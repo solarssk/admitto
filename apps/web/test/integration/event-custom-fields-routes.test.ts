@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { PrismaClient } from "@admitto/db";
+import { PrismaClient, type Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
 import { buildTestApp } from "../helpers/build-test-app.js";
@@ -1372,7 +1372,7 @@ describe("the format rules of a field", () => {
     for (const rules of [
       { pattern: "^[0-9]+$" },
       { regex: "a" },
-      { suggestions: ["Vegan"] },
+      { suggestion: ["Vegan"] },
       { allow_other: true },
       { min_length: 3, unknown_rule: 1 },
       { min_length: 0 },
@@ -1522,5 +1522,557 @@ describe("the format rules of a field", () => {
     });
     expect(logs).toHaveLength(2);
     for (const log of logs) expect(log.metadata).toEqual({ source_field: "audited" });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The rules of the registration form: an icon, suggestions and a condition between fields (v0.8).
+// ---------------------------------------------------------------------------------------------
+
+const deleteField = (eventId: string, fieldId: string): Promise<Response> =>
+  Promise.resolve(
+    app.request(`/api/admin/events/${eventId}/custom-fields/${fieldId}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    }),
+  );
+
+/** Creates a field and expects it to be created. */
+async function makeField(eventId: string, body: Record<string, unknown>): Promise<TypedFieldItem> {
+  const res = await createField(eventId, body);
+  expect(res.status, JSON.stringify(body)).toBe(201);
+  return readField(res);
+}
+
+const whenParking = { show_when: { field: "parking", value: true } };
+const whenBoth = { show_when: { field: "day", value: "Both" } };
+const DAYS = ["Day 1", "Day 2", "Both"];
+
+/** What the stored rows say about the field: its rules and its flags, for a check that a refusal changed nothing. */
+async function stored(fieldId: string) {
+  const row = await prisma.eventCustomField.findUniqueOrThrow({ where: { id: fieldId } });
+  return { type: row.type, options: row.options, rules: row.rules, show_on_form: row.show_on_form };
+}
+
+/** The status and the error code of an answer. */
+async function refusal(res: Response): Promise<[number, string]> {
+  return [res.status, await errorOf(res)];
+}
+
+describe("the icon and the suggestions of a field", () => {
+  beforeEach(resetFormFixtures);
+
+  it("stores an icon on a field of every type, and lists it", async () => {
+    for (const type of ["text", "long_text", "date", "datetime", "phone", "boolean"]) {
+      const field = await makeField(EVENT_CF_ORDER, { source_field: `icon_${type}`, type, rules: { icon: "car" } });
+      expect(field.rules, type).toEqual({ icon: "car" });
+      expect((await storedRules(field.id)).rules).toEqual({ icon: "car" });
+    }
+    const select = await makeField(EVENT_CF_ORDER, { source_field: "icon_select", type: "select", options: ["A"], rules: { icon: "bed" } });
+    expect(select.rules).toEqual({ icon: "bed" });
+    expect((await listItems(EVENT_CF_ORDER)).every((item) => (item as TypedFieldItem).rules !== null)).toBe(true);
+  });
+
+  it("refuses an icon that is not on the list with 400, and creates nothing", async () => {
+    for (const icon of ["rocket", "Parking", "map-pin", "", 5, null, ["car"]]) {
+      const res = await createField(EVENT_CF_ORDER, { source_field: "odd_icon", rules: { icon } });
+      expect([res.status, await errorOf(res)], JSON.stringify(icon)).toEqual([400, "validation_failed"]);
+    }
+    expect(await fieldCount()).toBe(0);
+  });
+
+  it("sets, replaces and clears an icon with a PATCH, and keeps the format rules next to it", async () => {
+    const created = await makeField(EVENT_CF_ORDER, { source_field: "iconic", rules: { max_length: 20, icon: "food" } });
+    expect(created.rules).toEqual({ max_length: 20, icon: "food" });
+    const replaced = await patchField(EVENT_CF_ORDER, created.id, { rules: { max_length: 20, icon: "users" } });
+    expect((await readField(replaced)).rules).toEqual({ max_length: 20, icon: "users" });
+    const without = await patchField(EVENT_CF_ORDER, created.id, { rules: { max_length: 20 } });
+    expect((await readField(without)).rules).toEqual({ max_length: 20 });
+  });
+
+  it("stores the suggestions of a text field, trimmed, in the order given", async () => {
+    const field = await makeField(EVENT_CF_ORDER, {
+      source_field: "diet",
+      rules: { icon: "food", suggestions: ["  Vegan ", "Vegetarian", "Gluten-free"] },
+    });
+    expect(field.rules).toEqual({ icon: "food", suggestions: ["Vegan", "Vegetarian", "Gluten-free"] });
+    expect((await storedRules(field.id)).rules).toEqual({ icon: "food", suggestions: ["Vegan", "Vegetarian", "Gluten-free"] });
+  });
+
+  it("refuses suggestions on every type but text with 422 invalid_field_rules, and creates nothing", async () => {
+    for (const body of [
+      { type: "long_text" },
+      { type: "date" },
+      { type: "datetime" },
+      { type: "phone" },
+      { type: "boolean" },
+      { type: "select", options: ["A"] },
+    ]) {
+      const res = await createField(EVENT_CF_ORDER, { source_field: "no_suggestions", ...body, rules: { suggestions: ["Vegan"] } });
+      expect(await refusal(res), JSON.stringify(body)).toEqual([422, "invalid_field_rules"]);
+    }
+    expect(await fieldCount()).toBe(0);
+  });
+
+  it("refuses a list that is empty, long, too long in an entry, or has an entry twice, with 400", async () => {
+    const thirtyOne = Array.from({ length: 31 }, (_, index) => `Choice ${index}`);
+    for (const suggestions of [[], thirtyOne, ["a".repeat(101)], ["Vegan", "vegan"], ["Vegan", " VEGAN "], [""], ["   "], "Vegan"]) {
+      const res = await createField(EVENT_CF_ORDER, { source_field: "bad_list", rules: { suggestions } });
+      expect(res.status, JSON.stringify(suggestions).slice(0, 40)).toBe(400);
+    }
+    const ok = await createField(EVENT_CF_ORDER, { source_field: "thirty", rules: { suggestions: thirtyOne.slice(0, 30) } });
+    expect(ok.status).toBe(201);
+  });
+
+  it("judges the suggestions on the type the field will have: a text field with a list cannot become another type", async () => {
+    const text = await makeField(EVENT_CF_ORDER, { source_field: "diet_text", rules: { suggestions: ["Vegan"] } });
+    for (const type of ["long_text", "date", "phone"]) {
+      expect(await refusal(await patchField(EVENT_CF_ORDER, text.id, { type })), type).toEqual([422, "invalid_field_rules"]);
+    }
+    expect(await refusal(await patchField(EVENT_CF_ORDER, text.id, { type: "select", options: ["A"] }))).toEqual([422, "invalid_field_rules"]);
+    expect((await stored(text.id)).type).toBe("text");
+    // With the list left out of the same PATCH, the type changes.
+    const moved = await patchField(EVENT_CF_ORDER, text.id, { type: "long_text", rules: { icon: "food" } });
+    expect(await readField(moved)).toMatchObject({ type: "long_text", rules: { icon: "food" } });
+    // And a list cannot be added to a field that is not a text.
+    expect(await refusal(await patchField(EVENT_CF_ORDER, text.id, { rules: { suggestions: ["Vegan"] } }))).toEqual([422, "invalid_field_rules"]);
+  });
+
+  it("keeps an icon when the type changes, and refuses format rules the new type does not take", async () => {
+    const text = await makeField(EVENT_CF_ORDER, { source_field: "retype_icon", rules: { icon: "mail", max_length: 20 } });
+    expect(await refusal(await patchField(EVENT_CF_ORDER, text.id, { type: "date" }))).toEqual([422, "invalid_field_rules"]);
+    const moved = await patchField(EVENT_CF_ORDER, text.id, { type: "date", rules: { icon: "mail" } });
+    expect(await readField(moved)).toMatchObject({ type: "date", rules: { icon: "mail" } });
+  });
+});
+
+describe("a condition between fields, on create", () => {
+  beforeEach(resetFormFixtures);
+
+  it("stores a condition on a yes/no field, and on an option of a select field", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    await makeField(EVENT_CF_ORDER, { source_field: "day", type: "select", options: DAYS });
+    const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate", rules: { ...whenParking, icon: "car", max_length: 10 } });
+    const badge = await makeField(EVENT_CF_ORDER, { source_field: "badge", type: "phone", rules: { show_when: { field: "day", value: "  Both " } } });
+    expect(plate.rules).toEqual({ show_when: { field: "parking", value: true }, icon: "car", max_length: 10 });
+    expect(badge.rules).toEqual({ show_when: { field: "day", value: "Both" } });
+    expect((await storedRules(plate.id)).rules).toEqual(plate.rules);
+    expect((await listItems(EVENT_CF_ORDER)).map((item) => item.source_field)).toEqual(["parking", "day", "plate", "badge"]);
+  });
+
+  it("stores a condition on a field of every type", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    for (const type of ["text", "long_text", "date", "datetime", "phone", "boolean"]) {
+      const field = await makeField(EVENT_CF_ORDER, { source_field: `when_${type}`, type, rules: whenParking });
+      expect(field.rules, type).toEqual(whenParking);
+    }
+    const select = await makeField(EVENT_CF_ORDER, { source_field: "when_select", type: "select", options: ["A"], rules: whenParking });
+    expect(select.rules).toEqual(whenParking);
+  });
+
+  it("refuses a condition on a field the event does not have, and one on a field that does not exist yet, with 422", async () => {
+    expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking }))).toEqual([422, "invalid_show_when"]);
+    // The field cannot depend on itself.
+    expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean", rules: whenParking }))).toEqual([422, "invalid_show_when"]);
+    // A field of another event does not count.
+    await makeField(EVENT_CF_REG_OFF, { source_field: "parking", type: "boolean" });
+    expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking }))).toEqual([422, "invalid_show_when"]);
+    expect(await fieldCount()).toBe(0);
+  });
+
+  it("refuses a condition on a field that is neither yes/no nor select, with 422", async () => {
+    for (const type of ["text", "long_text", "date", "datetime", "phone"]) {
+      await makeField(EVENT_CF_ORDER, { source_field: "parking", type });
+      expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking })), type).toEqual([422, "invalid_show_when"]);
+      await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_CF_ORDER } });
+    }
+  });
+
+  it("refuses an answer the field cannot have, with 422", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    await makeField(EVENT_CF_ORDER, { source_field: "day", type: "select", options: DAYS });
+    for (const show_when of [
+      { field: "parking", value: "true" },
+      { field: "day", value: true },
+      { field: "day", value: "Day 3" },
+      { field: "day", value: "both" },
+      { field: "day", value: "Both days" },
+    ]) {
+      expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "plate", rules: { show_when } })), JSON.stringify(show_when)).toEqual([422, "invalid_show_when"]);
+    }
+    expect(await fieldCount()).toBe(2);
+  });
+
+  it("refuses a condition that is not one with 400", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    for (const show_when of [{ field: "parking" }, { value: true }, { field: "parking", value: false }, { field: "parking", value: true, extra: 1 }, "parking", null, [], { field: "Parking", value: true }]) {
+      const res = await createField(EVENT_CF_ORDER, { source_field: "plate", rules: { show_when } });
+      expect([res.status, await errorOf(res)], JSON.stringify(show_when)).toEqual([400, "validation_failed"]);
+    }
+  });
+
+  it("refuses a condition on a field that has a condition itself: no chain of two", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "day", type: "select", options: DAYS });
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean", rules: whenBoth });
+    expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking }))).toEqual([422, "invalid_show_when"]);
+    expect(await fieldCount()).toBe(2);
+  });
+
+  it("lets a field with a condition be on the form only when the field it depends on is", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean", show_on_form: false });
+    expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "plate", show_on_form: true, rules: whenParking }))).toEqual([422, "show_when_not_on_form"]);
+    expect((await createField(EVENT_CF_ORDER, { source_field: "plate", show_on_form: false, rules: whenParking })).status).toBe(201);
+    expect((await createField(EVENT_CF_ORDER, { source_field: "plate2", rules: whenParking })).status).toBe(201);
+    await makeField(EVENT_CF_ORDER, { source_field: "day", type: "select", options: DAYS, show_on_form: true });
+    expect((await createField(EVENT_CF_ORDER, { source_field: "badge", show_on_form: true, rules: whenBoth })).status).toBe(201);
+  });
+
+  it("holds an event that has a registration mode to the same rules, and one that has none, too", async () => {
+    for (const eventId of [EVENT_CF_REG, EVENT_CF_REG_OFF]) {
+      await makeField(eventId, { source_field: "parking", type: "boolean", show_on_form: false });
+      expect(await refusal(await createField(eventId, { source_field: "plate", show_on_form: true, rules: whenParking })), eventId).toEqual([422, "show_when_not_on_form"]);
+      expect(await refusal(await createField(eventId, { source_field: "plate", rules: { show_when: { field: "nothing", value: true } } })), eventId).toEqual([422, "invalid_show_when"]);
+    }
+  });
+
+  it("does not put the condition in the audit entry", async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { event_id: EVENT_CF_ORDER } });
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    await makeField(EVENT_CF_ORDER, { source_field: "plate", rules: { ...whenParking, suggestions: ["WA 12345"] } });
+    const logs = await prisma.attendeeActionLog.findMany({ where: { event_id: EVENT_CF_ORDER, action_type: "event_custom_field_created" } });
+    expect(logs.map((log) => log.metadata)).toEqual(expect.arrayContaining([{ source_field: "parking" }, { source_field: "plate" }]));
+  });
+});
+
+describe("a condition between fields, on PATCH", () => {
+  beforeEach(resetFormFixtures);
+
+  /** A yes/no field `parking`, a select field `day` and two fields that depend on them. */
+  async function seedPairs() {
+    const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    const day = await makeField(EVENT_CF_ORDER, { source_field: "day", type: "select", options: DAYS });
+    const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking });
+    const badge = await makeField(EVENT_CF_ORDER, { source_field: "badge", rules: whenBoth });
+    return { parking, day, plate, badge };
+  }
+
+  it("sets, moves and clears the condition of an existing field", async () => {
+    const { plate, badge } = await seedPairs();
+    const free = await makeField(EVENT_CF_ORDER, { source_field: "free_text" });
+    expect((await readField(await patchField(EVENT_CF_ORDER, free.id, { rules: whenParking }))).rules).toEqual(whenParking);
+    expect((await readField(await patchField(EVENT_CF_ORDER, plate.id, { rules: whenBoth }))).rules).toEqual(whenBoth);
+    expect((await readField(await patchField(EVENT_CF_ORDER, badge.id, { rules: null }))).rules).toBeNull();
+    expect((await readField(await patchField(EVENT_CF_ORDER, plate.id, { rules: { icon: "car" } }))).rules).toEqual({ icon: "car" });
+  });
+
+  it("refuses a condition that cannot be kept with 422, and changes nothing", async () => {
+    const { plate } = await seedPairs();
+    const before = await stored(plate.id);
+    for (const show_when of [
+      { field: "nothing", value: true },
+      { field: "plate", value: true },
+      { field: "badge", value: true },
+      { field: "day", value: true },
+      { field: "parking", value: "true" },
+      { field: "day", value: "Day 3" },
+    ]) {
+      expect(await refusal(await patchField(EVENT_CF_ORDER, plate.id, { rules: { show_when } })), JSON.stringify(show_when)).toEqual([422, "invalid_show_when"]);
+    }
+    expect(await stored(plate.id)).toEqual(before);
+  });
+
+  it("refuses a yes/no or select field that depends on itself, and changes nothing", async () => {
+    const solo = await makeField(EVENT_CF_ORDER, { source_field: "solo", type: "boolean" });
+    const pick = await makeField(EVENT_CF_ORDER, { source_field: "pick", type: "select", options: ["A", "B"] });
+    expect(await refusal(await patchField(EVENT_CF_ORDER, solo.id, { rules: { show_when: { field: "solo", value: true } } }))).toEqual([422, "invalid_show_when"]);
+    expect(await refusal(await patchField(EVENT_CF_ORDER, pick.id, { rules: { show_when: { field: "pick", value: "A" } } }))).toEqual([422, "invalid_show_when"]);
+    expect((await stored(solo.id)).rules).toBeNull();
+    expect((await stored(pick.id)).rules).toBeNull();
+  });
+
+  it("refuses a condition for a field that others depend on: no chain of two, either way", async () => {
+    const { parking } = await seedPairs();
+    // `plate` depends on `parking`, so `parking` may not depend on `day`, which `badge` depends on.
+    expect(await refusal(await patchField(EVENT_CF_ORDER, parking.id, { rules: whenBoth }))).toEqual([422, "invalid_show_when"]);
+    expect((await stored(parking.id)).rules).toBeNull();
+  });
+
+  it("refuses a cycle, whichever of the two fields is saved last", async () => {
+    const a = await makeField(EVENT_CF_ORDER, { source_field: "a", type: "boolean" });
+    const b = await makeField(EVENT_CF_ORDER, { source_field: "b", type: "boolean" });
+    expect((await patchField(EVENT_CF_ORDER, a.id, { rules: { show_when: { field: "b", value: true } } })).status).toBe(200);
+    expect(await refusal(await patchField(EVENT_CF_ORDER, b.id, { rules: { show_when: { field: "a", value: true } } }))).toEqual([422, "invalid_show_when"]);
+    expect((await stored(b.id)).rules).toBeNull();
+    // Nor a field on its own.
+    expect(await refusal(await patchField(EVENT_CF_ORDER, b.id, { rules: { show_when: { field: "b", value: true } } }))).toEqual([422, "invalid_show_when"]);
+  });
+
+  it("refuses to change the type of a field that others depend on with 409 field_controls_others", async () => {
+    const { parking, day } = await seedPairs();
+    const before = [await stored(parking.id), await stored(day.id)];
+    for (const type of ["text", "long_text", "date", "datetime", "phone"]) {
+      expect(await refusal(await patchField(EVENT_CF_ORDER, parking.id, { type })), `boolean to ${type}`).toEqual([409, "field_controls_others"]);
+      expect(await refusal(await patchField(EVENT_CF_ORDER, day.id, { type })), `select to ${type}`).toEqual([409, "field_controls_others"]);
+    }
+    expect(await refusal(await patchField(EVENT_CF_ORDER, parking.id, { type: "select", options: ["true"] }))).toEqual([409, "field_controls_others"]);
+    expect(await refusal(await patchField(EVENT_CF_ORDER, day.id, { type: "boolean", options: null }))).toEqual([409, "field_controls_others"]);
+    expect([await stored(parking.id), await stored(day.id)]).toEqual(before);
+  });
+
+  it("refuses to remove or rename the option another field is shown for, and lets the others go", async () => {
+    const { day } = await seedPairs();
+    expect(await refusal(await patchField(EVENT_CF_ORDER, day.id, { options: ["Day 1", "Day 2"] }))).toEqual([409, "field_controls_others"]);
+    expect(await refusal(await patchField(EVENT_CF_ORDER, day.id, { options: ["Day 1", "Day 2", "Both days"] }))).toEqual([409, "field_controls_others"]);
+    expect(await refusal(await patchField(EVENT_CF_ORDER, day.id, { options: ["both"] }))).toEqual([409, "field_controls_others"]);
+    expect((await stored(day.id)).options).toEqual(DAYS);
+    expect((await patchField(EVENT_CF_ORDER, day.id, { options: ["Both", "Day 2"] })).status).toBe(200);
+    expect((await patchField(EVENT_CF_ORDER, day.id, { options: ["Day 3", "Both", "Day 1"] })).status).toBe(200);
+    expect((await stored(day.id)).options).toEqual(["Day 3", "Both", "Day 1"]);
+  });
+
+  it("lets the option go once nothing is shown for it", async () => {
+    const { day, badge } = await seedPairs();
+    expect((await patchField(EVENT_CF_ORDER, badge.id, { rules: null })).status).toBe(200);
+    expect((await patchField(EVENT_CF_ORDER, day.id, { options: ["Day 1"] })).status).toBe(200);
+  });
+
+  it("lets a field that others depend on be changed in ways that do not matter to them", async () => {
+    const { parking, day } = await seedPairs();
+    expect((await patchField(EVENT_CF_ORDER, parking.id, { label: "Parking?", description: "Do you come by car?", required: true })).status).toBe(200);
+    expect((await patchField(EVENT_CF_ORDER, parking.id, { rules: { icon: "parking" } })).status).toBe(200);
+    expect((await patchField(EVENT_CF_ORDER, day.id, { options: [...DAYS, "Day 3"] })).status).toBe(200);
+    expect((await patchField(EVENT_CF_ORDER, day.id, { options: [...DAYS].reverse() })).status).toBe(200);
+  });
+
+  it("lets a field with a condition change its type, its options and its other rules", async () => {
+    const { plate } = await seedPairs();
+    expect((await readField(await patchField(EVENT_CF_ORDER, plate.id, { type: "select", options: ["A"], rules: whenParking }))).type).toBe("select");
+    expect((await readField(await patchField(EVENT_CF_ORDER, plate.id, { type: "text", options: null, rules: { ...whenParking, suggestions: ["A"] } }))).rules).toEqual({
+      ...whenParking,
+      suggestions: ["A"],
+    });
+  });
+
+  it("lets a field with a condition be on the form only when the field it depends on is, and the other way round", async () => {
+    const { parking, plate } = await seedPairs();
+    // Both off the form: turning the dependent on is refused, turning the other on first makes it possible.
+    expect(await refusal(await patchField(EVENT_CF_ORDER, plate.id, { show_on_form: true }))).toEqual([422, "show_when_not_on_form"]);
+    expect((await stored(plate.id)).show_on_form).toBe(false);
+    expect((await patchField(EVENT_CF_ORDER, parking.id, { show_on_form: true })).status).toBe(200);
+    expect((await patchField(EVENT_CF_ORDER, plate.id, { show_on_form: true })).status).toBe(200);
+    // Now the one it depends on may not leave the form.
+    expect(await refusal(await patchField(EVENT_CF_ORDER, parking.id, { show_on_form: false }))).toEqual([422, "show_when_not_on_form"]);
+    expect((await stored(parking.id)).show_on_form).toBe(true);
+    // In the other order it may.
+    expect((await patchField(EVENT_CF_ORDER, plate.id, { show_on_form: false })).status).toBe(200);
+    expect((await patchField(EVENT_CF_ORDER, parking.id, { show_on_form: false })).status).toBe(200);
+  });
+
+  it("refuses to put on the form a field whose condition names one that is off it, also when the same PATCH sets the condition", async () => {
+    const { plate } = await seedPairs();
+    const free = await makeField(EVENT_CF_ORDER, { source_field: "free_on_form", show_on_form: true });
+    expect(await refusal(await patchField(EVENT_CF_ORDER, free.id, { rules: whenParking }))).toEqual([422, "show_when_not_on_form"]);
+    expect(await refusal(await patchField(EVENT_CF_ORDER, plate.id, { show_on_form: true, rules: whenParking }))).toEqual([422, "show_when_not_on_form"]);
+  });
+
+  it("keeps working in an event that takes registrations", async () => {
+    await makeField(EVENT_CF_REG, { source_field: "parking", type: "boolean", show_on_form: true });
+    const plate = await makeField(EVENT_CF_REG, { source_field: "plate", show_on_form: true, rules: whenParking });
+    expect(await refusal(await patchField(EVENT_CF_REG, plate.id, { type: "select", options: ["A"], rules: { show_when: { field: "plate", value: true } } }))).toEqual([422, "invalid_show_when"]);
+    expect((await patchField(EVENT_CF_REG, plate.id, { required: true })).status).toBe(200);
+  });
+
+  it("reads a condition a hand edit left naming no field, and still lets the field be saved", async () => {
+    const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate" });
+    await prisma.$executeRaw`UPDATE "EventCustomField" SET "rules" = '{"show_when": {"field": "gone", "value": true}}'::jsonb WHERE "id" = ${plate.id}`;
+    expect((await listItems(EVENT_CF_ORDER))[0]).toMatchObject({ source_field: "plate", rules: { show_when: { field: "gone", value: true } } });
+    expect((await patchField(EVENT_CF_ORDER, plate.id, { label: "Plate number", required: true })).status).toBe(200);
+    // Saving the rules again is judged like any other save of a condition.
+    expect(await refusal(await patchField(EVENT_CF_ORDER, plate.id, { rules: { show_when: { field: "gone", value: true } } }))).toEqual([422, "invalid_show_when"]);
+    expect((await patchField(EVENT_CF_ORDER, plate.id, { rules: null })).status).toBe(200);
+  });
+});
+
+describe("deleting a field that others are shown by", () => {
+  beforeEach(resetFormFixtures);
+
+  it("is refused with 409 field_controls_others, and nothing is deleted", async () => {
+    const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    const day = await makeField(EVENT_CF_ORDER, { source_field: "day", type: "select", options: DAYS });
+    await makeField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking });
+    await makeField(EVENT_CF_ORDER, { source_field: "badge", rules: whenBoth });
+
+    expect(await refusal(await deleteField(EVENT_CF_ORDER, parking.id))).toEqual([409, "field_controls_others"]);
+    expect(await refusal(await deleteField(EVENT_CF_ORDER, day.id))).toEqual([409, "field_controls_others"]);
+    expect(await fieldCount()).toBe(4);
+  });
+
+  it("goes through once the fields that depend on it are changed or gone, in either way", async () => {
+    const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    const day = await makeField(EVENT_CF_ORDER, { source_field: "day", type: "select", options: DAYS });
+    const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking });
+    const badge = await makeField(EVENT_CF_ORDER, { source_field: "badge", rules: whenBoth });
+
+    expect((await deleteField(EVENT_CF_ORDER, plate.id)).status).toBe(200);
+    expect((await deleteField(EVENT_CF_ORDER, parking.id)).status).toBe(200);
+    expect((await patchField(EVENT_CF_ORDER, badge.id, { rules: null })).status).toBe(200);
+    expect((await deleteField(EVENT_CF_ORDER, day.id)).status).toBe(200);
+    expect(await fieldCount()).toBe(1);
+  });
+
+  it("deletes a field with a condition at once, and a field that only looks like a controller", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking });
+    const other = await makeField(EVENT_CF_ORDER, { source_field: "parking_two", type: "boolean" });
+    expect((await deleteField(EVENT_CF_ORDER, other.id)).status).toBe(200);
+    expect((await deleteField(EVENT_CF_ORDER, plate.id)).status).toBe(200);
+  });
+
+  it("only looks at the fields of the same event", async () => {
+    const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    await makeField(EVENT_CF_REG_OFF, { source_field: "parking", type: "boolean" });
+    await makeField(EVENT_CF_REG_OFF, { source_field: "plate", rules: whenParking });
+    expect((await deleteField(EVENT_CF_ORDER, parking.id)).status).toBe(200);
+  });
+
+  it("is refused for a field that is also used by an item, as before", async () => {
+    const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    await makeField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking });
+    await prisma.eventItem.create({ data: { event_id: EVENT_CF_ORDER, key: "parking_item", label: "Parking item", config: { content_fields: ["parking"] } } });
+    try {
+      expect(await refusal(await deleteField(EVENT_CF_ORDER, parking.id))).toEqual([409, "field_in_use"]);
+    } finally {
+      await prisma.eventItem.deleteMany({ where: { event_id: EVENT_CF_ORDER } });
+    }
+  });
+});
+
+describe("conditions between fields, saved at the same time", () => {
+  beforeEach(resetFormFixtures);
+
+  /** Runs `act` while this test holds the lock of the event's fields, so that every request it starts has passed its first
+   * read and queues behind the lock. `act` changes the rows the way a request that committed meanwhile would. */
+  async function whileLocked(eventId: string, start: () => Promise<Response>[], act: (tx: Prisma.TransactionClient) => Promise<void>): Promise<Response[]> {
+    let pending: Promise<Response>[] = [];
+    await prisma.$transaction(async (tx) => {
+      await acquireEventCustomFieldsLock(tx, eventId);
+      pending = start();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await act(tx);
+    });
+    return Promise.all(pending);
+  }
+
+  it("creates no field that depends on a field deleted while the save waited", async () => {
+    const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    const [res] = await whileLocked(
+      EVENT_CF_ORDER,
+      () => [createField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking })],
+      async (tx) => {
+        await tx.eventCustomField.delete({ where: { id: parking.id } });
+      },
+    );
+    expect(await refusal(res!)).toEqual([422, "invalid_show_when"]);
+    expect(await fieldCount()).toBe(0);
+  });
+
+  it("does not delete a field that a field created while the delete waited depends on", async () => {
+    const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    const [res] = await whileLocked(
+      EVENT_CF_ORDER,
+      () => [deleteField(EVENT_CF_ORDER, parking.id)],
+      async (tx) => {
+        await tx.eventCustomField.create({ data: { event_id: EVENT_CF_ORDER, source_field: "plate", label: "Plate", rules: whenParking } });
+      },
+    );
+    expect(await refusal(res!)).toEqual([409, "field_controls_others"]);
+    expect(await fieldCount()).toBe(2);
+  });
+
+  it("does not change the type of a field that a field created while the PATCH waited depends on", async () => {
+    const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    const [res] = await whileLocked(
+      EVENT_CF_ORDER,
+      () => [patchField(EVENT_CF_ORDER, parking.id, { type: "text" })],
+      async (tx) => {
+        await tx.eventCustomField.create({ data: { event_id: EVENT_CF_ORDER, source_field: "plate", label: "Plate", rules: whenParking } });
+      },
+    );
+    expect(await refusal(res!)).toEqual([409, "field_controls_others"]);
+    expect((await stored(parking.id)).type).toBe("boolean");
+  });
+
+  it("does not remove an option that a condition added while the PATCH waited names", async () => {
+    const day = await makeField(EVENT_CF_ORDER, { source_field: "day", type: "select", options: DAYS });
+    const [res] = await whileLocked(
+      EVENT_CF_ORDER,
+      () => [patchField(EVENT_CF_ORDER, day.id, { options: ["Day 1"] })],
+      async (tx) => {
+        await tx.eventCustomField.create({ data: { event_id: EVENT_CF_ORDER, source_field: "badge", label: "Badge", rules: whenBoth } });
+      },
+    );
+    expect(await refusal(res!)).toEqual([409, "field_controls_others"]);
+    expect((await stored(day.id)).options).toEqual(DAYS);
+  });
+
+  it("does not put a field on the form whose controller left it while the PATCH waited", async () => {
+    const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean", show_on_form: true });
+    const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking });
+    const [res] = await whileLocked(
+      EVENT_CF_ORDER,
+      () => [patchField(EVENT_CF_ORDER, plate.id, { show_on_form: true })],
+      async (tx) => {
+        await tx.eventCustomField.update({ where: { id: parking.id }, data: { show_on_form: false } });
+      },
+    );
+    expect(await refusal(res!)).toEqual([422, "show_when_not_on_form"]);
+    expect((await stored(plate.id)).show_on_form).toBe(false);
+  });
+
+  it("never leaves a dependent without its controller when a delete and a create race", async () => {
+    for (let round = 0; round < 6; round += 1) {
+      await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_CF_ORDER } });
+      const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+      const [removed, made] = await Promise.all([
+        deleteField(EVENT_CF_ORDER, parking.id),
+        createField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking }),
+      ]);
+      // One of the two wins. Whichever it is, the survivors are consistent.
+      expect([removed.status, made.status].sort()).toSatisfy((statuses: number[]) => (statuses[0] === 200 || statuses[0] === 201) && statuses[1] !== undefined && statuses[1] >= 400);
+      const rows = await prisma.eventCustomField.findMany({ where: { event_id: EVENT_CF_ORDER } });
+      const dangling = rows.some((row) => row.source_field === "plate") && !rows.some((row) => row.source_field === "parking");
+      expect(dangling).toBe(false);
+    }
+  });
+
+  it("never closes a cycle when two fields are each given a condition on the other at once", async () => {
+    for (let round = 0; round < 6; round += 1) {
+      await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_CF_ORDER } });
+      const a = await makeField(EVENT_CF_ORDER, { source_field: "a", type: "boolean" });
+      const b = await makeField(EVENT_CF_ORDER, { source_field: "b", type: "boolean" });
+      const [x, y] = await Promise.all([
+        patchField(EVENT_CF_ORDER, a.id, { rules: { show_when: { field: "b", value: true } } }),
+        patchField(EVENT_CF_ORDER, b.id, { rules: { show_when: { field: "a", value: true } } }),
+      ]);
+      expect([x.status, y.status].sort()).toEqual([200, 422]);
+      const rows = await prisma.eventCustomField.findMany({ where: { event_id: EVENT_CF_ORDER } });
+      expect(rows.filter((row) => row.rules !== null)).toHaveLength(1);
+    }
+  });
+
+  it("never leaves a condition on a field that stopped being yes/no when a retype and a new condition race", async () => {
+    for (let round = 0; round < 6; round += 1) {
+      await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_CF_ORDER } });
+      const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+      const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate" });
+      const [retyped, conditioned] = await Promise.all([
+        patchField(EVENT_CF_ORDER, parking.id, { type: "text" }),
+        patchField(EVENT_CF_ORDER, plate.id, { rules: whenParking }),
+      ]);
+      expect([retyped.status, conditioned.status].sort()).toSatisfy((statuses: number[]) => statuses.includes(200) && statuses.some((status) => status >= 400));
+      const rows = new Map((await prisma.eventCustomField.findMany({ where: { event_id: EVENT_CF_ORDER } })).map((row) => [row.source_field, row]));
+      const dependsOnParking = rows.get("plate")?.rules !== null;
+      expect(dependsOnParking && rows.get("parking")?.type !== "boolean").toBe(false);
+    }
   });
 });

@@ -312,3 +312,210 @@ describe("the custom fields report with the new types", () => {
     expect(html).toContain("Answered");
   });
 });
+
+// A question that is asked only for a certain answer to another one, as the staff API reads it (v0.8).
+
+describe("a question with a condition, in the staff API", () => {
+  const EVENT_COND = "evt-field-conditions-att";
+  let condCounter = 0;
+
+  beforeAll(async () => {
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_COND } });
+    await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_COND } });
+    await prisma.event.deleteMany({ where: { id: EVENT_COND } });
+    await prisma.event.create({
+      data: { id: EVENT_COND, title: "Conditions Event", slug: "conditions-event", date: new Date("2026-11-05"), organization_id: ORG_ID },
+    });
+    await prisma.eventCustomField.createMany({
+      data: [
+        { event_id: EVENT_COND, source_field: "parking", label: "Parking", type: "boolean", display_order: 0 },
+        {
+          event_id: EVENT_COND,
+          source_field: "plate",
+          label: "Plate",
+          type: "text",
+          required: true,
+          display_order: 1,
+          rules: { show_when: { field: "parking", value: true } },
+        },
+        { event_id: EVENT_COND, source_field: "day", label: "Day", type: "select", options: ["Day 1", "Day 2", "Both"], display_order: 2 },
+        {
+          event_id: EVENT_COND,
+          source_field: "badge",
+          label: "Badge",
+          type: "text",
+          display_order: 3,
+          rules: { show_when: { field: "day", value: "Both" } },
+        },
+      ],
+    });
+  });
+
+  afterAll(async () => {
+    await prisma?.attendee.deleteMany({ where: { event_id: EVENT_COND } });
+    await prisma?.eventCustomField.deleteMany({ where: { event_id: EVENT_COND } });
+    await prisma?.event.deleteMany({ where: { id: EVENT_COND } });
+  });
+
+  function addAttendee(custom_data: Record<string, unknown>): Promise<Response> {
+    condCounter += 1;
+    return Promise.resolve(
+      app.request(`/api/admin/events/${EVENT_COND}/attendees`, {
+        method: "POST",
+        headers: jsonAdmin(),
+        body: JSON.stringify({ email: `conditions-${condCounter}@example.com`, first_name: "Ann", last_name: `Guest${condCounter}`, custom_data }),
+      }),
+    );
+  }
+
+  /** Adds an attendee and returns its id, expecting it to be added. */
+  async function added(custom_data: Record<string, unknown>): Promise<string> {
+    const res = await addAttendee(custom_data);
+    expect(res.status, JSON.stringify(custom_data)).toBe(201);
+    return ((await res.json()) as CreatedAttendee).id;
+  }
+
+  async function edit(attendeeId: string, body: Record<string, unknown>): Promise<Response> {
+    return app.request(`/api/admin/events/${EVENT_COND}/attendees/${attendeeId}`, {
+      method: "PATCH",
+      headers: jsonAdmin(),
+      body: JSON.stringify({ ...body, expected_updated_at: await updatedAt(attendeeId) }),
+    });
+  }
+
+  const editAnswers = (attendeeId: string, custom_data_fields: Record<string, string | null>) => edit(attendeeId, { custom_data_fields });
+
+  async function refused(res: Response): Promise<[number, unknown]> {
+    return [res.status, await res.json()];
+  }
+
+  describe("when an attendee is added", () => {
+    it("stores the answer to a question that is asked", async () => {
+      const id = await added({ parking: "yes", plate: "WA 12345" });
+      expect(await storedCustomData(id)).toEqual({ parking: "true", plate: "WA 12345" });
+      const day = await added({ day: "Both", badge: "Blue" });
+      expect(await storedCustomData(day)).toEqual({ day: "Both", badge: "Blue" });
+    });
+
+    it("drops the answer to a question that is not asked, and answers 201 with no word of it", async () => {
+      for (const answers of [{ parking: "no", plate: "WA 12345" }, { plate: "WA 12345" }, { parking: "", plate: "WA 12345" }]) {
+        const res = await addAttendee(answers);
+        expect(res.status, JSON.stringify(answers)).toBe(201);
+        const body = (await res.json()) as CreatedAttendee;
+        expect(body.custom_data?.plate).toBeUndefined();
+        expect((await storedCustomData(body.id) as Record<string, string> | null)?.plate).toBeUndefined();
+      }
+      const day = await added({ day: "Day 1", badge: "Blue" });
+      expect(await storedCustomData(day)).toEqual({ day: "Day 1" });
+    });
+
+    it("does not require an answer to a question that is not asked", async () => {
+      expect(await storedCustomData(await added({ parking: "no" }))).toEqual({ parking: "false" });
+      expect(await storedCustomData(await added({}))).toBeNull();
+    });
+
+    it("requires it once the question is asked, naming the field", async () => {
+      expect(await refused(await addAttendee({ parking: "yes" }))).toEqual([400, { error: "required_custom_data_field_missing", field: "plate" }]);
+      expect(await refused(await addAttendee({ parking: "true", plate: "  " }))).toEqual([400, { error: "required_custom_data_field_missing", field: "plate" }]);
+    });
+
+    it("does not look at an answer to a question that is not asked, however wrong it is", async () => {
+      // Longer than any answer may be, and shorter than the request limit that a body is held to before anything is read.
+      expect((await addAttendee({ parking: "no", plate: "p".repeat(1500) })).status).toBe(201);
+      expect((await addAttendee({ day: "Day 2", badge: "b".repeat(101) })).status).toBe(201);
+    });
+
+    it("refuses a wrong answer to a question that is asked, and a controller that has no such answer", async () => {
+      expect(await refused(await addAttendee({ parking: "yes", plate: "p".repeat(101) }))).toEqual([400, { error: "validation_failed", field: "plate" }]);
+      expect(await refused(await addAttendee({ parking: "maybe", plate: "WA 12345" }))).toEqual([400, { error: "validation_failed", field: "parking" }]);
+      expect(await refused(await addAttendee({ day: "Day 3", badge: "Blue" }))).toEqual([400, { error: "validation_failed", field: "day" }]);
+    });
+  });
+
+  describe("when an attendee is edited", () => {
+    it("keeps the answer stored while the question was asked, and asks for nothing more of it", async () => {
+      const id = await added({ parking: "true", plate: "WA 12345" });
+      expect((await editAnswers(id, { parking: "no" })).status).toBe(200);
+      expect(await storedCustomData(id)).toEqual({ parking: "false", plate: "WA 12345" });
+      // Other edits keep working: the plate is not asked, so it is not required, and it is not touched.
+      expect((await edit(id, { first_name: "Anna", last_name: "Guest" })).status).toBe(200);
+      expect(await storedCustomData(id)).toEqual({ parking: "false", plate: "WA 12345" });
+    });
+
+    it("does not store an answer to a question that is not asked, and says nothing of it", async () => {
+      const id = await added({ parking: "no" });
+      const res = await editAnswers(id, { plate: "WA 99999" });
+      expect(res.status).toBe(200);
+      expect(await storedCustomData(id)).toEqual({ parking: "false" });
+      const kept = await added({ parking: "no" });
+      expect((await editAnswers(kept, { plate: "p".repeat(500) })).status).toBe(200);
+      expect(await storedCustomData(kept)).toEqual({ parking: "false" });
+    });
+
+    it("stores both when one edit answers the question and asks it", async () => {
+      const id = await added({ parking: "no" });
+      expect((await editAnswers(id, { plate: "WA 5", parking: "yes" })).status).toBe(200);
+      expect(await storedCustomData(id)).toEqual({ parking: "true", plate: "WA 5" });
+    });
+
+    it("drops the answer of an edit that stops asking the question", async () => {
+      const id = await added({ parking: "yes", plate: "OLD 1" });
+      expect((await editAnswers(id, { plate: "NEW 2", parking: "no" })).status).toBe(200);
+      expect(await storedCustomData(id)).toEqual({ parking: "false", plate: "OLD 1" });
+    });
+
+    it("clears an answer to a question that is not asked, when the staff clear it", async () => {
+      const id = await added({ parking: "yes", plate: "OLD 1" });
+      expect((await editAnswers(id, { parking: "no" })).status).toBe(200);
+      expect((await editAnswers(id, { plate: null })).status).toBe(200);
+      expect(await storedCustomData(id)).toEqual({ parking: "false" });
+    });
+
+    it("refuses to clear a required answer to a question that is asked, and to ask a required question without an answer", async () => {
+      const asked = await added({ parking: "yes", plate: "WA 1" });
+      expect(await refused(await editAnswers(asked, { plate: null }))).toEqual([400, { error: "required_custom_data_field_missing", field: "plate" }]);
+      const quiet = await added({ parking: "no" });
+      expect(await refused(await editAnswers(quiet, { parking: "yes" }))).toEqual([400, { error: "required_custom_data_field_missing", field: "plate" }]);
+      expect((await editAnswers(quiet, { parking: "yes", plate: "WA 2" })).status).toBe(200);
+      expect(await storedCustomData(asked)).toEqual({ parking: "true", plate: "WA 1" });
+    });
+
+    it("holds an attendee whose question is asked and unanswered to the rule at every other edit, as for any required field", async () => {
+      const id = await added({ parking: "no" });
+      // Written straight to the database, as an older save might have left it.
+      await prisma.attendee.update({ where: { id }, data: { custom_data: { parking: "true" } } });
+      expect(await refused(await edit(id, { first_name: "Anna", last_name: "Guest" }))).toEqual([400, { error: "required_custom_data_field_missing", field: "plate" }]);
+      expect((await editAnswers(id, { plate: "WA 3" })).status).toBe(200);
+    });
+
+    it("works the same for a select question", async () => {
+      const id = await added({ day: "Day 1" });
+      expect((await editAnswers(id, { badge: "Blue" })).status).toBe(200);
+      expect(await storedCustomData(id)).toEqual({ day: "Day 1" });
+      expect((await editAnswers(id, { day: "Both", badge: "Blue" })).status).toBe(200);
+      expect(await storedCustomData(id)).toEqual({ day: "Both", badge: "Blue" });
+      expect((await editAnswers(id, { day: "Day 2" })).status).toBe(200);
+      expect(await storedCustomData(id)).toEqual({ day: "Day 2", badge: "Blue" });
+    });
+  });
+
+  describe("when the organiser changes the condition later", () => {
+    it("reads the answers already stored under the condition as it is now", async () => {
+      const id = await added({ parking: "yes", plate: "WA 7" });
+      await prisma.eventCustomField.update({
+        where: { event_id_source_field: { event_id: EVENT_COND, source_field: "plate" } },
+        data: { rules: { show_when: { field: "parking", value: true }, max_length: 3 } },
+      });
+      try {
+        // The stored answer breaks the new length rule: the edit is refused until it is fixed, as for any rule.
+        expect(await refused(await editAnswers(id, { day: "Day 1" }))).toEqual([400, { error: "validation_failed", field: "plate" }]);
+        expect((await editAnswers(id, { plate: "W7" })).status).toBe(200);
+      } finally {
+        await prisma.eventCustomField.update({
+          where: { event_id_source_field: { event_id: EVENT_COND, source_field: "plate" } },
+          data: { rules: { show_when: { field: "parking", value: true } } },
+        });
+      }
+    });
+  });
+});

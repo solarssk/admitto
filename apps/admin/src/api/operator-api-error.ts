@@ -60,6 +60,8 @@ export const CODE_MESSAGES: Record<string, string> = {
   event_archived: "This event is archived.",
   event_full: "Event is at capacity.",
   export_too_large: "Export is too large. Narrow filters or export in parts.",
+  field_controls_others:
+    "Other fields are shown only for an answer to this one. Change or remove their condition first.",
   field_in_use: "This field is used as a hint on an item. Remove it there first.",
   field_limit_reached: "This event has reached its custom field limit.",
   file_required: "Choose a file to upload.",
@@ -74,8 +76,10 @@ export const CODE_MESSAGES: Record<string, string> = {
   internal_error: "Something went wrong. Try again. If it keeps happening, check System logs.",
   invalid_email: INVALID_EMAIL_MESSAGE,
   invalid_field_rules:
-    "These format rules do not fit the field. Only text, long text and phone fields take rules, and a length cannot be longer than the field allows.",
+    "These rules do not fit the field. Length, digits-only and example rules fit text, long text and phone fields, suggestions fit text fields only, and a length cannot be longer than the field allows.",
   invalid_phone: CONTACT_PHONE_ERROR,
+  invalid_show_when:
+    "This condition cannot be kept. It must point at another yes/no or select field of this event that has no condition of its own, and name an answer that field can have. A field that other fields depend on cannot have a condition itself.",
   invalid_form_data: "Could not read the upload. Try again.",
   invalid_image: "That file is not a valid image. Try another PNG, JPG, or WebP.",
   invalid_code: "Invalid authenticator code.",
@@ -130,6 +134,8 @@ export const CODE_MESSAGES: Record<string, string> = {
   save_failed: "Save failed. Try again.",
   "server error": "Something went wrong. Try again.",
   setup_not_ready: "Complete the setup steps before finishing.",
+  show_when_not_on_form:
+    "A field with a condition can be on the registration form only when the field it depends on is on the form too.",
   source_field_conflict: "A custom field with this key already exists for this event.",
   source_provider_unavailable:
     "Select an enabled direct OIDC identity provider before enabling Cloudflare Access.",

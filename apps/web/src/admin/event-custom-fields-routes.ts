@@ -10,14 +10,18 @@ import {
 } from "@admitto/shared";
 import {
   MAX_CUSTOM_FIELDS_PER_EVENT,
+  controlsOtherFields,
   eventCustomFieldOrderBy,
   eventCustomFieldRulesFitType,
   eventCustomFieldRulesSchema,
+  findShowWhenProblem,
   hasNoRules,
   isReservedCustomDataSourceField,
   readStoredFieldRules,
   writeBulkActionLog,
+  type ConditionField,
   type OpsAuditContext,
+  type ShowWhenProblem,
 } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -47,6 +51,14 @@ class FieldGoneError extends Error {}
 /** Thrown when a save would leave a field with format rules that its type does not take (or a length
  * longer than the type can hold). Mapped to 422 `invalid_field_rules`. */
 class InvalidFieldRulesError extends Error {}
+
+/** Thrown when a save would break a condition between two fields of the event, or a delete would leave a field
+ * whose condition depends on the deleted one (see findShowWhenProblem). Mapped to 422 or 409 by showWhenProblemResponse. */
+class ShowWhenError extends Error {
+  constructor(readonly problem: ShowWhenProblem) {
+    super(problem);
+  }
+}
 
 /** Thrown when a reorder lists other ids than the event's fields have now: one was added or
  * deleted since the client loaded the list, or never belonged to this event. Mapped to 409
@@ -93,8 +105,9 @@ const createFieldSchema = z
     // that existed before the form; the Registration page sends true for a field it creates.
     show_on_form: z.boolean().optional(),
     options: z.array(optionValueField).max(20).optional(),
-    // Format rules of a text, long text or phone field (see eventCustomFieldRulesSchema): a shape
-    // that is not one is a 400, and rules the type does not take are a 422 (assertRulesFitType).
+    // The rules of the field (see eventCustomFieldRulesSchema): a shape that is not one is a 400, rules the
+    // type does not take are a 422 (eventCustomFieldRulesFitType), and a condition between fields that cannot
+    // be kept (`show_when`) is a 422 or a 409 (findShowWhenProblem).
     rules: eventCustomFieldRulesSchema.nullable().optional(),
   })
   .strict()
@@ -146,7 +159,8 @@ export type EventCustomFieldDto = {
   show_on_form: boolean;
   display_order: number | null;
   options: string[] | null;
-  /** Format rules of a text, long text or phone field; null = none. */
+  /** Format rules (text, long text and phone fields), and the icon, condition and suggestions of the
+   * registration form; null = none. */
   rules: EventCustomFieldRules | null;
   created_at: string;
 };
@@ -223,6 +237,59 @@ function invalidFieldRulesResponse(c: Context): Response {
   return c.json({ error: "invalid_field_rules" }, 422);
 }
 
+/** The answer to a save or a delete that a condition between fields refuses: 409 when other fields are shown by
+ * the field being changed or deleted, 422 when the condition cannot be kept. */
+function showWhenProblemResponse(c: Context, problem: ShowWhenProblem): Response {
+  if (problem === "field_controls_others") return c.json({ error: "field_controls_others" }, 409);
+  if (problem === "show_when_not_on_form") return c.json({ error: "show_when_not_on_form" }, 422);
+  return c.json({ error: "invalid_show_when" }, 422);
+}
+
+/** The columns of a field row that the checks of conditions between fields read. */
+const CONDITION_COLUMNS = { source_field: true, type: true, show_on_form: true, options: true, rules: true } as const;
+
+type ConditionRow = {
+  source_field: string;
+  type: string;
+  show_on_form: boolean;
+  options: Prisma.JsonValue;
+  rules: Prisma.JsonValue;
+};
+
+function toConditionField(row: ConditionRow): ConditionField {
+  return {
+    source_field: row.source_field,
+    type: row.type,
+    show_on_form: row.show_on_form,
+    options: Array.isArray(row.options) ? row.options.filter((o): o is string => typeof o === "string") : null,
+    rules: readStoredFieldRules(row.rules) ?? null,
+  };
+}
+
+/** The event's fields as the checks of conditions read them. Read under the custom-fields lock, so no other
+ * save changes them before this one commits. */
+async function loadConditionFields(tx: Prisma.TransactionClient, eventId: string): Promise<ConditionField[]> {
+  const rows = await tx.eventCustomField.findMany({ where: { event_id: eventId }, select: CONDITION_COLUMNS });
+  return rows.map((row) => toConditionField(row));
+}
+
+/** Refuses a save that would break a condition between fields. `next` is the field as it will be saved. */
+async function assertConditionsHold(tx: Prisma.TransactionClient, eventId: string, next: ConditionField): Promise<void> {
+  const problem = findShowWhenProblem(next, await loadConditionFields(tx, eventId));
+  if (problem) throw new ShowWhenError(problem);
+}
+
+/** A new field as the checks of conditions read it. */
+function newConditionField(input: z.infer<typeof createFieldSchema>): ConditionField {
+  return {
+    source_field: input.source_field,
+    type: input.type ?? "text",
+    show_on_form: input.show_on_form ?? false,
+    options: input.options ?? null,
+    rules: input.rules ?? null,
+  };
+}
+
 /** What goes in the `rules` column: the rules, or SQL NULL for none. Never a JSON null: the column's
  * CHECK refuses it, so "no rules" has one form. */
 function rulesColumn(rules: EventCustomFieldRules | null | undefined): Prisma.InputJsonValue | typeof Prisma.DbNull {
@@ -275,6 +342,7 @@ function fieldLimitReachedResponse(c: Context): Response {
 function createFieldFailure(c: Context, err: unknown): Response {
   if (err instanceof FieldLimitReachedError) return fieldLimitReachedResponse(c);
   if (err instanceof RequiredFieldNotOnFormError) return requiredFieldNotOnFormResponse(c);
+  if (err instanceof ShowWhenError) return showWhenProblemResponse(c, err.problem);
   if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
     return c.json({ error: "source_field_conflict" }, 409);
   }
@@ -324,6 +392,8 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
         throw new FieldLimitReachedError();
       }
       await assertRequiredFieldStaysOnForm(tx, eventId, data, null);
+      // A new field cannot be one that others depend on, so only its own condition is checked.
+      if (parsed.data.rules?.show_when) await assertConditionsHold(tx, eventId, newConditionField(parsed.data));
       const row = await tx.eventCustomField.create({ data });
       await writeBulkActionLog(tx, {
         event_id: eventId,
@@ -368,6 +438,28 @@ function assertRulesFitType(current: CustomFieldRow, patch: z.infer<typeof patch
   if (!eventCustomFieldRulesFitType(patch.type ?? current.type, rules)) throw new InvalidFieldRulesError();
 }
 
+/** True when a patch changes something that a condition between fields depends on. */
+function patchTouchesConditions(patch: z.infer<typeof patchFieldSchema>): boolean {
+  return (
+    patch.type !== undefined ||
+    patch.options !== undefined ||
+    patch.rules !== undefined ||
+    patch.show_on_form !== undefined
+  );
+}
+
+/** The field as it will be once the patch is applied to `current`, as the checks of conditions read it. */
+function patchedConditionField(current: CustomFieldRow, patch: z.infer<typeof patchFieldSchema>): ConditionField {
+  const stored = toConditionField(current);
+  return {
+    ...stored,
+    type: patch.type ?? stored.type,
+    show_on_form: patch.show_on_form ?? stored.show_on_form,
+    options: patch.options === undefined ? stored.options : patch.options,
+    rules: patch.rules === undefined ? stored.rules : patch.rules,
+  };
+}
+
 /** The two flags as they will be once the patch is applied to `current`. */
 function mergedFormFlags(current: FormFlags, patch: z.infer<typeof patchFieldSchema>): FormFlags {
   return {
@@ -381,6 +473,7 @@ function mergedFormFlags(current: FormFlags, patch: z.infer<typeof patchFieldSch
 function patchFieldFailure(c: Context, err: unknown): Response {
   if (err instanceof RequiredFieldNotOnFormError) return requiredFieldNotOnFormResponse(c);
   if (err instanceof InvalidFieldRulesError) return invalidFieldRulesResponse(c);
+  if (err instanceof ShowWhenError) return showWhenProblemResponse(c, err.problem);
   if (err instanceof FieldGoneError) return c.json({ error: "forbidden" }, 403);
   throw err;
 }
@@ -425,6 +518,9 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
       const current = await loadCustomFieldInEvent(tx, eventId, fieldId);
       if (!current) throw new FieldGoneError();
       assertRulesFitType(current, parsed.data);
+      if (patchTouchesConditions(parsed.data)) {
+        await assertConditionsHold(tx, eventId, patchedConditionField(current, parsed.data));
+      }
       await assertRequiredFieldStaysOnForm(tx, eventId, mergedFormFlags(current, parsed.data), current);
       const row = await tx.eventCustomField.update({ where: { id: fieldId }, data });
       await writeBulkActionLog(tx, {
@@ -559,7 +655,8 @@ export async function handleGetEventCustomFieldOptionUsage(c: Context, db: Prism
 }
 
 /** DELETE /api/admin/events/:eventId/custom-fields/:fieldId — blocked (409 field_in_use) while
- * any of the event's items still reference this field via config.content_fields. Does not check
+ * any of the event's items still reference this field via config.content_fields, and (409
+ * field_controls_others) while another field is shown only for an answer to this one. Does not check
  * existing Attendee.custom_data, consistent with how deleting/reshaping an item today never
  * scrubs attendee data. */
 export async function handleDeleteEventCustomField(c: Context, db: PrismaClient): Promise<Response> {
@@ -596,6 +693,10 @@ export async function handleDeleteEventCustomField(c: Context, db: PrismaClient)
       if (inUse) {
         throw new FieldInUseError();
       }
+      // A field that other fields are shown by is not deleted: their condition would name nothing.
+      if (controlsOtherFields(existing.source_field, await loadConditionFields(tx, eventId))) {
+        throw new ShowWhenError("field_controls_others");
+      }
 
       await tx.eventCustomField.delete({ where: { id: fieldId } });
       await writeBulkActionLog(tx, {
@@ -610,6 +711,7 @@ export async function handleDeleteEventCustomField(c: Context, db: PrismaClient)
     if (err instanceof FieldInUseError) {
       return c.json({ error: "field_in_use" }, 409);
     }
+    if (err instanceof ShowWhenError) return showWhenProblemResponse(c, err.problem);
     throw err;
   }
 }
