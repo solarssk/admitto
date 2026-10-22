@@ -238,7 +238,7 @@ jobs:
         # A hung reviewer is stopped here, not by the 30 minute job limit, so the run can still say
         # what happened. REVIEW_TIMEOUT_MINUTES in the two status steps must be this number.
         timeout-minutes: 15
-        uses: anthropics/claude-code-action@97c53473391bff1901034d4b454b5bac7ab7a029  # v1.0.239
+        uses: anthropics/claude-code-action@374f254f5efaf968abfe15d399fd90972e8138b9  # v1.0.251
         with:
           # The maintainer's Claude subscription (from `claude setup-token`), not per-token API billing.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
