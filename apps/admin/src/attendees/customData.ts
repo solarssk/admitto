@@ -1,8 +1,9 @@
+import { isDateAnswer, isDateTimeAnswer } from "@admitto/shared";
 import { filterCustomDataAttributeFields } from "@admitto/tickets/custom-data-reserved";
 import { fetchEventCustomFields } from "../api/client.js";
 import type { EventCustomFieldDto } from "../api/types.js";
 import { formatIsoCalendarDate, formatWallClockDateTime } from "../utils/event-dates.js";
-import { answerExpectation, answerProblem, isDateAnswer, isDateTimeAnswer } from "./answerFormat.js";
+import { answerExpectation, answerProblem } from "./answerFormat.js";
 
 /** The registry row shape is exactly what attendee forms need - no separate flatten/merge step. */
 export type CustomDataFieldDef = EventCustomFieldDto;

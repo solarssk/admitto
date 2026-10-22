@@ -2,13 +2,16 @@
  * The answer formats of the custom field types that take a free answer (text, long text, date, date and time, phone): what the Add
  * attendee form and the attendee page ask for, check before they send, and say in words. The server decides
  * (`normalizeCustomDataFieldValue` in packages/tickets); this mirrors it, so that a form says what is wrong before it asks, in the
- * words of the field. It cannot import that package: its root pulls Prisma into the browser (standards/admin-spa/ui-gotchas.md).
+ * words of the field. It cannot import that package: its root pulls Prisma into the browser (standards/admin-spa/ui-gotchas.md). What both
+ * sides can share lives in `@admitto/shared`: the phone number and the calendar day (`isDateAnswer`, `isDateTimeAnswer`) are the server's own code.
  */
 import {
   CONTACT_PHONE_MAX_DIGITS,
   CONTACT_PHONE_MIN_DIGITS,
   EVENT_CUSTOM_FIELD_LONG_TEXT_MAX,
   EVENT_CUSTOM_FIELD_TEXT_MAX,
+  isDateAnswer,
+  isDateTimeAnswer,
   isValidContactPhone,
   type EventCustomFieldRules,
 } from "@admitto/shared";
@@ -113,35 +116,8 @@ export function joinDateTime(date: string, time: string): string {
   return date === "" && time === "" ? "" : `${date}T${time}`;
 }
 
-const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-const DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 // One half of a date and time with the other still empty, as the date picker and the time field leave them.
 const HALF_DATE_TIME = /^(?:\d{4}-\d{2}-\d{2}T|T\d{2}:\d{2})$/;
-
-function isLeapYear(year: number): boolean {
-  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-}
-
-function daysInMonth(year: number, month: number): number {
-  if (month === 2) return isLeapYear(year) ? 29 : 28;
-  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
-}
-
-/** True for a day that exists. Worked out here, as the server does, not with `Date`, which rolls 30 February over into March. */
-function isCalendarDay(year: number, month: number, day: number): boolean {
-  return year >= 1 && month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth(year, month);
-}
-
-export function isDateAnswer(value: string): boolean {
-  const match = DATE.exec(value);
-  return match !== null && isCalendarDay(Number(match[1]), Number(match[2]), Number(match[3]));
-}
-
-export function isDateTimeAnswer(value: string): boolean {
-  const match = DATE_TIME.exec(value);
-  if (match === null || Number(match[4]) > 23 || Number(match[5]) > 59) return false;
-  return isCalendarDay(Number(match[1]), Number(match[2]), Number(match[3]));
-}
 
 /** A phone number as the server stores it: an optional leading + and the digits ("+48 600-100-200" is "+48600100200"). */
 function canonicalPhone(trimmed: string): string {

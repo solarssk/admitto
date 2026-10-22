@@ -36,6 +36,8 @@ a shared modal/component CSS file should show up importing it directly.
 
 Same idea as avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./password-strength`). Type-only re-exports from the root remain OK when they stay `import type` / `export type`.
 
+**A check that the server and a form both make is written once, in `@admitto/shared`, and imported on both sides: never copied into `apps/admin`.** The calendar day of a date answer (`isDateAnswer`, `isDateTimeAnswer`) and a phone number (`isValidContactPhone`) are the examples. A hand copy is counted as duplicated code by SonarCloud, and nothing keeps it in step with the server when the server changes.
+
 A local build's Vite output (`npm run build -w @admitto/admin`) surfaces new leaks as "Module ... has been externalized for browser compatibility" warnings during the `vite build` step: do not ignore them.
 
 **A CSS custom-property fallback (`var(--token, #hex)`) must match the token's real value in `packages/ui/src/styles/tokens/colors.css` exactly.** The fallback only renders when the variable is genuinely undefined (a stylesheet load race, or a standalone page that never imports `colors.css`), so a drifted fallback is invisible in normal use and easy to introduce with a hand-typed hex that's merely close to the real color.

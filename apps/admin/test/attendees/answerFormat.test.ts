@@ -5,8 +5,6 @@ import {
   answerImportNote,
   answerProblem,
   codePointLength,
-  isDateAnswer,
-  isDateTimeAnswer,
   joinDateTime,
   longTextLimit,
   splitDateTime,
@@ -123,35 +121,6 @@ describe("splitDateTime and joinDateTime", () => {
     expect(joinDateTime("2026-11-04", "")).toBe("2026-11-04T");
     expect(joinDateTime("", "10:30")).toBe("T10:30");
     expect(joinDateTime("", "")).toBe("");
-  });
-});
-
-describe("isDateAnswer and isDateTimeAnswer", () => {
-  it("accept a day that exists, and refuse one that does not (the server does the same sums, not Date)", () => {
-    expect(isDateAnswer("2026-11-04")).toBe(true);
-    expect(isDateAnswer("2028-02-29")).toBe(true);
-    expect(isDateAnswer("2026-02-29")).toBe(false);
-    expect(isDateAnswer("2026-02-30")).toBe(false);
-    expect(isDateAnswer("2026-04-31")).toBe(false);
-    expect(isDateAnswer("2026-13-01")).toBe(false);
-    expect(isDateAnswer("2026-00-10")).toBe(false);
-    expect(isDateAnswer("0000-01-01")).toBe(false);
-    expect(isDateAnswer("04.11.2026")).toBe(false);
-    expect(isDateAnswer("2026-11-04T10:30")).toBe(false);
-    expect(isDateAnswer("")).toBe(false);
-  });
-
-  it("need the T, a clock that exists and a day that exists, and nothing else", () => {
-    expect(isDateTimeAnswer("2026-11-04T10:30")).toBe(true);
-    expect(isDateTimeAnswer("2026-11-04T00:00")).toBe(true);
-    expect(isDateTimeAnswer("2026-11-04T23:59")).toBe(true);
-    expect(isDateTimeAnswer("2026-11-04T24:00")).toBe(false);
-    expect(isDateTimeAnswer("2026-11-04T10:60")).toBe(false);
-    expect(isDateTimeAnswer("2026-11-04 10:30")).toBe(false);
-    expect(isDateTimeAnswer("2026-11-04T10:30:00")).toBe(false);
-    expect(isDateTimeAnswer("2026-11-04T10:30Z")).toBe(false);
-    expect(isDateTimeAnswer("2026-02-30T10:30")).toBe(false);
-    expect(isDateTimeAnswer("2026-11-04T")).toBe(false);
   });
 });
 
