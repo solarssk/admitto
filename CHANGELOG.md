@@ -20,13 +20,13 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a worker job that sends guest registration mail and deletes registrations not confirmed in 24 hours, with a Health check row for its queue ([#1775](https://github.com/solarssk/admitto/pull/1775))
 - Add the guest registration form at /r/<event slug> for events that use the public link; it stays a not-found page until an event turns registration on ([#1776](https://github.com/solarssk/admitto/pull/1776))
 - Add long text, date, date and time and phone questions to the registration form, with the field's rules as hints ([#1783](https://github.com/solarssk/admitto/pull/1783))
-- Add long text, date, date and time and phone answer types, with format rules, to the field editor, attendee form and import columns list
+- Add long text, date, date and time and phone answer types, with format rules, to the field editor, attendee form and import columns list ([#1784](https://github.com/solarssk/admitto/pull/1784))
 
 ### Fixed
 
 - Save an attendee's email in lower case when staff add or edit it, and refuse an address that differs from another's only in capitals ([#1781](https://github.com/solarssk/admitto/pull/1781))
-- Fix saving a single choice field when only its label or Required switch changed, which failed with "Check the form and try again"
-- Fix Escape closing a whole dialog, and what was typed in it, together with an open date or time picker
+- Fix saving a single choice field when only its label or Required switch changed, which failed with "Check the form and try again" ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Fix Escape closing a whole dialog, and what was typed in it, together with an open date or time picker ([#1784](https://github.com/solarssk/admitto/pull/1784))
 
 ### Security
 

@@ -49,7 +49,7 @@ The field appears in supported attendee and import workflows with the label, typ
 | Single choice | One of the options you list | A list |
 | Yes / No | Yes or no | A list of Yes and No |
 
-The exact limits are in the [Validation Reference](Validation-Reference).
+The registration form for guests asks the same types in its own way. See [Registration Form Fields](Registration-Form-Fields). The exact limits are in the [Validation Reference](Validation-Reference).
 
 **Format rules**
 
@@ -132,6 +132,7 @@ When you edit a Select field, Admitto reads how many attendees use each option, 
 
 ## Related pages
 
+- [Registration Form Fields](Registration-Form-Fields)
 - [Validation Reference](Validation-Reference)
 - [Import File Reference](Import-File-Reference)
 - [Importing Attendees](Importing-Attendees)
