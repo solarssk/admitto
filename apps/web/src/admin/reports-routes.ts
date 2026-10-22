@@ -1467,7 +1467,10 @@ async function loadCustomFieldReportsAggregates(
 
   const fields = await Promise.all(
     customFields.map(async (field) => {
-      const type = field.type as EventCustomFieldReportsResponse["fields"][number]["type"];
+      // The chart kind, not the field's own type: every free-input type (text, long text, date, date and
+      // time, phone) is charted as `text`, by how many attendees answered it.
+      const type: EventCustomFieldReportsResponse["fields"][number]["type"] =
+        field.type === "select" || field.type === "boolean" ? field.type : "text";
       if (type === "text") {
         const answered = await countAttendeesWithCustomFieldAnswered(db, eventId, field.source_field);
         return {
