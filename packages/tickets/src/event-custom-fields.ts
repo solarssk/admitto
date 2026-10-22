@@ -1,4 +1,5 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
+import { readStoredFieldRules } from "./custom-field-rules.js";
 import type { RegistrantFormField } from "./registrant-input.js";
 import type { EventItemContent } from "./types.js";
 
@@ -29,6 +30,7 @@ type CustomFieldRow = {
   type: string;
   required: boolean;
   options: Prisma.JsonValue;
+  rules: Prisma.JsonValue;
   show_on_form: boolean;
 };
 
@@ -50,6 +52,8 @@ function toFieldContent(row: CustomFieldRow): EventItemContent {
     const options = row.options.filter((o): o is string => typeof o === "string");
     if (options.length > 0) field.options = options;
   }
+  const rules = readStoredFieldRules(row.rules);
+  if (rules) field.rules = rules;
   return field;
 }
 

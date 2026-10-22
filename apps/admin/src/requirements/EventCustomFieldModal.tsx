@@ -28,7 +28,7 @@ type FormState = {
   label: string;
   source_field: string;
   description: string;
-  type: "text" | "select" | "boolean";
+  type: EventCustomFieldDto["type"];
   required: boolean;
   options: OptionRow[];
 };

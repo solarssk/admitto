@@ -159,7 +159,9 @@ Restoring a revoked attendee checks the event's capacity limit again, the same a
 | Up to 50,000 data rows per file | "File exceeds the row limit. Split the file and import in parts." |
 | A row needs a first name, a last name and a valid, non-empty email | "Both first_name and last_name are required." / "Missing email." / "Invalid email: ..." |
 | The same email, agency ID or QR payload can't appear twice **within one file** | "Duplicate email in file: ..." (and similarly for the others) |
-| An unrecognised ticket type or custom-field value fails that row, not the whole import | "Unknown ticket type: ..." / "Invalid value for {field} (expected one of: ...)" |
+| An unrecognised ticket type, or a custom-field answer that does not fit its field's type or format rules, fails that row, not the whole import | "Unknown ticket type: ..." / "Invalid value for {field} (expected one of: ...)" / "Invalid value for {field} (expected a date as YYYY-MM-DD)" |
+| In an XLSX file, a date or date and time cell is read as the date it shows. In a CSV file, write a date as `YYYY-MM-DD` and a date and time as `YYYY-MM-DDTHH:mm` | No message. This is by design |
+| In a CSV file, a date written as `YYYY-MM-DDT00:00:00.000Z` and a date and time written as `YYYY-MM-DDTHH:mm:00.000Z` are read as the day or the time shown, not converted from UTC | No message. This is the form in which an XLSX date cell arrives |
 | A row that matches an existing attendee is skipped, unless "Overwrite existing attendees" is on | "Attendee already exists. Turn on 'Overwrite existing attendees' to update it instead of skipping." |
 | Overwriting updates only name, ticket type, company, department and custom fields. It never touches status, QR code or token | No message. This is by design |
 | The whole import is capped by the event's capacity, the same as adding attendees one at a time. A Superadmin can override the cap | "Import would exceed capacity. {current} existing + {incoming} new = {projected} &gt; {capacity}." |
@@ -173,8 +175,9 @@ Every row gets its own pass or fail reason in the preview before you commit. Not
 | Field key | Derived automatically. Lowercase letters, numbers and underscore only |
 | Label | Required, up to 60 characters |
 | Description | Optional, up to 500 characters |
-| Type | Text, select, or yes/no |
+| Type | Text, long text, date, date and time, phone, select, or yes/no. The field editor offers text, select and yes/no. The other types are set through the admin API |
 | Select options | At least one for a select field. Up to 20 options, each up to 60 characters |
+| Format rules | Optional, for text, long text and phone fields only. See "Format rules" below |
 
 **Limits and protections**
 
@@ -187,6 +190,34 @@ Every row gets its own pass or fail reason in the preview before you commit. Not
 - An answer to a required field can't be left blank.
 - A select answer must be one of the configured options.
 - A yes/no answer accepts Yes, No, true or false, in any letter case.
+- An answer that does not fit its type or format rules is refused when you add an attendee, when you save one and when you import a file. Nothing is guessed. The one thing that is cut is a text answer in an import, which is cut to 100 characters.
+
+| Type | An answer is |
+|---|---|
+| Text | Up to 100 characters. Adding or saving an attendee refuses more than 100. An import cuts it to 100 |
+| Long text | Up to 1000 characters, line breaks included. Longer text is refused, never cut |
+| Date | Written `YYYY-MM-DD`, and a day that exists. `2026-02-30` is refused |
+| Date and time | Written `YYYY-MM-DDTHH:mm`, for example `2026-11-04T10:30`. It is the time on the clock at the event, so it has no time zone. A zone, seconds, or a space in place of the `T` are refused |
+| Phone | 3 to 15 digits, written with digits, spaces, dashes, dots and brackets, and an optional `+` at the start. It is saved as the `+` and the digits: `+48 600-100-200` becomes `+48600100200` |
+| Select | One of the field's options |
+| Yes/No | Yes, No, true or false |
+
+**Format rules**
+
+Text, long text and phone fields can carry rules about what an answer looks like. A rule is a plain setting that Admitto reads as written. You never type a pattern.
+
+| Rule | What it asks |
+|---|---|
+| Minimum length | At least this many characters, from 1 to 1000 |
+| Maximum length | At most this many characters. It can't be more than the type holds: 100 for text, 1000 for long text, 16 for a phone number |
+| Digits only | Only the digits 0 to 9. No spaces, dashes or letters |
+| Example | A hint for the person answering. It is never checked |
+
+- A length counts characters as a person sees them: an emoji is one character.
+- A phone number is checked in its saved form, so its length counts the `+`, and "digits only" refuses a number that starts with `+`.
+- A date, date and time, select or yes/no field takes no rules. Saving one with rules is refused.
+- A rule applies to every answer entered after it is set, and to the answers already saved. An attendee whose older answer breaks a new rule can't be saved until that answer is fixed.
+- An export writes a phone number as saved, with its `+`, so an exported file can be imported again.
 
 ### Event items (Requirements page)
 

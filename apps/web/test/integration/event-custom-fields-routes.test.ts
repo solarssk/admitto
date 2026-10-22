@@ -1267,3 +1267,260 @@ describe("PUT /api/admin/events/:eventId/custom-fields/order", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// The answer types long text, date, date and time and phone, and the format rules (v0.8).
+// ---------------------------------------------------------------------------------------------
+
+type TypedFieldItem = FieldItem & { type: string; rules: Record<string, unknown> | null };
+
+async function readField(res: Response): Promise<TypedFieldItem> {
+  return (await res.json()) as TypedFieldItem;
+}
+
+/** What the rules column holds: "none" for the SQL NULL, never a JSON null. */
+async function storedRules(id: string): Promise<{ isNull: boolean; rules: unknown }> {
+  const [row] = await prisma.$queryRaw<{ is_null: boolean; rules: unknown }[]>`
+    SELECT "rules" IS NULL AS is_null, "rules" FROM "EventCustomField" WHERE "id" = ${id}
+  `;
+  return { isNull: row!.is_null, rules: row!.rules };
+}
+
+async function errorOf(res: Response): Promise<string> {
+  return ((await res.json()) as { error: string }).error;
+}
+
+const fieldCount = () => prisma.eventCustomField.count({ where: { event_id: EVENT_CF_ORDER } });
+
+describe("the answer types of a field", () => {
+  beforeEach(resetFormFixtures);
+
+  it.each(["long_text", "date", "datetime", "phone"])("creates a %s field, with no rules", async (type) => {
+    const res = await createField(EVENT_CF_ORDER, { source_field: `answer_${type}`, type, required: true });
+    expect(res.status).toBe(201);
+    const field = await readField(res);
+    expect(field).toMatchObject({ type, required: true, rules: null });
+    expect(await storedRules(field.id)).toEqual({ isNull: true, rules: null });
+    expect((await listItems(EVENT_CF_ORDER)).map((item) => item.source_field)).toEqual([`answer_${type}`]);
+  });
+
+  it("keeps creating the three types it always had", async () => {
+    expect((await readField(await createField(EVENT_CF_ORDER, { source_field: "t" }))).type).toBe("text");
+    expect((await readField(await createField(EVENT_CF_ORDER, { source_field: "s", type: "select", options: ["A"] }))).type).toBe("select");
+    expect((await readField(await createField(EVENT_CF_ORDER, { source_field: "b", type: "boolean" }))).type).toBe("boolean");
+  });
+
+  it("refuses a type it does not know, on create and on PATCH", async () => {
+    for (const type of ["number", "multi_select", "email", "TEXT", "", null, 5]) {
+      const res = await createField(EVENT_CF_ORDER, { source_field: "odd", type });
+      expect(res.status, String(type)).toBe(400);
+    }
+    const created = await readField(await createField(EVENT_CF_ORDER, { source_field: "stays_text" }));
+    expect((await patchField(EVENT_CF_ORDER, created.id, { type: "number" })).status).toBe(400);
+    expect(await fieldCount()).toBe(1);
+  });
+
+  it("changes the type of an existing field to a new one, and back", async () => {
+    const created = await readField(await createField(EVENT_CF_ORDER, { source_field: "retype" }));
+    for (const type of ["long_text", "date", "datetime", "phone", "text"]) {
+      const res = await patchField(EVENT_CF_ORDER, created.id, { type });
+      expect(res.status, type).toBe(200);
+      expect((await readField(res)).type).toBe(type);
+    }
+  });
+});
+
+describe("the format rules of a field", () => {
+  beforeEach(resetFormFixtures);
+
+  const RULES = { min_length: 3, max_length: 9, digits_only: true, example: "  600100200 " };
+
+  it.each(["text", "long_text", "phone"])("stores the rules of a %s field and lists them", async (type) => {
+    const res = await createField(EVENT_CF_ORDER, { source_field: "ruled", type, rules: RULES });
+    expect(res.status).toBe(201);
+    const field = await readField(res);
+    expect(field.rules).toEqual({ min_length: 3, max_length: 9, digits_only: true, example: "600100200" });
+    expect(await storedRules(field.id)).toEqual({
+      isNull: false,
+      rules: { min_length: 3, max_length: 9, digits_only: true, example: "600100200" },
+    });
+    expect((await listItems(EVENT_CF_ORDER))[0]).toMatchObject({ source_field: "ruled", rules: field.rules });
+  });
+
+  it("stores each rule on its own", async () => {
+    let n = 0;
+    for (const rules of [{ min_length: 4 }, { max_length: 4 }, { digits_only: true }, { example: "AB 12" }]) {
+      n += 1;
+      const field = await readField(await createField(EVENT_CF_ORDER, { source_field: `single_${n}`, rules }));
+      expect(field.rules).toEqual(rules);
+    }
+  });
+
+  it("stores no rules as the SQL NULL: left out, null, or an object with no rule", async () => {
+    let n = 0;
+    for (const body of [{}, { rules: null }, { rules: {} }]) {
+      n += 1;
+      const res = await createField(EVENT_CF_ORDER, { source_field: `none_${n}`, ...body });
+      expect(res.status).toBe(201);
+      const field = await readField(res);
+      expect(field.rules).toBeNull();
+      expect(await storedRules(field.id)).toEqual({ isNull: true, rules: null });
+    }
+  });
+
+  it("refuses a shape that is not a rules object with 400, and creates nothing", async () => {
+    for (const rules of [
+      { pattern: "^[0-9]+$" },
+      { regex: "a" },
+      { suggestions: ["Vegan"] },
+      { allow_other: true },
+      { min_length: 3, unknown_rule: 1 },
+      { min_length: 0 },
+      { min_length: 1.5 },
+      { min_length: "3" },
+      { max_length: 1001 },
+      { max_length: -1 },
+      { min_length: 10, max_length: 9 },
+      { digits_only: "yes" },
+      { example: "" },
+      { example: "x".repeat(101) },
+      { example: "two\nlines" },
+      { example: "nul\u0000" },
+      "digits_only",
+      ["min_length"],
+      5,
+      true,
+    ]) {
+      const res = await createField(EVENT_CF_ORDER, { source_field: "bad_rules", rules });
+      expect(res.status, JSON.stringify(rules)).toBe(400);
+      expect(await errorOf(res)).toBe("validation_failed");
+    }
+    expect(await fieldCount()).toBe(0);
+  });
+
+  it("refuses rules on a type that takes none with 422 invalid_field_rules, and creates nothing", async () => {
+    for (const body of [
+      { type: "date", rules: { example: "2026-11-04" } },
+      { type: "datetime", rules: { digits_only: true } },
+      { type: "boolean", rules: { min_length: 1 } },
+      { type: "select", options: ["A", "B"], rules: { max_length: 5 } },
+    ]) {
+      const res = await createField(EVENT_CF_ORDER, { source_field: "no_rules_here", ...body });
+      expect(res.status, JSON.stringify(body)).toBe(422);
+      expect(await errorOf(res)).toBe("invalid_field_rules");
+    }
+    expect(await fieldCount()).toBe(0);
+  });
+
+  it("refuses a length longer than the type can hold (100 for text, 16 for phone, 1000 for long text), and phone rules no number can meet", async () => {
+    const cases = [
+      ["text", { max_length: 100 }, 201],
+      ["text", { max_length: 101 }, 422],
+      ["text", { min_length: 101 }, 422],
+      ["long_text", { max_length: 1000 }, 201],
+      ["phone", { max_length: 16 }, 201],
+      ["phone", { max_length: 17 }, 422],
+      ["phone", { min_length: 17 }, 422],
+      ["phone", { max_length: 2 }, 422],
+      ["phone", { max_length: 3 }, 201],
+      ["phone", { digits_only: true, min_length: 16 }, 422],
+      ["phone", { min_length: 16 }, 201],
+    ] as const;
+    for (const [index, [type, rules, status]] of cases.entries()) {
+      const res = await createField(EVENT_CF_ORDER, { source_field: `cap_${index}`, type, rules });
+      expect(res.status, `${type} ${JSON.stringify(rules)}`).toBe(status);
+      if (status === 422) expect(await errorOf(res)).toBe("invalid_field_rules");
+    }
+  });
+
+  it("sets, replaces and clears the rules of an existing field with a PATCH", async () => {
+    const created = await readField(await createField(EVENT_CF_ORDER, { source_field: "patched", type: "text" }));
+
+    const set = await patchField(EVENT_CF_ORDER, created.id, { rules: { digits_only: true, min_length: 3 } });
+    expect(set.status).toBe(200);
+    expect((await readField(set)).rules).toEqual({ digits_only: true, min_length: 3 });
+
+    // An object replaces the rules, it does not merge into them.
+    const replaced = await patchField(EVENT_CF_ORDER, created.id, { rules: { max_length: 4 } });
+    expect(replaced.status).toBe(200);
+    expect((await readField(replaced)).rules).toEqual({ max_length: 4 });
+    expect((await storedRules(created.id)).rules).toEqual({ max_length: 4 });
+
+    // A PATCH that leaves the key out leaves the rules alone.
+    expect((await readField(await patchField(EVENT_CF_ORDER, created.id, { label: "Renamed" }))).rules).toEqual({ max_length: 4 });
+
+    const cleared = await readField(await patchField(EVENT_CF_ORDER, created.id, { rules: null }));
+    expect(cleared.rules).toBeNull();
+    expect(await storedRules(created.id)).toEqual({ isNull: true, rules: null });
+
+    await patchField(EVENT_CF_ORDER, created.id, { rules: { example: "x" } });
+    expect((await readField(await patchField(EVENT_CF_ORDER, created.id, { rules: {} }))).rules).toBeNull();
+    expect((await storedRules(created.id)).isNull).toBe(true);
+  });
+
+  it("refuses a PATCH with a bad rules shape with 400, or rules the type does not take with 422, and changes nothing", async () => {
+    const text = await readField(await createField(EVENT_CF_ORDER, { source_field: "keeps_rules", rules: { max_length: 5 } }));
+    const date = await readField(await createField(EVENT_CF_ORDER, { source_field: "a_date", type: "date" }));
+
+    expect((await patchField(EVENT_CF_ORDER, text.id, { rules: { pattern: "a" } })).status).toBe(400);
+    expect((await patchField(EVENT_CF_ORDER, text.id, { rules: { min_length: 9, max_length: 2 } })).status).toBe(400);
+    const tooLong = await patchField(EVENT_CF_ORDER, text.id, { rules: { max_length: 101 } });
+    expect(tooLong.status).toBe(422);
+    expect(await errorOf(tooLong)).toBe("invalid_field_rules");
+    const onDate = await patchField(EVENT_CF_ORDER, date.id, { rules: { digits_only: true } });
+    expect(onDate.status).toBe(422);
+
+    expect((await storedRules(text.id)).rules).toEqual({ max_length: 5 });
+    expect((await storedRules(date.id)).isNull).toBe(true);
+  });
+
+  it("judges the type and the rules as they will be once the PATCH is applied", async () => {
+    const text = await readField(await createField(EVENT_CF_ORDER, { source_field: "retyped", rules: { max_length: 50, digits_only: true } }));
+
+    // To a type that takes no rules, while the field still has them: refused, and nothing changes.
+    for (const type of ["date", "datetime", "select", "boolean"]) {
+      const body = type === "select" ? { type, options: ["A"] } : { type };
+      const res = await patchField(EVENT_CF_ORDER, text.id, body);
+      expect(res.status, type).toBe(422);
+    }
+    expect(await storedRules(text.id)).toEqual({ isNull: false, rules: { max_length: 50, digits_only: true } });
+    expect((await prisma.eventCustomField.findUniqueOrThrow({ where: { id: text.id } })).type).toBe("text");
+
+    // The same PATCH with the rules cleared goes through.
+    const moved = await patchField(EVENT_CF_ORDER, text.id, { type: "date", rules: null });
+    expect(moved.status).toBe(200);
+    expect(await readField(moved)).toMatchObject({ type: "date", rules: null });
+
+    // Between types that take rules, the rules that fit the new type are kept.
+    await patchField(EVENT_CF_ORDER, text.id, { type: "text", rules: { max_length: 50 } });
+    const longer = await patchField(EVENT_CF_ORDER, text.id, { type: "long_text", rules: { max_length: 500 } });
+    expect(await readField(longer)).toMatchObject({ type: "long_text", rules: { max_length: 500 } });
+    const kept = await patchField(EVENT_CF_ORDER, text.id, { type: "phone", rules: { max_length: 16 } });
+    expect((await readField(kept)).rules).toEqual({ max_length: 16 });
+  });
+
+  it("refuses to turn a long text with a long maximum back into a text it cannot hold, unless the rules change with it", async () => {
+    const long = await readField(await createField(EVENT_CF_ORDER, { source_field: "essay", type: "long_text", rules: { max_length: 500 } }));
+    const back = await patchField(EVENT_CF_ORDER, long.id, { type: "text" });
+    expect(back.status).toBe(422);
+    expect((await prisma.eventCustomField.findUniqueOrThrow({ where: { id: long.id } })).type).toBe("long_text");
+    expect((await patchField(EVENT_CF_ORDER, long.id, { type: "text", rules: { max_length: 80 } })).status).toBe(200);
+  });
+
+  it("reads rules a hand edit left unreadable as none, so the list still loads", async () => {
+    const created = await readField(await createField(EVENT_CF_ORDER, { source_field: "tampered" }));
+    await prisma.$executeRaw`UPDATE "EventCustomField" SET "rules" = '{"pattern": "^a$"}'::jsonb WHERE "id" = ${created.id}`;
+    expect((await listItems(EVENT_CF_ORDER))[0]).toMatchObject({ source_field: "tampered", rules: null });
+  });
+
+  it("keeps the audit entry of a save free of the rules and the example", async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { event_id: EVENT_CF_ORDER } });
+    const created = await readField(await createField(EVENT_CF_ORDER, { source_field: "audited", rules: { example: "AB 12345" } }));
+    await patchField(EVENT_CF_ORDER, created.id, { rules: { example: "CD 67890" } });
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { event_id: EVENT_CF_ORDER, action_type: { in: ["event_custom_field_created", "event_custom_field_updated"] } },
+    });
+    expect(logs).toHaveLength(2);
+    for (const log of logs) expect(log.metadata).toEqual({ source_field: "audited" });
+  });
+});

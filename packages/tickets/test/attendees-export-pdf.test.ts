@@ -197,6 +197,19 @@ describe("buildExportPdfBuffer", () => {
     expect(Buffer.from(bytes.subarray(0, 4)).toString("ascii")).toBe("%PDF");
   });
 
+  it("draws a long text answer of 1000 characters with line breaks, without failing", async () => {
+    const answer = Array.from({ length: 20 }, (_, i) => `Line ${i} ${"words ".repeat(8)}`).join("\n").slice(0, 1000);
+    const rows = [
+      makeRow({ attribute_values: [answer, "+48600100200", "2026-11-04T10:30"] }),
+      makeRow({ name: "Guest Two", attribute_values: ["", "", ""] }),
+    ];
+    const bytes = await buildExportPdfBuffer(rows, [...BASE_HEADERS, "Notes", "Phone", "Arrival"], {
+      title: "Long Text Event",
+      date: new Date("2026-11-04T00:00:00Z"),
+    });
+    expect(Buffer.from(bytes.subarray(0, 4)).toString("ascii")).toBe("%PDF");
+  });
+
   it("escalates to A3 and exercises the ellipsis-fallback draw path for an extreme attribute count", async () => {
     const attributeCount = 20;
     const columns = [
