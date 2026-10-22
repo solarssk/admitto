@@ -138,6 +138,26 @@ export {
 } from "./registrant-input.js";
 export type { RegistrantFormField, RegistrantProfileFields } from "./registrant-input.js";
 export {
+  MAX_REGISTRATION_BULK_IDS,
+  REGISTRATION_AGE_FILTERS,
+  REGISTRATION_SEARCH_MAX_LENGTH,
+  REGISTRATION_SEARCH_MAX_WORDS,
+  canRetryRegistrationMail,
+  isRegistrationAgeFilter,
+  isRegistrationStatus,
+  parseRegistrationFilter,
+  parseRegistrationSearch,
+  registrationAgeCutoff,
+  registrationListWhere,
+} from "./registration-list.js";
+export type {
+  RegistrationAgeFilter,
+  RegistrationFilterField,
+  RegistrationFilterInput,
+  RegistrationFilterResult,
+  RegistrationListFilter,
+} from "./registration-list.js";
+export {
   RESERVED_CUSTOM_DATA_SOURCE_FIELDS,
   isReservedCustomDataSourceField,
   filterCustomDataAttributeFields,
