@@ -118,4 +118,30 @@ describe("withHeartbeatRefresh (via runWorkerTick's wallet_push drain)", () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect(touchWorkerHeartbeat).not.toHaveBeenCalled();
   });
+
+  it("refreshes the heartbeat every 60s while a registration mail drain is still sending", async () => {
+    const { registrationMailMock } = await import("./registration-mail-mock.js");
+    vi.useFakeTimers();
+    let resolveDrain!: (v: { claimed: number; sent: number; failed: number; cancelled: number; skipped: number; eventIds: string[] }) => void;
+    registrationMailMock.drainRegistrationMails.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDrain = resolve;
+      }),
+    );
+
+    const tickPromise = runWorkerTick({} as never, fakeLocks() as never, createRetentionSchedule());
+    // Let the tick reach the slow drain, then count only the refreshes made while it is out.
+    await vi.advanceTimersByTimeAsync(0);
+    touchWorkerHeartbeat.mockClear();
+
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(touchWorkerHeartbeat).toHaveBeenCalledTimes(3);
+
+    resolveDrain({ claimed: 1, sent: 1, failed: 0, cancelled: 0, skipped: 0, eventIds: [] });
+    await tickPromise;
+
+    touchWorkerHeartbeat.mockClear();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(touchWorkerHeartbeat).not.toHaveBeenCalled();
+  });
 });
