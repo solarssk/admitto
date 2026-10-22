@@ -70,6 +70,33 @@ export function sameRules(a: EventCustomFieldRules | null | undefined, b: EventC
   );
 }
 
+/** The rules of a question on the registration form that the editor has no boxes for yet: its icon, its condition and its suggestions. */
+function otherRulesOf(rules: EventCustomFieldRules | null | undefined): EventCustomFieldRules {
+  const other: EventCustomFieldRules = {};
+  if (rules?.icon !== undefined) other.icon = rules.icon;
+  if (rules?.show_when !== undefined) other.show_when = rules.show_when;
+  if (rules?.suggestions !== undefined) other.suggestions = rules.suggestions;
+  return other;
+}
+
+/** The rules a save leaves on a field: the ones of the form, and the ones the editor has no boxes for. It does not change those, but a
+ * save with rules replaces all the rules of the field on the server, so it sends the stored ones again. Suggestions fit a text field
+ * only, so they are left out when the field becomes another type. Null for none. */
+export function rulesAfterSave(
+  formRules: EventCustomFieldRules | null,
+  stored: EventCustomFieldRules | null | undefined,
+  type: string,
+): EventCustomFieldRules | null {
+  const { suggestions, ...kept } = otherRulesOf(stored);
+  const rules: EventCustomFieldRules = { ...kept, ...(type === "text" && suggestions ? { suggestions } : {}), ...formRules };
+  return Object.keys(rules).length > 0 ? rules : null;
+}
+
+/** True when two sets of rules are the same, the ones the editor has no boxes for included. */
+export function sameAllRules(a: EventCustomFieldRules | null | undefined, b: EventCustomFieldRules | null | undefined): boolean {
+  return sameRules(a, b) && JSON.stringify(otherRulesOf(a)) === JSON.stringify(otherRulesOf(b));
+}
+
 /** What is wrong with the two length boxes, in a sentence, and which of the two it is about; the first thing wrong, in the order
  * a person reads them. */
 export interface LengthsProblem {

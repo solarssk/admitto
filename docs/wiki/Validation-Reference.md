@@ -218,14 +218,14 @@ Text, long text and phone fields can carry rules about what an answer looks like
 
 - A length counts characters as a person sees them: an emoji is one character.
 - A phone number is checked in its saved form, so its length counts the `+`, and "digits only" refuses a number that starts with `+`.
-- A date, date and time, select or yes/no field takes no rules. Saving one with rules is refused. The field editor shows no rules for these types, and removes the rules of a field that becomes one of them.
+- A date, date and time, select or yes/no field takes no format rules (lengths, digits only, example). Saving one with such a rule is refused. The field editor shows no format rules for these types, and removes the format rules of a field that becomes one of them. An icon and a condition stay.
 - The field editor refuses a length that is not a whole number from 1 to what the type holds, a shortest answer longer than the longest, and phone lengths that no number can meet (a saved number has 3 to 16 characters, or 3 to 15 with digits only). It also refuses an example of more than 100 characters, or one with an invisible character.
 - A rule applies to every answer entered after it is set, and to the answers already saved. An attendee whose older answer breaks a new rule can't be saved until that answer is fixed.
 - An export writes a phone number as saved, with its `+`, so an exported file can be imported again.
 
 **Icons and suggestions**
 
-These two rules shape the registration form. They are set through the admin API. The field editor does not show them.
+These two rules shape the registration form. They are set through the admin API. The field editor does not show them, and it sends them again when it saves a field, so a save in the editor never removes them.
 
 | Rule | What it asks |
 |---|---|
@@ -237,7 +237,7 @@ These two rules shape the registration form. They are set through the admin API.
 
 **Questions that depend on another answer**
 
-A question can be shown only when another question has a certain answer. For example, the question "Car registration number" can be shown only when the yes/no question "Do you need parking?" is answered Yes. This is the rule `show_when` of the field. It is set through the admin API. The field editor does not show it.
+A question can be shown only when another question has a certain answer. For example, the question "Car registration number" can be shown only when the yes/no question "Do you need parking?" is answered Yes. This is the rule `show_when` of the field. It is set through the admin API. The field editor does not show it, and it sends it again when it saves a field, so a save in the editor never removes it.
 
 | Rule | What you'll see when you break it |
 |---|---|

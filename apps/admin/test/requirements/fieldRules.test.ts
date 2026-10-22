@@ -6,6 +6,8 @@ import {
   rulesFromDraft,
   rulesLengthCap,
   rulesProblems,
+  rulesAfterSave,
+  sameAllRules,
   sameRules,
   typeTakesRules,
   type RulesDraft,
@@ -47,6 +49,49 @@ describe("rulesDraftFromRules and rulesFromDraft", () => {
 
   it("ignore a length that is not a whole number (rulesProblems says so, and the editor does not save it)", () => {
     expect(rulesFromDraft(draft({ minLength: "abc", maxLength: "1.5" }))).toBeNull();
+  });
+});
+
+describe("rulesAfterSave", () => {
+  const condition = { field: "parking", value: "Yes" };
+
+  it("is the rules of the form, with the icon, the condition and the suggestions of the stored rules", () => {
+    expect(rulesAfterSave({ max_length: 6 }, { max_length: 5, icon: "car", show_when: condition, suggestions: ["a"] }, "text")).toEqual({
+      max_length: 6,
+      icon: "car",
+      show_when: condition,
+      suggestions: ["a"],
+    });
+  });
+
+  it("leaves the suggestions out unless the field is a text field", () => {
+    expect(rulesAfterSave(null, { suggestions: ["a"] }, "text")).toEqual({ suggestions: ["a"] });
+    expect(rulesAfterSave(null, { suggestions: ["a"], icon: "car" }, "long_text")).toEqual({ icon: "car" });
+    expect(rulesAfterSave(null, { suggestions: ["a"] }, "select")).toBeNull();
+  });
+
+  it("is null when nothing is left, and the rules of the form when the field has no others", () => {
+    expect(rulesAfterSave(null, null, "text")).toBeNull();
+    expect(rulesAfterSave(null, undefined, "date")).toBeNull();
+    expect(rulesAfterSave({ example: "a" }, null, "text")).toEqual({ example: "a" });
+  });
+
+  it("never takes a format rule from the stored rules: the form decides those", () => {
+    expect(rulesAfterSave(null, { max_length: 5, digits_only: true, example: "1" }, "text")).toBeNull();
+  });
+});
+
+describe("sameAllRules", () => {
+  it("is sameRules, and the icon, the condition and the suggestions as well", () => {
+    expect(sameAllRules({ max_length: 5, icon: "car" }, { max_length: 5, icon: "car" })).toBe(true);
+    expect(sameAllRules({ max_length: 5, icon: "car" }, { max_length: 5 })).toBe(false);
+    expect(sameAllRules({ icon: "car" }, { icon: "pin" })).toBe(false);
+    expect(sameAllRules({ show_when: { field: "a", value: true } }, { show_when: { field: "a", value: true } })).toBe(true);
+    expect(sameAllRules({ show_when: { field: "a", value: true } }, { show_when: { field: "b", value: true } })).toBe(false);
+    expect(sameAllRules({ suggestions: ["a", "b"] }, { suggestions: ["a", "b"] })).toBe(true);
+    expect(sameAllRules({ suggestions: ["a"] }, { suggestions: ["a", "b"] })).toBe(false);
+    expect(sameAllRules(null, undefined)).toBe(true);
+    expect(sameAllRules({ max_length: 5 }, { max_length: 6 })).toBe(false);
   });
 });
 

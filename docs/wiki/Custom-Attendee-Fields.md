@@ -66,7 +66,7 @@ Text, long text and phone fields can limit what an answer looks like. Open **For
 - A phone number is counted the way Admitto saves it: an optional + and the digits. **Digits only** refuses a number that starts with +.
 - In the attendee form, a phone number pasted with its country code, such as +48 601 200 300, sets the country picker and fills the number box.
 - The editor checks the rules before you save. It refuses a length above what the type holds (100 for text, 1000 for long text, 16 for a phone number), a shortest answer longer than the longest, and phone lengths that no number can meet. The line under the two length boxes says which.
-- Date, Date and time, Single choice and Yes / No fields take no rules. When you change a field to one of them, its rules are removed.
+- Date, Date and time, Single choice and Yes / No fields take no format rules. When you change a field to one of them, its format rules are removed. An icon and a condition that the field has stay.
 
 **Wallet passes**
 

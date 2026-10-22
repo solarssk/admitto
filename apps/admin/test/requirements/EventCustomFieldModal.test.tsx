@@ -1345,7 +1345,7 @@ describe("EventCustomFieldModal: the format rules", () => {
       setBox("Longest answer", "6");
       fireEvent.click(saveButton());
 
-      await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.stringContaining("format rules do not fit the field"), "error"));
+      await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.stringContaining("rules do not fit the field"), "error"));
       expect(screen.getByRole("dialog", { hidden: true })).toBeTruthy();
       expect((screen.getByLabelText("Longest answer") as HTMLInputElement).value).toBe("6");
       expect(saveButton().getAttribute("aria-busy")).not.toBe("true");

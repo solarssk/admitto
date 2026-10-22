@@ -114,6 +114,42 @@ describe("updateFieldPatch", () => {
     expect(patch).not.toHaveProperty("rules");
   });
 
+  describe("the rules the editor has no boxes for (an icon, a condition, suggestions)", () => {
+    const condition = { field: "parking", value: true } as const;
+    const stored = field({ rules: { max_length: 5, icon: "car", show_when: condition, suggestions: ["AB 123"] } });
+
+    it("sends them again with the rules it edits, since a save with rules replaces all of them", () => {
+      expect(updateFieldPatch(stored, save({ rules: { max_length: 6 } })).rules).toEqual({
+        max_length: 6,
+        icon: "car",
+        show_when: condition,
+        suggestions: ["AB 123"],
+      });
+    });
+
+    it("sends the rules of the form on a field that has none of its own, and no rules when nothing changed", () => {
+      expect(updateFieldPatch(stored, save({ rules: { max_length: 5 } }))).not.toHaveProperty("rules");
+      expect(updateFieldPatch(field({ rules: { icon: "car", show_when: condition } }), save({ label: "Plate" }))).not.toHaveProperty("rules");
+    });
+
+    it("keeps the icon and the condition of a field that becomes a type with no format rules, and sends nothing of its format rules or suggestions", () => {
+      expect(updateFieldPatch(stored, save({ type: "date", rules: null }))).toMatchObject({ type: "date", rules: { icon: "car", show_when: condition } });
+    });
+
+    it("leaves the suggestions out when a text field becomes another type that takes format rules, since they fit text fields only", () => {
+      expect(updateFieldPatch(stored, save({ type: "long_text", rules: { max_length: 5 } })).rules).toEqual({
+        max_length: 5,
+        icon: "car",
+        show_when: condition,
+      });
+    });
+
+    it("sends null when nothing is left of the rules, and clears an icon that was the only rule only through a save that drops it", () => {
+      expect(updateFieldPatch(field({ rules: { suggestions: ["a"] } }), save({ type: "boolean", rules: null })).rules).toBeNull();
+      expect(updateFieldPatch(field({ rules: { icon: "car" } }), save({ rules: null }))).not.toHaveProperty("rules");
+    });
+  });
+
   it.each(TYPE_PAIRS)("never names a choice type without its options, whatever the field was (%s) and became (%s): the server's rule for a PATCH", (from, to) => {
     const before = field({ type: from, options: from === "select" ? ["S", "M"] : null });
     for (const options of [["S", "M"], ["S", "M", "L"]]) {
