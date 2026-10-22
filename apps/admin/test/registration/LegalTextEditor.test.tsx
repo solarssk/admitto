@@ -12,6 +12,7 @@ import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-
 import { advanceTimers, hangUntilAborted, isOff } from "../test-utils.js";
 import { stubProseMirrorLayout } from "./proseMirrorJsdom.js";
 
+const goToLogin = vi.fn();
 const fetchLegalDocument = vi.fn();
 const saveLegalDocument = vi.fn();
 const publishLegalDocument = vi.fn();
@@ -26,6 +27,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   unpublishLegalDocument: (...args: unknown[]) => unpublishLegalDocument(...args),
   deleteLegalDocument: (...args: unknown[]) => deleteLegalDocument(...args),
 }));
+
+vi.mock("../../src/auth/login-navigation.js", () => ({ goToLogin: (...args: unknown[]) => goToLogin(...args) }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js");
 
@@ -372,6 +375,20 @@ describe("LegalTextEditor: saving", () => {
     await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not save this text.", "error"));
   });
 
+  it("sends the browser to sign-in when saving meets a session that ended, with no error toast", async () => {
+    saveLegalDocument.mockRejectedValue(new ApiError(401, "unauthorized", "unauthorized"));
+    renderEditor();
+    await textbox();
+    await write("Words.");
+
+    fireEvent.click(button("Save"));
+
+    await waitFor(() => expect(goToLogin).toHaveBeenCalledTimes(1));
+    expect(goToLogin).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/));
+    expect(addToast).not.toHaveBeenCalledWith("Could not save this text.", "error");
+    expect(isOff(button("Save"))).toBe(false);
+  });
+
   it("will not save a title that is only spaces", async () => {
     renderEditor();
     await textbox();
@@ -579,6 +596,24 @@ describe("LegalTextEditor: deleting", () => {
     const dialog = screen.getByRole("dialog");
     await waitFor(() => expect(within(dialog).getByRole("alert").textContent).toContain("Registration is on for this event and needs this text"));
     expect(onDeleted).not.toHaveBeenCalled();
+  });
+});
+
+describe("LegalTextEditor: a session that ended", () => {
+  it("sends the browser to sign-in from publishing and from deleting, with no error shown", async () => {
+    publishLegalDocument.mockRejectedValue(new ApiError(401, "unauthorized", "unauthorized"));
+    deleteLegalDocument.mockRejectedValue(new ApiError(401, "unauthorized", "unauthorized"));
+    renderEditor();
+    await textbox();
+
+    fireEvent.click(button("Publish"));
+    await waitFor(() => expect(goToLogin).toHaveBeenCalledTimes(1));
+    expect(addToast).not.toHaveBeenCalledWith("Could not publish this text.", "error");
+
+    fireEvent.click(button("Delete"));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(goToLogin).toHaveBeenCalledTimes(2));
+    expect(within(screen.getByRole("dialog")).queryByRole("alert")).toBeNull();
   });
 });
 

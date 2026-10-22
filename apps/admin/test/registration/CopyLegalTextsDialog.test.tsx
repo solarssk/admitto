@@ -136,6 +136,21 @@ describe("CopyLegalTextsDialog: choosing the event", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("forgets the error of a copy when another event is chosen", async () => {
+    saveLegalDocument.mockRejectedValueOnce(new ApiError(422, "legal_document_unsupported", "legal_document_unsupported"));
+    renderDialog();
+    await choose("Autumn Gala");
+    await screen.findByRole("list", { name: "What will be copied" });
+    fireEvent.click(copyButton());
+    await waitFor(() => expect(within(dialog()).getAllByRole("alert").length).toBeGreaterThan(0));
+
+    await choose("Winter Meetup");
+
+    await waitFor(() => expect(fetchLegalDocuments).toHaveBeenCalledWith("evt-3", expect.anything()));
+    await screen.findByRole("list", { name: "What will be copied" });
+    expect(within(dialog()).queryByRole("alert")).toBeNull();
+  });
+
   it("says that the texts of an event could not be read, with a Retry that reads them again", async () => {
     fetchLegalDocuments.mockRejectedValueOnce(new ApiError(403, "forbidden", "forbidden"));
     renderDialog();

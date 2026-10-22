@@ -152,7 +152,11 @@ export function CopyLegalTextsDialog({ open, eventId, current, limits, onClose, 
             value={sourceId}
             options={options}
             disabled={events.error !== null || copying}
-            onChange={setSourceId}
+            onChange={(id) => {
+              setSourceId(id);
+              // What went wrong with the copy of another event says nothing about this one.
+              setError(null);
+            }}
           />
         </LookupSlot>
         {sourceId !== "" && (

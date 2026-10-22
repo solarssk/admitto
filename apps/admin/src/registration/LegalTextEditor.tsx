@@ -20,7 +20,7 @@ import { useCardLoad } from "../hooks/useCardLoad.js";
 import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useListLoad } from "../hooks/useListLoad.js";
 import { DiscardUnsavedChangesDialogs } from "../identity/DiscardUnsavedChangesDialogs.js";
-import { orLoginRedirect } from "../identity/loginRedirect.js";
+import { orLoginRedirect, redirectToLogin } from "../identity/loginRedirect.js";
 import { SettingsPanelSkeleton } from "../settings/SettingsPanelSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
 import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
@@ -41,6 +41,17 @@ import "./legal-texts.css";
 const LegalHtmlEditor = lazy(() => import("./LegalHtmlEditor.js").then((module) => ({ default: module.LegalHtmlEditor })));
 
 /** The editor's own placeholder while its code is on its way: a box of its size, held invisibly for the first 200ms. */
+/**
+ * A session that ended hands the browser to sign-in, as the write calls of the identity editors do, instead of an
+ * error whose retry meets the same 401. True when it did, and the action has nothing more to say. Unsaved words are
+ * guarded by the browser's own prompt when the page is left.
+ */
+function handedToSignIn(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 401) return false;
+  redirectToLogin();
+  return true;
+}
+
 function EditorFallback() {
   const gate = useLoadingGate(true);
   const slow = useDelayedLoading(true, SLOW_NOTICE_MS);
@@ -286,6 +297,7 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
       addToast("Text saved.", "success");
       onChanged();
     } catch (err) {
+      if (handedToSignIn(err)) return;
       addToast(operatorApiErrorMessage(err, "Could not save this text."), "error");
     } finally {
       setSaving(false);
@@ -301,6 +313,7 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
       addToast(answer.published ? "Text published." : "Text unpublished. Guests can no longer read it.", "success");
       onChanged();
     } catch (err) {
+      if (handedToSignIn(err)) return;
       addToast(operatorApiErrorMessage(err, saved.published ? "Could not unpublish this text." : "Could not publish this text."), "error");
     } finally {
       setPublishing(false);
@@ -317,6 +330,7 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
       addToast("Text deleted.", "success");
       onDeleted();
     } catch (err) {
+      if (handedToSignIn(err)) return;
       setDeleteError(operatorApiErrorMessage(err, "Could not delete this text."));
     } finally {
       setDeleting(false);
