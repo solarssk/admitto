@@ -18,6 +18,16 @@ export function optionRowsFromOptions(options: string[] | null): OptionRow[] {
   return (options ?? []).map((text, i) => ({ key: `row-${i}`, text, originalText: text }));
 }
 
+/** The number for the next row the operator adds: past the highest `new-N` key of `rows`, and never below their count. The editor
+ * can be mounted again over rows it added in an earlier life (it goes while the type of the field has no list, and the draft keeps
+ * them), so a count that starts at zero would give a new row the key of one that is already there. */
+function nextNewRowNumber(rows: readonly OptionRow[]): number {
+  return rows.reduce((next, row) => {
+    const added = /^new-(\d+)$/.exec(row.key);
+    return added ? Math.max(next, Number(added[1]) + 1) : next;
+  }, rows.length);
+}
+
 function usageOf(usageCounts: Record<string, number> | null, originalText: string): number {
   if (!usageCounts || !originalText) return 0;
   return usageCounts[originalText] ?? 0;
@@ -127,7 +137,7 @@ export function OptionsEditor({
   rowsRef.current = rows;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const nextRowIdRef = useRef(rows.length);
+  const nextRowIdRef = useRef(0);
 
   function updateRow(key: string, text: string) {
     onChange(rows.map((r) => (r.key === key ? { ...r, text } : r)));
@@ -144,7 +154,10 @@ export function OptionsEditor({
   }
 
   function addRow() {
-    const key = `new-${nextRowIdRef.current++}`;
+    // The rows may be ones that were added before this mount, or put in since (the draft is reset): look at them each time.
+    const number = Math.max(nextRowIdRef.current, nextNewRowNumber(rows));
+    nextRowIdRef.current = number + 1;
+    const key = `new-${number}`;
     onChange([...rows, newOptionRow(key)]);
     requestAnimationFrame(() => {
       listRef.current?.querySelector<HTMLInputElement>(`input[data-key="${key}"]`)?.focus();

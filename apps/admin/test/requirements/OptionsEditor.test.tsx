@@ -399,6 +399,36 @@ describe("OptionsEditor: a list of suggestions (no attendee counts)", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(inputs[1]));
   });
 
+  it("gives a new row a key that no row has, though the editor was mounted again over rows it had added before", () => {
+    // `new-2` was added in an earlier life of the editor, which goes while the field's type has no list; the draft kept it, and the
+    // rows before it were removed. A count that starts at the number of rows would make `new-1` and then `new-2` again.
+    const earlier: OptionRow[] = [{ key: "new-2", text: "Vegan", originalText: "" }];
+    const { container } = render(<ControlledSuggestions initial={earlier} />);
+    for (let n = 0; n < 3; n += 1) fireEvent.click(screen.getByRole("button", { name: "+ Add suggestion" }));
+    const keys = [...container.querySelectorAll("input[data-key]")].map((input) => input.getAttribute("data-key"));
+    expect(keys).toHaveLength(4);
+    expect(new Set(keys).size).toBe(4);
+  });
+
+  it("looks again at the rows when it adds one, so a list that was put in under it cannot make a key twice", () => {
+    const { container, rerender } = render(
+      <OptionsEditor rows={suggestionRows("Vegan")} usageCounts={null} showUsage={false} noun="suggestion" onChange={vi.fn()} />,
+    );
+    const onChange = vi.fn();
+    rerender(
+      <OptionsEditor
+        rows={[{ key: "new-7", text: "Halal", originalText: "" }]}
+        usageCounts={null}
+        showUsage={false}
+        noun="suggestion"
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "+ Add suggestion" }));
+    expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ key: "new-7" }), expect.objectContaining({ key: "new-8" })]);
+    expect(container.querySelectorAll("input[data-key]")).toHaveLength(1);
+  });
+
   it("turns '+ Add' off at the most rows it takes, and on again below it", () => {
     const { rerender } = render(
       <OptionsEditor rows={suggestionRows("a", "b")} usageCounts={null} showUsage={false} noun="suggestion" max={3} onChange={vi.fn()} />,
