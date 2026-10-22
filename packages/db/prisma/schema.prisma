@@ -208,6 +208,11 @@ model EventCustomField {
   // under the event's custom-fields lock. Readers sort through eventCustomFieldOrderBy in
   // @admitto/tickets, never with their own orderBy.
   display_order Int?
+  // Format rules of the field (min_length, max_length, digits_only, example), read literally by the code: there is no
+  // pattern an organiser types. SQL NULL = none, so write Prisma.DbNull, never JsonNull (a CHECK refuses a JSON null).
+  // The keys are checked in the application (a strict Zod object in @admitto/tickets), so a new rule needs no migration.
+  // Only `text`, `long_text` and `phone` fields take rules.
+  rules         Json?
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 

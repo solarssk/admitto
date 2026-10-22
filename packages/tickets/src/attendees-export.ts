@@ -94,6 +94,16 @@ function resolveTicketTypeLabel(raw: string | null, ticketTypes: TicketTypeInfo[
   return ticketTypes.find((t) => t.key === raw)?.label ?? raw;
 }
 
+/** A phone number in canonical form (an optional + and 3 to 15 digits) cannot carry a formula. */
+const CANONICAL_PHONE = /^\+?\d{3,15}$/;
+
+/** One custom field's cell, guarded against spreadsheet formulas. A `phone` answer in canonical form
+ * is left as it is stored: the guard would put an apostrophe before every international number,
+ * and a file exported with its columns could then not be imported again. */
+function sanitizeAttributeValue(field: EventItemContent, value: string | null): string {
+  return field.type === "phone" && value !== null && CANONICAL_PHONE.test(value) ? value : sanitizeCsvCell(value);
+}
+
 export function buildSanitizedExportRows(
   rows: ExportAttendeeSqlRow[],
   attributeFields: EventItemContent[],
@@ -112,7 +122,7 @@ export function buildSanitizedExportRows(
       check_in_status: row.admitted_at ? "Checked in" : "Not checked in",
       admitted_at: row.admitted_at ? formatAdmittedAtLocal(row.admitted_at, timeZone) : "",
       attribute_values: attributeFields.map((field) =>
-        sanitizeCsvCell(customDataValue(row.custom_data, field.source_field)),
+        sanitizeAttributeValue(field, customDataValue(row.custom_data, field.source_field)),
       ),
     };
   });

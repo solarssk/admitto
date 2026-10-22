@@ -14,6 +14,16 @@ export {
   isValidContactPhone,
   sanitizeContactPhoneInput,
 } from "./contactPhone.js";
+export {
+  EVENT_CUSTOM_FIELD_EXAMPLE_MAX,
+  EVENT_CUSTOM_FIELD_LONG_TEXT_MAX,
+  EVENT_CUSTOM_FIELD_TEXT_MAX,
+  EVENT_CUSTOM_FIELD_TYPES,
+  isFreeInputCustomFieldType,
+  eventCustomFieldRulesMaxLength,
+  type EventCustomFieldRules,
+  type EventCustomFieldType,
+} from "./customFieldTypes.js";
 export { parseUserAgent, parseUserAgentSafe, parseUserAgentWithVersion } from "./parseUserAgent.js";
 export { NO_COMPRESSION_HEADERS } from "./noCompressionHeaders.js";
 export type { DeliveryDetailDto, DeliveryDto } from "./deliveryDto.js";

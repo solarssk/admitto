@@ -1,3 +1,5 @@
+import type { EventCustomFieldRules, EventCustomFieldType } from "@admitto/shared";
+
 export type AttendeeRow = {
   /** 1-based non-empty data record index; header is 0, quoted newlines do not increment it. */
   rowIndex: number;
@@ -17,9 +19,10 @@ export type AttendeeRow = {
 export type ImportAttributeField = {
   label: string;
   source_field: string;
-  type?: "text" | "select" | "boolean";
+  type?: EventCustomFieldType;
   required?: boolean;
   options?: string[];
+  rules?: EventCustomFieldRules;
 };
 
 /** Minimal per-event ticket-type catalog shape for import validation (batch 04 / #351) - key +

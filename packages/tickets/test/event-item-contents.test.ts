@@ -29,6 +29,22 @@ describe("buildItemDetail", () => {
     expect(buildItemDetail({ content_fields: ["size"] }, {}, sizeRequired)).toBe("Size*: -");
   });
 
+  it("shows the answer to a long text, date, date and time or phone field as it is stored", () => {
+    const registry = new Map<string, EventItemContent>([
+      ["notes", { label: "Notes", source_field: "notes", type: "long_text" }],
+      ["arrival", { label: "Arrival", source_field: "arrival", type: "date" }],
+      ["arrives_at", { label: "Arrives", source_field: "arrives_at", type: "datetime" }],
+      ["phone", { label: "Phone", source_field: "phone", type: "phone", required: true }],
+    ]);
+    expect(
+      buildItemDetail(
+        { content_fields: ["notes", "arrival", "arrives_at", "phone"] },
+        { notes: "Two seats", arrival: "2026-11-04", arrives_at: "2026-11-04T10:30", phone: "+48600100200" },
+        registry,
+      ),
+    ).toBe("Notes: Two seats · Arrival: 2026-11-04 · Arrives: 2026-11-04T10:30 · Phone*: +48600100200");
+  });
+
   it("joins multiple attributes with middle dot", () => {
     const registry = new Map<string, EventItemContent>([
       ["shirt_size", { label: "Shirt size", source_field: "shirt_size" }],

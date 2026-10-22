@@ -73,6 +73,8 @@ export const CODE_MESSAGES: Record<string, string> = {
   incomplete_transport: "Fill in all required fields for this mail transport before saving.",
   internal_error: "Something went wrong. Try again. If it keeps happening, check System logs.",
   invalid_email: INVALID_EMAIL_MESSAGE,
+  invalid_field_rules:
+    "These format rules do not fit the field. Only text, long text and phone fields take rules, and a length cannot be longer than the field allows.",
   invalid_phone: CONTACT_PHONE_ERROR,
   invalid_form_data: "Could not read the upload. Try again.",
   invalid_image: "That file is not a valid image. Try another PNG, JPG, or WebP.",
