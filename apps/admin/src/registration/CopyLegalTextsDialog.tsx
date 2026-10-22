@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge, Notice } from "@admitto/ui";
 import { fetchLegalDocument, fetchLegalDocuments, saveLegalDocument } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -6,6 +6,7 @@ import type { LegalDocumentDto, LegalDocumentLimitsDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect, type SearchableSelectOption } from "../components/SearchableSelect.js";
 import { useEventOptions } from "../hooks/useEventOptions.js";
+import { orLoginRedirect } from "../identity/loginRedirect.js";
 import { lookupReady, useOptionsLoad } from "../hooks/useOptionsLoad.js";
 import { LookupSlot } from "../pages/users/LookupSlot.js";
 import { pluralSuffix } from "../utils/pluralize.js";
@@ -85,8 +86,9 @@ export function CopyLegalTextsDialog({ open, eventId, current, limits, onClose, 
     }
   }, [open]);
 
-  const loadSourceTexts = useCallback(
-    (signal: AbortSignal) => fetchLegalDocuments(sourceId, signal).then((answer) => answer.items),
+  // A session that expired after the events were read hands the browser to sign-in, as the read of the events does.
+  const loadSourceTexts = useMemo(
+    () => orLoginRedirect((signal: AbortSignal) => fetchLegalDocuments(sourceId, signal).then((answer) => answer.items)),
     [sourceId],
   );
   const sourceTexts = useOptionsLoad(loadSourceTexts, "Could not load the legal texts of that event.", open && sourceId !== "");

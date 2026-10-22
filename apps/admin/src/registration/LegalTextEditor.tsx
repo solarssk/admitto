@@ -333,7 +333,7 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
           <FormNotices changed={changed} lossy={lossy} />
           <FormFields
             kind={target.kind}
-            savedKey={target.key}
+            savedKey={saved?.key ?? target.key}
             isNewConsent={isNewConsent}
             keyText={keyText}
             keyProblem={keyProblem}

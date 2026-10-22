@@ -7,10 +7,13 @@ import { CopyLegalTextsDialog, type CopyLegalTextsDialogProps } from "../../src/
 import { isOff } from "../test-utils.js";
 import { LEGAL_LIMITS, legalDoc, legalDocWithContent } from "./legalFixtures.js";
 
+const goToLogin = vi.fn();
 const fetchAdminEvents = vi.fn();
 const fetchLegalDocuments = vi.fn();
 const fetchLegalDocument = vi.fn();
 const saveLegalDocument = vi.fn();
+
+vi.mock("../../src/auth/login-navigation.js", () => ({ goToLogin: (...args: unknown[]) => goToLogin(...args) }));
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
@@ -106,6 +109,17 @@ describe("CopyLegalTextsDialog: choosing the event", () => {
 
     expect((await screen.findByRole("alert")).textContent).toBe("This would give the event 4 extra consents. The limit is 3.");
     expect(isOff(copyButton())).toBe(true);
+  });
+
+  it("hands the browser to sign-in when the session ended before the texts were read, with no error and no Retry", async () => {
+    fetchLegalDocuments.mockRejectedValueOnce(new ApiError(401, "unauthorized", "unauthorized"));
+    renderDialog();
+    await choose("Autumn Gala");
+
+    await waitFor(() => expect(goToLogin).toHaveBeenCalledTimes(1));
+    expect(goToLogin).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Retry loading legal texts/ })).toBeNull();
   });
 
   it("says that the texts of an event could not be read, with a Retry that reads them again", async () => {

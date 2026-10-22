@@ -453,9 +453,10 @@ describe("LegalTextEditor: a new extra consent", () => {
     fireEvent.click(button("Save"));
 
     await waitFor(() => expect(saveLegalDocument).toHaveBeenCalledWith("evt-1", "consent-video", { title: "Video", content_html: "<p>I agree to be filmed.</p>" }));
-    // Once written it is a consent with a key that cannot be changed.
+    // Once written it is a consent with a key that cannot be changed, and the key shown is the one that was saved.
     await waitFor(() => expect(screen.getByText("Draft")).toBeTruthy());
     expect(screen.queryByRole("textbox", { name: "Key" })).toBeNull();
+    expect(screen.getByText("Key: video")).toBeTruthy();
   });
 });
 
