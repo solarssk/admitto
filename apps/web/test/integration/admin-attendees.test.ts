@@ -5774,6 +5774,14 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     return row.updated_at.toISOString();
   }
 
+  /** A bare attendee for the address tests: the only custom field of the event at this point of the file (shirt size)
+   * is not required, so an attendee without answers can be saved. Later tests need that field, so it stays. */
+  async function addAttendeeWithAddress(id: string, email: string): Promise<void> {
+    await prisma.attendee.create({
+      data: { id, event_id: EVENT_A, email, name: "Case Test", first_name: "Case", last_name: "Test" },
+    });
+  }
+
   it("returns 403 without updating a cross-event attendee", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}`, {
       method: "PATCH",
@@ -5971,6 +5979,68 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("email_conflict");
+  });
+
+  it("saves a changed address in lower case, without the spaces around it", async () => {
+    await addAttendeeWithAddress("att-admin-case-lower", "case-lower@example.com");
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/att-admin-case-lower`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: " Case.Changed@Example.COM ",
+          expected_updated_at: await currentUpdatedAt("att-admin-case-lower"),
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { email: string }).email).toBe("case.changed@example.com");
+      const stored = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-admin-case-lower" } });
+      expect(stored.email).toBe("case.changed@example.com");
+    } finally {
+      await prisma.attendee.deleteMany({ where: { id: "att-admin-case-lower" } });
+    }
+  });
+
+  it("returns 409 for an address that another attendee holds in other letters", async () => {
+    // Saved before addresses were lower-cased: the unique index sees another spelling, so only the check can refuse it.
+    await addAttendeeWithAddress("att-admin-case-legacy", "Case.Legacy@Example.com");
+    await addAttendeeWithAddress("att-admin-case-target", "case-target@example.com");
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/att-admin-case-target`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "case.legacy@example.com",
+          expected_updated_at: await currentUpdatedAt("att-admin-case-target"),
+        }),
+      });
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: string }).error).toBe("email_conflict");
+      const stored = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-admin-case-target" } });
+      expect(stored.email).toBe("case-target@example.com");
+    } finally {
+      await prisma.attendee.deleteMany({ where: { id: { in: ["att-admin-case-legacy", "att-admin-case-target"] } } });
+    }
+  });
+
+  it("lets an attendee whose address has capitals save it in lower case", async () => {
+    // The check leaves the attendee itself out: tidying one's own address is not a conflict.
+    await addAttendeeWithAddress("att-admin-case-self", "Case.Self@Example.com");
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/att-admin-case-self`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "case.self@example.com",
+          expected_updated_at: await currentUpdatedAt("att-admin-case-self"),
+        }),
+      });
+      expect(res.status).toBe(200);
+      const stored = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-admin-case-self" } });
+      expect(stored.email).toBe("case.self@example.com");
+    } finally {
+      await prisma.attendee.deleteMany({ where: { id: "att-admin-case-self" } });
+    }
   });
 
   it("rejects a ticket_type not in the event's catalog (batch 04 / #351)", async () => {
@@ -8870,6 +8940,33 @@ describe("Attendees v2 — RSVP and manual create", () => {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({ email: "anna@example.com", first_name: "Duplicate", last_name: "Test" }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("email_taken");
+  });
+
+  it("POST create saves the address in lower case, without the spaces around it", async () => {
+    await resetEventACustomFields();
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: " New.Guest@Example.COM ", first_name: "New", last_name: "Guest" }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; email: string };
+    expect(body.email).toBe("new.guest@example.com");
+    const stored = await prisma.attendee.findUniqueOrThrow({ where: { id: body.id } });
+    expect(stored.email).toBe("new.guest@example.com");
+
+    await prisma.attendee.delete({ where: { id: body.id } });
+  });
+
+  it("POST create returns 409 email_taken for an address that differs only in letter case", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "ANNA@Example.com", first_name: "Duplicate", last_name: "Test" }),
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { code: string };

@@ -188,11 +188,13 @@ const RSVP_STATUSES = ATTENDEE_EXPORT_RSVP_STATUSES;
 type RsvpStatus = (typeof RSVP_STATUSES)[number];
 const rsvpStatusSchema = z.enum(RSVP_STATUSES);
 
-/** An attendee's email: a valid address that is not in the namespace reserved for the placeholders
- * of erased attendees (see isErasedPlaceholderEmail). */
+/** An attendee's email: a valid address, in lower case like the import and the registration form store
+ * it (the unique index on (event, email) tells apart only the same spelling), that is not in the
+ * namespace reserved for the placeholders of erased attendees (see isErasedPlaceholderEmail). */
 const attendeeEmailSchema = z
   .string()
   .trim()
+  .toLowerCase()
   .email()
   .max(254)
   .refine((value) => !isErasedPlaceholderEmail(value), "reserved address");
@@ -1834,6 +1836,26 @@ async function guardPatchTicketTypeChange(
   if (ticketTypeError) throw new TransactionResponseError(c.json(ticketTypeError, 400));
 }
 
+/** A changed address must not be another attendee's address in other letters, which the create route
+ * refuses the same way. The unique index tells apart only the same spelling, and an address saved
+ * before addresses were lower-cased can still have capitals. Throws a TransactionResponseError for
+ * the transaction's catch to surface as the same 409 the index gives for the same spelling. */
+async function guardPatchEmailChange(
+  c: Context,
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  attendeeId: string,
+  profileChanges: ReturnType<typeof computePatchChanges>,
+  nextEmail: string | undefined,
+): Promise<void> {
+  if (!profileChanges?.fields.includes("email") || nextEmail === undefined) return;
+  const other = await tx.attendee.findFirst({
+    where: { event_id: eventId, id: { not: attendeeId }, email: { equals: nextEmail, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (other) throw new TransactionResponseError(c.json({ error: "email_conflict" }, 409));
+}
+
 /** Re-checks event capacity when a PATCH restores a previously non-admittable attendee to an
  * admittable status (capacity_reactivation), under the same advisory lock the create/check-in
  * paths use — returns the forced-admit detail for the audit log, or undefined when nothing
@@ -1905,6 +1927,7 @@ async function runPatchAttendeeTransaction(
     attendeeId: string;
     existing: { status: string; admitted_at: Date | null };
     profileChanges: ReturnType<typeof computePatchChanges>;
+    profilePatchEmail: string | undefined;
     profilePatchTicketType: string | null | undefined;
     rsvpChange: ReturnType<typeof computeRsvpChange>;
     statusChange: PatchAttendeeStatusChange;
@@ -1918,6 +1941,7 @@ async function runPatchAttendeeTransaction(
     attendeeId,
     existing,
     profileChanges,
+    profilePatchEmail,
     profilePatchTicketType,
     rsvpChange,
     statusChange,
@@ -1925,6 +1949,7 @@ async function runPatchAttendeeTransaction(
     updateData,
   } = ctx;
 
+  await guardPatchEmailChange(c, tx, eventId, attendeeId, profileChanges, profilePatchEmail);
   await guardPatchTicketTypeChange(c, tx, eventId, profileChanges, profilePatchTicketType);
 
   const restoreCapacityForced = await guardPatchCapacityRestore(
@@ -2078,6 +2103,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       attendeeId,
       existing,
       profileChanges,
+      profilePatchEmail: profilePatch.email,
       profilePatchTicketType: profilePatch.ticket_type,
       rsvpChange,
       statusChange,
