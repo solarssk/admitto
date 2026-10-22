@@ -6023,6 +6023,27 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     }
   });
 
+  it("does not take an underscore in a new address for any other character", async () => {
+    // A case-insensitive match written as a pattern (ILIKE) would read `wild_card` as `wildxcard`.
+    await addAttendeeWithAddress("att-admin-wild-other", "wildxcard@example.com");
+    await addAttendeeWithAddress("att-admin-wild-target", "wild-target@example.com");
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/att-admin-wild-target`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "wild_card@example.com",
+          expected_updated_at: await currentUpdatedAt("att-admin-wild-target"),
+        }),
+      });
+      expect(res.status).toBe(200);
+      const stored = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-admin-wild-target" } });
+      expect(stored.email).toBe("wild_card@example.com");
+    } finally {
+      await prisma.attendee.deleteMany({ where: { id: { in: ["att-admin-wild-other", "att-admin-wild-target"] } } });
+    }
+  });
+
   it("lets an attendee whose address has capitals save it in lower case", async () => {
     // The check leaves the attendee itself out: tidying one's own address is not a conflict.
     await addAttendeeWithAddress("att-admin-case-self", "Case.Self@Example.com");
@@ -8971,6 +8992,25 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("email_taken");
+  });
+
+  it("POST create does not take an underscore in the address for any other character", async () => {
+    await resetEventACustomFields();
+    await prisma.attendee.create({
+      data: { id: "att-admin-wild-create", event_id: EVENT_A, email: "wildycard@example.com", name: "Wild Card", first_name: "Wild", last_name: "Card" },
+    });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "wild_card@example.com", first_name: "Wild", last_name: "Guest" }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string };
+      await prisma.attendee.delete({ where: { id: body.id } });
+    } finally {
+      await prisma.attendee.deleteMany({ where: { id: "att-admin-wild-create" } });
+    }
   });
 
   it("POST create rejects operator", async () => {
