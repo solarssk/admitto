@@ -36,6 +36,8 @@ a shared modal/component CSS file should show up importing it directly.
 
 Same idea as avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./password-strength`). Type-only re-exports from the root remain OK when they stay `import type` / `export type`.
 
+**A field in which staff type the details of somebody else (an attendee's email, name, company or phone) takes `attendeeFieldAttrs(key)` from `utils/no-autofill.ts`, not bare `NO_AUTOFILL_PROPS`.** 1Password and LastPass honour the opt-out, but Bitwarden does only for a user who switched that on, and otherwise offers to fill in the staff member's own email, name or phone. The helper adds a `name` that Bitwarden's own test reads as a search box (`test/checkin/bitwardenSearchField.ts`), without the word "email", which Safari's Hide My Email reads.
+
 **A check that the server and a form both make is written once, in `@admitto/shared`, and imported on both sides: never copied into `apps/admin`.** The calendar day of a date answer (`isDateAnswer`, `isDateTimeAnswer`) and a phone number (`isValidContactPhone`) are the examples. A hand copy is counted as duplicated code by SonarCloud, and nothing keeps it in step with the server when the server changes.
 
 A local build's Vite output (`npm run build -w @admitto/admin`) surfaces new leaks as "Module ... has been externalized for browser compatibility" warnings during the `vite build` step: do not ignore them.

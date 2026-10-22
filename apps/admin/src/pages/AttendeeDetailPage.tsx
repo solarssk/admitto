@@ -131,7 +131,7 @@ import { formatDeliveryHistoryTimeParts, deliveryHistoryIcon, deliveryStatusBadg
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
 import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
-import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { attendeeFieldAttrs } from "../utils/no-autofill.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
 import { ACTIVITY_PAGE_SIZE_OPTIONS, useActivityLog } from "../attendees/useActivityLog.js";
@@ -3111,7 +3111,7 @@ export function AttendeeDetailPage() {
                       value={form.email}
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
                       required
-                      {...NO_AUTOFILL_PROPS}
+                      {...attendeeFieldAttrs("edit-attendee-contact")}
                     />
                   </div>
                   {emailChanged && (
@@ -3130,7 +3130,7 @@ export function AttendeeDetailPage() {
                     value={form.first_name}
                     onChange={(e) => setForm({ ...form, first_name: e.target.value })}
                     required
-                    {...NO_AUTOFILL_PROPS}
+                    {...attendeeFieldAttrs("edit-attendee-given")}
                   />
                   <Input
                     label="Last name"
@@ -3138,13 +3138,14 @@ export function AttendeeDetailPage() {
                     value={form.last_name}
                     onChange={(e) => setForm({ ...form, last_name: e.target.value })}
                     required
-                    {...NO_AUTOFILL_PROPS}
+                    {...attendeeFieldAttrs("edit-attendee-family")}
                   />
                   <Input
                     label="Company"
                     icon={<i className="ti ti-building" aria-hidden="true" />}
                     value={form.company}
                     onChange={(e) => setForm({ ...form, company: e.target.value })}
+                    {...attendeeFieldAttrs("edit-attendee-org")}
                   />
                   <Input
                     label="Department"

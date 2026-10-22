@@ -5,6 +5,7 @@ import { AddAttendeeModal } from "../../src/attendees/AddAttendeeModal.js";
 import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import { setPreferredLocale, setPreferredTimeFormat } from "../../src/utils/locale-store.js";
 import { deferred } from "../test-utils.js";
+import { bitwardenTreatsAsSearchField } from "../checkin/bitwardenSearchField.js";
 import { ANSWER_TYPE_FIELDS, answerField } from "./answerTypeFixtures.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -627,6 +628,12 @@ describe("AddAttendeeModal", () => {
     expect(email.autocomplete).toBe("off");
     expect(email.getAttribute("data-1p-ignore")).toBe("true");
     expect(email.getAttribute("data-lpignore")).toBe("true");
+    // Bitwarden honours that opt-out only for a user who switched it on, so the details of a person read as a search box to its own test,
+    // without the word "email" in the name, which Safari's Hide My Email reads.
+    for (const label of ["Email *", "First name *", "Last name *", "Company"]) {
+      expect(bitwardenTreatsAsSearchField(screen.getByLabelText(label) as HTMLInputElement), label).toBe(true);
+    }
+    expect(email.name).not.toMatch(/mail/i);
 
     expect(screen.getByText(/enter their email, first name, and last name/i)).toBeTruthy();
 

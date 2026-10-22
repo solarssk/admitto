@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CustomDataFieldInput } from "../../src/attendees/CustomDataFieldInput.js";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
 import { setPreferredLocale, setPreferredTimeFormat } from "../../src/utils/locale-store.js";
+import { bitwardenTreatsAsSearchField } from "../checkin/bitwardenSearchField.js";
 
 const baseField = {
   id: "field-1",
@@ -278,6 +279,8 @@ describe("CustomDataFieldInput: phone", () => {
     expect(box().autocomplete).toBe("off");
     expect(box().maxLength).toBe(40);
     expect(screen.getByText("A phone number with 3 to 15 digits.")).toBeTruthy();
+    // The number of a person reads as a search box to Bitwarden, which would offer the staff member's own phone otherwise.
+    expect(bitwardenTreatsAsSearchField(box())).toBe(true);
   });
 
   it("answers with the code and the digits of the number once a country is picked, and shows the number as it was typed", () => {
@@ -355,6 +358,7 @@ describe("CustomDataFieldInput: phone", () => {
     const onChange = renderInput({ ...mobile, rules: { digits_only: true, max_length: 9, example: "600100200" } });
     expect(screen.queryByRole("button", { name: /country code/ })).toBeNull();
     expect(box().type).toBe("tel");
+    expect(bitwardenTreatsAsSearchField(box())).toBe(true);
     expect(screen.getByText("A phone number with 3 to 15 digits, digits only, at most 9 characters, for example 600100200.")).toBeTruthy();
     fireEvent.change(box(), { target: { value: "+48 600 100" } });
     expect(onChange).toHaveBeenLastCalledWith("+48 600 100");

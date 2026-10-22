@@ -16,7 +16,7 @@ import { SlowNote } from "../components/SlowNote.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
-import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { attendeeFieldAttrs } from "../utils/no-autofill.js";
 import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
 import { SectionLabel } from "./SectionLabel.js";
 import "./add-attendee-modal.css";
@@ -357,7 +357,7 @@ export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCrea
                 setEmail(e.target.value);
                 setError(null);
               }}
-              {...NO_AUTOFILL_PROPS}
+              {...attendeeFieldAttrs("add-attendee-contact")}
             />
           </div>
           <Input
@@ -370,7 +370,7 @@ export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCrea
               setFirstName(e.target.value);
               setError(null);
             }}
-            {...NO_AUTOFILL_PROPS}
+            {...attendeeFieldAttrs("add-attendee-given")}
           />
           <Input
             label="Last name *"
@@ -382,7 +382,7 @@ export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCrea
               setLastName(e.target.value);
               setError(null);
             }}
-            {...NO_AUTOFILL_PROPS}
+            {...attendeeFieldAttrs("add-attendee-family")}
           />
           <Input
             label="Company"
@@ -393,6 +393,7 @@ export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCrea
               setCompany(e.target.value);
               setError(null);
             }}
+            {...attendeeFieldAttrs("add-attendee-org")}
           />
           <Input
             label="Department"

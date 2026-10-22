@@ -32,6 +32,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Save an attendee's email in lower case when staff add or edit it, and refuse an address that differs from another's only in capitals ([#1781](https://github.com/solarssk/admitto/pull/1781))
 - Fix saving a single choice field when only its label or Required switch changed, which failed with "Check the form and try again" ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Fix Escape closing a whole dialog, and what was typed in it, together with an open date or time picker ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Keep Bitwarden from offering to fill an attendee's email, name, company and phone with the staff member's own in the Add attendee and Edit attendee forms ([#1784](https://github.com/solarssk/admitto/pull/1784))
 
 ### Security
 

@@ -5,7 +5,7 @@ import { DatePicker } from "../components/DatePicker.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { TimeInput } from "../components/TimeInput.js";
-import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
+import { attendeeFieldAttrs } from "../utils/no-autofill.js";
 import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.js";
 import { answerHint, codePointLength, joinDateTime, longTextLimit, splitDateTime } from "./answerFormat.js";
 import { customDataFieldLabel, type CustomDataFieldDef } from "./customData.js";
@@ -136,7 +136,7 @@ function PhoneInput({ field, value, disabled, onChange }: Readonly<CustomDataFie
             const next = text.startsWith("+") ? splitPhoneForPicker(text) : { dialCode: typed.dialCode, nationalNumber: text };
             change(next.dialCode, next.nationalNumber);
           }}
-          {...NO_AUTOFILL_PROPS}
+          {...attendeeFieldAttrs(fieldId)}
         />
       </div>
       {hint ? (
@@ -168,8 +168,8 @@ function LineInput({ field, value, disabled, onChange }: Readonly<CustomDataFiel
       type={isPhone ? "tel" : undefined}
       inputMode={lineInputMode(field)}
       maxLength={isPhone ? CONTACT_PHONE_MAX_LENGTH : undefined}
-      autoComplete={isPhone ? "off" : undefined}
       onChange={(e) => onChange(isPhone ? sanitizeContactPhoneInput(e.target.value, true) : e.target.value)}
+      {...(isPhone ? attendeeFieldAttrs(`custom-field-${field.source_field}`) : {})}
     />
   );
 }

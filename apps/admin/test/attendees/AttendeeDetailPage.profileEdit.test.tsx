@@ -7,6 +7,7 @@ import { baseAttendeeDetailEvent, makeOrgAdminAssignment, mockMatchMedia, render
 import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
 import { setPreferredLocale, setPreferredTimeFormat } from "../../src/utils/locale-store.js";
 import { ANSWER_TYPE_FIELDS } from "./answerTypeFixtures.js";
+import { bitwardenTreatsAsSearchField } from "../checkin/bitwardenSearchField.js";
 
 const updateAttendee = vi.fn();
 const resendTicket = vi.fn();
@@ -1175,6 +1176,16 @@ describe("AttendeeDetailPage: the answer types of a custom field", { timeout: 30
     expect(follows(ticketType, screen.getByLabelText("Email"))).toBe(true);
     expect(follows(screen.getByLabelText("Department"), label)).toBe(true);
     expect(follows(label, screen.getByLabelText("Abstract"))).toBe(true);
+  });
+
+  it("keeps the details of the person in the edit form out of Bitwarden's inline menu, which honours the opt-out only for a user who asked", async () => {
+    await openPage();
+    openEdit();
+    for (const label of ["Email", "First name", "Last name", "Company", "Mobile"]) {
+      expect(bitwardenTreatsAsSearchField(screen.getByLabelText(label) as HTMLInputElement), label).toBe(true);
+    }
+    // The word "email" stays out of the name, since Safari's Hide My Email reads it.
+    expect((screen.getByLabelText("Email") as HTMLInputElement).name).not.toMatch(/mail/i);
   });
 
   it("shows the avatar of the attendee before the name in the header: the initials for now, hidden from assistive technology", async () => {
