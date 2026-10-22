@@ -55,7 +55,7 @@ describe("the product stylesheet of the guest pages is the product's own CSS", (
       "--font-sans:",
       "--control-h: 2.25rem;",
       "--shadow-md:",
-      ".at-input, .at-select {",
+      ".at-input, .at-select, .at-textarea {",
       ".at-check__box {",
       ".at-btn--primary {",
       ".at-notice--error {",
@@ -68,7 +68,7 @@ describe("the product stylesheet of the guest pages is the product's own CSS", (
 
   it("leaves out the component rules the form does not use (the element rules are copied whole)", () => {
     const components = GUEST_PAGE_PRODUCT_CSS.slice(GUEST_PAGE_PRODUCT_CSS.indexOf("/* components.css"));
-    for (const unwanted of [".at-badge", ".at-card", ".at-tab", ".at-switch", ".at-password", ".at-iconbtn", ".at-textarea", ".at-pageheader"]) {
+    for (const unwanted of [".at-badge", ".at-card", ".at-tab", ".at-switch", ".at-password", ".at-iconbtn", ".at-pageheader"]) {
       expect(components, unwanted).not.toContain(unwanted);
     }
   });
@@ -100,9 +100,9 @@ describe("every class of the product the pages use has its rules in the styleshe
 
   it("lists the classes the page script adds, and the stylesheet has a rule for each", () => {
     const added = new Set([...REGISTRATION_FORM_SCRIPT.matchAll(/classList\.(?:add|remove|toggle)\("([\w-]+)"/g)].map((match) => match[1]!));
-    expect([...added].sort()).toEqual(["at-input--invalid", "at-select--invalid", "has-error"]);
+    expect([...added].sort()).toEqual(["at-input--invalid", "at-select--invalid", "at-textarea--invalid", "has-error"]);
     for (const name of [...added].filter((n) => n.startsWith("at-"))) expect(GUEST_PAGE_COMPONENT_CLASSES, name).toContain(name);
-    expect(REGISTRATION_PAGE_CSS).toContain(".has-error .reg-slot__err { display: flex; }");
+    expect(REGISTRATION_PAGE_CSS).toContain(".has-error .reg-slot__err { visibility: visible; }");
   });
 
   it("has a rule in the stylesheet for every other class the pages use, so a misspelt class name is caught", () => {
@@ -141,7 +141,7 @@ describe("buildGuestPageProductCss, on a stylesheet written for the test", () =>
   });
 
   it("keeps the selectors of a list that use only listed classes", () => {
-    const lines = build(".at-input, .at-textarea, .at-select { x: 1; }");
+    const lines = build(".at-input, .at-switch, .at-select { x: 1; }");
     expect(lines).toContain(".at-input, .at-select { x: 1; }");
   });
 
@@ -160,9 +160,9 @@ describe("buildGuestPageProductCss, on a stylesheet written for the test", () =>
   });
 
   it("copies the rules of a media block that are wanted, with the block, and drops a block with none", () => {
-    const lines = build("@media (pointer: coarse) { .at-input { a: 1; } .at-textarea { b: 2; } } @media print { .at-card { c: 3; } }");
+    const lines = build("@media (pointer: coarse) { .at-input { a: 1; } .at-switch { b: 2; } } @media print { .at-card { c: 3; } }");
     expect(lines).toEqual(expect.arrayContaining(["@media (pointer: coarse) {", "  .at-input { a: 1; }", "}"]));
-    expect(lines.join("\n")).not.toContain("textarea");
+    expect(lines.join("\n")).not.toContain("switch");
     expect(lines.join("\n")).not.toContain("print");
   });
 
@@ -246,7 +246,7 @@ describe("the colours of the form, by the tokens, read well", () => {
   });
 
   it("has a focus ring that is not the only difference: the field's border changes too", () => {
-    expect(GUEST_PAGE_PRODUCT_CSS).toContain(".at-input:focus, .at-select:focus { outline: none; border-color: var(--border-focus);");
+    expect(GUEST_PAGE_PRODUCT_CSS).toContain(".at-input:focus, .at-select:focus, .at-textarea:focus { outline: none; border-color: var(--border-focus);");
   });
 
   it("is the same contrast function WCAG gives: black on white is 21, a colour on itself is 1", () => {
@@ -368,5 +368,45 @@ describe("the whole stylesheet", () => {
     expect(css).toContain("@font-face");
     expect(css).not.toMatch(/url\(\s*["']?https?:/);
     expect(css).not.toContain("@import");
+  });
+});
+
+describe("the long text box and the message slot", () => {
+  const productRules = GUEST_PAGE_PRODUCT_CSS.split("\n");
+
+  it("carries the product's textarea rules, including the 16 px on a touch device that stops the zoom on focus", () => {
+    expect(productRules.some((line) => line.startsWith(".at-textarea { height: auto;"))).toBe(true);
+    expect(productRules).toContain("  .at-textarea { font-size: 16px; }");
+    expect(productRules.some((line) => line.startsWith(".at-input--invalid, .at-textarea--invalid, .at-select--invalid {"))).toBe(true);
+  });
+
+  it("sets the box in the font of the other fields, not the product's code font, and keeps 16 px on a touch device", () => {
+    expect(REGISTRATION_PAGE_CSS).toContain(".reg-form .at-textarea { font-family: var(--font-sans); font-size: var(--fs-body); }");
+    expect(REGISTRATION_PAGE_CSS).toContain("@media (pointer: coarse) {\n  .reg-form .at-textarea { font-size: 16px; }\n}");
+    const all = buildRegistrationPageStyles();
+    // The form's touch rule is the later one, so it is the one that wins, and it must not undo the 16 px.
+    expect(all.lastIndexOf(".reg-form .at-textarea { font-size: 16px; }")).toBeGreaterThan(all.indexOf(".reg-form .at-textarea { font-family"));
+  });
+
+  it("takes a date and a date and time input out of Mobile Safari's own layout, which cuts off the edges of a box it sizes itself", () => {
+    expect(REGISTRATION_PAGE_CSS).toContain(
+      '.reg-form .at-input[type="date"], .reg-form .at-input[type="datetime-local"] { -webkit-appearance: none; appearance: none; }',
+    );
+    // ... and sets the date it shows from the left, like the text of every other field.
+    expect(REGISTRATION_PAGE_CSS).toContain(".reg-form .at-input::-webkit-date-and-time-value { text-align: left; }");
+  });
+
+  it("puts the note and the error of a slot in one cell, so it is as tall as the taller and an error moves nothing", () => {
+    for (const rule of [
+      ".reg-slot { display: grid;",
+      ".reg-slot > * { grid-area: 1 / 1; }",
+      ".reg-slot__err { display: flex; visibility: hidden;",
+      ".has-error .reg-slot__hint { visibility: hidden; }",
+      ".has-error .reg-slot__err { visibility: visible; }",
+    ]) {
+      expect(REGISTRATION_PAGE_CSS, rule).toContain(rule);
+    }
+    // `display: none` would take the hidden one out of the cell, and the slot would change height with the error.
+    expect(REGISTRATION_PAGE_CSS).not.toMatch(/\.reg-slot__(hint|err)[^{]*\{[^}]*display: none/);
   });
 });

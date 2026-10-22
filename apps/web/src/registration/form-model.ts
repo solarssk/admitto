@@ -12,7 +12,7 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { resolveEventContactVars } from "@admitto/mail-templates";
-import { eventEndsAtUtc } from "@admitto/shared";
+import { eventCustomFieldRulesMaxLength, eventEndsAtUtc, type EventCustomFieldRules } from "@admitto/shared";
 import {
   formatDate,
   formatEventHoursRange,
@@ -43,6 +43,9 @@ export interface FormQuestion {
   type: FormQuestionType;
   /** The choices of a `select`; empty for the other types. */
   options: readonly string[];
+  /** The format rules of a `text`, `long_text` or `phone` question (null for the others, which take
+   * none, and for a question without any). The page shows them as hints only: the server decides. */
+  rules: EventCustomFieldRules | null;
 }
 
 /** An extra consent the event asks for: its own checkbox, labelled with its title. */
@@ -67,6 +70,9 @@ export interface FormEvent {
   venue: string | null;
   /** The event's logo, else the organisation's. */
   logoUrl: string | null;
+  /** The IANA time zone the event's clock times are in (UTC when none is saved): a guest's date and
+   * time answer is read in it. */
+  timezone: string;
 }
 
 export interface RegistrationFormModel {
@@ -139,6 +145,7 @@ function toFormEvent(row: EventRow): FormEvent {
     when: whenOf(row),
     venue: location?.venue_name?.trim() || location?.formatted_address?.trim() || null,
     logoUrl: resolveTicketLogoUrl(row),
+    timezone: row.timezone || "UTC",
   };
 }
 
@@ -147,9 +154,15 @@ async function loadContact(db: PrismaClient, eventId: string): Promise<FormConta
   return vars.contact_email ? { name: vars.contact_name, email: vars.contact_email } : null;
 }
 
+/** The format rules the page shows for a question: only the types that take rules have any (the server
+ * ignores a rule stored on another type, so the page must not announce it). */
+function hintRules(type: FormQuestionType, field: RegistrantFormField): EventCustomFieldRules | null {
+  return eventCustomFieldRulesMaxLength(type) === null ? null : (field.rules ?? null);
+}
+
 /** The questions to draw, or null when a required one cannot be drawn. A form nobody can submit is
- * worse than a closed one: a required question of a type the page does not know yet (or a choice with
- * no choices) fails every submission on the server. */
+ * worse than a closed one: a required question of a type the page does not know (a type that
+ * `canDrawQuestion` refuses) or a choice with no choices fails every submission on the server. */
 function drawQuestions(fields: readonly RegistrantFormField[]): FormQuestion[] | null {
   const questions: FormQuestion[] = [];
   for (const field of pickRegistrantFormFields(fields)) {
@@ -163,6 +176,7 @@ function drawQuestions(fields: readonly RegistrantFormField[]): FormQuestion[] |
         required: field.required === true,
         type,
         options: type === "select" ? options : [],
+        rules: hintRules(type, field),
       });
     } else if (field.required) {
       return null;

@@ -34,6 +34,8 @@ export const GUEST_PAGE_COMPONENT_CLASSES: readonly string[] = [
   "at-input--invalid",
   "at-select",
   "at-select--invalid",
+  "at-textarea",
+  "at-textarea--invalid",
   "at-inputgroup",
   "at-inputgroup__icon",
   "at-check",

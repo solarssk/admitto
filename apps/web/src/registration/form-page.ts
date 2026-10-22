@@ -30,12 +30,15 @@ export interface RegistrationPageOptions {
 /** Cloudflare's widget script. Its origin is the one the policy allows when Turnstile is on. */
 const TURNSTILE_SCRIPT_URL = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
+/** Both pages tell iOS not to turn what looks like a phone number into a call link: an organiser's example of a phone
+ * answer ("For example: +1 555 0100") would become one, and so would any other run of digits in a note. */
 function renderDocument(title: string, content: string, scripts: string, theme?: BrandingTheme | null): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="format-detection" content="telephone=no">
   <title>${esc(title)}</title>
   ${renderAdmittoFaviconLink()}
   <style>${buildRegistrationPageStyles(theme)}</style>
@@ -107,7 +110,7 @@ function renderFoot(contact: FormContact | null): string {
 export function renderRegistrationFormPage(model: RegistrationFormModel, options: RegistrationPageOptions): string {
   const form = `<form class="reg-form" id="reg-form" method="post" action="/r/${esc(model.event.slug)}" novalidate data-hide-when-done>
       <p class="reg-legend"><span class="reg-req" aria-hidden="true">*</span> Required</p>
-      ${renderPersonalFields(model)}${renderQuestions(model.questions)}${renderAgreement(model)}
+      ${renderPersonalFields(model)}${renderQuestions(model.questions, { timeZone: model.event.timezone })}${renderAgreement(model)}
     </form>`;
   const content = [
     renderHeader(model.event),

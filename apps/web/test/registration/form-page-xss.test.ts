@@ -41,12 +41,16 @@ function injected(html: string): string[] {
 
 describe.each(PAYLOADS)("organiser text %j on the form", (payload) => {
   const model = formModel({
-    event: { slug: "northwind-summit", title: payload, when: payload, venue: payload, logoUrl: null },
+    event: { slug: "northwind-summit", title: payload, when: payload, venue: payload, logoUrl: null, timezone: payload },
     questions: [
       question({ key: "k_select", label: payload, type: "select", options: [payload, `${payload} 2`], description: payload, required: true }),
       question({ key: payload, label: `${payload} flag`, type: "boolean", description: payload }),
       question({ key: "k_text", label: payload, type: "text", description: payload }),
       question({ key: "k_choice", label: payload, type: "boolean", required: true }),
+      question({ key: "k_long", label: payload, type: "long_text", description: payload, rules: { example: payload } }),
+      question({ key: payload, label: payload, type: "date", description: payload }),
+      question({ key: "k_datetime", label: payload, type: "datetime", description: payload }),
+      question({ key: `${payload} phone`, label: payload, type: "phone", description: payload, rules: { digits_only: true, min_length: 3, example: payload } }),
     ],
     consents: [{ key: payload, title: payload, path: `/legal/x/consent-${payload}` }],
     contact: { name: payload, email: payload },
@@ -81,6 +85,21 @@ describe.each(PAYLOADS)("organiser text %j on the form", (payload) => {
     expect(doc.querySelector("label.reg-opt small").textContent).toBe(payload);
   });
 
+  it("prints the label, the note, the example and the time zone of a long text, a date, a time and a phone number as text", () => {
+    const hint = (selector: string) => doc.querySelector(`${selector} .reg-slot__hint`).textContent;
+    const label = (selector: string) => doc.querySelector(`${selector} .at-label`).textContent;
+    expect(label("[data-custom=k_long]")).toBe(payload);
+    expect(hint("[data-custom=k_long]")).toBe(`${payload}\nFor example: ${payload}`);
+    expect(hint("[data-custom=k_datetime]")).toBe(`${payload}\nTime in the event's time zone (${payload}).`);
+    const date = doc.querySelectorAll("input[type=date]");
+    expect(date).toHaveLength(1);
+    expect(date[0].closest(".at-field").getAttribute("data-custom")).toBe(payload);
+    expect(date[0].closest(".at-field").querySelector(".reg-slot__hint").textContent).toBe(payload);
+    const phone = doc.querySelector("input[type=tel]").closest(".at-field");
+    expect(phone.getAttribute("data-custom")).toBe(`${payload} phone`);
+    expect(phone.querySelector(".reg-slot__hint").textContent).toBe(`${payload}\nAt least 3 digits. For example: ${payload}`);
+  });
+
   it("prints a consent's title as text and its key and link as attributes", () => {
     const consent = doc.querySelector("input[data-consent]");
     expect(consent.getAttribute("data-consent")).toBe(payload);
@@ -96,7 +115,10 @@ describe.each(PAYLOADS)("organiser text %j on the form", (payload) => {
 
 describe.each(PAYLOADS)("organiser text %j on the closed page", (payload) => {
   const html = renderRegistrationClosedPage(
-    closedModel({ event: { slug: "x", title: payload, when: payload, venue: payload, logoUrl: null }, contact: { name: payload, email: payload } }),
+    closedModel({
+      event: { slug: "x", title: payload, when: payload, venue: payload, logoUrl: null, timezone: payload },
+      contact: { name: payload, email: payload },
+    }),
   );
 
   it("creates nothing and has no script at all", () => {

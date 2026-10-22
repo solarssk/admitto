@@ -1,8 +1,9 @@
+import { buildRegistrantCustomData, type RegistrantFormField } from "@admitto/tickets";
 import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import { renderRegistrationFormPage } from "../../src/registration/form-page.js";
 import { REGISTRATION_FORM_SCRIPT } from "../../src/registration/form-script.js";
-import { formModel, question, type Dom } from "../helpers/registration-form-fixtures.js";
+import { formModel, question, requiredNewKinds, type Dom } from "../helpers/registration-form-fixtures.js";
 
 const NONCE = "bm9uY2U=";
 const PAGE_URL = "https://tickets.example.com/r/northwind-summit";
@@ -315,6 +316,241 @@ describe("what is sent", () => {
     await until(() => expect(page.doc.getElementById("reg-done").hidden).toBe(false));
     expect(button.getAttribute("aria-busy")).toBeNull();
     expect(page.doc.getElementById("reg-submit-label").textContent).toBe("Send registration");
+  });
+});
+
+describe("a long text, a date, a date and time and a phone number", () => {
+  // In the default form they are the 6th to the 9th question (f-q5 to f-q8); `requiredNewKinds` has them as f-q0 to f-q3.
+  const kinds = [
+    { type: "long_text", id: "f-q5", key: "notes", typed: "  Line one\nLine two  ", sent: "Line one\nLine two", stored: "Line one\nLine two" },
+    { type: "date", id: "f-q6", key: "arrival_date", typed: "2027-05-13", sent: "2027-05-13", stored: "2027-05-13" },
+    { type: "datetime", id: "f-q7", key: "arrival_time", typed: "2027-05-13T18:30", sent: "2027-05-13T18:30", stored: "2027-05-13T18:30" },
+    { type: "phone", id: "f-q8", key: "mobile", typed: " +1 (555) 010-0 ", sent: "+1 (555) 010-0", stored: "+15550100" },
+  ];
+
+  it.each(kinds)("sends $type as it was typed, trimmed, under its key", async ({ id, key, typed, sent }) => {
+    const page = boot();
+    fillValid(page);
+    type(page, id, typed);
+    send(page);
+    await until(() => expect(page.fetchMock).toHaveBeenCalledTimes(1));
+    expect(body(page).custom_data[key]).toBe(sent);
+  });
+
+  it("sends all four together, and the server takes what the page sent, in its canonical form", async () => {
+    const page = boot();
+    fillValid(page);
+    for (const { id, typed } of kinds) type(page, id, typed);
+    send(page);
+    await until(() => expect(page.fetchMock).toHaveBeenCalledTimes(1));
+    const answers = body(page).custom_data;
+    const fields: RegistrantFormField[] = kinds.map(({ type: fieldType, key }) => ({
+      label: key,
+      source_field: key,
+      type: fieldType as RegistrantFormField["type"],
+      show_on_form: true,
+    }));
+    const stored = buildRegistrantCustomData(fields, answers);
+    for (const { key, stored: value } of kinds) expect(stored?.[key], key).toBe(value);
+  });
+
+  it("keeps the line breaks of a long text, and an empty line between two paragraphs", async () => {
+    const page = boot();
+    fillValid(page);
+    type(page, "f-q5", "one\n\ntwo\nthree");
+    send(page);
+    await until(() => expect(page.fetchMock).toHaveBeenCalledTimes(1));
+    expect(body(page).custom_data.notes).toBe("one\n\ntwo\nthree");
+  });
+
+  it("sends a long text of 1000 emoji whole: the server counts characters, not the UTF-16 units of the browser", async () => {
+    const page = boot();
+    fillValid(page);
+    const emoji = "\u{1F600}".repeat(1000);
+    type(page, "f-q5", emoji);
+    send(page);
+    await until(() => expect(page.fetchMock).toHaveBeenCalledTimes(1));
+    expect(body(page).custom_data.notes).toBe(emoji);
+    expect([...body(page).custom_data.notes]).toHaveLength(1000);
+  });
+
+  it("leaves out an answer that was not given, and does not judge a format: that is the server's", async () => {
+    const page = boot();
+    fillValid(page);
+    type(page, "f-q8", "not a phone");
+    type(page, "f-q6", "");
+    send(page);
+    await until(() => expect(page.fetchMock).toHaveBeenCalledTimes(1));
+    const answers = body(page).custom_data;
+    expect(answers.mobile).toBe("not a phone");
+    for (const key of ["notes", "arrival_date", "arrival_time"]) expect(Object.keys(answers)).not.toContain(key);
+  });
+
+  describe("when a required one is left empty", () => {
+    function empty() {
+      const page = boot({ model: { questions: requiredNewKinds() } });
+      type(page, "f-first_name", "Anna");
+      type(page, "f-last_name", "Kowalska");
+      type(page, "f-email", "anna@contoso.example");
+      tick(page, "f-terms");
+      solve(page);
+      return page;
+    }
+
+    it("sends nothing, says what is missing in the slot under each, and focuses the first", () => {
+      const page = empty();
+      send(page);
+      expect(page.fetchMock).not.toHaveBeenCalled();
+      expect(invalidFields(page)).toEqual(["custom_data.why", "custom_data.checkin", "custom_data.flight", "custom_data.extension"]);
+      expect(slotText(page, "custom_data.why")).toBe("Answer this question.");
+      expect(slotText(page, "custom_data.checkin")).toBe("Enter a date.");
+      expect(slotText(page, "custom_data.flight")).toBe("Enter a date and time.");
+      expect(slotText(page, "custom_data.extension")).toBe("Enter a phone number.");
+      expect(page.doc.activeElement.id).toBe("f-q0");
+      expect(page.doc.getElementById("reg-error-text").textContent).toBe("4 fields need your attention. They are marked in red.");
+    });
+
+    it("marks a textarea with its own class and the others with the input's, and says so to assistive technology", () => {
+      const page = empty();
+      send(page);
+      expect(page.doc.getElementById("f-q0").classList.contains("at-textarea--invalid")).toBe(true);
+      expect(page.doc.getElementById("f-q0").classList.contains("at-input--invalid")).toBe(false);
+      for (const id of ["f-q1", "f-q2", "f-q3"]) {
+        expect(page.doc.getElementById(id).classList.contains("at-input--invalid"), id).toBe(true);
+      }
+      for (const id of ["f-q0", "f-q1", "f-q2", "f-q3"]) expect(page.doc.getElementById(id).getAttribute("aria-invalid"), id).toBe("true");
+    });
+
+    it("takes an answer made of spaces and line breaks for none", () => {
+      const page = empty();
+      type(page, "f-q0", " \n  \n ");
+      type(page, "f-q3", "   ");
+      send(page);
+      expect(invalidFields(page)).toContain("custom_data.why");
+      expect(invalidFields(page)).toContain("custom_data.extension");
+    });
+
+    it("clears the error of a field once the guest edits it, and the class with it", () => {
+      const page = empty();
+      send(page);
+      type(page, "f-q0", "Because");
+      expect(invalidFields(page)).not.toContain("custom_data.why");
+      expect(slotText(page, "custom_data.why")).toBe("");
+      expect(page.doc.getElementById("f-q0").classList.contains("at-textarea--invalid")).toBe(false);
+      expect(page.doc.getElementById("f-q0").hasAttribute("aria-invalid")).toBe(false);
+    });
+
+    it("lets the form go once each is answered", async () => {
+      const page = empty();
+      type(page, "f-q0", "A reason of more than twenty characters");
+      type(page, "f-q1", "2027-05-13");
+      type(page, "f-q2", "2027-05-15T07:45");
+      type(page, "f-q3", "1234");
+      send(page);
+      await until(() => expect(page.fetchMock).toHaveBeenCalledTimes(1));
+      expect(body(page).custom_data).toEqual({
+        why: "A reason of more than twenty characters",
+        checkin: "2027-05-13",
+        flight: "2027-05-15T07:45",
+        extension: "1234",
+      });
+    });
+  });
+
+  describe("when the browser cannot read a date or a time the guest began", () => {
+    /** A date input in a real browser reads as empty, with `badInput` set, while a part of it is still unfilled. */
+    function unfinished(page: Page, id: string) {
+      Object.defineProperty(page.doc.getElementById(id), "validity", { configurable: true, get: () => ({ badInput: true }) });
+    }
+
+    it("does not send the form, and says the date is not valid, also for one that is not required", () => {
+      const page = boot();
+      fillValid(page);
+      unfinished(page, "f-q6");
+      unfinished(page, "f-q7");
+      send(page);
+      expect(page.fetchMock).not.toHaveBeenCalled();
+      expect(invalidFields(page)).toEqual(["custom_data.arrival_date", "custom_data.arrival_time"]);
+      expect(slotText(page, "custom_data.arrival_date")).toBe("Enter a valid date.");
+      expect(slotText(page, "custom_data.arrival_time")).toBe("Enter a valid date and time.");
+    });
+
+    it("says the same of a required one, not that it is missing", () => {
+      const page = boot({ model: { questions: requiredNewKinds() } });
+      unfinished(page, "f-q1");
+      send(page);
+      expect(slotText(page, "custom_data.checkin")).toBe("Enter a valid date.");
+    });
+
+    it("lets a date that is empty and was never started go, as no answer", async () => {
+      const page = boot();
+      fillValid(page);
+      send(page);
+      await until(() => expect(page.fetchMock).toHaveBeenCalledTimes(1));
+      expect(Object.keys(body(page).custom_data)).not.toContain("arrival_date");
+    });
+  });
+
+  describe("when the server refuses an answer", () => {
+    const refuse = (...keys: string[]) => ({
+      status: 422,
+      body: { errors: Object.fromEntries(keys.map((key) => [`custom_data.${key}`, `<b>SERVER</b> says no to ${key}`])) },
+    });
+
+    it("shows the page's own sentence for each, and never the server's text, which could echo what the guest typed", async () => {
+      const page = boot({ model: { questions: requiredNewKinds() }, fetchMock: stubFetch(refuse("why", "checkin", "flight", "extension")) });
+      type(page, "f-first_name", "Anna");
+      type(page, "f-last_name", "Kowalska");
+      type(page, "f-email", "anna@contoso.example");
+      type(page, "f-q0", "A reason of more than twenty characters");
+      type(page, "f-q1", "2027-05-13");
+      type(page, "f-q2", "2027-05-15T07:45");
+      type(page, "f-q3", "12");
+      tick(page, "f-terms");
+      solve(page);
+      send(page);
+      await until(() => expect(invalidFields(page)).toHaveLength(4));
+      expect(slotText(page, "custom_data.why")).toBe("Check your answer. Use 20 to 500 characters.");
+      expect(slotText(page, "custom_data.checkin")).toBe("Enter a valid date.");
+      expect(slotText(page, "custom_data.flight")).toBe("Enter a valid date and time.");
+      expect(slotText(page, "custom_data.extension")).toBe("Enter a valid phone number. Use 3 to 6 digits.");
+      expect(page.doc.body.textContent).not.toContain("SERVER");
+      expect(page.doc.querySelector("[data-field] b")).toBeNull();
+      expect(page.doc.activeElement.id).toBe("f-q0");
+      expect(page.doc.getElementById("f-q0").classList.contains("at-textarea--invalid")).toBe(true);
+      expect(page.doc.getElementById("f-q1").classList.contains("at-input--invalid")).toBe(true);
+    });
+
+    it("keeps what the guest typed, and gives the form back", async () => {
+      const page = boot({ fetchMock: stubFetch(refuse("notes", "mobile")) });
+      fillValid(page);
+      type(page, "f-q5", "Two\nlines");
+      type(page, "f-q8", "12");
+      send(page);
+      await until(() => expect(invalidFields(page)).toEqual(["custom_data.notes", "custom_data.mobile"]));
+      expect(page.doc.getElementById("f-q5").value).toBe("Two\nlines");
+      expect(page.doc.getElementById("f-q8").value).toBe("12");
+      expect(slotText(page, "custom_data.notes")).toBe("Check your answer. Use up to 1000 characters.");
+      expect(slotText(page, "custom_data.mobile")).toBe("Enter a valid phone number.");
+      expect(page.doc.getElementById("reg-submit").disabled).toBe(false);
+    });
+
+    it("shows the server's text, as text, for a short text, as it always did", async () => {
+      const page = boot({ fetchMock: stubFetch({ status: 422, body: { errors: { "custom_data.plate": "<b>Not a plate</b>" } } }) });
+      fillValid(page);
+      send(page);
+      await until(() => expect(invalidFields(page)).toEqual(["custom_data.plate"]));
+      expect(slotText(page, "custom_data.plate")).toBe("<b>Not a plate</b>");
+      expect(page.doc.querySelector("[data-field='custom_data.plate'] b")).toBeNull();
+    });
+
+    it("answers with the general message when the only errors it names are for fields that are not on the page", async () => {
+      const page = boot({ fetchMock: stubFetch(refuse("nothing_like_this")) });
+      fillValid(page);
+      send(page);
+      await until(() => expect(page.doc.getElementById("reg-error").hidden).toBe(false));
+      expect(page.doc.getElementById("reg-error-text").textContent).toBe("Something went wrong. Check your details and try again.");
+    });
   });
 });
 
