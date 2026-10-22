@@ -106,6 +106,18 @@ export function contrastRatio(a: string, b: string): number {
   return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
 }
 
+/** `hex` (`#rrggbb`) moved towards white by `amount`, 0 to 1. */
+function towardWhite(hex: string, amount: number): string {
+  const value = Number.parseInt(hex.slice(1), 16);
+  const channel = (shift: number): string => {
+    const own = (value >> shift) & 255;
+    return Math.round(own + (255 - own) * amount)
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${channel(16)}${channel(8)}${channel(0)}`;
+}
+
 const WHITE = "#ffffff";
 /** Dark ink for a light brand colour: the product's own `--at-ink`. */
 const DARK_INK = "#1d273b";
@@ -121,12 +133,16 @@ const MIN_TEXT_CONTRAST = 4.5;
  * product's dark ink instead, and black when the dark ink does not reach AA either. White reaches AA
  * up to a relative luminance of 0.183 and black from 0.175, so one of the three always does. Empty
  * when white is fine, which is the default blue.
+ *
+ * The product darkens a button under the pointer and under a press (`--primary-hover`, `--primary-active`, by 12 and
+ * 22 percent). That helps white text and hurts dark text, so with dark text the two states get lighter by the same
+ * amounts, and the text keeps its contrast in every state.
  */
 export function inkOnPrimaryRule(theme?: BrandingTheme | null): string {
   const primary = resolveThemeVars({ ...theme, primary: theme?.ticket_primary ?? theme?.primary })["--primary"];
   if (contrastRatio(primary, WHITE) >= MIN_TEXT_CONTRAST) return "";
   const ink = contrastRatio(primary, DARK_INK) >= MIN_TEXT_CONTRAST ? DARK_INK : BLACK;
-  return `:root { --text-on-primary: ${ink}; }`;
+  return `:root { --text-on-primary: ${ink}; --primary-hover: ${towardWhite(primary, 0.12)}; --primary-active: ${towardWhite(primary, 0.22)}; }`;
 }
 
 /** The whole stylesheet of a guest page, for the instance branding `theme`. */

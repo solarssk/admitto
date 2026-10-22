@@ -10,6 +10,7 @@ import {
   contrastRatio,
   inkOnPrimaryRule,
 } from "../../src/registration/form-style.js";
+import { resolveThemeVars } from "@admitto/ui";
 import { GUEST_PAGE_PRODUCT_CSS } from "../../src/registration/guest-page-css.generated.js";
 import {
   GUEST_PAGE_COMPONENT_CLASSES,
@@ -254,6 +255,17 @@ describe("the colours of the form, by the tokens, read well", () => {
   });
 });
 
+/** The colours a primary button is painted in, and its text, as a page with this accent ends up with them. */
+function buttonColours(primary: string) {
+  const rule = inkOnPrimaryRule({ primary });
+  const set = Object.fromEntries([...rule.matchAll(/(--[a-z-]+): (#[0-9a-f]{6})/g)].map((match) => [match[1]!, match[2]!]));
+  const product = resolveThemeVars({ primary });
+  return {
+    ink: set["--text-on-primary"] ?? "#ffffff",
+    states: [primary, set["--primary-hover"] ?? product["--primary-hover"], set["--primary-active"] ?? product["--primary-active"]],
+  };
+}
+
 describe("the text on the send button, for the organisation's accent colour", () => {
   it("is the product's white on the default blue, and when the accent is dark enough", () => {
     expect(inkOnPrimaryRule()).toBe("");
@@ -265,7 +277,7 @@ describe("the text on the send button, for the organisation's accent colour", ()
   it("is the product's dark ink on a light accent, which white would leave unreadable", () => {
     for (const primary of ["#f5c400", "#ffffff", "#9be15d", "#e6e7e9"]) {
       const rule = inkOnPrimaryRule({ primary });
-      expect(rule, primary).toBe(":root { --text-on-primary: #1d273b; }");
+      expect(rule, primary).toContain("--text-on-primary: #1d273b;");
       expect(contrastRatio(primary, "#1d273b"), primary).toBeGreaterThanOrEqual(4.5);
     }
   });
@@ -274,9 +286,18 @@ describe("the text on the send button, for the organisation's accent colour", ()
     for (const primary of ["#777777", "#3b82f6", "#808080", "#4a90d9"]) {
       expect(contrastRatio(primary, "#ffffff"), `white on ${primary}`).toBeLessThan(4.5);
       expect(contrastRatio(primary, "#1d273b"), `dark ink on ${primary}`).toBeLessThan(4.5);
-      expect(inkOnPrimaryRule({ primary }), primary).toBe(":root { --text-on-primary: #000000; }");
+      expect(inkOnPrimaryRule({ primary }), primary).toContain("--text-on-primary: #000000;");
       expect(contrastRatio(primary, "#000000"), `black on ${primary}`).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  it("lightens the button under the pointer and under a press when the text is dark, so the text keeps its contrast", () => {
+    // The product darkens both states, which is right under white text and takes black below 4.5 to 1 on this grey.
+    expect(inkOnPrimaryRule({ primary: "#777777" })).toBe(
+      ":root { --text-on-primary: #000000; --primary-hover: #878787; --primary-active: #959595; }",
+    );
+    const { ink, states } = buttonColours("#777777");
+    for (const background of states) expect(contrastRatio(background, ink), background).toBeGreaterThanOrEqual(4.5);
   });
 
   it("always gives a text colour that reaches 4.5 to 1, whatever the accent is", () => {
@@ -285,8 +306,11 @@ describe("the text on the send button, for the organisation's accent colour", ()
       for (const g of steps) {
         for (const b of steps) {
           const primary = `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
-          const ink = /--text-on-primary: (#[0-9a-f]{6})/.exec(inkOnPrimaryRule({ primary }))?.[1] ?? "#ffffff";
-          expect(contrastRatio(primary, ink), `${ink} on ${primary}`).toBeGreaterThanOrEqual(4.5);
+          // In every state of the button: at rest, under the pointer and pressed.
+          const { ink, states } = buttonColours(primary);
+          for (const background of states) {
+            expect(contrastRatio(background, ink), `${ink} on ${background} (accent ${primary})`).toBeGreaterThanOrEqual(4.5);
+          }
         }
       }
     }
