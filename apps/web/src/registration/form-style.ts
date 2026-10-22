@@ -41,12 +41,22 @@ export const REGISTRATION_PAGE_CSS = `
 .reg-legend .reg-req { margin: 0; }
 .reg-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
 .reg-form .at-field { min-width: 0; align-content: start; }
-.reg-slot { min-height: 1rem; line-height: 1rem; }
+/* The product's textarea is a code box (monospace). A long answer is prose, so it is set like the other fields. A phone keeps the product's 16 px, which stops the zoom on focus. */
+.reg-form .at-textarea { font-family: var(--font-sans); font-size: var(--fs-body); }
+@media (pointer: coarse) {
+  .reg-form .at-textarea { font-size: 16px; }
+}
+/* Mobile Safari lays a date input out by its own rules unless it is told to drop them: it does not take the product's border-box sizing, so the box is wider than its field and its right and bottom edges are cut off. It also centres the date it shows. */
+.reg-form .at-input[type="date"], .reg-form .at-input[type="datetime-local"] { -webkit-appearance: none; appearance: none; }
+.reg-form .at-input::-webkit-date-and-time-value { text-align: left; }
+/* The note and the error sit in one grid cell, so the slot is as tall as the taller of the two and an error never moves what is below it, whether the note is one line or several. */
+.reg-slot { display: grid; min-height: 1rem; line-height: 1rem; }
+.reg-slot > * { grid-area: 1 / 1; }
 .reg-slot__hint { white-space: pre-line; overflow-wrap: anywhere; }
-.reg-slot__err { display: none; align-items: flex-start; gap: 4px; line-height: 1.25; }
+.reg-slot__err { display: flex; visibility: hidden; align-items: flex-start; gap: 4px; line-height: 1.25; }
 .reg-slot__err .ic { margin-top: 2px; font-size: 13px; }
-.has-error .reg-slot__hint { display: none; }
-.has-error .reg-slot__err { display: flex; }
+.has-error .reg-slot__hint { visibility: hidden; }
+.has-error .reg-slot__err { visibility: visible; }
 .has-error .at-check__box { border-color: var(--status-error); }
 .reg-section { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--border); }
 .reg-section__label { margin: 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }

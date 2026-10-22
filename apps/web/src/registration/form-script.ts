@@ -12,7 +12,9 @@
  *   already under the field. The first problem gets the focus, and a notice with the count is read
  *   out. A form whose terms are not accepted, or whose challenge is not solved, is never sent;
  * - sends the answers as JSON with `fetch` (the contract is in ./form-contract.ts) and shows what the
- *   server says: "Check your inbox", an error under a field, or "Try again in a moment";
+ *   server says: "Check your inbox", an error under a field, or "Try again in a moment". A field that
+ *   carries its own sentence for a refused answer (`data-invalid`: a long text, a date, a time, a phone
+ *   number) shows that sentence and never the server's text;
  * - gives the Turnstile widget its three callbacks and tells the guest when the widget cannot load.
  *
  * Nothing the guest typed is put in an address, and the page has no cookie.
@@ -65,6 +67,7 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     if (!ctl || ctl.tagName === "DIV") return;
     ctl.setAttribute("aria-invalid", "true");
     if (ctl.tagName === "SELECT") ctl.classList.add("at-select--invalid");
+    else if (ctl.tagName === "TEXTAREA") ctl.classList.add("at-textarea--invalid");
     else if (ctl.type !== "checkbox") ctl.classList.add("at-input--invalid");
   }
 
@@ -77,6 +80,7 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     ctl.removeAttribute("aria-invalid");
     ctl.classList.remove("at-input--invalid");
     ctl.classList.remove("at-select--invalid");
+    ctl.classList.remove("at-textarea--invalid");
   }
 
   function clearAll() {
@@ -93,9 +97,16 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     return ctl.value.trim();
   }
 
+  // A date or time the guest began and did not finish reads as empty. Left alone, it would be dropped from what is sent without a word.
+  function unfinished(box) {
+    var ctl = control(box);
+    return !!(ctl && ctl.validity && ctl.validity.badInput);
+  }
+
   function problem(box) {
     var value = valueOf(box);
     var message = box.getAttribute("data-message") || "";
+    if (value === "" && unfinished(box)) return box.getAttribute("data-invalid") || message;
     if (value === "") return box.hasAttribute("data-required") ? message : "";
     if (box.getAttribute("data-kind") === "email" && !EMAIL.test(value)) return message;
     return "";
@@ -130,7 +141,8 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     boxes.forEach(function (box) {
       var key = box.getAttribute("data-field");
       if (Object.prototype.hasOwnProperty.call(errors, key) && typeof errors[key] === "string" && errors[key] !== "") {
-        found.push({ box: box, message: errors[key] });
+        // The field's own sentence when it has one: the server's text for it is not put on the page.
+        found.push({ box: box, message: box.getAttribute("data-invalid") || errors[key] });
       }
     });
     if (found.length === 0) return false;

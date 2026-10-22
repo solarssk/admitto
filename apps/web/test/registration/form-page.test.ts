@@ -1,9 +1,17 @@
-import { REGISTRANT_EMAIL_MAX, REGISTRANT_NAME_MAX, REGISTRANT_TEXT_MAX, normalizeRegistrantText, registrantRawLimit } from "@admitto/tickets";
+import {
+  REGISTRANT_EMAIL_MAX,
+  REGISTRANT_LONG_TEXT_MAX,
+  REGISTRANT_NAME_MAX,
+  REGISTRANT_TEXT_MAX,
+  buildRegistrantCustomData,
+  normalizeRegistrantText,
+  registrantRawLimit,
+} from "@admitto/tickets";
 import { describe, expect, it } from "vitest";
 import { botChallengeCData } from "../../src/registration/bot-challenge.js";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
 import { REGISTRATION_FORM_SCRIPT } from "../../src/registration/form-script.js";
-import { closedModel, documentOf, formModel, question, type Dom } from "../helpers/registration-form-fixtures.js";
+import { closedModel, documentOf, formModel, question, requiredNewKinds, type Dom } from "../helpers/registration-form-fixtures.js";
 
 const NONCE = "bm9uY2UtdmFsdWU=";
 
@@ -30,6 +38,7 @@ describe("the form's structure follows the mockup, with the product's own classe
       ".at-field .at-control > .at-input",
       ".at-field .at-inputgroup > .at-input",
       ".at-field .at-control > .at-select",
+      ".at-field > textarea.at-textarea",
       "label.at-check > input[type=checkbox] + .at-check__box",
       "button.at-btn.at-btn--primary.at-btn--block.at-btn--lg[type=submit]",
       ".at-notice.at-notice--info",
@@ -73,7 +82,7 @@ describe("the organiser's questions", () => {
   it("sit in an Additional details section, in the organiser's order", () => {
     expect(textOf(section?.querySelector(".reg-section__label") ?? null)).toBe("Additional details");
     const keys = [...section!.querySelectorAll("[data-custom]")].map((el: Dom) => el.getAttribute("data-custom"));
-    expect(keys).toEqual(["day", "parking", "diet", "plate", "badge"]);
+    expect(keys).toEqual(["day", "parking", "diet", "plate", "badge", "notes", "arrival_date", "arrival_time", "mobile"]);
   });
 
   it("draws a choice as a list with its options and an empty first one", () => {
@@ -149,6 +158,215 @@ describe("the organiser's questions", () => {
     const doc2 = documentOf(render({ questions: [question({ key: "q", label: "Why?", type: "text", required: true })] }));
     expect(doc2.querySelector("[data-custom=q] input").hasAttribute("required")).toBe(true);
     expect(doc2.querySelector("[data-custom=q] .at-label .reg-req").getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
+describe("a long text, a date, a date and time and a phone number", () => {
+  const doc = documentOf(render());
+  const rawCap = (max: number) => String(registrantRawLimit(max));
+  const kinds = [
+    {
+      type: "long_text",
+      key: "notes",
+      control: "textarea.at-textarea",
+      attributes: { rows: "4", maxlength: rawCap(REGISTRANT_LONG_TEXT_MAX) },
+      kind: "longtext",
+      empty: "Answer this question.",
+      refused: "Check your answer. Use up to 1000 characters.",
+    },
+    {
+      type: "date",
+      key: "arrival_date",
+      control: "input.at-input[type=date]",
+      attributes: {},
+      kind: "date",
+      empty: "Enter a date.",
+      refused: "Enter a valid date.",
+    },
+    {
+      type: "datetime",
+      key: "arrival_time",
+      control: "input.at-input[type=datetime-local]",
+      attributes: {},
+      kind: "datetime",
+      empty: "Enter a date and time.",
+      refused: "Enter a valid date and time.",
+    },
+    {
+      type: "phone",
+      key: "mobile",
+      control: "input.at-input[type=tel]",
+      attributes: { maxlength: rawCap(REGISTRANT_TEXT_MAX) },
+      kind: "phone",
+      empty: "Enter a phone number.",
+      refused: "Enter a valid phone number.",
+    },
+  ];
+
+  it.each(kinds)("draws $type as $control, with a sentence of the page's own for an empty answer and for a refused one", (row) => {
+    const field = doc.querySelector(`[data-custom=${row.key}]`);
+    const control = field.querySelector(row.control);
+    expect(control, row.control).not.toBeNull();
+    for (const [name, value] of Object.entries(row.attributes)) expect(control.getAttribute(name), name).toBe(value);
+    expect(control.hasAttribute("data-control")).toBe(true);
+    expect(control.getAttribute("autocomplete") ?? "off").toBe("off");
+    expect(field.getAttribute("data-kind")).toBe(row.kind);
+    expect(field.getAttribute("data-field")).toBe(`custom_data.${row.key}`);
+    expect(field.getAttribute("data-message")).toBe(row.empty);
+    expect(field.getAttribute("data-invalid")).toBe(row.refused);
+    expect(field.hasAttribute("data-required")).toBe(false);
+    expect(control.hasAttribute("required")).toBe(false);
+  });
+
+  it.each(kinds)("labels $type's control, names its message slot and gives it a place for an error", (row) => {
+    const field = doc.querySelector(`[data-custom=${row.key}]`);
+    const control = field.querySelector("[data-control]");
+    const id = control.getAttribute("id");
+    expect(id).toMatch(/^f-q\d+$/);
+    expect(control.getAttribute("name")).toBe(id.slice(2));
+    expect(field.querySelector(`label[for="${id}"]`)).not.toBeNull();
+    expect(control.getAttribute("aria-describedby")).toBe(`m-${id}`);
+    const slot = doc.getElementById(`m-${id}`);
+    expect(slot.hasAttribute("data-slot")).toBe(true);
+    expect(slot.querySelector(".reg-slot__err [data-msg-text]")).not.toBeNull();
+    expect(field.querySelectorAll("[data-slot]")).toHaveLength(1);
+  });
+
+  it("marks a required one with a star and the required attribute, and keeps the other sentences", () => {
+    const html = render({ questions: requiredNewKinds() });
+    const required = documentOf(html);
+    const controls = [...required.querySelectorAll("[data-custom] [data-control]")] as Dom[];
+    expect(controls).toHaveLength(4);
+    for (const control of controls) {
+      const field = control.closest("[data-custom]");
+      expect(control.hasAttribute("required"), field.getAttribute("data-custom")).toBe(true);
+      expect(field.hasAttribute("data-required")).toBe(true);
+      expect(field.querySelector(".at-label .reg-req").getAttribute("aria-hidden")).toBe("true");
+    }
+  });
+
+  it("has no pattern, length, range or step on any control, which would stop a send in a way the server does not", () => {
+    const rules = { digits_only: true, min_length: 3, max_length: 6, example: "1234" };
+    const questions = [
+      question({ key: "a", label: "A", type: "text", rules }),
+      question({ key: "b", label: "B", type: "long_text", rules }),
+      question({ key: "c", label: "C", type: "phone", rules }),
+      question({ key: "d", label: "D", type: "date" }),
+      question({ key: "e", label: "E", type: "datetime" }),
+    ];
+    const controls = [...documentOf(render({ questions })).querySelectorAll("[data-custom] [data-control]")] as Dom[];
+    expect(controls).toHaveLength(5);
+    for (const control of controls) {
+      for (const name of ["pattern", "minlength", "min", "max", "step"]) {
+        expect(control.hasAttribute(name), `${control.tagName} ${control.getAttribute("type")} ${name}`).toBe(false);
+      }
+    }
+  });
+
+  it("caps a text control at the longest raw text the server looks at, whatever a rule says about the length", () => {
+    const rules = { max_length: 5 };
+    const questions = [
+      question({ key: "a", label: "A", type: "text", rules }),
+      question({ key: "b", label: "B", type: "long_text", rules }),
+      question({ key: "c", label: "C", type: "phone", rules }),
+    ];
+    const caps = [...documentOf(render({ questions })).querySelectorAll("[data-custom] [data-control]")].map((el: Dom) => Number(el.getAttribute("maxlength")));
+    expect(caps).toEqual([registrantRawLimit(REGISTRANT_TEXT_MAX), registrantRawLimit(REGISTRANT_LONG_TEXT_MAX), registrantRawLimit(REGISTRANT_TEXT_MAX)]);
+  });
+
+  it("lets a long text of 1000 emoji be typed in full, as the server takes it, and no more is taken", () => {
+    const cap = Number(doc.querySelector("textarea").getAttribute("maxlength"));
+    const fits = "\u{1F600}".repeat(REGISTRANT_LONG_TEXT_MAX);
+    // The browser counts UTF-16 units, the server code points: 1000 emoji are 2000 units, and still an answer.
+    expect([...fits]).toHaveLength(REGISTRANT_LONG_TEXT_MAX);
+    expect(fits.length).toBeLessThanOrEqual(cap);
+    const field = { label: "Notes", source_field: "notes", type: "long_text" as const, show_on_form: true };
+    expect(buildRegistrantCustomData([field], { notes: fits })).toEqual({ notes: fits });
+    expect(() => buildRegistrantCustomData([field], { notes: `${fits}\u{1F600}` })).toThrow();
+  });
+
+  describe("the rules of a question are hints under it, and the server judges", () => {
+    const hintOf = (type: "text" | "long_text" | "phone", rules: object, description: string | null = null) => {
+      const html = render({ questions: [question({ key: "q", label: "Q", type, rules, description })] });
+      return documentOf(html).querySelector("[data-custom=q] .reg-slot__hint")?.textContent ?? null;
+    };
+
+    it.each([
+      [{ min_length: 3, max_length: 6 }, "3 to 6 characters."],
+      [{ min_length: 6, max_length: 6 }, "Exactly 6 characters."],
+      [{ min_length: 1, max_length: 1 }, "Exactly 1 character."],
+      [{ min_length: 20 }, "At least 20 characters."],
+      [{ max_length: 12 }, "Up to 12 characters."],
+      [{ digits_only: true }, "Digits only."],
+      [{ digits_only: true, min_length: 3, max_length: 6 }, "3 to 6 digits."],
+      [{ digits_only: true, min_length: 6, max_length: 6 }, "Exactly 6 digits."],
+      [{ digits_only: true, min_length: 1, max_length: 1 }, "Exactly 1 digit."],
+      [{ digits_only: true, max_length: 4 }, "Up to 4 digits."],
+      [{ example: "WA 12345" }, "For example: WA 12345"],
+      [{ digits_only: true, min_length: 3, max_length: 6, example: "1234" }, "3 to 6 digits. For example: 1234"],
+    ])("says %j as %j, for a text, a long text and a phone number", (rules, hint) => {
+      for (const type of ["text", "long_text", "phone"] as const) expect(hintOf(type, rules), type).toBe(hint);
+    });
+
+    it("has no hint for a question with no note and no rules, and leaves the slot for its error", () => {
+      expect(hintOf("text", {})).toBeNull();
+      const html = render({ questions: [question({ key: "q", label: "Q", type: "phone" })] });
+      expect(documentOf(html).querySelector("[data-custom=q] .reg-slot__hint")).toBeNull();
+      expect(documentOf(html).querySelector("[data-custom=q] [data-slot] [data-msg-text]")).not.toBeNull();
+    });
+
+    it("puts the organiser's own note first, then what the rules ask, each on a line of its own", () => {
+      expect(hintOf("phone", { digits_only: true, min_length: 3, example: "123" }, "Dial it as you would inside the building.")).toBe(
+        "Dial it as you would inside the building.\nAt least 3 digits. For example: 123",
+      );
+    });
+
+    it("asks for a numeric keypad only for an answer that is digits only", () => {
+      const inputMode = (type: "text" | "long_text" | "phone", rules: object) =>
+        documentOf(render({ questions: [question({ key: "q", label: "Q", type, rules })] }))
+          .querySelector("[data-custom=q] [data-control]")
+          .getAttribute("inputmode");
+      for (const type of ["text", "long_text", "phone"] as const) {
+        expect(inputMode(type, { digits_only: true }), type).toBe("numeric");
+        expect(inputMode(type, { min_length: 3 }), type).toBeNull();
+        expect(inputMode(type, {}), type).toBeNull();
+      }
+    });
+
+    it("tells a refused answer in the page's own words, with the length rule in them", () => {
+      const refused = (type: "long_text" | "phone", rules: object) =>
+        documentOf(render({ questions: [question({ key: "q", label: "Q", type, rules })] }))
+          .querySelector("[data-custom=q]")
+          .getAttribute("data-invalid");
+      expect(refused("long_text", { min_length: 20, max_length: 500 })).toBe("Check your answer. Use 20 to 500 characters.");
+      expect(refused("long_text", { min_length: 20 })).toBe("Check your answer. Use at least 20 characters.");
+      expect(refused("long_text", { digits_only: true })).toBe("Check your answer. Use digits only.");
+      expect(refused("phone", { digits_only: true, min_length: 3, max_length: 6 })).toBe("Enter a valid phone number. Use 3 to 6 digits.");
+      expect(refused("phone", { example: "+1 555 0100" })).toBe("Enter a valid phone number.");
+    });
+
+    it("sets no sentence for a refused answer on a short text, a choice or a Yes/No: the server's own is shown for them", () => {
+      const doc2 = documentOf(render({ questions: [question({ key: "t", label: "T", type: "text", rules: { max_length: 5 } }), ...formModel().questions.slice(0, 5)] }));
+      expect(doc2.querySelectorAll("[data-invalid]")).toHaveLength(0);
+    });
+  });
+
+  describe("a date and a time", () => {
+    it("names the event's time zone under a time, after the organiser's note", () => {
+      const doc2 = documentOf(render({ event: { ...formModel().event, timezone: "America/New_York" } }));
+      expect(doc2.querySelector("[data-custom=arrival_time] .reg-slot__hint")?.textContent).toBe(
+        "Roughly is fine.\nTime in the event's time zone (America/New_York).",
+      );
+    });
+
+    it("says the zone alone when the time has no note, and says nothing of a zone under a date", () => {
+      const html = render({
+        questions: [question({ key: "t", label: "T", type: "datetime" }), question({ key: "d", label: "D", type: "date", description: "Any day." })],
+      });
+      const doc2 = documentOf(html);
+      expect(doc2.querySelector("[data-custom=t] .reg-slot__hint")?.textContent).toBe("Time in the event's time zone (Europe/Warsaw).");
+      expect(doc2.querySelector("[data-custom=d] .reg-slot__hint")?.textContent).toBe("Any day.");
+    });
   });
 });
 
@@ -329,7 +547,7 @@ describe("scripts, nonce and what the page loads", () => {
 
 describe("accessibility", () => {
   const doc = documentOf(render());
-  const controls = [...doc.querySelectorAll("form input:not([type=hidden]), form select")] as Dom[];
+  const controls = [...doc.querySelectorAll("form input:not([type=hidden]), form select, form textarea")] as Dom[];
 
   it("gives every control a label that points at it with for and id", () => {
     expect(controls.length).toBeGreaterThan(8);
@@ -454,6 +672,14 @@ describe("a page for an event that is over", () => {
 
   it("is titled for the event", () => {
     expect(doc.querySelector("title").textContent).toBe("Registration closed - Northwind Partner Summit 2027");
+  });
+});
+
+describe("the head of both pages", () => {
+  it("asks iOS not to turn what looks like a phone number into a call link, as an example of a phone answer would become", () => {
+    for (const html of [render(), renderRegistrationClosedPage(closedModel())]) {
+      expect(documentOf(html).querySelector('meta[name="format-detection"]')?.getAttribute("content")).toBe("telephone=no");
+    }
   });
 });
 
