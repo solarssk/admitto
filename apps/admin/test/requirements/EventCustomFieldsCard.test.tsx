@@ -462,7 +462,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
       await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(1));
       expect(reorderEventCustomFields).toHaveBeenCalledWith("evt-1", ["field-shirt", "field-dietary", "field-parking"]);
-      expect((onUpdated.mock.calls[0]![0] as FieldsChange)([])).toEqual(answer);
+      expect((onUpdated.mock.calls[0]![0] as FieldsChange)([dietaryField, shirtField, parkingField])).toEqual(answer);
       // A move that lands says nothing: the rows moving is the answer.
       expect(addToast).not.toHaveBeenCalled();
       expect(onChanged).not.toHaveBeenCalled();

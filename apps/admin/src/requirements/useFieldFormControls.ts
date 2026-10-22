@@ -26,12 +26,30 @@ interface FieldFormControlsOptions {
 }
 
 /**
+ * The order the server has just answered, put on the rows the host has now. A move takes only the order from the answer:
+ * a field edited or deleted while the move was on its way stays as it is now, and one added meanwhile, which the answer
+ * does not know, goes last.
+ */
+function inOrderOf(answer: readonly EventCustomFieldDto[]): FieldsChange {
+  return (current) => {
+    const byId = new Map(current.map((row) => [row.id, row]));
+    const answered = new Set(answer.map((item) => item.id));
+    const placed = answer.flatMap((item) => {
+      const row = byId.get(item.id);
+      return row ? [{ ...row, display_order: item.display_order }] : [];
+    });
+    return [...placed, ...current.filter((row) => !answered.has(row.id))];
+  };
+}
+
+/**
  * What the Registration page's card does besides what the Requirements card does: an "On the form" switch for each field
  * and arrows that put a field one place up or down. A switch has a request of its own for each field; reorders run one at a
  * time, because a reorder sends the whole list and a second one made from the list before the first has landed would put
  * the first back. For the same reason a switch and a reorder do not run together: the answer of a reorder is the whole list,
  * and it would put back a switch whose request is still out (or the other way round). The one that comes second is ignored.
- * The answer is shown at once (`onUpdated`), so nothing is read again except after a refused move.
+ * The answer is shown at once (`onUpdated`), so nothing is read again except after a refused move. A move shows only the
+ * order of its answer (`inOrderOf`), so an edit or a delete made on the card while the move was out is not undone.
  */
 export function useFieldFormControls({ eventId, fields, onChanged, onUpdated, rootRef }: FieldFormControlsOptions) {
   const { addToast } = useToast();
@@ -77,7 +95,7 @@ export function useFieldFormControls({ eventId, fields, onChanged, onUpdated, ro
     try {
       const items = await reorderEventCustomFields(eventId, ids);
       refocusRef.current = { fieldId: field.id, direction };
-      show(() => items);
+      show(inOrderOf(items));
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "stale_write")) {
         addToast("The fields changed since this list was loaded, so it was refreshed. Move the field again.", "warning");
