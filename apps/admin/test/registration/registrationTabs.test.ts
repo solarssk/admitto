@@ -24,18 +24,19 @@ describe("registrationTabFromSearch", () => {
 });
 
 describe("registrationTabItems", () => {
-  it("lists Requests, Fields and Access in that order, with no number while the count is unknown", () => {
+  it("lists Requests, Fields, Access and Legal in that order, with no number while the count is unknown", () => {
     const items = registrationTabItems();
 
     expect(items.map((item) => [item.id, item.label])).toEqual([
       ["requests", "Requests"],
       ["fields", "Fields"],
       ["access", "Access"],
+      ["legal", "Legal"],
     ]);
     expect(items.every((item) => item.count === undefined)).toBe(true);
   });
 
   it("puts the count on Requests and nowhere else", () => {
-    expect(registrationTabItems(4).map((item) => item.count)).toEqual([4, undefined, undefined]);
+    expect(registrationTabItems(4).map((item) => item.count)).toEqual([4, undefined, undefined, undefined]);
   });
 });

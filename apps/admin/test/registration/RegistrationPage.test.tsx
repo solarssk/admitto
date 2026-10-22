@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation } from "react-router";
 import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
 
+// The Legal tab reads and edits the event's legal texts: RegistrationLegalTab.test.tsx has it. The page is tested around it.
+vi.mock("../../src/registration/RegistrationLegalTab.js", () => ({
+  RegistrationLegalTab: () => <p>The legal texts of the event</p>,
+}));
+
+/** The tabs that have nothing to show yet: a plain empty state that says what will be there. */
 const TABS = [
   ["requests", "Requests", "Registration requests from guests will be listed here."],
   ["fields", "Fields", "The questions guests answer on the registration form will be managed here."],
@@ -33,13 +39,13 @@ afterEach(() => {
 });
 
 describe("RegistrationPage", () => {
-  it("has the page heading and the three tabs, with no number on Requests", () => {
+  it("has the page heading and the four tabs, with no number on Requests", () => {
     renderAt();
 
     expect(screen.getByRole("heading", { level: 1, name: "Registration" })).toBeTruthy();
     expect(screen.getAllByRole("heading")).toHaveLength(1);
     const tabs = within(screen.getByRole("tablist")).getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Requests", "Fields", "Access"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Requests", "Fields", "Access", "Legal"]);
   });
 
   it.each([
@@ -47,6 +53,7 @@ describe("RegistrationPage", () => {
     ["?tab=requests", "Requests"],
     ["?tab=fields", "Fields"],
     ["?tab=access", "Access"],
+    ["?tab=legal", "Legal"],
     ["?tab=nope", "Requests"],
     ["?tab=", "Requests"],
   ])("opens the tab for the address %j: %s", (search, label) => {
@@ -66,6 +73,15 @@ describe("RegistrationPage", () => {
     expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
   });
 
+  it("shows the legal texts in the Legal tab, and nothing of the placeholders", () => {
+    renderAt("?tab=legal");
+
+    const panel = screen.getByRole("tabpanel", { name: "Legal" });
+    expect(within(panel).getByText("The legal texts of the event")).toBeTruthy();
+    expect(within(panel).queryByRole("status")).toBeNull();
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+  });
+
   it("opens the tab that is clicked and writes it to the address", () => {
     renderAt();
 
@@ -79,21 +95,21 @@ describe("RegistrationPage", () => {
   it("keeps only the open tab in the tab order and moves with the arrow, Home and End keys", () => {
     renderAt();
     const tabIndexes = () => screen.getAllByRole("tab").map((tab) => tab.tabIndex);
-    expect(tabIndexes()).toEqual([0, -1, -1]);
+    expect(tabIndexes()).toEqual([0, -1, -1, -1]);
 
     fireEvent.keyDown(openTab(), { key: "ArrowRight" });
     expect(openTab().textContent).toBe("Fields");
     expect(document.activeElement).toBe(openTab());
-    expect(tabIndexes()).toEqual([-1, 0, -1]);
+    expect(tabIndexes()).toEqual([-1, 0, -1, -1]);
 
     fireEvent.keyDown(openTab(), { key: "End" });
-    expect(openTab().textContent).toBe("Access");
+    expect(openTab().textContent).toBe("Legal");
 
     fireEvent.keyDown(openTab(), { key: "ArrowRight" });
     expect(openTab().textContent).toBe("Requests");
 
     fireEvent.keyDown(openTab(), { key: "ArrowLeft" });
-    expect(openTab().textContent).toBe("Access");
+    expect(openTab().textContent).toBe("Legal");
 
     fireEvent.keyDown(openTab(), { key: "Home" });
     expect(openTab().textContent).toBe("Requests");
