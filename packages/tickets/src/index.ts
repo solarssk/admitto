@@ -348,4 +348,10 @@ export type {
   RejectRegistrationsResult,
   StaffActor,
 } from "./registration-decisions.js";
+export { retryRegistrationMails } from "./registration-mail-retry.js";
+export type {
+  RetryMailOutcome,
+  RetryRegistrationMailsParams,
+  RetryRegistrationMailsResult,
+} from "./registration-mail-retry.js";
 export { activeAttendeeWhere, countActiveAdmittedAttendees, countActiveAttendees, countSeatsInUse } from "./event-seats.js";
