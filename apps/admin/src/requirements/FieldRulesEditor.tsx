@@ -35,7 +35,7 @@ export function FieldRulesEditor({ type, draft, problems, onChange, saving }: Re
   if (cap === null) return null;
   const lengths = problems.lengths;
   return (
-    <div className="field-rules" role="group" aria-labelledby="cf-rules-title">
+    <fieldset className="field-rules" aria-labelledby="cf-rules-title">
       <span className="at-label" id="cf-rules-title">
         Format rules
       </span>
@@ -104,6 +104,6 @@ export function FieldRulesEditor({ type, draft, problems, onChange, saving }: Re
           onChange={(e) => onChange({ ...draft, example: e.target.value })}
         />
       </div>
-    </div>
+    </fieldset>
   );
 }

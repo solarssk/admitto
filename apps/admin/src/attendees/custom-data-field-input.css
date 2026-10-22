@@ -1,5 +1,14 @@
 /* The inputs of the custom fields that take a longer answer or a date and a time (CustomDataFieldInput). */
 
+/* The date and time answer is a fieldset (a group of two inputs, named by its label): its browser border, margin, padding and
+   minimum width are taken off. */
+.custom-data-field__group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
 /* A date and a time of day side by side, the date a little wider, since its text is longer. At a phone's width they stack, so that
    neither is squeezed. */
 .custom-data-field__datetime {

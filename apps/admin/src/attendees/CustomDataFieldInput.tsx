@@ -66,7 +66,7 @@ function DateTimeInput({ field, value, disabled, onChange, eventTimeZone }: Read
   const { date, time } = splitDateTime(value);
   const hint = answerHint(field, eventTimeZone);
   return (
-    <div className="at-field" role="group" aria-labelledby={labelId}>
+    <fieldset className="at-field custom-data-field__group" aria-labelledby={labelId}>
       <span className="at-label" id={labelId}>
         {customDataFieldLabel(field)}
       </span>
@@ -89,7 +89,7 @@ function DateTimeInput({ field, value, disabled, onChange, eventTimeZone }: Read
         />
       </div>
       {hint ? <span className="at-hint">{hint}</span> : null}
-    </div>
+    </fieldset>
   );
 }
 

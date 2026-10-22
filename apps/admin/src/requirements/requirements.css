@@ -418,10 +418,16 @@
 /* The answer types of a custom field (FieldTypePicker): seven buttons that wrap in a grid, each with its icon and name, instead of a
    row that a dialog is too narrow for. Two to a row on a phone, three in the dialog on a desktop, wide enough for "Date and time"
    to stay on one line. */
+/* A fieldset (the types are a group of buttons, named by the label above): its browser border, margin, padding and minimum
+   width are taken off. */
 .custom-field-types {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
   gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
 }
 
 .custom-field-types__btn {
@@ -474,10 +480,15 @@
 /* The format rules of a text, long text or phone field (FieldRulesEditor): the boxes sit in one panel under their title. The line
    under the two lengths holds what they take or what is wrong with them, and keeps the room of its longest text (one line, two on
    a phone), so the dialog does not jump when an error comes and goes. */
+/* A fieldset as well, with the same four things taken off. */
 .field-rules {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
 }
 
 .field-rules__panel {

@@ -14,7 +14,7 @@ export interface FieldTypePickerProps {
  * wrap, two to a row on a phone. Each has its icon and its name, so the name is not hidden in a tooltip. */
 export function FieldTypePicker({ value, onChange, labelledBy, disabled }: Readonly<FieldTypePickerProps>) {
   return (
-    <div className="custom-field-types" role="group" aria-labelledby={labelledBy}>
+    <fieldset className="custom-field-types" aria-labelledby={labelledBy}>
       {CUSTOM_FIELD_TYPES.map((type) => (
         <button
           key={type.value}
@@ -28,6 +28,6 @@ export function FieldTypePicker({ value, onChange, labelledBy, disabled }: Reado
           <span>{type.label}</span>
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
