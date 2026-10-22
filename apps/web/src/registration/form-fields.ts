@@ -88,11 +88,21 @@ interface TextFieldSpec {
   answerKey?: string;
 }
 
+/**
+ * The `maxlength` of a text input. The browser counts the UTF-16 units of what is typed, while the server counts the
+ * characters (code points) of the trimmed, composed text, so a value equal to the server's limit would stop a valid
+ * answer of 100 emoji at 50 and let leading spaces eat the allowance. Twice the limit never blocks a valid answer and
+ * still stops a huge paste; the server holds the exact limit. An address keeps its own limit: it is plain ASCII.
+ */
+function nativeMaxLength(spec: TextFieldSpec): number {
+  return spec.kind === "email" ? spec.maxLength : spec.maxLength * 2;
+}
+
 function renderTextField(spec: TextFieldSpec): string {
   const input = `<input class="at-input" id="${spec.id}" name="${spec.id.slice(2)}"${attrs([
     ["type", spec.inputType ?? "text"],
     ["autocomplete", spec.autocomplete ?? "off"],
-    ["maxlength", String(spec.maxLength)],
+    ["maxlength", String(nativeMaxLength(spec))],
     ["placeholder", spec.placeholder],
     ["inputmode", spec.inputType === "email" ? "email" : undefined],
     ["autocapitalize", spec.inputType === "email" ? "none" : undefined],
