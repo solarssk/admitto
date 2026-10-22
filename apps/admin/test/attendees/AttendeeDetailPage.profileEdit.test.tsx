@@ -1157,6 +1157,34 @@ describe("AttendeeDetailPage: the answer types of a custom field", { timeout: 30
     expect(screen.getByText("Digits only, exactly 5 characters, for example 01234.")).toBeTruthy();
   });
 
+  it("lays the edit form out with Attendance and Ticket type side by side, and the custom fields under a labelled break", async () => {
+    await openPage();
+    openEdit();
+    const attendance = document.getElementById("attendee-edit-rsvp-status") as HTMLElement;
+    const ticketType = document.getElementById("attendee-edit-ticket-type") as HTMLElement;
+    // Neither select takes a whole row; the email does.
+    expect(attendance.closest(".attendee-fields-grid__full")).toBeNull();
+    expect(ticketType.closest(".attendee-fields-grid__full")).toBeNull();
+    expect(screen.getByLabelText("Email").closest(".attendee-fields-grid__full")).not.toBeNull();
+
+    const grid = document.querySelector(".attendee-fields-grid") as HTMLElement;
+    const label = within(grid).getByText("Custom fields");
+    expect(label.classList.contains("attendee-fields-grid__full")).toBe(true);
+    const follows = (before: Node, after: Node) => Boolean(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(attendance, ticketType)).toBe(true);
+    expect(follows(ticketType, screen.getByLabelText("Email"))).toBe(true);
+    expect(follows(screen.getByLabelText("Department"), label)).toBe(true);
+    expect(follows(label, screen.getByLabelText("Abstract"))).toBe(true);
+  });
+
+  it("shows the avatar of the attendee before the name in the header: the initials for now, hidden from assistive technology", async () => {
+    await openPage();
+    const avatar = document.querySelector(".attendee-detail-title .at-avatar") as HTMLElement;
+    expect(avatar.textContent).toBe("AN");
+    expect(avatar.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy();
+  });
+
   it("saves only the answers that were changed, each in the form the API takes", async () => {
     await openPage();
     updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: ANSWERS }));

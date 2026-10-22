@@ -18,6 +18,7 @@ import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useD
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
+import { SectionLabel } from "./SectionLabel.js";
 import "./add-attendee-modal.css";
 import "./attendee-fields-grid.css";
 
@@ -426,6 +427,7 @@ export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCrea
               }}
             />
           </div>
+          {attributeFields.length > 0 && <SectionLabel className="attendee-fields-grid__full">Custom fields</SectionLabel>}
           {attributeFields.map((field) => (
             <CustomDataFieldInput
               key={field.source_field}

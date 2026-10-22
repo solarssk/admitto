@@ -35,6 +35,7 @@ import { readRememberedRowCount, rememberRowCount } from "./rememberedRowCount.j
 import { WalletColumnCell } from "./walletColumnCell.js";
 import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
 import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
+import { SectionLabel } from "./SectionLabel.js";
 import "./attendees.css";
 
 /** Rows a skeleton draws when it does not know how many the list will have. */
@@ -1411,7 +1412,7 @@ function FilterToolbar({
           </div>
         )}
         {customFields.length > 0 && (
-          <p className="attendees-filters-menu__section-label">Custom fields</p>
+          <SectionLabel>Custom fields</SectionLabel>
         )}
         {customFields.map((field) => {
           if (isFreeInputCustomFieldType(field.type)) {

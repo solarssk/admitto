@@ -162,6 +162,14 @@ describe("AddAttendeeModal delayed loading", () => {
     expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
   });
 
+  it("has no labelled break for the custom fields when the event has none", async () => {
+    mockFetchEventCustomFields.mockResolvedValue([]);
+    mockFetchTicketTypes.mockResolvedValue([]);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await waitFor(() => expect(fields().className).toContain("at-fade-in"));
+    expect(screen.queryByText("Custom fields")).toBeNull();
+  });
+
   it("shows the whole form at once, fading in, when the catalogs arrive before the 200ms are up", async () => {
     mockFetchEventCustomFields.mockResolvedValue([]);
     mockFetchTicketTypes.mockResolvedValue([]);
@@ -967,6 +975,17 @@ describe("AddAttendeeModal: the answer types of a custom field", { timeout: 30_0
         postcode: "01234",
       },
     });
+  });
+
+  it("sets the custom fields apart under a labelled break across both columns, after the fixed fields", async () => {
+    await openWith(FIELDS);
+
+    const label = screen.getByText("Custom fields");
+    expect(label.classList.contains("attendees-section-label")).toBe(true);
+    expect(label.classList.contains("attendee-fields-grid__full")).toBe(true);
+    const follows = (before: Node, after: Node) => Boolean(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(screen.getByLabelText("Department"), label)).toBe(true);
+    expect(follows(label, screen.getByLabelText("Abstract"))).toBe(true);
   });
 
   it("lays the fields out in two columns, with the email and a long text across both", async () => {

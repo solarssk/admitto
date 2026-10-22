@@ -21,10 +21,11 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add the guest registration form at /r/<event slug> for events that use the public link; it stays a not-found page until an event turns registration on ([#1776](https://github.com/solarssk/admitto/pull/1776))
 - Add long text, date, date and time and phone questions to the registration form, with the field's rules as hints ([#1783](https://github.com/solarssk/admitto/pull/1783))
 - Add long text, date, date and time and phone answer types, with format rules, to the field editor, attendee form and import columns list ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Show an avatar with the attendee's initials before the name on the attendee page ([#1784](https://github.com/solarssk/admitto/pull/1784))
 
 ### Changed
 
-- Use the width of the screen in the Add attendee and Edit attendee forms, two fields to a row, instead of one long column ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Use the width of the screen in the Add attendee and Edit attendee forms, two fields to a row, with the custom fields under their own heading ([#1784](https://github.com/solarssk/admitto/pull/1784))
 
 ### Fixed
 

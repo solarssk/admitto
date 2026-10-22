@@ -71,6 +71,13 @@ describe("AttendeeDetailSkeleton: the page's own frame while its record is on it
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the room of the avatar before the heading, so that the header does not grow when the name arrives", () => {
+    const { container } = renderSkeleton();
+    const circle = container.querySelector(".attendee-detail-title .at-skeleton--circle") as HTMLElement;
+    expect(circle.style.width).toBe("48px");
+    expect(circle.style.height).toBe("48px");
+  });
+
   it("draws a bar for Edit and one for More actions on a desktop, and only More actions on a phone, in the sizes of the buttons", () => {
     const widths = (container: HTMLElement) =>
       [...container.querySelectorAll(".at-pageheader__actions .at-skeleton")].map((el) => (el as HTMLElement).style.width);

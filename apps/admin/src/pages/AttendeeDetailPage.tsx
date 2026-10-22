@@ -98,6 +98,7 @@ import { hasWalletStatusChip } from "../attendees/walletStatusChip.js";
 import { walletRegistrationLabel } from "../attendees/walletRegistrationLabel.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
+import { SectionLabel } from "../attendees/SectionLabel.js";
 import {
   allCustomDataEntries,
   customDataApiErrorMessage,
@@ -2823,7 +2824,12 @@ export function AttendeeDetailPage() {
   return (
     <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
       <PageHeader
-        title={detail.name}
+        title={
+          <span className="attendee-detail-title">
+            <Avatar name={detail.name} size="lg" aria-hidden="true" />
+            <span>{detail.name}</span>
+          </span>
+        }
         subtitle="Manage this attendee's profile, ticket, and check-in status."
         className="attendee-detail-pageheader"
         actions={
@@ -3043,7 +3049,7 @@ export function AttendeeDetailPage() {
             >
               <fieldset className="attendee-form__fieldset" disabled={isEventArchived(event)}>
                 <div className="attendee-fields-grid">
-                  <div className="at-field attendee-fields-grid__full">
+                  <div className="at-field">
                     <label className="at-label" htmlFor="attendee-edit-rsvp-status">
                       Attendance
                     </label>
@@ -3059,6 +3065,43 @@ export function AttendeeDetailPage() {
                       onChange={(id) => setForm({ ...form, rsvp_status: id as RsvpStatus })}
                     />
                   </div>
+                  <div className="at-field">
+                    <label className="at-label" htmlFor="attendee-edit-ticket-type">
+                      Ticket type
+                    </label>
+                    <SearchableSelect
+                      id="attendee-edit-ticket-type"
+                      label="Ticket type"
+                      placeholder="Select ticket type…"
+                      searchPlaceholder="Search ticket types…"
+                      emptyLabel="No ticket types found"
+                      showLabel={false}
+                      value={form.ticket_type}
+                      options={buildTicketTypeOptions(orphanedTicketType, ticketTypes)}
+                      onChange={(id) => setForm({ ...form, ticket_type: id })}
+                    />
+                  </div>
+                  {ticketTypesError && (
+                    <Notice
+                      variant="error"
+                      role="alert"
+                      className="attendee-fields-grid__full"
+                      actionBusy={ticketTypesRetry.busy}
+                      action={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          loading={ticketTypesRetry.busy}
+                          onClick={ticketTypesRetry.retry}
+                        >
+                          Retry
+                        </Button>
+                      }
+                    >
+                      {ticketTypesError}
+                    </Notice>
+                  )}
                   <div className="attendee-fields-grid__full">
                     <Input
                       label="Email"
@@ -3109,43 +3152,7 @@ export function AttendeeDetailPage() {
                     value={form.department}
                     onChange={(e) => setForm({ ...form, department: e.target.value })}
                   />
-                  <div className="at-field">
-                    <label className="at-label" htmlFor="attendee-edit-ticket-type">
-                      Ticket type
-                    </label>
-                    <SearchableSelect
-                      id="attendee-edit-ticket-type"
-                      label="Ticket type"
-                      placeholder="Select ticket type…"
-                      searchPlaceholder="Search ticket types…"
-                      emptyLabel="No ticket types found"
-                      showLabel={false}
-                      value={form.ticket_type}
-                      options={buildTicketTypeOptions(orphanedTicketType, ticketTypes)}
-                      onChange={(id) => setForm({ ...form, ticket_type: id })}
-                    />
-                  </div>
-                  {ticketTypesError && (
-                    <Notice
-                      variant="error"
-                      role="alert"
-                      className="attendee-fields-grid__full"
-                      actionBusy={ticketTypesRetry.busy}
-                      action={
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          loading={ticketTypesRetry.busy}
-                          onClick={ticketTypesRetry.retry}
-                        >
-                          Retry
-                        </Button>
-                      }
-                    >
-                      {ticketTypesError}
-                    </Notice>
-                  )}
+                  {attributeFields.length > 0 && <SectionLabel className="attendee-fields-grid__full">Custom fields</SectionLabel>}
                   {attributeFields.map((field) => (
                     <CustomDataFieldInput
                       key={field.source_field}
@@ -3161,7 +3168,6 @@ export function AttendeeDetailPage() {
                       }
                     />
                   ))}
-              
                 </div>
               </fieldset>
             </Tooltip>
