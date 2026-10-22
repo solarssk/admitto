@@ -1,13 +1,17 @@
 /**
  * The fields of the registration form, as HTML.
  *
- * Everything the organiser typed (a question's label, its note, its choices, the title of an extra
+ * Everything the organiser typed (a question's label, its note, its choices, its suggestions, the title of an extra
  * consent) goes through `esc` and ends up in element text or in a double-quoted attribute, nowhere
  * else: not in an `id`, a selector, a style or a script. The one address built from a name is the
  * form's own (`/r/<slug>`, and the paths of the legal texts), and the model only holds a slug that
  * is lowercase letters, digits, `_` and `-`. Elements the page script needs to find carry fixed
  * `data-*` names; the ids of the organiser's questions are their position (`f-q0`, `f-q1`, ...),
- * never their key.
+ * never their key. A suggestion is a row of the list (`<li>`) whose text is escaped and whose `data-value`
+ * is the same text as an escaped attribute: the script reads it with `getAttribute` and sets it with
+ * `textContent`, so the suggestions are data in the page, never code and never built into a script. The
+ * condition of a question is two attributes, `data-show-when-field` (the key of the question it names) and
+ * `data-show-when-value`; the script compares them as strings and builds no selector from them.
  *
  * Each field that can say something has one message slot under it, which keeps its height whether
  * it shows the field's note or an error, so an error never moves what is next to it. The field is
@@ -16,13 +20,24 @@
  * The questions are drawn by type. {@link QUESTION_RENDERERS} is the one place that knows which
  * types the page can draw: a new type of answer is added there (and to `EVENT_CUSTOM_FIELD_TYPES`).
  *
+ * A question can carry an icon (`rules.icon`): a Yes/No row shows it before the text, a one-line field (text,
+ * date, date and time, phone) shows it inside the box, as the mockup does. A choice list and a long text have
+ * no place for one in the product's controls and draw none.
+ *
+ * A question with a condition (`rules.show_when`) is not in the main run. It waits, hidden and disabled and
+ * without `required`, in a panel (`.reg-reveal`) that follows the question it names, which is a Yes/No or a
+ * choice. All the questions that depend on one question share its panel, in the organiser's order. The page script
+ * shows each of them when the condition is met (see ./form-script.ts); this module only writes the condition
+ * down as data. A question whose controlling question is not on the form is not drawn at all: nothing can ever
+ * show it.
+ *
  * The format rules of a question (`rules`) are hints here and nothing more: a length, "digits only"
  * and an example are printed in the question's message slot, and "digits only" sets `inputmode` for a
  * numeric keypad. There is no `pattern`, `minlength`, `min` or `max` on any control, because a browser
  * rule would block a send in a way the server does not; the server is the one judge of an answer.
  * A control's `maxlength` is the longest raw text the server looks at, never less.
  */
-import type { EventCustomFieldRules, EventCustomFieldType } from "@admitto/shared";
+import type { EventCustomFieldRules, EventCustomFieldType, ShowWhen } from "@admitto/shared";
 import {
   REGISTRANT_EMAIL_MAX,
   REGISTRANT_LONG_TEXT_MAX,
@@ -62,10 +77,16 @@ function attrs(list: readonly Attribute[]): string {
 
 const REQUIRED_MARK = '<span class="reg-req" aria-hidden="true">*</span>';
 
-/** The slot under a field: its note (when it has one) and, hidden until the script needs it, the error. */
-function slot(id: string, note: string | null): string {
+/**
+ * The slot under a field: its note (when it has one) and, hidden until the script needs it, the error. It keeps the
+ * height of the field's note, so an error never moves what is next to a field. A `collapsed` slot is for a row that is
+ * not a text box (the terms, the security check): it takes no room until it has an error to show, so that the ticks of
+ * "Before you send" stand as close as in the mockup. The error then opens under its row, as the notice at the top does.
+ */
+function slot(id: string, note: string | null, collapsed = false): string {
   const hint = note ? `<span class="reg-slot__hint">${esc(note)}</span>` : "";
-  return `<p class="at-hint reg-slot" id="m-${id}" data-slot>${hint}<span class="reg-slot__err at-hint--error">${icon("alert")}<span data-msg-text></span></span></p>`;
+  const kind = collapsed ? "at-hint reg-slot reg-slot--collapsed" : "at-hint reg-slot";
+  return `<p class="${kind}" id="m-${id}" data-slot>${hint}<span class="reg-slot__err at-hint--error">${icon("alert")}<span data-msg-text></span></span></p>`;
 }
 
 function labelOf(id: string, text: string, required: boolean): string {
@@ -82,6 +103,27 @@ function fieldAttrs(errorKey: string, kind: string, required: boolean, message: 
     ["data-message", message || undefined],
     ...extra,
   ]);
+}
+
+/** The `required` and `disabled` of a control. A question under a condition starts disabled and without `required`:
+ * while it is not asked, nothing of it is sent and no browser rule can stop the form. The page script turns both on
+ * when the condition is met (and `data-required` on its field says it is required then). */
+function stateAttrs(required: boolean, showWhen: ShowWhen | null | undefined): Attribute[] {
+  return [
+    ["required", required && !showWhen ? true : undefined],
+    ["disabled", showWhen ? true : undefined],
+  ];
+}
+
+/** The condition of a question as data on its field, and the field hidden until the script finds it met. `true` is the
+ * answer of a Yes/No, written the way the script reads one: "true". */
+function conditionAttrs(showWhen: ShowWhen | null | undefined): Attribute[] {
+  if (!showWhen) return [];
+  return [
+    ["data-show-when-field", showWhen.field],
+    ["data-show-when-value", showWhen.value === true ? "true" : showWhen.value],
+    ["hidden", true],
+  ];
 }
 
 interface TextFieldSpec {
@@ -106,6 +148,10 @@ interface TextFieldSpec {
   leadingIcon?: GuestIcon;
   /** `source_field` of an organiser's question; absent for a fixed field. */
   answerKey?: string;
+  /** The condition of an organiser's question; absent for a fixed field and a question that is always asked. */
+  showWhen?: ShowWhen | null;
+  /** What to offer while the guest types: a list of rows under the box (see {@link renderCombo}). Absent: a plain box. */
+  suggestions?: readonly string[];
 }
 
 /**
@@ -118,7 +164,42 @@ function nativeMaxLength(spec: TextFieldSpec): string | undefined {
   return spec.maxLength === undefined ? undefined : String(registrantRawLimit(spec.maxLength));
 }
 
+/** The ARIA 1.2 combobox attributes of a box that has a list of suggestions under it: the box is the combobox, the
+ * list its popup. `aria-expanded` is kept up to date by the page script, which also sets `aria-activedescendant`. */
+function comboAttrs(id: string, suggestions: readonly string[]): Attribute[] {
+  if (suggestions.length === 0) return [];
+  return [
+    ["role", "combobox"],
+    ["aria-autocomplete", "list"],
+    ["aria-expanded", "false"],
+    ["aria-controls", `${id}-list`],
+  ];
+}
+
+/**
+ * A box with a list of suggestions under it (`rules.suggestions` of a text question), after the product's searchable
+ * select. The list is a panel of fixed rows, hidden until the guest focuses the box: one row for each suggestion, a
+ * line "Not on the list" and a row that offers what was typed as it is. The page script filters the rows, marks what
+ * matches and shows the panel. Any text is welcome, so the box is a plain text box that the list only helps.
+ *
+ * A suggestion is printed twice, as the text of its row and as the escaped `data-value` the script reads and picks.
+ * The ids are positions (`f-q3-opt0`), never text.
+ */
+function renderCombo(id: string, control: string, suggestions: readonly string[]): string {
+  const rows = suggestions
+    .map(
+      (text, index) =>
+        `<li class="searchable-select__option" id="${id}-opt${index}" role="option" aria-selected="false"${attrs([["data-value", text]])}><span class="searchable-select__name">${esc(text)}</span></li>`,
+    )
+    .join("");
+  const empty = '<li class="searchable-select__empty" role="presentation" data-combo-empty hidden>Not on the list. That is fine.</li>';
+  const custom = `<li class="searchable-select__option combo__custom" id="${id}-custom" role="option" aria-selected="false" data-combo-custom hidden>${icon("plus")}<span class="searchable-select__name"></span></li>`;
+  const list = `<ul class="searchable-select__list" id="${id}-list" role="listbox" aria-label="Suggestions">${rows}${empty}${custom}</ul>`;
+  return `<div class="combo" data-combo>${control}<div class="searchable-select__panel combo__panel" data-combo-panel hidden>${list}</div></div>`;
+}
+
 function renderTextField(spec: TextFieldSpec): string {
+  const suggestions = spec.suggestions ?? [];
   const input = `<input class="at-input" id="${spec.id}" name="${spec.id.slice(2)}"${attrs([
     ["type", spec.inputType ?? "text"],
     ["autocomplete", spec.autocomplete ?? "off"],
@@ -127,16 +208,19 @@ function renderTextField(spec: TextFieldSpec): string {
     ["inputmode", spec.inputMode ?? (spec.inputType === "email" ? "email" : undefined)],
     ["autocapitalize", spec.inputType === "email" ? "none" : undefined],
     ["spellcheck", spec.inputType === "email" ? "false" : undefined],
-    ["required", spec.required ? true : undefined],
+    ...stateAttrs(spec.required, spec.showWhen),
     ["aria-describedby", `m-${spec.id}`],
+    ...comboAttrs(spec.id, suggestions),
     ["data-control", true],
   ])}>`;
-  const control = spec.leadingIcon
+  const box = spec.leadingIcon
     ? `<div class="at-inputgroup">${icon(spec.leadingIcon, "ic at-inputgroup__icon")}${input}</div>`
     : `<div class="at-control">${input}</div>`;
+  const control = suggestions.length > 0 ? renderCombo(spec.id, box, suggestions) : box;
   const wrapper = fieldAttrs(spec.errorKey, spec.kind, spec.required, spec.message, [
     ["data-custom", spec.answerKey],
     ["data-invalid", spec.invalid],
+    ...conditionAttrs(spec.showWhen),
   ]);
   return `<div class="at-field"${wrapper}>${labelOf(spec.id, spec.label, spec.required)}${control}${slot(spec.id, spec.note)}</div>`;
 }
@@ -185,13 +269,19 @@ export function renderPersonalFields(model: RegistrationFormModel): string {
 }
 
 function questionKeyAttrs(question: FormQuestion, kind: string, message: string | null): string {
-  return fieldAttrs(customDataErrorKey(question.key), kind, question.required, message, [["data-custom", question.key]]);
+  return fieldAttrs(customDataErrorKey(question.key), kind, question.required, message, [
+    ["data-custom", question.key],
+    ...conditionAttrs(question.showWhen),
+  ]);
 }
 
-/** What the renderers know about the event besides the question. */
+/** What the renderers know besides the question. */
 export interface QuestionContext {
   /** The IANA time zone the event's clock times are in. */
   timeZone: string;
+  /** The id of the panel that follows this question and holds the questions that depend on its answer. Absent when
+   * nothing depends on it. Only a Yes/No or a choice has one, and it names it in `aria-controls`. */
+  panelId?: string;
 }
 
 type QuestionRenderer = (question: FormQuestion, id: string, context: QuestionContext) => string;
@@ -256,7 +346,8 @@ function invalidMessage(question: FormQuestion): string | undefined {
   }
 }
 
-/** A one-line control for a question: the spec of a fixed field, filled in from the question. */
+/** A one-line control for a question: the spec of a fixed field, filled in from the question, with the question's icon
+ * inside the box. */
 function questionField(question: FormQuestion, id: string, own: Pick<TextFieldSpec, "kind" | "message"> & Partial<TextFieldSpec>): string {
   return renderTextField({
     id,
@@ -266,12 +357,20 @@ function questionField(question: FormQuestion, id: string, own: Pick<TextFieldSp
     note: questionNote(question),
     inputMode: inputModeOf(question),
     answerKey: question.key,
+    showWhen: question.showWhen,
+    leadingIcon: question.icon ?? undefined,
     ...own,
   });
 }
 
+/** A short text. With suggestions it is a box with a list under it that helps and never limits. */
 function renderTextQuestion(question: FormQuestion, id: string): string {
-  return questionField(question, id, { kind: "text", message: "Answer this question.", maxLength: REGISTRANT_TEXT_MAX });
+  return questionField(question, id, {
+    kind: "text",
+    message: "Answer this question.",
+    maxLength: REGISTRANT_TEXT_MAX,
+    suggestions: question.suggestions,
+  });
 }
 
 /** A long text is a box of several lines. Line breaks are kept; the server counts the characters. */
@@ -280,13 +379,14 @@ function renderLongTextQuestion(question: FormQuestion, id: string): string {
     ["rows", "4"],
     ["maxlength", String(registrantRawLimit(REGISTRANT_LONG_TEXT_MAX))],
     ["inputmode", inputModeOf(question)],
-    ["required", question.required ? true : undefined],
+    ...stateAttrs(question.required, question.showWhen),
     ["aria-describedby", `m-${id}`],
     ["data-control", true],
   ])}></textarea>`;
   const wrapper = fieldAttrs(customDataErrorKey(question.key), "longtext", question.required, "Answer this question.", [
     ["data-custom", question.key],
     ["data-invalid", invalidMessage(question)],
+    ...conditionAttrs(question.showWhen),
   ]);
   return `<div class="at-field"${wrapper}>${labelOf(id, question.label, question.required)}${textarea}${slot(id, questionNote(question))}</div>`;
 }
@@ -323,29 +423,38 @@ function option(value: string, text: string): string {
   return `<option${attrs([["value", value]])}>${esc(text)}</option>`;
 }
 
-function renderChoice(question: FormQuestion, id: string, kind: "select" | "choice", options: string): string {
+function renderChoice(question: FormQuestion, id: string, kind: "select" | "choice", options: string, context: QuestionContext): string {
   const message = kind === "select" ? "Choose one option." : "Choose Yes or No.";
   const select = `<select class="at-select" id="${id}" name="${id.slice(2)}"${attrs([
-    ["required", question.required ? true : undefined],
+    ...stateAttrs(question.required, question.showWhen),
     ["aria-describedby", `m-${id}`],
+    ["aria-controls", context.panelId],
     ["data-control", true],
   ])}>${option("", "Choose one")}${options}</select>`;
   return `<div class="at-field"${questionKeyAttrs(question, kind, message)}>${labelOf(id, question.label, question.required)}<div class="at-control">${select}</div>${slot(id, question.description)}</div>`;
 }
 
-function renderSelectQuestion(question: FormQuestion, id: string): string {
-  return renderChoice(question, id, "select", question.options.map((value) => option(value, value)).join(""));
+function renderSelectQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
+  return renderChoice(question, id, "select", question.options.map((value) => option(value, value)).join(""), context);
 }
 
 /** A Yes/No question. Optional, it is one checkbox: ticked is "true", and unticked sends nothing, so a
  * guest who skipped it is not recorded as having said no. Required, the guest must answer, and a
  * checkbox cannot tell "no" from "not answered", so it is a list of Yes and No. */
-function renderBooleanQuestion(question: FormQuestion, id: string): string {
+function renderBooleanQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
   if (question.required) {
-    return renderChoice(question, id, "choice", `${option("true", "Yes")}${option("false", "No")}`);
+    return renderChoice(question, id, "choice", `${option("true", "Yes")}${option("false", "No")}`, context);
   }
   const note = question.description ? `<small>${esc(question.description)}</small>` : "";
-  return `<label class="reg-opt at-check"${questionKeyAttrs(question, "flag", null)}><input type="checkbox" id="${id}" name="${id.slice(2)}" data-control><span class="at-check__box">${checkTick()}</span>${icon("plus")}<span class="reg-opt__text">${esc(question.label)}${note}</span></label>`;
+  // A row with no icon is a plain checkbox and its text, like the terms. `reg-opt--bare` lets a run that has rows with
+  // icons keep the text of such a row in line with the others.
+  const picture = question.icon ? icon(question.icon) : "";
+  const checkbox = `<input type="checkbox" id="${id}" name="${id.slice(2)}"${attrs([
+    ...stateAttrs(false, question.showWhen),
+    ["aria-controls", context.panelId],
+    ["data-control", true],
+  ])}>`;
+  return `<label class="reg-opt at-check${question.icon ? "" : " reg-opt--bare"}"${questionKeyAttrs(question, "flag", null)}>${checkbox}<span class="at-check__box">${checkTick()}</span>${picture}<span class="reg-opt__text">${esc(question.label)}${note}</span></label>`;
 }
 
 /** How to draw each kind of question. A kind that is not here is not drawn (see `canDrawQuestion`). */
@@ -370,28 +479,88 @@ function isOptionRow(question: FormQuestion): boolean {
   return question.type === "boolean" && !question.required;
 }
 
-/** The "Additional details" section: the organiser's questions, in their order. Empty without questions. */
-export function renderQuestions(questions: readonly FormQuestion[], context: QuestionContext): string {
-  if (questions.length === 0) return "";
+/** True for a question whose answer can show others: a Yes/No or a choice that is itself always asked. A question
+ * with a condition of its own is not one, so there is no chain: the server refuses chains, and the page does not
+ * rely on that. */
+function canControl(question: FormQuestion): boolean {
+  return (question.type === "boolean" || question.type === "select") && question.showWhen === null;
+}
+
+/** The keys of the questions among `questions` that can control others. */
+export function controllerKeys(questions: readonly FormQuestion[]): ReadonlySet<string> {
+  return new Set(questions.filter(canControl).map((question) => question.key));
+}
+
+/** True when a question with this condition can ever be shown: it has none, or the question it names is one of
+ * `controllers`. Otherwise nothing could show it, and the page leaves it out. */
+export function canBeShown(showWhen: ShowWhen | null | undefined, controllers: ReadonlySet<string>): boolean {
+  return !showWhen || controllers.has(showWhen.field);
+}
+
+/** A question and the id of its control. The id is its position in the list, never its key. */
+interface Placed {
+  question: FormQuestion;
+  id: string;
+}
+
+/** The questions of the main run, in the organiser's order, and the ones that wait in a panel, by the key of the
+ * question they depend on. A question that cannot be shown is in neither. */
+function placeQuestions(questions: readonly FormQuestion[]): { main: Placed[]; panels: Map<string, Placed[]> } {
+  const controllers = controllerKeys(questions);
+  const main: Placed[] = [];
+  const panels = new Map<string, Placed[]>();
+  questions.forEach((question, index) => {
+    const placed = { question, id: `f-q${index}` };
+    const condition = question.showWhen;
+    if (!condition) main.push(placed);
+    else if (canBeShown(condition, controllers)) panels.set(condition.field, [...(panels.get(condition.field) ?? []), placed]);
+  });
+  return { main, panels };
+}
+
+/** The panel that follows a question and holds the questions that depend on it. It is hidden here; the page script
+ * shows it while at least one of them is asked. */
+function renderReveal(id: string, entries: readonly Placed[], context: QuestionContext): string {
+  return `<div class="reg-reveal" id="${id}" data-reveal hidden>${renderGroup(entries, new Map(), context)}</div>`;
+}
+
+/** The questions of `entries` in order, a run of optional Yes/No rows in one block, and after each question that has
+ * one the panel of the questions that depend on it. A panel is drawn once, under the first question with its key,
+ * so that two questions with one key (the page does not rely on a key being unique) cannot repeat its ids. A run in
+ * which some row has an icon is marked, so that a row without one can keep its text in line. */
+function renderGroup(entries: readonly Placed[], panels: Map<string, Placed[]>, context: QuestionContext): string {
   const parts: string[] = [];
   let run: string[] = [];
+  let runHasIcon = false;
   const endRun = () => {
-    if (run.length > 0) parts.push(`<div class="reg-opts">${run.join("")}</div>`);
+    if (run.length > 0) parts.push(`<div class="${runHasIcon ? "reg-opts reg-opts--icons" : "reg-opts"}">${run.join("")}</div>`);
     run = [];
+    runHasIcon = false;
   };
-  questions.forEach((question, index) => {
+  for (const { question, id } of entries) {
     const draw = QUESTION_RENDERERS.get(question.type);
-    if (!draw) return;
-    const html = draw(question, `f-q${index}`, context);
+    if (!draw) continue;
+    const waiting = panels.get(question.key);
+    panels.delete(question.key);
+    const panelId = `${id}-reveal`;
+    const html = draw(question, id, { ...context, panelId: waiting ? panelId : undefined }) + (waiting ? renderReveal(panelId, waiting, context) : "");
     if (isOptionRow(question)) {
       run.push(html);
-      return;
+      runHasIcon ||= question.icon !== null;
+    } else {
+      endRun();
+      parts.push(html);
     }
-    endRun();
-    parts.push(html);
-  });
+  }
   endRun();
-  return `<div class="reg-section"><p class="reg-section__label">Additional details</p>${parts.join("")}</div>`;
+  return parts.join("");
+}
+
+/** The "Additional details" section: the organiser's questions, in their order. Empty without questions. */
+export function renderQuestions(questions: readonly FormQuestion[], context: QuestionContext): string {
+  const { main, panels } = placeQuestions(questions);
+  if (main.length === 0) return "";
+  return `<div class="reg-section"><p class="reg-section__label">Additional details</p>${renderGroup(main, panels, context)}</div>`;
 }
 
 /** A link to a legal text. It opens in a new tab: the form keeps what the guest has typed. */
@@ -401,7 +570,7 @@ function legalLink(path: string, text: string): string {
 
 function renderTermsRow(model: RegistrationFormModel): string {
   const message = "Accept the event terms to continue.";
-  return `<div${fieldAttrs(ERROR_KEY_TERMS, "terms", true, message)}><label class="at-check"><input type="checkbox" id="f-terms" name="terms" required aria-describedby="m-f-terms" data-control><span class="at-check__box">${checkTick()}</span><span>I accept the ${legalLink(model.termsPath, "event terms")}${REQUIRED_MARK}</span></label>${slot("f-terms", null)}</div>`;
+  return `<div${fieldAttrs(ERROR_KEY_TERMS, "terms", true, message)}><label class="at-check"><input type="checkbox" id="f-terms" name="terms" required aria-describedby="m-f-terms" data-control><span class="at-check__box">${checkTick()}</span><span>I accept the ${legalLink(model.termsPath, "event terms")}${REQUIRED_MARK}</span></label>${slot("f-terms", null, true)}</div>`;
 }
 
 function renderConsentRow(consent: FormConsent, index: number): string {
@@ -424,7 +593,7 @@ function renderChallenge(model: RegistrationFormModel): string {
     ["data-response-field", "false"],
   ])}></div>`;
   const wrapper = fieldAttrs(ERROR_KEY_CHALLENGE, "challenge", true, "Complete the security check.");
-  return `<div${wrapper}><div class="reg-captcha" tabindex="-1" data-control>${widget}</div>${slot("challenge", null)}</div>`;
+  return `<div${wrapper}><div class="reg-captcha" tabindex="-1" data-control>${widget}</div>${slot("challenge", null, true)}</div>`;
 }
 
 /** The label of the send button, by who decides (D-B1). */

@@ -57,6 +57,9 @@ export const REGISTRATION_PAGE_CSS = `
 .reg-slot__err .ic { margin-top: 2px; font-size: 13px; }
 .has-error .reg-slot__hint { visibility: hidden; }
 .has-error .reg-slot__err { visibility: visible; }
+/* The terms and the security check are not text boxes, so their slot takes no room until it has an error: the ticks stand as close as in the mockup, and the error opens under its row. */
+.reg-slot--collapsed { display: none; }
+.has-error .reg-slot--collapsed { display: grid; }
 .has-error .at-check__box { border-color: var(--status-error); }
 .reg-section { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--border); }
 .reg-section__label { margin: 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
@@ -68,7 +71,22 @@ export const REGISTRATION_PAGE_CSS = `
 .reg-opt:has(input:checked) .ic { color: var(--primary); }
 .reg-opt__text { color: var(--text-primary); line-height: 1.35; overflow-wrap: anywhere; }
 .reg-opt__text small { display: block; margin-top: 1px; white-space: pre-line; }
+/* In a run where some row has an icon, a row with none keeps its text in line with the others: the icon's width and the gap. */
+.reg-opts--icons > .reg-opt--bare .reg-opt__text { margin-left: calc(18px + var(--space-2)); }
+/* The questions that wait for another answer, under its row or its field. The small negative margin joins the panel to the row above it. */
+.reg-reveal { margin: -2px 0 2px; padding: var(--space-3); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-md); display: grid; gap: var(--space-3); }
+/* A text box with suggestions: the product's searchable-select panel under it, over what follows. A long suggestion wraps instead of being cut. Any text is welcome. */
+.combo { position: relative; }
+.combo__panel { position: absolute; left: 0; right: 0; top: calc(100% + 4px); margin: 0; }
+.combo .searchable-select__option[aria-selected="true"] { background: var(--surface-hover, var(--surface-sunken)); }
+.combo .searchable-select__option .ic { font-size: 16px; color: var(--text-muted); }
+.combo .searchable-select__name { white-space: normal; overflow-wrap: anywhere; }
+.combo .searchable-select__name strong { font-weight: var(--fw-semibold); color: var(--primary); }
+.combo__custom { border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); margin-top: 2px; }
+.combo .searchable-select__empty { padding: var(--space-1) var(--space-2) 0; }
 .reg-checks { display: grid; gap: 10px; }
+/* The row of the terms sits in a box of its own (it has an error slot). A grid makes its tick a block like the other ticks, so the box is no taller than the tick and the rows stand 10 px apart. */
+.reg-checks > [data-field] { display: grid; }
 .reg-checks .at-check { align-items: flex-start; font-size: var(--fs-sm); color: var(--text-primary); line-height: 1.45; }
 .reg-checks .at-check__box { margin-top: 2px; }
 .reg-checks small { display: block; margin-top: 1px; }

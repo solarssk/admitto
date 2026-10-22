@@ -12,7 +12,13 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { resolveEventContactVars } from "@admitto/mail-templates";
-import { eventCustomFieldRulesMaxLength, eventEndsAtUtc, type EventCustomFieldRules } from "@admitto/shared";
+import {
+  eventCustomFieldRulesMaxLength,
+  eventEndsAtUtc,
+  type EventCustomFieldRules,
+  type GuestFormIcon,
+  type ShowWhen,
+} from "@admitto/shared";
 import {
   formatDate,
   formatEventHoursRange,
@@ -25,7 +31,7 @@ import {
 import { legalDocumentPath } from "../legal/legal-documents.js";
 import { loadRequiredLegalDocuments, type RequiredLegalDocuments } from "../legal/registration-gate.js";
 import { resolveAccessMethodAvailability } from "./access-methods.js";
-import { canDrawQuestion, type FormQuestionType } from "./form-fields.js";
+import { canBeShown, canDrawQuestion, controllerKeys, type FormQuestionType } from "./form-fields.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
 
 /** An event slug as the create-event form allows it (lowercase letters, digits, `_` and `-`, up to 80).
@@ -44,8 +50,18 @@ export interface FormQuestion {
   /** The choices of a `select`; empty for the other types. */
   options: readonly string[];
   /** The format rules of a `text`, `long_text` or `phone` question (null for the others, which take
-   * none, and for a question without any). The page shows them as hints only: the server decides. */
+   * none, and for a question without any). The page shows them as hints only: the server decides. Only
+   * the four format keys: the icon, the condition and the suggestions are the fields below. */
   rules: EventCustomFieldRules | null;
+  /** The symbol drawn with the question (`rules.icon`), or null. */
+  icon: GuestFormIcon | null;
+  /** The condition under which the question is asked (`rules.show_when`): the answer to another question of the
+   * form that shows it. Null: always asked. A question with one waits, hidden and not required, in the panel of the
+   * question it names (see `renderQuestions`). */
+  showWhen: ShowWhen | null;
+  /** What the page offers while a guest types (`rules.suggestions`), for a `text` question only. They suggest and
+   * nothing more: any text is sent as it was typed. */
+  suggestions: readonly string[];
 }
 
 /** An extra consent the event asks for: its own checkbox, labelled with its title. */
@@ -155,34 +171,66 @@ async function loadContact(db: PrismaClient, eventId: string): Promise<FormConta
 }
 
 /** The format rules the page shows for a question: only the types that take rules have any (the server
- * ignores a rule stored on another type, so the page must not announce it). */
+ * ignores a rule stored on another type, so the page must not announce it), and only the four that shape an
+ * answer. The icon, the condition and the suggestions are read into their own fields of the question. */
 function hintRules(type: FormQuestionType, field: RegistrantFormField): EventCustomFieldRules | null {
-  return eventCustomFieldRulesMaxLength(type) === null ? null : (field.rules ?? null);
+  const rules = field.rules;
+  if (!rules || eventCustomFieldRulesMaxLength(type) === null) return null;
+  const hints: EventCustomFieldRules = {};
+  if (rules.min_length !== undefined) hints.min_length = rules.min_length;
+  if (rules.max_length !== undefined) hints.max_length = rules.max_length;
+  if (rules.digits_only !== undefined) hints.digits_only = rules.digits_only;
+  if (rules.example !== undefined) hints.example = rules.example;
+  return Object.keys(hints).length > 0 ? hints : null;
 }
 
-/** The questions to draw, or null when a required one cannot be drawn. A form nobody can submit is
- * worse than a closed one: a required question of a type the page does not know (a type that
- * `canDrawQuestion` refuses) or a choice with no choices fails every submission on the server. */
+/** The type the page draws a field as, or null when it cannot: a type it does not know (a row written by a later
+ * version) or a choice with no choices, which nobody could answer. */
+function drawableType(field: RegistrantFormField): FormQuestionType | null {
+  const type = field.type ?? "text";
+  const hasChoices = type !== "select" || (field.options ?? []).length > 0;
+  return canDrawQuestion(type) && hasChoices ? type : null;
+}
+
+/** The question for a field the page can draw. The rules were read by `readStoredFieldRules` when the field was
+ * loaded, so an unreadable rules object is already no rules: the question is asked always, with no icon. */
+function toQuestion(field: RegistrantFormField, type: FormQuestionType): FormQuestion {
+  const rules = field.rules;
+  return {
+    key: field.source_field,
+    label: field.label,
+    description: field.description ?? null,
+    required: field.required === true,
+    type,
+    options: type === "select" ? (field.options ?? []) : [],
+    rules: hintRules(type, field),
+    icon: rules?.icon ?? null,
+    showWhen: rules?.show_when ?? null,
+    suggestions: type === "text" ? (rules?.suggestions ?? []) : [],
+  };
+}
+
+/** The questions to draw, in the organiser's order, or null when a required one cannot be drawn. A form nobody
+ * can submit is worse than a closed one: a required question of a type the page does not know or a choice with
+ * no choices fails every submission on the server.
+ *
+ * A question with a condition (`rules.show_when`) is asked only when the question it names has that answer, so
+ * the page can ask it only when that question is on the form, is a Yes/No or a choice, and is itself always
+ * asked. The server guarantees that, and the page does not rely on it. A question with a condition that
+ * nothing can meet is left out: it is never asked, so it is never required and never closes the form. A
+ * required question the page cannot draw closes the form only when a guest could meet its condition and then
+ * be stuck. */
 function drawQuestions(fields: readonly RegistrantFormField[]): FormQuestion[] | null {
-  const questions: FormQuestion[] = [];
+  const drawable: FormQuestion[] = [];
+  const stuck: RegistrantFormField[] = [];
   for (const field of pickRegistrantFormFields(fields)) {
-    const type = field.type ?? "text";
-    const options = field.options ?? [];
-    if (canDrawQuestion(type) && (type !== "select" || options.length > 0)) {
-      questions.push({
-        key: field.source_field,
-        label: field.label,
-        description: field.description ?? null,
-        required: field.required === true,
-        type,
-        options: type === "select" ? options : [],
-        rules: hintRules(type, field),
-      });
-    } else if (field.required) {
-      return null;
-    }
+    const type = drawableType(field);
+    if (type !== null) drawable.push(toQuestion(field, type));
+    else if (field.required) stuck.push(field);
   }
-  return questions;
+  const controllers = controllerKeys(drawable);
+  if (stuck.some((field) => canBeShown(field.rules?.show_when, controllers))) return null;
+  return drawable.filter((question) => canBeShown(question.showWhen, controllers));
 }
 
 function legalPaths(slug: string, legal: RequiredLegalDocuments): { privacy: string; terms: string; consents: FormConsent[] } | null {

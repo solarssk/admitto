@@ -15,7 +15,17 @@
  *   server says: "Check your inbox", an error under a field, or "Try again in a moment". A field that
  *   carries its own sentence for a refused answer (`data-invalid`: a long text, a date, a time, a phone
  *   number) shows that sentence and never the server's text;
- * - gives the Turnstile widget its three callbacks and tells the guest when the widget cannot load.
+ * - gives the Turnstile widget its three callbacks and tells the guest when the widget cannot load;
+ * - asks a question only when its condition is met. A question with a condition (`data-show-when-field`, the key of
+ *   the question it depends on, and `data-show-when-value`) is hidden and disabled and not required until the
+ *   answer to that question is exactly that value, which is what `isQuestionShown` of `@admitto/shared` decides.
+ *   The answer to a Yes/No is "true" when it is ticked or Yes, else none; a choice is the text of its option. It is
+ *   not that function's code and the page has no copy of its logic: it compares two strings, and a test runs this
+ *   script against `isQuestionShown` for every case. A question that is not asked is not checked and not sent, and
+ *   what the guest typed in it is kept, so it is there again when the question comes back;
+ * - gives a text box that has suggestions (`data-combo`) a list under it: it filters the rows the server wrote by
+ *   what is typed, marks the match, and picks with the mouse, a tap or the keys. It is an ARIA combobox with a
+ *   listbox. A pick writes the text of the suggestion into the box, and any other text stays as it was typed.
  *
  * Nothing the guest typed is put in an address, and the page has no cookie.
  */
@@ -38,6 +48,12 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
   var again = document.getElementById("reg-again");
   var regions = Array.prototype.slice.call(document.querySelectorAll("[data-hide-when-done]"));
   var boxes = Array.prototype.slice.call(form.querySelectorAll("[data-field]"));
+  var panels = Array.prototype.slice.call(form.querySelectorAll("[data-reveal]"));
+  var asked = Object.create(null);
+  boxes.forEach(function (box) {
+    var key = box.getAttribute("data-custom");
+    if (key !== null) asked[key] = box;
+  });
   var challenge = form.querySelector('[data-kind="challenge"]');
   var captcha = form.querySelector(".cf-turnstile");
   var sendLabel = label.textContent;
@@ -97,6 +113,41 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     return ctl.value.trim();
   }
 
+  // Whether a question is asked now. One without a condition always is. One with a condition is when the question it
+  // names, which has no condition of its own, has exactly that answer: the same rule as isQuestionShown, which reads
+  // "true" for a ticked Yes/No and the text of the option for a choice, and takes no answer for a match of nothing.
+  function isShown(box) {
+    var field = box.getAttribute("data-show-when-field");
+    if (field === null) return true;
+    var source = asked[field];
+    if (!source || source.hasAttribute("data-show-when-field")) return false;
+    return valueOf(source) === box.getAttribute("data-show-when-value");
+  }
+
+  // A question that is not asked is hidden, and its control is disabled and not required, so that no browser rule or
+  // autofill touches it. What the guest typed stays in the control.
+  function setShown(box, on) {
+    var ctl = control(box);
+    box.hidden = !on;
+    if (ctl) {
+      ctl.disabled = !on;
+      if (box.hasAttribute("data-required")) ctl.required = on;
+    }
+    if (!on) clearError(box);
+  }
+
+  // Shows and hides the questions that wait for a condition, and the panel that holds them while any is asked.
+  function sync() {
+    boxes.forEach(function (box) {
+      if (!box.hasAttribute("data-show-when-field")) return;
+      var on = isShown(box);
+      if (box.hidden === on) setShown(box, on);
+    });
+    panels.forEach(function (panel) {
+      panel.hidden = panel.querySelector("[data-show-when-field]:not([hidden])") === null;
+    });
+  }
+
   // A date or time the guest began and did not finish reads as empty. Left alone, it would be dropped from what is sent without a word.
   function unfinished(box) {
     var ctl = control(box);
@@ -115,7 +166,7 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
   function validate() {
     var found = [];
     boxes.forEach(function (box) {
-      var message = problem(box);
+      var message = isShown(box) ? problem(box) : "";
       if (message) found.push({ box: box, message: message });
     });
     return found;
@@ -140,7 +191,7 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     var found = [];
     boxes.forEach(function (box) {
       var key = box.getAttribute("data-field");
-      if (Object.prototype.hasOwnProperty.call(errors, key) && typeof errors[key] === "string" && errors[key] !== "") {
+      if (isShown(box) && Object.prototype.hasOwnProperty.call(errors, key) && typeof errors[key] === "string" && errors[key] !== "") {
         // The field's own sentence when it has one: the server's text for it is not put on the page.
         found.push({ box: box, message: box.getAttribute("data-invalid") || errors[key] });
       }
@@ -157,6 +208,7 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     boxes.forEach(function (box) {
       var kind = box.getAttribute("data-kind");
       var custom = box.getAttribute("data-custom");
+      if (!isShown(box)) return;
       var value = valueOf(box);
       if (value === "") return;
       if (custom !== null) {
@@ -248,6 +300,7 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
   function onEdit(event) {
     var box = event.target && event.target.closest ? event.target.closest("[data-field]") : null;
     if (box) clearError(box);
+    sync();
   }
   form.addEventListener("input", onEdit);
   form.addEventListener("change", onEdit);
@@ -273,6 +326,124 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     setTimeout(function () { if (!window.turnstile && !token) challengeProblem(); }, WIDGET_WAIT_MS);
   }
 
+  // A text box with suggestions: an ARIA combobox whose popup is a listbox of rows the server wrote. Each row holds its
+  // suggestion in data-value; the box keeps any text, and a pick only writes the suggestion's text into it.
+  function setUpCombo(wrap) {
+    var input = wrap.querySelector("input");
+    var panel = wrap.querySelector("[data-combo-panel]");
+    var list = wrap.querySelector('[role="listbox"]');
+    var none = wrap.querySelector("[data-combo-empty]");
+    var custom = wrap.querySelector("[data-combo-custom]");
+    var box = wrap.closest("[data-field]");
+    var suggestions = Array.prototype.slice.call(list.querySelectorAll('[role="option"]:not([data-combo-custom])'));
+    var rows = [];
+    var active = -1;
+
+    function setActive(index) {
+      active = index;
+      rows.forEach(function (row, n) { row.setAttribute("aria-selected", n === index ? "true" : "false"); });
+      if (index < 0) {
+        input.removeAttribute("aria-activedescendant");
+        return;
+      }
+      input.setAttribute("aria-activedescendant", rows[index].id);
+      if (rows[index].scrollIntoView) rows[index].scrollIntoView({ block: "nearest" });
+    }
+
+    function close() {
+      panel.hidden = true;
+      input.setAttribute("aria-expanded", "false");
+      setActive(-1);
+    }
+
+    function pick(value) {
+      input.value = value;
+      clearError(box);
+      close();
+    }
+
+    // The text of a row with the part that matches in bold. The offsets are for the lower-case text, so a letter
+    // whose lower case has another length (some capitals of other alphabets) turns the marking off for that row.
+    function mark(row, text, at, length) {
+      var name = row.querySelector(".searchable-select__name");
+      name.textContent = "";
+      if (at < 0) {
+        name.textContent = text;
+        return;
+      }
+      var strong = document.createElement("strong");
+      strong.textContent = text.slice(at, at + length);
+      name.appendChild(document.createTextNode(text.slice(0, at)));
+      name.appendChild(strong);
+      name.appendChild(document.createTextNode(text.slice(at + length)));
+    }
+
+    function render() {
+      var typed = input.value.trim();
+      var needle = typed.toLowerCase();
+      var exact = false;
+      rows = [];
+      suggestions.forEach(function (row) {
+        var text = row.getAttribute("data-value");
+        var lower = text.toLowerCase();
+        var at = needle === "" ? 0 : lower.indexOf(needle);
+        row.hidden = at === -1;
+        if (at === -1) return;
+        if (lower === needle) exact = true;
+        mark(row, text, needle === "" || lower.length !== text.length ? -1 : at, needle.length);
+        rows.push(row);
+      });
+      var offer = typed !== "" && !exact;
+      none.hidden = !(typed !== "" && rows.length === 0);
+      custom.hidden = !offer;
+      if (offer) {
+        custom.setAttribute("data-value", typed);
+        custom.querySelector(".searchable-select__name").textContent = "Use “" + typed + "” as written";
+        rows.push(custom);
+      }
+      panel.hidden = rows.length === 0;
+      input.setAttribute("aria-expanded", String(rows.length > 0));
+      setActive(-1);
+    }
+
+    function move(key) {
+      if (panel.hidden) render();
+      if (rows.length === 0) return;
+      var last = rows.length - 1;
+      var next = active + 1;
+      if (key === "ArrowUp") next = active < 0 ? last : active - 1;
+      setActive(Math.max(0, Math.min(last, next)));
+    }
+
+    input.addEventListener("focus", render);
+    input.addEventListener("click", function () { if (panel.hidden) render(); });
+    input.addEventListener("input", render);
+    input.addEventListener("blur", close);
+    input.addEventListener("keydown", function (event) {
+      if (event.isComposing) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        move(event.key);
+      } else if (event.key === "Enter" && !panel.hidden && active >= 0) {
+        event.preventDefault();
+        pick(rows[active].getAttribute("data-value"));
+      } else if (event.key === "Escape" && !panel.hidden) {
+        event.preventDefault();
+        close();
+      }
+    });
+    // Keep the focus in the box while a row is pressed, so the list is still there for the click that follows.
+    list.addEventListener("mousedown", function (event) { event.preventDefault(); });
+    list.addEventListener("click", function (event) {
+      var row = event.target && event.target.closest ? event.target.closest('[role="option"]') : null;
+      if (row && !row.hidden) pick(row.getAttribute("data-value"));
+    });
+  }
+  Array.prototype.slice.call(form.querySelectorAll("[data-combo]")).forEach(setUpCombo);
+
+  // The state a browser restores into the form (a reload, the way back) can leave a condition met.
+  sync();
+  window.addEventListener("pageshow", sync);
   submit.disabled = false;
 })();
 `;

@@ -56,12 +56,12 @@ describe("the form's structure follows the mockup, with the product's own classe
     expect(doc.querySelector(".reg-row")?.querySelectorAll(".at-field")).toHaveLength(2);
   });
 
-  it("gives the fields the mockup's icons: a mail, a building and a group, and a plus on an option row", () => {
+  it("gives the fields the mockup's icons: a mail, a building and a group; an option row has the icon its question names, else none", () => {
     const icons = (selector: string) => [...doc.querySelectorAll(`${selector} use`)].map((el: Dom) => el.getAttribute("href"));
     expect(icons("[data-field=email] .at-inputgroup__icon")).toEqual(["#i-mail"]);
     expect(icons("[data-field=company] .at-inputgroup__icon")).toEqual(["#i-building"]);
     expect(icons("[data-field=department] .at-inputgroup__icon")).toEqual(["#i-users"]);
-    expect(icons(".reg-opt > svg.ic")).toEqual(["#i-plus", "#i-plus"]);
+    expect(icons(".reg-opt > svg.ic")).toEqual([]);
   });
 
   it("has one message slot under each field that can fail, holding the note and the error", () => {

@@ -37,7 +37,38 @@ export function formModel(overrides: Partial<RegistrationFormModel> = {}): Regis
 }
 
 export function question(overrides: Partial<FormQuestion> & Pick<FormQuestion, "key" | "label" | "type">): FormQuestion {
-  return { description: null, required: false, options: [], rules: null, ...overrides };
+  return { description: null, required: false, options: [], rules: null, icon: null, showWhen: null, suggestions: [], ...overrides };
+}
+
+/**
+ * A form with what the mockup shows: an icon on every kind of row and field, a panel under a Yes/No row and one under a
+ * choice, a text box with suggestions, a row without an icon, and a question with no place for an icon. The ids of the
+ * questions are f-q0 to f-q9 in this order.
+ */
+export function panelModel(overrides: Partial<RegistrationFormModel> = {}): RegistrationFormModel {
+  return formModel({
+    questions: [
+      question({ key: "day", label: "Which days will you attend?", type: "select", required: true, options: ["Both days", "Day 1 only", "Day 2 only"] }),
+      question({ key: "hotel", label: "Hotel name", type: "text", icon: "bed", showWhen: { field: "day", value: "Both days" } }),
+      question({ key: "parking", label: "I will arrive by car and need parking", type: "boolean", icon: "parking" }),
+      question({ key: "plate", label: "Car registration number", type: "text", icon: "car", description: "The venue uses it at the gate.", showWhen: { field: "parking", value: true } }),
+      question({ key: "diet", label: "I have dietary requirements", type: "boolean", icon: "food", description: "Vegetarian, vegan or allergies." }),
+      question({
+        key: "diet_details",
+        label: "What should we know?",
+        type: "text",
+        icon: "food",
+        description: "Pick a suggestion, or write your own.",
+        suggestions: ["No pork", "Vegetarian", "Vegan"],
+        showWhen: { field: "diet", value: true },
+      }),
+      question({ key: "access", label: "I have accessibility or mobility needs", type: "boolean", icon: "accessible" }),
+      question({ key: "shirt", label: "I would like a shirt", type: "boolean" }),
+      question({ key: "notes", label: "Anything else?", type: "long_text", icon: "mail" }),
+      question({ key: "arrival", label: "Arrival date", type: "date", icon: "calendar" }),
+    ],
+    ...overrides,
+  });
 }
 
 /** One required question of each newer kind: what the page says when each is left empty or refused. */
