@@ -897,7 +897,9 @@ describe("AddAttendeeModal", () => {
   });
 });
 
-describe("AddAttendeeModal: the answer types of a custom field", () => {
+// The first mount of the date and time pickers is slow on a loaded runner (the admin suite took 405 s on CI against 100 s on a laptop, and two
+// of these tests ran out of the 10 s of the suite): a test that waits for them has 30 s, so that it fails for what it checks and not for the clock.
+describe("AddAttendeeModal: the answer types of a custom field", { timeout: 30_000 }, () => {
   const FIELDS = ANSWER_TYPE_FIELDS;
 
   beforeEach(() => {
