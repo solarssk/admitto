@@ -54,6 +54,14 @@ describe("normalizeCustomDataFieldValue", () => {
 });
 
 describe("buildCustomDataFromInput", () => {
+  it("counts a text answer in code points, as the guest path does: 100 emoji pass, 101 are refused", () => {
+    const hundred = "\u{1F600}".repeat(100);
+    expect(buildCustomDataFromInput([{ label: "Mood", source_field: "mood", type: "text" }], { mood: hundred })).toEqual({ mood: hundred });
+    expect(() =>
+      buildCustomDataFromInput([{ label: "Mood", source_field: "mood", type: "text" }], { mood: "\u{1F600}".repeat(101) }),
+    ).toThrow("validation_failed:mood");
+  });
+
   it("requires configured required fields on create", () => {
     expect(() => buildCustomDataFromInput([sizeField], { size: "M" })).not.toThrow();
     expect(() => buildCustomDataFromInput([sizeField], {})).toThrow(

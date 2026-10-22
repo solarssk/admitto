@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton, TopProgressBar } from "@admitto/ui";
-import type { EnabledWalletPlatforms } from "@admitto/shared";
+import { isFreeInputCustomFieldType, type EnabledWalletPlatforms } from "@admitto/shared";
 import type {
   AttendeeMailStatusFilter,
   AttendeeRowDto,
@@ -1289,7 +1289,7 @@ function FilterToolbar({
 }>) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const activeCustomFieldCount = customFields.filter((field) =>
-    field.type === "text"
+    isFreeInputCustomFieldType(field.type)
       ? Boolean(customFieldTextInputs[field.source_field]?.trim())
       : (customFieldSelectValues[field.source_field]?.length ?? 0) > 0,
   ).length;
@@ -1414,7 +1414,7 @@ function FilterToolbar({
           <p className="attendees-filters-menu__section-label">Custom fields</p>
         )}
         {customFields.map((field) => {
-          if (field.type === "text") {
+          if (isFreeInputCustomFieldType(field.type)) {
             return (
               <div className="attendees-toolbar__filter" key={field.id}>
                 <Input
