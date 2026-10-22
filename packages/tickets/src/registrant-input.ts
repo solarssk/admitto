@@ -250,7 +250,11 @@ function answerFor(field: EventItemContent, raw: unknown): unknown {
  * other key (import-only fields, hidden fields, `__proto__`, `company` and `department`, anything
  * unknown) is dropped without an error. A payload with more keys than an event may have fields is
  * refused before anything is read. A text answer longer than the limit is refused, not cut.
- * Required fields on the form must be answered. Any failure throws {@link RegistrantInputError}. */
+ * Required fields on the form must be answered, unless they are questions with a condition that the other
+ * answers do not meet (`rules.show_when`, see isQuestionShown): the answer to such a question is not read, not
+ * checked and not stored, even when the client sends one, and the question is not required. Whether it is
+ * asked is judged on the answers to the other questions as the server normalised them, never on what the
+ * client claims. Any failure throws {@link RegistrantInputError}. */
 export function buildRegistrantCustomData(
   fields: readonly RegistrantFormField[],
   input: unknown,
@@ -264,9 +268,11 @@ export function buildRegistrantCustomData(
   }
 
   const onForm = pickRegistrantFormFields(fields, appliesTo);
+  // The answers as they came, for the declared fields only. answerFor cleans each one when it is read, and
+  // buildCustomDataFromInput does not read the answer to a question that is not asked.
   const answers: Record<string, unknown> = {};
   for (const field of onForm) {
-    const answer = input ? answerFor(field, ownValue(input, field.source_field)) : undefined;
+    const answer = input ? ownValue(input, field.source_field) : undefined;
     if (answer !== undefined) {
       Object.defineProperty(answers, field.source_field, {
         value: answer,
@@ -278,7 +284,7 @@ export function buildRegistrantCustomData(
   }
 
   try {
-    return buildCustomDataFromInput(onForm, answers);
+    return buildCustomDataFromInput(onForm, answers, answerFor);
   } catch {
     // The library messages carry field keys; the registrant gets one fixed code.
     throw new RegistrantInputError();
