@@ -35,6 +35,39 @@ function selectField(sourceField: string, label: string, options: string[]): Eve
   };
 }
 
+describe("AttendeesPage filters of the free-input field types", () => {
+  it.each(["long_text", "date", "datetime", "phone"] as const)(
+    "filters a %s field with a text box that sends a contains query, like a text field",
+    async (type) => {
+      fetchEventCustomFields.mockResolvedValue([{ ...textField("answer", "Answer"), type }]);
+      fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+
+      vi.useFakeTimers();
+      try {
+        renderPage();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+        });
+        fetchEventAttendees.mockClear();
+
+        fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+        fireEvent.change(screen.getByLabelText("Answer"), { target: { value: "abc" } });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(400);
+        });
+
+        expect(fetchEventAttendees).toHaveBeenCalledWith(
+          "evt-1",
+          expect.objectContaining({ customFieldParams: { cf_answer: ["abc"] } }),
+          expect.anything(),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+});
+
 describe("AttendeesPage custom-field text filter debounce", () => {
   it("debounces two text custom fields independently - typing in one does not reset the other's timer", async () => {
     fetchEventCustomFields.mockResolvedValue([

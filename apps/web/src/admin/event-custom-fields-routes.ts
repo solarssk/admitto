@@ -2,11 +2,20 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
-import { CUSTOM_FIELD_NOT_ANSWERED_KEY } from "@admitto/shared";
+import {
+  CUSTOM_FIELD_NOT_ANSWERED_KEY,
+  EVENT_CUSTOM_FIELD_TYPES,
+  type EventCustomFieldRules,
+  type EventCustomFieldType,
+} from "@admitto/shared";
 import {
   MAX_CUSTOM_FIELDS_PER_EVENT,
   eventCustomFieldOrderBy,
+  eventCustomFieldRulesFitType,
+  eventCustomFieldRulesSchema,
+  hasNoRules,
   isReservedCustomDataSourceField,
+  readStoredFieldRules,
   writeBulkActionLog,
   type OpsAuditContext,
 } from "@admitto/tickets";
@@ -34,6 +43,10 @@ class RequiredFieldNotOnFormError extends Error {}
 /** Thrown when a PATCH finds its field gone once it holds the lock (a delete committed after the
  * first read). Answered like any field the event does not have: 403. */
 class FieldGoneError extends Error {}
+
+/** Thrown when a save would leave a field with format rules that its type does not take (or a length
+ * longer than the type can hold). Mapped to 422 `invalid_field_rules`. */
+class InvalidFieldRulesError extends Error {}
 
 /** Thrown when a reorder lists other ids than the event's fields have now: one was added or
  * deleted since the client loaded the list, or never belonged to this event. Mapped to 409
@@ -67,17 +80,22 @@ const optionValueField = z
   .max(60)
   .refine((value) => value !== CUSTOM_FIELD_NOT_ANSWERED_KEY, { message: "reserved option value" });
 
+const fieldTypeSchema = z.enum(EVENT_CUSTOM_FIELD_TYPES);
+
 const createFieldSchema = z
   .object({
     source_field: slugField.min(1).max(60),
     label: z.string().trim().min(1).max(60),
     description: z.string().trim().max(500).optional(),
-    type: z.enum(["text", "select", "boolean"]).optional(),
+    type: fieldTypeSchema.optional(),
     required: z.boolean().optional(),
     // Whether the registration form asks guests this question. Left out = off, as for every field
     // that existed before the form; the Registration page sends true for a field it creates.
     show_on_form: z.boolean().optional(),
     options: z.array(optionValueField).max(20).optional(),
+    // Format rules of a text, long text or phone field (see eventCustomFieldRulesSchema): a shape
+    // that is not one is a 400, and rules the type does not take are a 422 (assertRulesFitType).
+    rules: eventCustomFieldRulesSchema.nullable().optional(),
   })
   .strict()
   .refine((row) => row.type !== "select" || (row.options != null && row.options.length > 0), {
@@ -96,12 +114,15 @@ const patchFieldSchema = z
     // null clears a previously set description; omitting the key leaves it untouched (same
     // omit-vs-null convention as options below).
     description: z.union([z.string().trim().max(500), z.null()]).optional(),
-    type: z.enum(["text", "select", "boolean"]).optional(),
+    type: fieldTypeSchema.optional(),
     required: z.boolean().optional(),
     show_on_form: z.boolean().optional(),
     // null (not just omitted) is how the client asks to clear a previous select's options when
     // switching to text/boolean - omitting the key means "leave options untouched" for PATCH.
     options: z.union([z.array(optionValueField).max(20), z.null()]).optional(),
+    // Same convention: null clears the rules (needed when the field becomes a type that takes none),
+    // omitting the key leaves them untouched, an object replaces them.
+    rules: eventCustomFieldRulesSchema.nullable().optional(),
   })
   .strict()
   .refine((row) => row.type !== "select" || (row.options != null && row.options.length > 0), {
@@ -120,11 +141,13 @@ export type EventCustomFieldDto = {
   source_field: string;
   label: string;
   description: string | null;
-  type: "text" | "select" | "boolean";
+  type: EventCustomFieldType;
   required: boolean;
   show_on_form: boolean;
   display_order: number | null;
   options: string[] | null;
+  /** Format rules of a text, long text or phone field; null = none. */
+  rules: EventCustomFieldRules | null;
   created_at: string;
 };
 
@@ -138,6 +161,7 @@ type CustomFieldRow = {
   show_on_form: boolean;
   display_order: number | null;
   options: Prisma.JsonValue;
+  rules: Prisma.JsonValue;
   created_at: Date;
 };
 
@@ -155,6 +179,7 @@ function serializeCustomField(row: CustomFieldRow): EventCustomFieldDto {
     show_on_form: row.show_on_form,
     display_order: row.display_order,
     options: options && options.length > 0 ? options : null,
+    rules: readStoredFieldRules(row.rules) ?? null,
     created_at: row.created_at.toISOString(),
   };
 }
@@ -194,6 +219,16 @@ function requiredFieldNotOnFormResponse(c: Context): Response {
   return c.json({ error: "required_field_not_on_form" }, 422);
 }
 
+function invalidFieldRulesResponse(c: Context): Response {
+  return c.json({ error: "invalid_field_rules" }, 422);
+}
+
+/** What goes in the `rules` column: the rules, or SQL NULL for none. Never a JSON null: the column's
+ * CHECK refuses it, so "no rules" has one form. */
+function rulesColumn(rules: EventCustomFieldRules | null | undefined): Prisma.InputJsonValue | typeof Prisma.DbNull {
+  return rules && !hasNoRules(rules) ? rules : Prisma.DbNull;
+}
+
 /** GET /api/admin/events/:eventId/custom-fields */
 export async function handleListEventCustomFields(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -227,6 +262,7 @@ function newFieldData(
     required: input.required ?? false,
     show_on_form: input.show_on_form ?? false,
     options: input.options ?? Prisma.JsonNull,
+    rules: rulesColumn(input.rules),
   };
 }
 
@@ -264,6 +300,9 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
   const parsed = createFieldSchema.safeParse(body);
   if (!parsed.success) {
     return c.json({ error: "validation_failed" }, 400);
+  }
+  if (!eventCustomFieldRulesFitType(parsed.data.type ?? "text", parsed.data.rules)) {
+    return invalidFieldRulesResponse(c);
   }
 
   const count = await db.eventCustomField.count({ where: { event_id: eventId } });
@@ -316,7 +355,17 @@ function fieldPatchData(patch: z.infer<typeof patchFieldSchema>): Prisma.EventCu
   if (patch.required !== undefined) data.required = patch.required;
   if (patch.show_on_form !== undefined) data.show_on_form = patch.show_on_form;
   if (patch.options !== undefined) data.options = patch.options ?? Prisma.JsonNull;
+  if (patch.rules !== undefined) data.rules = rulesColumn(patch.rules);
   return data;
+}
+
+/** Refuses a save that would leave the field with rules its type does not take, judged on the type
+ * and rules as they will be once `patch` is applied to `current`. A patch that names neither one
+ * leaves them as they are. */
+function assertRulesFitType(current: CustomFieldRow, patch: z.infer<typeof patchFieldSchema>): void {
+  if (patch.type === undefined && patch.rules === undefined) return;
+  const rules = patch.rules === undefined ? readStoredFieldRules(current.rules) : patch.rules;
+  if (!eventCustomFieldRulesFitType(patch.type ?? current.type, rules)) throw new InvalidFieldRulesError();
 }
 
 /** The two flags as they will be once the patch is applied to `current`. */
@@ -331,6 +380,7 @@ function mergedFormFlags(current: FormFlags, patch: z.infer<typeof patchFieldSch
  * again. */
 function patchFieldFailure(c: Context, err: unknown): Response {
   if (err instanceof RequiredFieldNotOnFormError) return requiredFieldNotOnFormResponse(c);
+  if (err instanceof InvalidFieldRulesError) return invalidFieldRulesResponse(c);
   if (err instanceof FieldGoneError) return c.json({ error: "forbidden" }, 403);
   throw err;
 }
@@ -374,6 +424,7 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
       await acquireEventCustomFieldsLock(tx, eventId);
       const current = await loadCustomFieldInEvent(tx, eventId, fieldId);
       if (!current) throw new FieldGoneError();
+      assertRulesFitType(current, parsed.data);
       await assertRequiredFieldStaysOnForm(tx, eventId, mergedFormFlags(current, parsed.data), current);
       const row = await tx.eventCustomField.update({ where: { id: fieldId }, data });
       await writeBulkActionLog(tx, {

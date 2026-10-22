@@ -11,7 +11,12 @@ import {
 } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 import { Button, Input, ModalBackdrop, Notice, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
-import { enabledWalletPlatforms, type AttendeeRemovalReason, type EnabledWalletPlatforms } from "@admitto/shared";
+import {
+  enabledWalletPlatforms,
+  isFreeInputCustomFieldType,
+  type AttendeeRemovalReason,
+  type EnabledWalletPlatforms,
+} from "@admitto/shared";
 import {
   ApiError,
   bulkChangeRsvpStatus,
@@ -1362,7 +1367,7 @@ export function AttendeesPage() {
   const customFieldParams = useMemo(() => {
     const params: Record<string, string[]> = {};
     for (const field of customFields) {
-      if (field.type === "text") {
+      if (isFreeInputCustomFieldType(field.type)) {
         const text = customFieldTextQueries[field.source_field];
         if (text) params[`cf_${field.source_field}`] = [text];
       } else {
