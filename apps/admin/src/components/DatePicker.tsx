@@ -11,9 +11,11 @@ import {
   formatIsoCalendarDate,
   getWeekdayLabelsShort,
   calendarDateValidationHint,
+  isoDateOfParts,
   localeDateInputPattern,
   parseFlexibleCalendarDate,
   todayIsoDate,
+  utcCalendarDate,
 } from "../utils/event-dates.js";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
@@ -38,21 +40,17 @@ function parseIsoDate(iso: string): { y: number; m: number; d: number } | null {
   return { y, m, d };
 }
 
-function toIsoDate(y: number, m: number, d: number): string {
-  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
-
 function daysInMonth(y: number, m: number): number {
-  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return utcCalendarDate(y, m, 0).getUTCDate();
 }
 
 function mondayFirstOffset(y: number, m: number): number {
-  const dow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const dow = utcCalendarDate(y, m - 1, 1).getUTCDay();
   return dow === 0 ? 6 : dow - 1;
 }
 
 function shiftMonth(year: number, month: number, delta: number): { y: number; m: number } {
-  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  const date = utcCalendarDate(year, month - 1 + delta, 1);
   return { y: date.getUTCFullYear(), m: date.getUTCMonth() + 1 };
 }
 
@@ -62,7 +60,7 @@ function addDays(
   day: number,
   delta: number,
 ): { y: number; m: number; d: number } {
-  const date = new Date(Date.UTC(year, month - 1, day + delta));
+  const date = utcCalendarDate(year, month - 1, day + delta);
   return {
     y: date.getUTCFullYear(),
     m: date.getUTCMonth() + 1,
@@ -210,7 +208,7 @@ export function DatePicker({
   };
 
   const selectDate = (day: number) => {
-    const iso = toIsoDate(viewYear, viewMonth, day);
+    const iso = isoDateOfParts(viewYear, viewMonth, day);
     onChange(iso);
     setText(formatIsoCalendarDate(iso));
     setParseError(null);
@@ -402,7 +400,7 @@ export function DatePicker({
             ))}
             {Array.from({ length: days }, (_, i) => {
               const day = i + 1;
-              const iso = toIsoDate(viewYear, viewMonth, day);
+              const iso = isoDateOfParts(viewYear, viewMonth, day);
               const selected = value === iso;
               const isToday = today === iso;
               return (

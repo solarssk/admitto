@@ -14,9 +14,13 @@ import {
   formatRelativeAdmissionDisplay,
   formatUtcDateTime,
   formatUtcPrimaryTime,
+  formatWallClockDateTime,
   calendarDateValidationHint,
   localeDateInputPattern,
+  isoDateOfParts,
+  formatCalendarMonth,
   parseFlexibleCalendarDate,
+  utcCalendarDate,
   utcDayEndIso,
   utcDayStartIso,
   zonedDayEndIso,
@@ -498,5 +502,77 @@ describe("truncatedToEventHour", () => {
 
   it("works before 1970, where the milliseconds count backwards", () => {
     expect(truncatedToEventHour("1969-12-31T23:59:59.250Z", "UTC")).toBe("1969-12-31T23:00:00.000Z");
+  });
+});
+
+describe("formatWallClockDateTime", () => {
+  afterEach(() => setPreferredLocale(null));
+
+  it("formats the digits of a date and time answer in the account's date format, naming the zone it is read in", () => {
+    setPreferredLocale("en-GB");
+    expect(formatWallClockDateTime("2026-11-04T10:30", "Europe/Warsaw")).toBe("04 Nov 2026, 10:30 (Europe/Warsaw)");
+    expect(formatWallClockDateTime("2026-11-04T22:05", "America/New_York")).toBe("04 Nov 2026, 22:05 (America/New_York)");
+    expect(formatWallClockDateTime("2026-11-04T00:00", "UTC")).toBe("04 Nov 2026, 00:00 (UTC)");
+    setPreferredLocale("en-US");
+    expect(formatWallClockDateTime("2026-11-04T10:30", "Europe/Warsaw")).toBe("Nov 04, 2026, 10:30 AM (Europe/Warsaw)");
+  });
+
+  it("converts nothing, so a time on either side of a clock change reads as written, whatever the zone", () => {
+    setPreferredLocale("en-GB");
+    // 02:30 on 8 March 2026 does not exist on a New York clock (it jumped from 02:00 to 03:00): the digits are still shown as given.
+    expect(formatWallClockDateTime("2026-03-08T02:30", "America/New_York")).toBe("08 Mar 2026, 02:30 (America/New_York)");
+    expect(formatWallClockDateTime("2026-10-25T02:30", "Europe/Warsaw")).toBe("25 Oct 2026, 02:30 (Europe/Warsaw)");
+  });
+
+  it("leaves the zone out when it is not known", () => {
+    setPreferredLocale("en-GB");
+    expect(formatWallClockDateTime("2026-11-04T10:30")).toBe("04 Nov 2026, 10:30");
+  });
+
+  it("returns a value that is not a date and time as it came", () => {
+    expect(formatWallClockDateTime("next week", "Europe/Warsaw")).toBe("next week");
+    expect(formatWallClockDateTime("2026-11-04", "Europe/Warsaw")).toBe("2026-11-04");
+    expect(formatWallClockDateTime("2026-11-04T10:30:00Z", "Europe/Warsaw")).toBe("2026-11-04T10:30:00Z");
+    expect(formatWallClockDateTime("", "Europe/Warsaw")).toBe("");
+  });
+
+  it("reads a year before 100 as that year, not as 19xx", () => {
+    setPreferredLocale("en-GB");
+    expect(formatWallClockDateTime("0050-01-02T03:04", "UTC")).toContain("50");
+    expect(formatWallClockDateTime("0050-01-02T03:04", "UTC")).not.toContain("1950");
+  });
+});
+
+describe("early years, which Date.UTC would read as 19xx", () => {
+  it("utcCalendarDate keeps the year as written, and the calendar of that year", () => {
+    expect(utcCalendarDate(50, 2, 1).getUTCFullYear()).toBe(50);
+    // The weekday of 1 March 0050 is the one of the proleptic Gregorian calendar, which an ISO string with a four digit year reads as.
+    expect(utcCalendarDate(50, 2, 1).getUTCDay()).toBe(new Date("0050-03-01T00:00:00.000Z").getUTCDay());
+    expect(utcCalendarDate(50, 2, 0).getUTCDate()).toBe(28);
+    expect(utcCalendarDate(2028, 2, 0).getUTCDate()).toBe(29);
+    expect(utcCalendarDate(2028, 2, 0).getUTCMonth()).toBe(1);
+  });
+
+  it("isoDateOfParts writes the year with four digits, and the month and the day with two", () => {
+    expect(isoDateOfParts(1, 1, 1)).toBe("0001-01-01");
+    expect(isoDateOfParts(50, 3, 9)).toBe("0050-03-09");
+    expect(isoDateOfParts(999, 12, 31)).toBe("0999-12-31");
+    expect(isoDateOfParts(2026, 7, 5)).toBe("2026-07-05");
+  });
+
+  it("parseFlexibleCalendarDate keeps a typed early year as four digits, and counts its days as that year does", () => {
+    expect(parseFlexibleCalendarDate("0001-01-01")).toBe("0001-01-01");
+    expect(parseFlexibleCalendarDate("0050-03-15")).toBe("0050-03-15");
+    expect(parseFlexibleCalendarDate("0099-12-31")).toBe("0099-12-31");
+    expect(parseFlexibleCalendarDate("0400-02-29")).toBe("0400-02-29");
+    expect(parseFlexibleCalendarDate("0100-02-29")).toBeNull();
+    expect(parseFlexibleCalendarDate("0050-02-29")).toBeNull();
+  });
+
+  it("formatCalendarMonth heads the month of an early year with that year, not with 19xx", () => {
+    setPreferredLocale("en-GB");
+    expect(formatCalendarMonth(50, 3)).toContain("50");
+    expect(formatCalendarMonth(50, 3)).not.toContain("1950");
+    setPreferredLocale(null);
   });
 });

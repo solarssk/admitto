@@ -3,6 +3,10 @@ import { FOCUSABLE_SELECTOR } from "./focusable.js";
 import { useFocusRecovery } from "./useFocusRecovery.js";
 import { isAnyDropdownMenuOpen } from "./useDropdownMenu.js";
 
+/** The focus traps that are open, in the order they opened. A panel that traps focus and opens over another (a date picker's
+ * calendar over a dialog) opens after it, so it is the last one: Escape is its alone, and the dialog under it stays open. */
+const openTraps: symbol[] = [];
+
 /** Trap focus inside a modal panel, close on Escape, lock body scroll while open. It also keeps focus in the
  * panel when the control that holds it goes away or is only disabled while it works (`useFocusRecovery`).
  *
@@ -33,6 +37,8 @@ export function useModalFocusTrap(
   useEffect(() => {
     if (!open) return;
 
+    const self = Symbol("focus trap");
+    openTraps.push(self);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -48,6 +54,8 @@ export function useModalFocusTrap(
         // just the picker sitting open on top of it (bot review finding, #755). Step aside and
         // let the event continue to that bubble-phase handler when one is open.
         if (isAnyDropdownMenuOpen()) return;
+        // A trap that opened after this one is on top of it: Escape is that one's, so this one stays.
+        if (openTraps.at(-1) !== self) return;
         event.preventDefault();
         event.stopPropagation();
         onCancelRef.current();
@@ -79,6 +87,7 @@ export function useModalFocusTrap(
 
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
+      openTraps.splice(openTraps.indexOf(self), 1);
       document.body.style.overflow = prevOverflow;
       document.removeEventListener("keydown", onKeyDown, true);
     };

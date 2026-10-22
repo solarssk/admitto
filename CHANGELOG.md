@@ -21,10 +21,20 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add the guest registration form at /r/<event slug> for events that use the public link; it stays a not-found page until an event turns registration on ([#1776](https://github.com/solarssk/admitto/pull/1776))
 - Add long text, date, date and time and phone questions to the registration form, with the field's rules as hints ([#1783](https://github.com/solarssk/admitto/pull/1783))
 - Add icons, suggestions and "show only when" conditions to attendee fields (admin API); a question that is not shown is never required or saved ([#1785](https://github.com/solarssk/admitto/pull/1785))
+- Add long text, date, date and time and phone answer types, with format rules, to the field editor, attendee form and import columns list ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Show an avatar with the attendee's initials before the name on the attendee page ([#1784](https://github.com/solarssk/admitto/pull/1784))
+
+### Changed
+
+- Use the width of the screen in the Add attendee and Edit attendee forms, two fields to a row, with the custom fields under their own heading ([#1784](https://github.com/solarssk/admitto/pull/1784))
 
 ### Fixed
 
 - Save an attendee's email in lower case when staff add or edit it, and refuse an address that differs from another's only in capitals ([#1781](https://github.com/solarssk/admitto/pull/1781))
+- Fix saving a single choice field when only its label or Required switch changed, which failed with "Check the form and try again" ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Fix Escape closing a whole dialog, and what was typed in it, together with an open date or time picker ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Keep Bitwarden from offering to fill an attendee's email, name, company and phone with the staff member's own in the Add attendee and Edit attendee forms ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Fix the date picker for a date before the year 1000, which was written without its leading zeros and showed the calendar of 19xx ([#1784](https://github.com/solarssk/admitto/pull/1784))
 
 ### Security
 

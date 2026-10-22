@@ -177,6 +177,23 @@ describe.each([
     expect(within(shirtRow!).queryByText("Single choice")).toBeNull();
   });
 
+  it.each([
+    ["text", "Text", "ti-letter-case"],
+    ["long_text", "Long text", "ti-align-left"],
+    ["date", "Date", "ti-calendar"],
+    ["datetime", "Date and time", "ti-calendar-time"],
+    ["phone", "Phone", "ti-phone"],
+    ["select", "Single choice", "ti-list"],
+    ["boolean", "Yes / No", "ti-checkbox"],
+  ] as const)("draws a %s field with the name and the icon of its type", (type, name, icon) => {
+    renderCard([{ ...dietaryField, id: `field-${type}`, source_field: type, label: `A ${type} field`, type }], placement);
+
+    const row = screen.getByText(`A ${type} field`).closest("tr")!;
+    const marker = within(row).getByLabelText(name);
+    expect(marker.getAttribute("role")).toBe("img");
+    expect(marker.querySelector(`i.${icon}`)).not.toBeNull();
+  });
+
   it("disambiguates two fields that share a display label with their slug", () => {
     const shirtA: EventCustomFieldDto = { ...dietaryField, id: "f-shirt-a", source_field: "shirt_size", label: "Shirt size" };
     const shirtB: EventCustomFieldDto = { ...dietaryField, id: "f-shirt-b", source_field: "shirt_size_2", label: "Shirt size" };

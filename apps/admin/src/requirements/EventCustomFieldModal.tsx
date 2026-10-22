@@ -1,9 +1,23 @@
 import { useRef, useState } from "react";
-import { Button, IconButton, ModalBackdrop, Tooltip, useToast } from "@admitto/ui";
+import type { EventCustomFieldType } from "@admitto/shared";
+import { Button, IconButton, ModalBackdrop, Notice, Tooltip, useToast } from "@admitto/ui";
 import { createEventCustomField, updateEventCustomField } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto } from "../api/types.js";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
+import { createFieldBody, updateFieldPatch, type FieldSave } from "./fieldRequests.js";
+import { FieldRulesEditor } from "./FieldRulesEditor.js";
+import { FieldTypePicker } from "./FieldTypePicker.js";
+import {
+  EMPTY_RULES_DRAFT,
+  hasRulesProblem,
+  rulesDraftFromRules,
+  rulesFromDraft,
+  rulesProblems,
+  sameRules,
+  typeTakesRules,
+  type RulesDraft,
+} from "./fieldRules.js";
 import { slugifyItemKey } from "./itemKey.js";
 import { optionRowsFromOptions, OptionsEditor, type OptionRow } from "./OptionsEditor.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -31,10 +45,13 @@ type FormState = {
   type: EventCustomFieldDto["type"];
   required: boolean;
   options: OptionRow[];
+  /** The format rules, as typed. Kept while the type is one that takes none, so that going back to a type that does gives them
+   * back; what counts as an edit and what is sent follows the type (see `savedFormOf` and `nextRules`). */
+  rules: RulesDraft;
 };
 
 function emptyForm(): FormState {
-  return { label: "", source_field: "", description: "", type: "text", required: false, options: [] };
+  return { label: "", source_field: "", description: "", type: "text", required: false, options: [], rules: EMPTY_RULES_DRAFT };
 }
 
 function formFromField(field: EventCustomFieldDto): FormState {
@@ -45,7 +62,14 @@ function formFromField(field: EventCustomFieldDto): FormState {
     type: field.type,
     required: field.required,
     options: optionRowsFromOptions(field.options),
+    rules: rulesDraftFromRules(field.rules),
   };
+}
+
+/** The form as it will be saved: rules only for a type that takes them, so that rules typed for one type and left behind
+ * when the type changed neither count as an edit nor go to the server. */
+function savedFormOf(form: FormState): FormState {
+  return typeTakesRules(form.type) ? form : { ...form, rules: EMPTY_RULES_DRAFT };
 }
 
 /** Add/edit modal for one EventCustomField registry row (dietary, shirt size, ...). */
@@ -73,13 +97,21 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved, showOn
 
   const labelTrimmed = form.label.trim();
   const selectOptions = form.options.map((r) => r.text.trim()).filter(Boolean);
+  // What the server would refuse in the rules, said where the boxes are. A type that takes no rules has none to refuse.
+  const takesRules = typeTakesRules(form.type);
+  const problems = rulesProblems(form.type, form.rules);
   const canSubmit =
     labelTrimmed.length > 0 &&
     form.source_field.length > 0 &&
-    (form.type !== "select" || selectOptions.length > 0);
+    (form.type !== "select" || selectOptions.length > 0) &&
+    !hasRulesProblem(problems);
   // Create mode always has "something new to save" once canSubmit is true; edit mode also
   // requires the draft to actually differ from the field being edited.
-  const dirty = field ? JSON.stringify(form) !== JSON.stringify(formFromField(field)) : true;
+  const dirty = field ? JSON.stringify(savedFormOf(form)) !== JSON.stringify(savedFormOf(formFromField(field))) : true;
+  // The rules this save would leave on the field (none for a type that takes none), and whether that changes the type or the rules of
+  // a field that already has answers: they are not converted, only checked against the new type and rules from now on.
+  const nextRules = takesRules ? rulesFromDraft(form.rules) : null;
+  const changesAnswerFormat = field !== null && (form.type !== field.type || !sameRules(nextRules, field.rules));
 
   // Options renamed - or blanked, which selectOptions below treats as a removal - away from a
   // value with attendees currently on it. Save gates on these with ConfirmDialog instead of
@@ -93,6 +125,10 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved, showOn
         return (blanked || renamed) && (usageCounts[r.originalText] ?? 0) > 0;
       })
     : [];
+
+  function selectType(type: EventCustomFieldType) {
+    setForm((f) => ({ ...f, type, options: type === "select" ? f.options : [] }));
+  }
 
   function updateLabel(value: string) {
     setForm((f) => ({
@@ -114,44 +150,20 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved, showOn
   }
 
   async function performSave() {
-    const label = labelTrimmed;
-    const source_field = form.source_field;
-    const description = form.description.trim();
-    const options = selectOptions;
+    const save: FieldSave = {
+      type: form.type,
+      label: labelTrimmed,
+      description: form.description.trim(),
+      required: form.required,
+      options: selectOptions,
+      rules: nextRules,
+    };
     setSaving(true);
     try {
       if (isEdit) {
-        // Only send options when they actually changed (or the type just switched away from
-        // "select"): re-sending the same list re-derived from the textarea on every save -
-        // e.g. one that only flips "Required" - risks silently rewriting the stored options with
-        // a round-trip artifact (a comma inside an option gets re-split into two) and, since
-        // attendees' custom_data values match options by exact text, breaks their already-saved
-        // selection for no reason tied to what the operator actually changed.
-        const optionsChanged =
-          form.type === "select"
-            ? JSON.stringify(options) !== JSON.stringify(field.options ?? [])
-            : field.type === "select";
-        await updateEventCustomField(eventId, field.id, {
-          label,
-          // null (not undefined) so the server can tell "clear the previous description" apart
-          // from "leave it untouched" - same convention as options below.
-          description: description || null,
-          type: form.type,
-          required: form.required,
-          // null clears a previous select's options when switching away from "select"; omitting
-          // the key (undefined) leaves options untouched - PATCH only updates keys it receives.
-          ...(optionsChanged ? { options: form.type === "select" ? options : null } : {}),
-        });
+        await updateEventCustomField(eventId, field.id, updateFieldPatch(field, save));
       } else {
-        await createEventCustomField(eventId, {
-          source_field,
-          label,
-          description: description || undefined,
-          type: form.type,
-          required: form.required,
-          options: form.type === "select" ? options : undefined,
-          ...(showOnForm ? { show_on_form: true } : {}),
-        });
+        await createEventCustomField(eventId, createFieldBody(form.source_field, save, showOnForm));
       }
       onSaved();
     } catch (err) {
@@ -240,28 +252,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved, showOn
               <span className="at-label" id="cf-type-label">
                 Field type
               </span>
-              <div
-                className="contents-row__type-picker contents-row__type-picker--block"
-                role="group"
-                aria-labelledby="cf-type-label"
-              >
-                {CUSTOM_FIELD_TYPES.map(({ value, icon, label: btnLabel }) => (
-                  <Tooltip key={value} content={btnLabel}>
-                    <button
-                      type="button"
-                      className={`contents-row__type-btn${form.type === value ? " contents-row__type-btn--active" : ""}`}
-                      onClick={() => {
-                        setForm((f) => ({ ...f, type: value, options: value === "select" ? f.options : [] }));
-                      }}
-                      aria-pressed={form.type === value}
-                      aria-label={btnLabel}
-                    >
-                      <i className={`ti ${icon}`} />
-                      <span>{btnLabel}</span>
-                    </button>
-                  </Tooltip>
-                ))}
-              </div>
+              <FieldTypePicker value={form.type} onChange={selectType} labelledBy="cf-type-label" disabled={saving} />
               <span className="at-hint">
                 {CUSTOM_FIELD_TYPES.find((type) => type.value === form.type)?.hint}
               </span>
@@ -286,6 +277,20 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved, showOn
                 </>
               )}
             </div>
+            {/* Says nothing for a type that takes no rules. */}
+            <FieldRulesEditor
+              type={form.type}
+              draft={form.rules}
+              problems={problems}
+              saving={saving}
+              onChange={(rules) => setForm((f) => ({ ...f, rules }))}
+            />
+            {changesAnswerFormat && (
+              <Notice variant="warning" as="output">
+                Answers already saved are not changed, but they are checked against the new type and rules. An attendee whose
+                saved answer no longer fits can&apos;t be edited until that answer is replaced or cleared.
+              </Notice>
+            )}
           </form>
           <div className="event-item-modal__footer">
             <div className="event-item-modal__footer-end">

@@ -378,29 +378,6 @@
   align-self: flex-end;
 }
 
-.contents-row__type-picker--block {
-  align-self: stretch;
-  width: 100%;
-  height: auto;
-  min-height: var(--control-h);
-}
-
-.contents-row__type-picker--block > .at-tooltip-trigger {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-}
-
-.contents-row__type-picker--block .contents-row__type-btn {
-  flex: 1;
-  width: 100%;
-  justify-content: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-3);
-  font-size: var(--fs-sm);
-  white-space: nowrap;
-}
-
 .contents-row__type-btn {
   background: var(--surface-card);
   border: none;
@@ -436,6 +413,116 @@
 .contents-row__type-btn--active {
   background: var(--primary);
   color: var(--text-on-primary, #fff);
+}
+
+/* The answer types of a custom field (FieldTypePicker): seven buttons that wrap in a grid, each with its icon and name, instead of a
+   row that a dialog is too narrow for. Two to a row on a phone, three in the dialog on a desktop, wide enough for "Date and time"
+   to stay on one line. */
+/* A fieldset (the types are a group of buttons, named by the label above): its browser border, margin, padding and minimum
+   width are taken off. */
+.custom-field-types {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.custom-field-types__btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--control-h);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.custom-field-types__btn i {
+  flex: none;
+  font-size: 1.1rem;
+}
+
+.custom-field-types__btn:hover:not(:disabled, .custom-field-types__btn--active) {
+  border-color: var(--at-gray-400);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.custom-field-types__btn:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.custom-field-types__btn--active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--text-on-primary);
+}
+
+.custom-field-types__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* The format rules of a text, long text or phone field (FieldRulesEditor): the boxes sit in one panel under their title. The line
+   under the two lengths holds what they take or what is wrong with them, and keeps the room of its longest text (one line, two on
+   a phone), so the dialog does not jump when an error comes and goes. */
+/* A fieldset as well, with the same four things taken off. */
+.field-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.field-rules__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+/* The panel is tinted, and the shared error red (#d63939) is 4.46:1 on that tint, under the 4.5:1 that small text needs; the darker
+   error foreground of the notices is 7:1. */
+.field-rules__panel .at-hint--error {
+  color: var(--status-error-fg);
+}
+
+.field-rules__lengths {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.field-rules__note {
+  min-height: calc(var(--fs-xs) * var(--lh-normal));
+  margin-top: calc(-1 * var(--space-2));
+}
+
+@media (max-width: 640px) {
+  .field-rules__note {
+    min-height: calc(2 * var(--fs-xs) * var(--lh-normal));
+  }
 }
 
 #cf-options {
@@ -543,9 +630,22 @@
 
 .add-item-label-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: var(--space-2);
+  column-gap: var(--space-2);
+}
+
+/* The label keeps its width. A long key (the slug of a long name) goes on a line of its own under it, right-aligned, instead of
+   squeezing the label into two lines ("Display" / "label") beside it. */
+.add-item-label-row > .at-label {
+  flex: none;
+}
+
+.add-item-label-row > .at-hint {
+  min-width: 0;
+  margin-left: auto;
+  text-align: right;
 }
 
 .event-item-modal__body {

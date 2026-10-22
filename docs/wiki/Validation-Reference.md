@@ -175,9 +175,9 @@ Every row gets its own pass or fail reason in the preview before you commit. Not
 | Field key | Derived automatically. Lowercase letters, numbers and underscore only |
 | Label | Required, up to 60 characters |
 | Description | Optional, up to 500 characters |
-| Type | Text, long text, date, date and time, phone, select, or yes/no. The field editor offers text, select and yes/no. The other types are set through the admin API |
+| Type | Text, long text, date, date and time, phone, select (shown as Single choice), or yes/no. The field editor offers all seven |
 | Select options | At least one for a select field. Up to 20 options, each up to 60 characters |
-| Format rules | Optional, for text, long text and phone fields only. See "Format rules" below |
+| Format rules | Optional, for text, long text and phone fields only. Set in the field editor. See "Format rules" below |
 | Icon, suggestions, condition | Optional, for the registration form. An icon fits every type, suggestions fit text fields only, and a condition fits every type. See "Icons and suggestions" and "Questions that depend on another answer" below |
 
 **Limits and protections**
@@ -193,6 +193,7 @@ Every row gets its own pass or fail reason in the preview before you commit. Not
 - A select answer must be one of the configured options.
 - A yes/no answer accepts Yes, No, true or false, in any letter case.
 - An answer that does not fit its type or format rules is refused when you add an attendee, when you save one and when you import a file. Nothing is guessed. The one thing that is cut is a text answer in an import, which is cut to 100 characters.
+- The Add attendee dialog and the attendee page check an answer with the same limits before they send it, and say which field is wrong.
 
 | Type | An answer is |
 |---|---|
@@ -217,13 +218,14 @@ Text, long text and phone fields can carry rules about what an answer looks like
 
 - A length counts characters as a person sees them: an emoji is one character.
 - A phone number is checked in its saved form, so its length counts the `+`, and "digits only" refuses a number that starts with `+`.
-- A date, date and time, select or yes/no field takes no rules. Saving one with rules is refused.
+- A date, date and time, select or yes/no field takes no format rules (lengths, digits only, example). Saving one with such a rule is refused. The field editor shows no format rules for these types, and removes the format rules of a field that becomes one of them. An icon and a condition stay.
+- The field editor refuses a length that is not a whole number from 1 to what the type holds, a shortest answer longer than the longest, and phone lengths that no number can meet (a saved number has 3 to 16 characters, or 3 to 15 with digits only). It also refuses an example of more than 100 characters, or one with an invisible character.
 - A rule applies to every answer entered after it is set, and to the answers already saved. An attendee whose older answer breaks a new rule can't be saved until that answer is fixed.
 - An export writes a phone number as saved, with its `+`, so an exported file can be imported again.
 
 **Icons and suggestions**
 
-These two rules shape the registration form. They are set through the admin API. The field editor does not show them.
+These two rules shape the registration form. They are set through the admin API. The field editor does not show them, and it sends them again when it saves a field, so a save in the editor never removes them.
 
 | Rule | What it asks |
 |---|---|
@@ -235,7 +237,7 @@ These two rules shape the registration form. They are set through the admin API.
 
 **Questions that depend on another answer**
 
-A question can be shown only when another question has a certain answer. For example, the question "Car registration number" can be shown only when the yes/no question "Do you need parking?" is answered Yes. This is the rule `show_when` of the field. It is set through the admin API. The field editor does not show it.
+A question can be shown only when another question has a certain answer. For example, the question "Car registration number" can be shown only when the yes/no question "Do you need parking?" is answered Yes. This is the rule `show_when` of the field. It is set through the admin API. The field editor does not show it, and it sends it again when it saves a field, so a save in the editor never removes it.
 
 | Rule | What you'll see when you break it |
 |---|---|
