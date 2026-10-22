@@ -33,6 +33,25 @@ export const EVENT_CUSTOM_FIELD_SUGGESTIONS_MAX = 30;
 /** Longest entry of `rules.suggestions`, in characters. */
 export const EVENT_CUSTOM_FIELD_SUGGESTION_MAX = 100;
 
+/** What a suggestion may not hold. A suggestion is offered to the guest and, when picked, sent back as the answer,
+ * so it is held to the rule that answers are held to (normalizeRegistrantText in packages/tickets): no control
+ * character, no format character (zero-width and bidi marks, the soft hyphen, the byte order mark), no lone
+ * surrogate, nothing Unicode marks default-ignorable (variation selectors among them), no line or paragraph
+ * separator and no noncharacter. A test in packages/tickets keeps the two in step. */
+const FORBIDDEN_IN_SUGGESTION = /[\p{Cc}\p{Cf}\p{Cs}\p{Default_Ignorable_Code_Point}\u2028\u2029\uFFFE\uFFFF]/u;
+
+/** True when `text` holds a character that a suggestion may not hold (see FORBIDDEN_IN_SUGGESTION). The server's check of
+ * `rules.suggestions` and the field editor of the admin app both call it, so they refuse the same text. */
+export function hasForbiddenSuggestionCharacter(text: string): boolean {
+  return FORBIDDEN_IN_SUGGESTION.test(text);
+}
+
+/** The key two suggestions are compared by: the same letters in another case, or written as a base letter and a
+ * combining mark instead of one character, are the same suggestion. A list holds each key once. */
+export function suggestionKey(suggestion: string): string {
+  return suggestion.normalize("NFC").toLowerCase();
+}
+
 /** The icons a question can carry on the registration form (`rules.icon`). A fixed list: the form draws a
  * symbol of its own for each name, so a name that is not here has nothing to draw. Add a name at the end,
  * with its symbol in the same change, and in the list of the wiki (Validation Reference). Never rename or remove
