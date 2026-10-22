@@ -136,16 +136,28 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     if (!on) clearError(box);
   }
 
+  // The notice at the top counts the marked fields. A question that goes away with its mark is not one any more: the
+  // count drops, and the notice goes with the last mark.
+  function recount() {
+    var marked = boxes.filter(function (box) { return box.classList.contains("has-error"); }).length;
+    if (marked === 0) summary.hidden = true;
+    else summaryText.textContent = marked === 1 ? TEXT.oneField : marked + TEXT.manyFields;
+  }
+
   // Shows and hides the questions that wait for a condition, and the panel that holds them while any is asked.
   function sync() {
+    var unmarked = false;
     boxes.forEach(function (box) {
       if (!box.hasAttribute("data-show-when-field")) return;
       var on = isShown(box);
-      if (box.hidden === on) setShown(box, on);
+      if (box.hidden !== on) return;
+      if (!on && box.classList.contains("has-error")) unmarked = true;
+      setShown(box, on);
     });
     panels.forEach(function (panel) {
       panel.hidden = panel.querySelector("[data-show-when-field]:not([hidden])") === null;
     });
+    if (unmarked) recount();
   }
 
   // A date or time the guest began and did not finish reads as empty. Left alone, it would be dropped from what is sent without a word.

@@ -210,6 +210,38 @@ describe("a question that is not asked", () => {
     expect(page.doc.getElementById("f-q1").hasAttribute("aria-invalid")).toBe(false);
   });
 
+  it("takes its mark out of the count at the top when it is hidden, and the notice goes with the last mark", () => {
+    const page = ready();
+    tickBox(page, "f-q0", true);
+    sendForm(page);
+    expect(page.doc.getElementById("reg-error").hidden).toBe(false);
+    tickBox(page, "f-q0", false);
+    expect(page.doc.getElementById("reg-error").hidden).toBe(true);
+  });
+
+  it("lowers the count at the top when it is hidden and other fields are still marked", () => {
+    const page = ready();
+    typeInto(page, "f-last_name", "");
+    tickBox(page, "f-q0", true);
+    sendForm(page);
+    expect(page.doc.getElementById("reg-error-text").textContent).toBe("2 fields need your attention. They are marked in red.");
+    tickBox(page, "f-q0", false);
+    expect(page.doc.getElementById("reg-error").hidden).toBe(false);
+    expect(page.doc.getElementById("reg-error-text").textContent).toBe("1 field needs your attention. It is marked in red.");
+  });
+
+  it("leaves the count at the top as it was when a question without a mark is hidden, though the guest has fixed another field", () => {
+    const page = ready();
+    typeInto(page, "f-first_name", "");
+    typeInto(page, "f-last_name", "");
+    sendForm(page);
+    typeInto(page, "f-first_name", "Anne");
+    tickBox(page, "f-q0", true);
+    tickBox(page, "f-q0", false);
+    expect(page.doc.getElementById("reg-error").hidden).toBe(false);
+    expect(page.doc.getElementById("reg-error-text").textContent).toBe("2 fields need your attention. They are marked in red.");
+  });
+
   it("gets no error from the server while it is hidden, and the first error that is shown takes the focus", async () => {
     const page = ready();
     page.fetchMock.mockResolvedValueOnce({

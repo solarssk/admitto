@@ -289,6 +289,29 @@ describe("loadRegistrationPage, and the questions it draws", () => {
       expect((await pageWith([noChoices])).kind).toBe("open");
     });
 
+    it("closes the form for a required question it cannot draw only when the answer its condition asks for can be given", async () => {
+      const stuck = (show_when: { field: string; value: string | true }) =>
+        field({ source_field: "later", type: unknownType, required: true, rules: { show_when } });
+      const meal = field({ source_field: "meal", type: "select", options: ["Standard", "Vegan"] });
+      expect(await pageWith([meal, stuck({ field: "meal", value: "Vegan" })])).toEqual({ kind: "not_found" });
+      // An option that was removed, or an answer a Yes/No cannot have, shows nothing, so nobody is stuck.
+      expect((await pageWith([meal, stuck({ field: "meal", value: "Kosher" })])).kind).toBe("open");
+      expect((await pageWith([parking, stuck({ field: "parking", value: "maybe" })])).kind).toBe("open");
+      // A tick can only say Yes; a list of Yes and No can say No as well.
+      expect((await pageWith([parking, stuck({ field: "parking", value: "false" })])).kind).toBe("open");
+      expect(await pageWith([{ ...parking, required: true }, stuck({ field: "parking", value: "false" })])).toEqual({ kind: "not_found" });
+    });
+
+    it("leaves out a question whose condition asks for an answer its question cannot have, and does not close the form for it", async () => {
+      const day = field({ source_field: "day", type: "select", options: ["Both days", "Day 1"] });
+      const hotel = (value: string, overrides: Partial<RegistrantFormField> = {}) =>
+        field({ source_field: "hotel", rules: { show_when: { field: "day", value } }, ...overrides });
+      expect(await keysOf([day, hotel("Both days")])).toEqual(["day", "hotel"]);
+      expect(await keysOf([day, hotel("Day 3")])).toEqual(["day"]);
+      expect(await keysOf([parking, plate({ show_when: { field: "parking", value: "false" } })])).toEqual(["parking"]);
+      expect((await pageWith([day, hotel("Day 3", { required: true })])).kind).toBe("open");
+    });
+
     it("does not draw an optional question it cannot draw, under a condition or not", async () => {
       expect(await keysOf([parking, field({ source_field: "later", type: unknownType, rules: { show_when: when } })])).toEqual(["parking"]);
     });

@@ -486,15 +486,32 @@ function canControl(question: FormQuestion): boolean {
   return (question.type === "boolean" || question.type === "select") && question.showWhen === null;
 }
 
-/** The keys of the questions among `questions` that can control others. */
-export function controllerKeys(questions: readonly FormQuestion[]): ReadonlySet<string> {
-  return new Set(questions.filter(canControl).map((question) => question.key));
+/** The questions among `questions` that can control others, by key. */
+export function controllersByKey(questions: readonly FormQuestion[]): ReadonlyMap<string, FormQuestion> {
+  return new Map(questions.filter(canControl).map((question) => [question.key, question]));
 }
 
-/** True when a question with this condition can ever be shown: it has none, or the question it names is one of
- * `controllers`. Otherwise nothing could show it, and the page leaves it out. */
-export function canBeShown(showWhen: ShowWhen | null | undefined, controllers: ReadonlySet<string>): boolean {
+/** True when a question with this condition has a question to wait for: it has none, or the question it names is one
+ * of `controllers`. Otherwise nothing could show it, and the page leaves it out. */
+function canBeShown(showWhen: ShowWhen | null | undefined, controllers: ReadonlyMap<string, FormQuestion>): boolean {
   return !showWhen || controllers.has(showWhen.field);
+}
+
+/** The answers a Yes/No or a choice can be given on this page, in the form `isQuestionShown` reads them: "true" for a
+ * ticked Yes/No, and "false" as well when it is a list of Yes and No (a required one), and the text of an option for a
+ * choice. */
+function answersOf(question: FormQuestion): readonly string[] {
+  if (question.type === "select") return question.options;
+  return question.required ? ["true", "false"] : ["true"];
+}
+
+/** True when a guest of this page can show a question with this condition: it has none, or the question it names is
+ * one of `controllers` and can be given the answer the condition asks for (an option that was removed, or "false" of
+ * a tick, cannot be). Stricter than `canBeShown`, which the page uses to place a question, not to judge it. */
+export function canBeMet(showWhen: ShowWhen | null | undefined, controllers: ReadonlyMap<string, FormQuestion>): boolean {
+  if (!showWhen) return true;
+  const controller = controllers.get(showWhen.field);
+  return controller !== undefined && answersOf(controller).includes(showWhen.value === true ? "true" : showWhen.value);
 }
 
 /** A question and the id of its control. The id is its position in the list, never its key. */
@@ -506,7 +523,7 @@ interface Placed {
 /** The questions of the main run, in the organiser's order, and the ones that wait in a panel, by the key of the
  * question they depend on. A question that cannot be shown is in neither. */
 function placeQuestions(questions: readonly FormQuestion[]): { main: Placed[]; panels: Map<string, Placed[]> } {
-  const controllers = controllerKeys(questions);
+  const controllers = controllersByKey(questions);
   const main: Placed[] = [];
   const panels = new Map<string, Placed[]>();
   questions.forEach((question, index) => {

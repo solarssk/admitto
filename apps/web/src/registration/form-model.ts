@@ -31,7 +31,7 @@ import {
 import { legalDocumentPath } from "../legal/legal-documents.js";
 import { loadRequiredLegalDocuments, type RequiredLegalDocuments } from "../legal/registration-gate.js";
 import { resolveAccessMethodAvailability } from "./access-methods.js";
-import { canBeShown, canDrawQuestion, controllerKeys, type FormQuestionType } from "./form-fields.js";
+import { canBeMet, canDrawQuestion, controllersByKey, type FormQuestionType } from "./form-fields.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
 
 /** An event slug as the create-event form allows it (lowercase letters, digits, `_` and `-`, up to 80).
@@ -217,9 +217,9 @@ function toQuestion(field: RegistrantFormField, type: FormQuestionType): FormQue
  * A question with a condition (`rules.show_when`) is asked only when the question it names has that answer, so
  * the page can ask it only when that question is on the form, is a Yes/No or a choice, and is itself always
  * asked. The server guarantees that, and the page does not rely on it. A question with a condition that
- * nothing can meet is left out: it is never asked, so it is never required and never closes the form. A
- * required question the page cannot draw closes the form only when a guest could meet its condition and then
- * be stuck. */
+ * nothing can meet (a question that is not there, or an answer it cannot have, such as an option that was
+ * removed) is left out: it is never asked, so it is never required and never closes the form. A required
+ * question the page cannot draw closes the form only when a guest could meet its condition and then be stuck. */
 function drawQuestions(fields: readonly RegistrantFormField[]): FormQuestion[] | null {
   const drawable: FormQuestion[] = [];
   const stuck: RegistrantFormField[] = [];
@@ -228,9 +228,9 @@ function drawQuestions(fields: readonly RegistrantFormField[]): FormQuestion[] |
     if (type !== null) drawable.push(toQuestion(field, type));
     else if (field.required) stuck.push(field);
   }
-  const controllers = controllerKeys(drawable);
-  if (stuck.some((field) => canBeShown(field.rules?.show_when, controllers))) return null;
-  return drawable.filter((question) => canBeShown(question.showWhen, controllers));
+  const controllers = controllersByKey(drawable);
+  if (stuck.some((field) => canBeMet(field.rules?.show_when, controllers))) return null;
+  return drawable.filter((question) => canBeMet(question.showWhen, controllers));
 }
 
 function legalPaths(slug: string, legal: RequiredLegalDocuments): { privacy: string; terms: string; consents: FormConsent[] } | null {
