@@ -153,6 +153,21 @@ describe("LegalHtmlEditor: the link field", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Text" })));
   });
 
+  it("closes when the editor goes busy, so that it does not come back and take the focus from Save", () => {
+    const element = (mode: LegalEditorMode) => (
+      <LegalHtmlEditor initialHtml={INITIAL} labelledBy="label" describedBy="hint" mode={mode} onHtml={vi.fn()} />
+    );
+    const view = render(element("edit"));
+    fireEvent.click(button("Link"));
+    expect(screen.getByRole("textbox", { name: "Link address" })).toBeTruthy();
+
+    view.rerender(element("busy"));
+    view.rerender(element("edit"));
+
+    expect(screen.queryByRole("textbox", { name: "Link address" })).toBeNull();
+    expect(button("Link").getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("makes the selected words a link, written the way the server stores it", () => {
     const { onHtml } = renderEditor();
     selectWords(tiptap());

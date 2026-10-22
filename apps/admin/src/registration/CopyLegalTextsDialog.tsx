@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Notice } from "@admitto/ui";
-import { fetchLegalDocument, fetchLegalDocuments, saveLegalDocument } from "../api/client.js";
+import { ApiError, fetchLegalDocument, fetchLegalDocuments, saveLegalDocument } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { LegalDocumentDto, LegalDocumentLimitsDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect, type SearchableSelectOption } from "../components/SearchableSelect.js";
 import { useEventOptions } from "../hooks/useEventOptions.js";
-import { orLoginRedirect } from "../identity/loginRedirect.js";
+import { orLoginRedirect, redirectToLogin } from "../identity/loginRedirect.js";
 import { lookupReady, useOptionsLoad } from "../hooks/useOptionsLoad.js";
 import { LookupSlot } from "../pages/users/LookupSlot.js";
 import { pluralSuffix } from "../utils/pluralize.js";
@@ -114,6 +114,11 @@ export function CopyLegalTextsDialog({ open, eventId, current, limits, onClose, 
       });
       onCopied(done, sourceTitle);
     } catch (err) {
+      // A session that ended while the copy waited for the confirmation: sign in again, as the read of the texts does.
+      if (err instanceof ApiError && err.status === 401) {
+        redirectToLogin();
+        return;
+      }
       if (done > 0) onPartial();
       const reason = operatorApiErrorMessage(err, "Could not copy the texts.");
       setError(done > 0 ? `Copied ${done} of ${plan.steps.length} text${pluralSuffix(plan.steps.length)}, then it stopped. ${reason}` : reason);

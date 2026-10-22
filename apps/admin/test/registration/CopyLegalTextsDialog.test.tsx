@@ -122,6 +122,20 @@ describe("CopyLegalTextsDialog: choosing the event", () => {
     expect(screen.queryByRole("button", { name: /Retry loading legal texts/ })).toBeNull();
   });
 
+  it("hands the browser to sign-in when the session ended while the copy waited for its confirmation", async () => {
+    fetchLegalDocument.mockRejectedValueOnce(new ApiError(401, "unauthorized", "unauthorized"));
+    renderDialog();
+    await choose("Autumn Gala");
+    await screen.findByRole("list", { name: "What will be copied" });
+
+    fireEvent.click(copyButton());
+
+    await waitFor(() => expect(goToLogin).toHaveBeenCalledTimes(1));
+    expect(goToLogin).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/));
+    expect(onCopied).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("says that the texts of an event could not be read, with a Retry that reads them again", async () => {
     fetchLegalDocuments.mockRejectedValueOnce(new ApiError(403, "forbidden", "forbidden"));
     renderDialog();

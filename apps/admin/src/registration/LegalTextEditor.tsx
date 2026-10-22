@@ -264,6 +264,8 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
     setTitle(answer.title);
     if (normalizeLegalHtml(answer.content_html) === sent) {
       setBaseline(sent);
+      // What the editor could not show is gone from what was saved: there is nothing left to warn about.
+      setLossy(false);
       return;
     }
     // What the server kept is not what was sent: the editor shows what it kept, and says so.

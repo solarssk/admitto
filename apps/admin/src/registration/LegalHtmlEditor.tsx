@@ -197,6 +197,12 @@ function Toolbar({ editor, disabled }: Readonly<{ editor: Editor; disabled: bool
     }),
   });
 
+  // While the editor is busy the toolbar is gone. The link field must not wait behind it and come back, taking the
+  // focus from the button that was pressed, when the request is over.
+  useEffect(() => {
+    if (disabled) setLinkOpen(false);
+  }, [disabled]);
+
   function closeLink() {
     setLinkOpen(false);
     editor.commands.focus();

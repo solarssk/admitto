@@ -230,6 +230,20 @@ describe("LegalTextEditor: a text that is loaded", () => {
     expect(isOff(button("Save"))).toBe(true);
   });
 
+  it("stops warning once the text is saved without that formatting", async () => {
+    fetchLegalDocument.mockResolvedValue(stored({ content_html: "<p>An <em>italic</em> word<br>and a break</p>" }));
+    saveLegalDocument.mockImplementation(async (_event, _ref, body) => stored({ title: body.title, content_html: body.content_html }));
+    renderEditor();
+    await textbox();
+    await screen.findByText(/has formatting the editor cannot show/);
+    await write("More words.");
+
+    fireEvent.click(button("Save"));
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Text saved.", "success"));
+    expect(screen.queryByText(/has formatting the editor cannot show/)).toBeNull();
+  });
+
   it("does not warn about a text it shows exactly as it was stored", async () => {
     renderEditor();
     await textbox();
