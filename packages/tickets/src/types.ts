@@ -65,7 +65,8 @@ export type EventItemContent = {
   type?: EventCustomFieldType;
   required?: boolean;
   options?: string[];
-  /** Format rules of a `text`, `long_text` or `phone` field (`EventCustomField.rules`); absent = none. */
+  /** The rules of the field (`EventCustomField.rules`); absent = none: format rules for a `text`, `long_text` or
+   * `phone` field, and the icon, condition (`show_when`) and suggestions of the registration form. */
   rules?: EventCustomFieldRules;
 };
 

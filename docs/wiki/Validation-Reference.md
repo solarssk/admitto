@@ -178,11 +178,13 @@ Every row gets its own pass or fail reason in the preview before you commit. Not
 | Type | Text, long text, date, date and time, phone, select (shown as Single choice), or yes/no. The field editor offers all seven |
 | Select options | At least one for a select field. Up to 20 options, each up to 60 characters |
 | Format rules | Optional, for text, long text and phone fields only. Set in the field editor. See "Format rules" below |
+| Icon, suggestions, condition | Optional, for the registration form. An icon fits every type, suggestions fit text fields only, and a condition fits every type. See "Icons and suggestions" and "Questions that depend on another answer" below |
 
 **Limits and protections**
 
 - An event can have up to 20 custom fields.
 - A field that is currently used as a hint on an Event item can't be deleted until you remove it there first.
+- A field that other fields are shown by can't be deleted, changed to another type, or lose the option they are shown for, until you change or remove their condition. See "Questions that depend on another answer" below.
 - Renaming or removing a select option that attendees have already chosen asks you to confirm and tells you how many attendees are affected. It does not change what they see without asking, and it does not block you outright.
 
 **What an answer must look like**
@@ -220,6 +222,46 @@ Text, long text and phone fields can carry rules about what an answer looks like
 - The field editor refuses a length that is not a whole number from 1 to what the type holds, a shortest answer longer than the longest, and phone lengths that no number can meet (a saved number has 3 to 16 characters, or 3 to 15 with digits only). It also refuses an example of more than 100 characters, or one with an invisible character.
 - A rule applies to every answer entered after it is set, and to the answers already saved. An attendee whose older answer breaks a new rule can't be saved until that answer is fixed.
 - An export writes a phone number as saved, with its `+`, so an exported file can be imported again.
+
+**Icons and suggestions**
+
+These two rules shape the registration form. They are set through the admin API. The field editor does not show them.
+
+| Rule | What it asks |
+|---|---|
+| Icon | One name from a fixed list: `parking`, `car`, `food`, `accessible`, `bed`, `user-plus`, `users`, `building`, `calendar`, `clock`, `phone`, `mail`, `pin`, `plane`, `train` or `shirt`. A field of any type can have one. Any other name is refused |
+| Suggestions | Text fields only. A list of 1 to 30 texts, each 1 to 100 characters on one plain line, with no control, invisible or formatting characters. The same text twice is refused, in any letter case. They only suggest: a guest can still type any text, and Admitto never checks an answer against the list |
+
+- Saving suggestions on a field that is not a text field is refused. So is changing a text field that has suggestions to another type, unless the same save leaves the suggestions out.
+- A save with rules replaces all the rules of the field. Send every rule you want to keep, the format rules too.
+
+**Questions that depend on another answer**
+
+A question can be shown only when another question has a certain answer. For example, the question "Car registration number" can be shown only when the yes/no question "Do you need parking?" is answered Yes. This is the rule `show_when` of the field. It is set through the admin API. The field editor does not show it.
+
+| Rule | What you'll see when you break it |
+|---|---|
+| The condition names another field of the same event. It can't name the field itself | "This condition cannot be kept. It must point at another yes/no or select field of this event that has no condition of its own, and name an answer that field can have. A field that other fields depend on cannot have a condition itself." |
+| The other field is a yes/no field (the answer is Yes) or a select field (the answer is one of its options, written exactly) | The same message |
+| The other field has no condition of its own. So there are no chains of conditions and no cycles | The same message |
+| A field with a condition is on the registration form only if the field it depends on is on the form too. Taking that field off the form while a question that depends on it is on the form is refused as well | "A field with a condition can be on the registration form only when the field it depends on is on the form too." |
+| A field that other fields depend on can't be deleted, changed to another type, or lose or rename the option a condition names | "Other fields are shown only for an answer to this one. Change or remove their condition first." |
+
+These checks run when you save the field, in one step with every other change to the event's fields, so two people saving at the same time can't break them. An event that does not accept registrations is held to the same rules.
+
+**What happens to an answer to a question that is not shown**
+
+| Where | What happens |
+|---|---|
+| A required question | "Required" means "required when shown". A question that is not shown is never required |
+| The registration form | A guest's answer to a question that is not shown is ignored. It is never saved, even when a changed form sends it, and it causes no error. Admitto decides from the answers it received, not from what the page claims |
+| Adding an attendee | The same: the answer is ignored and not saved, with no error |
+| Editing an attendee | The same for an answer set in the edit. Clearing an answer is always saved |
+| Import | A cell is still checked against the field's type and rules, as for every field. The value of a question that is not shown is then not saved. Whether it is shown is judged on the file row together with the attendee's saved answers |
+
+- An answer saved while its question was shown stays when the question stops being shown, for example when staff change "Do you need parking?" from Yes to No. Admitto never deletes it by itself. Staff can clear it on the attendee.
+- A question is shown only when the answer it depends on is saved as Yes (yes/no field) or as the option (select field). No answer at all does not show it.
+- The staff screens for adding and editing an attendee list every field and ask for every required one, whether or not its question is shown. Only the server applies the condition, so a required question that is not shown is not required when the same attendee is saved through the admin API.
 
 ### Event items (Requirements page)
 

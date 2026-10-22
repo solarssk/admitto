@@ -18,12 +18,18 @@ export {
 export {
   EVENT_CUSTOM_FIELD_EXAMPLE_MAX,
   EVENT_CUSTOM_FIELD_LONG_TEXT_MAX,
+  EVENT_CUSTOM_FIELD_SUGGESTION_MAX,
+  EVENT_CUSTOM_FIELD_SUGGESTIONS_MAX,
   EVENT_CUSTOM_FIELD_TEXT_MAX,
   EVENT_CUSTOM_FIELD_TYPES,
+  GUEST_FORM_ICONS,
   isFreeInputCustomFieldType,
+  isQuestionShown,
   eventCustomFieldRulesMaxLength,
   type EventCustomFieldRules,
   type EventCustomFieldType,
+  type GuestFormIcon,
+  type ShowWhen,
 } from "./customFieldTypes.js";
 export { parseUserAgent, parseUserAgentSafe, parseUserAgentWithVersion } from "./parseUserAgent.js";
 export { NO_COMPRESSION_HEADERS } from "./noCompressionHeaders.js";
