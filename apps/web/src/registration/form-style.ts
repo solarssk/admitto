@@ -10,7 +10,9 @@
  * 3. what the form adds and the product does not have: the layout of the form, the rows of options,
  *    the message slot under a field, and the status screens ({@link REGISTRATION_PAGE_CSS}).
  *
- * Every value in the third layer is a token, so a change of tokens or branding reaches it.
+ * Every colour in the third layer is a token, and so is the spacing between the rows of the form: `--space-4` between
+ * fields, the gap of the admin forms (`apps/admin/src/attendees/attendee-fields-grid.css`), so a change of tokens or
+ * branding reaches it.
  */
 import type { BrandingTheme } from "@admitto/auth";
 import { resolveThemeVars } from "@admitto/ui";
@@ -18,8 +20,8 @@ import { buildTicketPageStyles } from "../ticket-inline-styles.js";
 import { GUEST_PAGE_PRODUCT_CSS } from "./guest-page-css.generated.js";
 
 /** What the form adds. The state classes are set by the page script: `has-error` on a field whose
- * message slot shows an error. The slot keeps its height either way, so an error never moves the
- * fields around it. */
+ * message slot shows an error. A slot with a note keeps its height either way; one without takes no
+ * room until it has an error. */
 export const REGISTRATION_PAGE_CSS = `
 :root { color-scheme: light; }
 [hidden] { display: none !important; }
@@ -35,11 +37,11 @@ export const REGISTRATION_PAGE_CSS = `
 .reg-lede { margin: 8px 0 0; font-size: var(--fs-body); color: var(--text-secondary); }
 .reg-notices { display: grid; gap: 8px; padding: 14px 24px 0; }
 .reg-notices .at-notice { animation: none; }
-.reg-form { padding: 16px 24px 22px; display: grid; gap: 14px; }
+.reg-form { padding: 16px 24px 22px; display: grid; gap: var(--space-4); }
 .reg-legend { margin: 0; font-size: var(--fs-xs); color: var(--text-muted); }
 .reg-req { color: var(--status-error-fg); margin-left: 2px; }
 .reg-legend .reg-req { margin: 0; }
-.reg-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.reg-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); align-items: start; }
 .reg-form .at-field { min-width: 0; align-content: start; }
 /* The product's textarea is a code box (monospace). A long answer is prose, so it is set like the other fields. A phone keeps the product's 16 px, which stops the zoom on focus. */
 .reg-form .at-textarea { font-family: var(--font-sans); font-size: var(--fs-body); }
@@ -49,7 +51,7 @@ export const REGISTRATION_PAGE_CSS = `
 /* Mobile Safari lays a date input out by its own rules unless it is told to drop them: it does not take the product's border-box sizing, so the box is wider than its field and its right and bottom edges are cut off. It also centres the date it shows. */
 .reg-form .at-input[type="date"], .reg-form .at-input[type="datetime-local"] { -webkit-appearance: none; appearance: none; }
 .reg-form .at-input::-webkit-date-and-time-value { text-align: left; }
-/* The note and the error sit in one grid cell, so the slot is as tall as the taller of the two and an error never moves what is below it, whether the note is one line or several. */
+/* The note and the error sit in one grid cell, so the slot is as tall as the taller of the two and an error that takes the place of a note moves nothing below it, whether the note is one line or several. */
 .reg-slot { display: grid; min-height: 1rem; line-height: 1rem; }
 .reg-slot > * { grid-area: 1 / 1; }
 .reg-slot__hint { white-space: pre-line; overflow-wrap: anywhere; }
@@ -57,13 +59,13 @@ export const REGISTRATION_PAGE_CSS = `
 .reg-slot__err .ic { margin-top: 2px; font-size: 13px; }
 .has-error .reg-slot__hint { visibility: hidden; }
 .has-error .reg-slot__err { visibility: visible; }
-/* The terms and the security check are not text boxes, so their slot takes no room until it has an error: the ticks stand as close as in the mockup, and the error opens under its row. */
+/* A slot with no note (a name, the company, the terms, the security check) takes no room until it has an error: the fields stand one gap apart, as in the admin forms, and the error opens under its field. */
 .reg-slot--collapsed { display: none; }
 .has-error .reg-slot--collapsed { display: grid; }
 .has-error .at-check__box { border-color: var(--status-error); }
-.reg-section { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--border); }
+.reg-section { display: grid; gap: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border); }
 .reg-section__label { margin: 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-.reg-opts { display: grid; gap: 6px; }
+.reg-opts { display: grid; gap: var(--space-2); }
 .reg-opt { display: flex; width: 100%; align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card); }
 .reg-opt:hover { background: var(--surface-hover); }
 .reg-opt:has(input:checked) { border-color: color-mix(in srgb, var(--primary) 50%, var(--border)); background: color-mix(in srgb, var(--primary) 5%, var(--surface-card)); }
@@ -84,8 +86,8 @@ export const REGISTRATION_PAGE_CSS = `
 .combo .searchable-select__name strong { font-weight: var(--fw-semibold); color: var(--primary); }
 .combo__custom { border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); margin-top: 2px; }
 .combo .searchable-select__empty { padding: var(--space-1) var(--space-2) 0; }
-.reg-checks { display: grid; gap: 10px; }
-/* The row of the terms sits in a box of its own (it has an error slot). A grid makes its tick a block like the other ticks, so the box is no taller than the tick and the rows stand 10 px apart. */
+.reg-checks { display: grid; gap: var(--space-2); }
+/* The row of the terms sits in a box of its own (it has an error slot). A grid makes its tick a block like the other ticks, so the box is no taller than the tick and the rows stand one gap apart. */
 .reg-checks > [data-field] { display: grid; }
 .reg-checks .at-check { align-items: flex-start; font-size: var(--fs-sm); color: var(--text-primary); line-height: 1.45; }
 .reg-checks .at-check__box { margin-top: 2px; }

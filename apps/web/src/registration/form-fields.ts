@@ -78,14 +78,14 @@ function attrs(list: readonly Attribute[]): string {
 const REQUIRED_MARK = '<span class="reg-req" aria-hidden="true">*</span>';
 
 /**
- * The slot under a field: its note (when it has one) and, hidden until the script needs it, the error. It keeps the
- * height of the field's note, so an error never moves what is next to a field. A `collapsed` slot is for a row that is
- * not a text box (the terms, the security check): it takes no room until it has an error to show, so that the ticks of
- * "Before you send" stand as close as in the mockup. The error then opens under its row, as the notice at the top does.
+ * The slot under a field: its note (when it has one) and, hidden until the script needs it, the error. A slot with a note
+ * keeps the height of that note, so an error that takes its place moves nothing. A slot without one (a name, the
+ * company, the terms, the security check) takes no room until it has an error to show: the fields stand one gap apart,
+ * as they do in the admin forms, and the error opens under its field, as an inline error does there.
  */
-function slot(id: string, note: string | null, collapsed = false): string {
+function slot(id: string, note: string | null): string {
   const hint = note ? `<span class="reg-slot__hint">${esc(note)}</span>` : "";
-  const kind = collapsed ? "at-hint reg-slot reg-slot--collapsed" : "at-hint reg-slot";
+  const kind = note ? "at-hint reg-slot" : "at-hint reg-slot reg-slot--collapsed";
   return `<p class="${kind}" id="m-${id}" data-slot>${hint}<span class="reg-slot__err at-hint--error">${icon("alert")}<span data-msg-text></span></span></p>`;
 }
 
@@ -570,7 +570,7 @@ function legalLink(path: string, text: string): string {
 
 function renderTermsRow(model: RegistrationFormModel): string {
   const message = "Accept the event terms to continue.";
-  return `<div${fieldAttrs(ERROR_KEY_TERMS, "terms", true, message)}><label class="at-check"><input type="checkbox" id="f-terms" name="terms" required aria-describedby="m-f-terms" data-control><span class="at-check__box">${checkTick()}</span><span>I accept the ${legalLink(model.termsPath, "event terms")}${REQUIRED_MARK}</span></label>${slot("f-terms", null, true)}</div>`;
+  return `<div${fieldAttrs(ERROR_KEY_TERMS, "terms", true, message)}><label class="at-check"><input type="checkbox" id="f-terms" name="terms" required aria-describedby="m-f-terms" data-control><span class="at-check__box">${checkTick()}</span><span>I accept the ${legalLink(model.termsPath, "event terms")}${REQUIRED_MARK}</span></label>${slot("f-terms", null)}</div>`;
 }
 
 function renderConsentRow(consent: FormConsent, index: number): string {
@@ -593,7 +593,7 @@ function renderChallenge(model: RegistrationFormModel): string {
     ["data-response-field", "false"],
   ])}></div>`;
   const wrapper = fieldAttrs(ERROR_KEY_CHALLENGE, "challenge", true, "Complete the security check.");
-  return `<div${wrapper}><div class="reg-captcha" tabindex="-1" data-control>${widget}</div>${slot("challenge", null, true)}</div>`;
+  return `<div${wrapper}><div class="reg-captcha" tabindex="-1" data-control>${widget}</div>${slot("challenge", null)}</div>`;
 }
 
 /** The label of the send button, by who decides (D-B1). */

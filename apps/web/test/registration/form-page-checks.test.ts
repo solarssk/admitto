@@ -43,12 +43,15 @@ describe("the ticks of Before you send, while there is no error", () => {
     expect(display(p, slot)).toBe("none");
   });
 
-  it("leave the slot of a text box as it was: a box keeps a line for its note or its error, so an error does not move the fields", () => {
+  it("keep the line of a text box that has a note, which an error takes the place of, and leave none under a box without one", () => {
     const p = page();
-    for (const id of ["m-f-first_name", "m-f-email", "m-f-q0"]) {
+    const note = p.doc.getElementById("m-f-email");
+    expect(note.classList.contains("reg-slot--collapsed")).toBe(false);
+    expect(display(p, note)).toBe("grid");
+    for (const id of ["m-f-first_name", "m-f-last_name", "m-f-company", "m-f-department", "m-f-q0"]) {
       const slot = p.doc.getElementById(id);
-      expect(slot.classList.contains("reg-slot--collapsed"), id).toBe(false);
-      expect(display(p, slot), id).toBe("grid");
+      expect(slot.classList.contains("reg-slot--collapsed"), id).toBe(true);
+      expect(display(p, slot), id).toBe("none");
     }
   });
 
@@ -124,13 +127,25 @@ describe("the error of the terms", () => {
   });
 });
 
+describe("the error of a text box without a note", () => {
+  it("opens under the box, where the guest looks, and goes when the guest types in it", () => {
+    const p = page();
+    sendForm(p);
+    const slot = p.doc.getElementById("m-f-first_name");
+    expect(display(p, slot)).toBe("grid");
+    expect(visibility(p, slot.querySelector(".reg-slot__err"))).toBe("visible");
+    typeInto(p, "f-first_name", "Anne");
+    expect(display(p, slot)).toBe("none");
+  });
+});
+
 describe("the stylesheet that does it", () => {
   it("collapses a slot until its box has an error, and makes the box of the terms a grid like the ticks next to it", () => {
     for (const rule of [
       ".reg-slot--collapsed { display: none; }",
       ".has-error .reg-slot--collapsed { display: grid; }",
       ".reg-checks > [data-field] { display: grid; }",
-      ".reg-checks { display: grid; gap: 10px; }",
+      ".reg-checks { display: grid; gap: var(--space-2); }",
     ]) {
       expect(REGISTRATION_PAGE_CSS, rule).toContain(rule);
     }

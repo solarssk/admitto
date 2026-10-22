@@ -435,6 +435,18 @@ describe("the whole stylesheet", () => {
     expect(REGISTRATION_PAGE_CSS).not.toMatch(/\b(rgb|rgba|hsl|hsla)\(/);
   });
 
+  it("spaces the rows of the form by the gap of the admin forms and the product's scale, not by sizes of its own", () => {
+    const adminGrid = readFromProduct("../../../../apps/admin/src/attendees/attendee-fields-grid.css");
+    const adminGap = /\.attendee-fields-grid \{[^}]*\bgap: (var\(--space-\d\))/.exec(adminGrid)?.[1];
+    expect(adminGap).toMatch(/^var\(--space-\d\)$/);
+    const bodyOf = (selector: string): string => {
+      const start = REGISTRATION_PAGE_CSS.indexOf(`\n${selector} {`);
+      return REGISTRATION_PAGE_CSS.slice(start, REGISTRATION_PAGE_CSS.indexOf("}", start));
+    };
+    for (const selector of [".reg-form", ".reg-row", ".reg-section"]) expect(bodyOf(selector), selector).toContain(`gap: ${adminGap}`);
+    for (const selector of [".reg-opts", ".reg-checks"]) expect(bodyOf(selector), selector).toMatch(/gap: var\(--space-\d\);/);
+  });
+
   it("has the self-hosted font of the ticket page and no request to another host", () => {
     const css = buildRegistrationPageStyles();
     expect(css).toContain("@font-face");
