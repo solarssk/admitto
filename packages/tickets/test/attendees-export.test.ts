@@ -9,6 +9,7 @@ import {
 } from "../src/attendees-export.js";
 import type { ExportAttendeeSqlRow } from "../src/attendees-list-filters.js";
 import type { TicketTypeInfo } from "../src/ticket-types.js";
+import type { EventItemContent } from "../src/types.js";
 
 function makeRow(overrides: Partial<ExportAttendeeSqlRow> = {}): ExportAttendeeSqlRow {
   return {
@@ -69,6 +70,31 @@ describe("buildSanitizedExportRows — check_in_status label", () => {
   it("renders a human-readable label for a not-yet-admitted attendee", () => {
     const [row] = buildSanitizedExportRows([makeRow({ admitted_at: null })], [], "UTC");
     expect(row!.check_in_status).toBe("Not checked in");
+  });
+});
+
+describe("buildSanitizedExportRows, phone fields", () => {
+  const fields: EventItemContent[] = [
+    { label: "Phone", source_field: "phone", type: "phone" },
+    { label: "Note", source_field: "note", type: "text" },
+  ];
+  const attributes = (custom_data: Record<string, string>) =>
+    buildSanitizedExportRows([makeRow({ custom_data })], fields, "UTC")[0]!.attribute_values;
+
+  it("exports a phone number in canonical form as stored, so the file can be imported again", () => {
+    expect(attributes({ phone: "+48600100200" })[0]).toBe("+48600100200");
+    expect(attributes({ phone: "600100200" })[0]).toBe("600100200");
+    expect(attributes({ phone: "+123" })[0]).toBe("+123");
+  });
+
+  it("still guards a value in a phone field that is not a canonical phone number", () => {
+    for (const value of ["+48 600 100 200", "+12", "+1234567890123456", "+cmd|' /C calc'!A0", "=1+1", "@SUM(A1)", "-5 5 5"]) {
+      expect(attributes({ phone: value })[0], value).toBe(`'${value}`);
+    }
+  });
+
+  it("guards the same text in any other field, a number included", () => {
+    expect(attributes({ note: "+48600100200" })[1]).toBe("'+48600100200");
   });
 });
 

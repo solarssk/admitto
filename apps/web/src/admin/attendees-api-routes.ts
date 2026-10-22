@@ -3,7 +3,13 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
-import { WALLET_RELEVANT_ATTENDEE_FIELDS, eventEndsAtUtc, isWalletAddClosed, type EventEndInput } from "@admitto/shared";
+import {
+  EVENT_CUSTOM_FIELD_LONG_TEXT_MAX,
+  WALLET_RELEVANT_ATTENDEE_FIELDS,
+  eventEndsAtUtc,
+  isWalletAddClosed,
+  type EventEndInput,
+} from "@admitto/shared";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import {
   listDeliveries,
@@ -191,6 +197,12 @@ const attendeeEmailSchema = z
   .max(254)
   .refine((value) => !isErasedPlaceholderEmail(value), "reserved address");
 
+/** The most one custom_data value may hold in a staff request: what the longest type takes, a long text
+ * of 1000 characters at up to two UTF-16 units each. How much a given field takes is decided against
+ * the event's own fields (validateCustomDataPatch and buildCustomDataFromInput in @admitto/tickets):
+ * 100 characters for every type but long text. */
+const CUSTOM_DATA_VALUE_REQUEST_MAX = EVENT_CUSTOM_FIELD_LONG_TEXT_MAX * 2;
+
 const patchAttendeeFieldsSchema = z
   .object({
     first_name: z.string().trim().min(1).max(100).optional(),
@@ -207,7 +219,7 @@ const patchAttendeeFieldsSchema = z
           .min(1)
           .max(60)
           .regex(/^[a-z0-9_]+$/),
-        z.string().trim().max(100).nullable(),
+        z.string().trim().max(CUSTOM_DATA_VALUE_REQUEST_MAX).nullable(),
       )
       .optional(),
     rsvp_status: rsvpStatusSchema.optional(),
@@ -260,7 +272,7 @@ export type BulkResendDto = {
   failed: number;
 };
 
-const customDataFieldValueSchema = z.string().trim().max(100).nullable();
+const customDataFieldValueSchema = z.string().trim().max(CUSTOM_DATA_VALUE_REQUEST_MAX).nullable();
 
 const customDataFieldsRecordSchema = z.record(
   z
@@ -622,6 +634,9 @@ function allowedCustomFieldValues(field: { type: string; options: Prisma.JsonVal
   return new Set(field.options.filter((o): o is string => typeof o === "string"));
 }
 
+/** The types filtered by the text they contain (a contains match): every type that is free input. */
+const TEXT_FILTER_FIELD_TYPES = new Set(["text", "long_text", "date", "datetime", "phone"]);
+
 /** One field's own `cf_<source_field>` value(s), or `null` when the field has no active filter -
  * see parseCustomFieldFilters's own doc comment for the validation this applies. */
 function parseOneCustomFieldFilter(
@@ -629,9 +644,11 @@ function parseOneCustomFieldFilter(
   field: { source_field: string; type: string; options: Prisma.JsonValue },
 ): AttendeeCustomFieldFilter | null {
   const key = `cf_${field.source_field}`;
-  if (field.type === "text") {
+  if (TEXT_FILTER_FIELD_TYPES.has(field.type)) {
     const raw = searchParams.get(key)?.trim();
-    return raw ? { source_field: field.source_field, type: "text", text: raw.slice(0, 200) } : null;
+    // A phone number is stored as an optional + and its digits, so what is looked for is cut down to that too.
+    const text = field.type === "phone" ? raw?.replaceAll(/[^\d+]/g, "") : raw;
+    return text ? { source_field: field.source_field, type: "text", text: text.slice(0, 200) } : null;
   }
   if (field.type !== "select" && field.type !== "boolean") return null;
   const allowed = allowedCustomFieldValues(field);

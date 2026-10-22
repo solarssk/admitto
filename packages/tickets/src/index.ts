@@ -116,12 +116,20 @@ export {
   assertCustomDataMeetsRequirements,
 } from "./validate-custom-data.js";
 export {
+  eventCustomFieldRulesFitType,
+  eventCustomFieldRulesSchema,
+  hasNoRules,
+  readStoredFieldRules,
+} from "./custom-field-rules.js";
+export {
   MAX_CUSTOM_FIELDS_PER_EVENT,
   REGISTRANT_EMAIL_MAX,
+  REGISTRANT_LONG_TEXT_MAX,
   REGISTRANT_NAME_MAX,
   REGISTRANT_TEXT_MAX,
   RegistrantInputError,
   buildRegistrantCustomData,
+  normalizeRegistrantLongText,
   normalizeRegistrantText,
   pickRegistrantProfileFields,
   registrantEmailSchema,
