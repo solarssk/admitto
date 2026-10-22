@@ -78,6 +78,13 @@
   overflow-wrap: anywhere;
 }
 
+/* The surface draws the focus ring (:focus-within above). The product's own ring on a focused element would draw a second one
+   inside it, around the text. */
+.legal-editor-surface .ProseMirror:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .legal-editor-surface .ProseMirror[aria-readonly="true"] {
   color: var(--text-secondary);
 }
