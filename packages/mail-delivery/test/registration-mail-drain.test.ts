@@ -287,6 +287,34 @@ describe("a row that cannot be sent", () => {
     expect((await mailRow(good.mail.id)).status).toBe("accepted");
   });
 
+  it("does not send the confirmation mail when its edited template has lost the link: the row fails for good", async () => {
+    // Saved straight into the table, as one saved before the link was required would be.
+    await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "registration-confirm",
+        label: "Registration: confirm your email",
+        subject_template: "Confirm {{event_name}}",
+        body_template: "<p>Welcome to {{event_name}}</p>",
+        compiled_html_template: "<p>Welcome to {{event_name}}</p>",
+        template_format: "html",
+      },
+    });
+    const { mail } = await queuedMailFor(prisma, EVENT_ID, "registration-confirm");
+    const { messages, deps } = collectMail();
+
+    expect(await drain(deps)).toMatchObject({ claimed: 1, sent: 0, failed: 1 });
+
+    expect(messages).toEqual([]);
+    expect(await mailRow(mail.id)).toMatchObject({
+      status: "failed",
+      retryable: false,
+      error_code: "message_unusable",
+      error: "The message cannot be built from the current template.",
+    });
+  });
+
   it("is tried again, with the delay of the ticket mail, and gives up after the attempts the ticket mail has", async () => {
     const { registration, mail } = await queuedMailFor(prisma, EVENT_ID, "registration-confirm");
     const network = new Error(`connect ECONNREFUSED 10.0.0.5:25 while sending to ${registration.email}`);

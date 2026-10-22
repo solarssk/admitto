@@ -43,6 +43,7 @@ URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in 
 `SYSTEM_TEMPLATE_NAMES` lists the mails a guest gets before an attendee exists: `registration-confirm`, `registration-received`, `registration-waitlist`, `registration-rejected`. Each has an English built-in default; an organizer's override is an ordinary `MailTemplate` row under the same name. `ticket` is not one of them: it stays the one template ticket delivery sends.
 
 - Ask `isSystemTemplateName(name)`, not a literal. A system row is flagged `is_system` in the template list, is not counted toward the ten-template cap, is refused by bulk send (422) and does not block permanent event deletion. `isReservedTemplateName` also covers `ticket`, for a free template's name.
+- The body of `registration-confirm` must hold `{{confirm_url}}` (`requiredPlaceholdersForTemplate`, checked by the admin routes with `findMissingRequiredPlaceholders`): a confirmation mail without its link is of no use to the guest. A stored template that lost it fails its queue row for good when the worker renders it.
 - A system template cannot use `ticket_url`, `qr_image_url`, `apple_wallet_url`, `google_wallet_url`, `download_page_url` or `ticket_type` (`SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS`). `setMailTemplate` and `createMailTemplate` apply it through `disallowedPlaceholdersForTemplate(name)`; the admin routes pass the same set to template validation.
 
 What the worker fills in when it sends a registration mail (`drainRegistrationMails` in `@admitto/mail-delivery`):

@@ -43,6 +43,17 @@ export const SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS: ReadonlySet<string> = new S
   "ticket_type",
 ]);
 
+const NO_REQUIRED_PLACEHOLDERS: ReadonlySet<string> = new Set();
+const CONFIRM_REQUIRED_PLACEHOLDERS: ReadonlySet<string> = new Set(["confirm_url"]);
+
+/** Placeholders the body of a template of this name cannot do without. The mail that confirms an address is the only
+ * way a guest has to confirm it, so one without its link is an email nobody can act on, sent as if it were fine, and
+ * the unconfirmed registration is deleted after 24 hours. Pass it as the `required` argument of
+ * `findMissingRequiredPlaceholders`, with an empty subject (a link in a subject line cannot be clicked). */
+export function requiredPlaceholdersForTemplate(name: string): ReadonlySet<string> {
+  return name === "registration-confirm" ? CONFIRM_REQUIRED_PLACEHOLDERS : NO_REQUIRED_PLACEHOLDERS;
+}
+
 /** Only the confirmation mail carries a confirmation link. */
 const NON_CONFIRM_SYSTEM_FORBIDDEN: ReadonlySet<string> = new Set([
   ...SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS,

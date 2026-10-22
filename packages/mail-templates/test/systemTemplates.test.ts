@@ -14,11 +14,13 @@ import {
   defaultTemplateLabel,
   disallowedPlaceholdersForTemplate,
   extractPlaceholderTokens,
+  findMissingRequiredPlaceholders,
   getBuiltinTemplate,
   getBuiltinTemplateSource,
   isReservedTemplateName,
   isSystemTemplateName,
   renderTemplate,
+  requiredPlaceholdersForTemplate,
   resolveEventContactVars,
   resolveTemplateForEvent,
   setMailTemplate,
@@ -157,6 +159,17 @@ describe("built-in registry", () => {
       expect(getBuiltinTemplateSource(name).body).toContain("you can ignore this email");
     }
     expect(getBuiltinTemplateSource("registration-rejected").body).not.toContain("you can ignore this email");
+  });
+
+  it("requires the confirmation link in the confirmation mail only, and every built-in mail meets its own requirement", () => {
+    expect([...requiredPlaceholdersForTemplate("registration-confirm")]).toEqual(["confirm_url"]);
+    for (const name of ["registration-received", "registration-waitlist", "registration-rejected", "ticket", "reminder"]) {
+      expect(requiredPlaceholdersForTemplate(name).size, name).toBe(0);
+    }
+    for (const name of SYSTEM_TEMPLATE_NAMES) {
+      const { body } = getBuiltinTemplateSource(name);
+      expect(findMissingRequiredPlaceholders("", body, requiredPlaceholdersForTemplate(name)), name).toEqual([]);
+    }
   });
 
   it("puts the confirm button only in registration-confirm", () => {

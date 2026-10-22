@@ -1,7 +1,10 @@
 import type { PrismaClient } from "@admitto/db";
 import {
+  MissingRequiredPlaceholderError,
   buildEventLocationTemplateVars,
+  findMissingRequiredPlaceholders,
   renderTemplate,
+  requiredPlaceholdersForTemplate,
   resolveBrandingFromEvent,
   resolveEventContactVars,
   resolveEventImageAssetVars,
@@ -82,6 +85,10 @@ export function renderRegistrationMail(
   registration: RegistrationForMail,
   baseUrl: string,
 ): RenderedTemplate {
+  // The mail that confirms an address, without its link, would be sent and counted as sent, and the guest could do nothing
+  // with it. A template saved before this was checked (or edited by hand) fails its row for good instead.
+  const missing = findMissingRequiredPlaceholders("", template.compiledHtmlTemplate, requiredPlaceholdersForTemplate(templateName));
+  if (missing.length > 0) throw new MissingRequiredPlaceholderError(missing);
   const named = mayShowNames(registration);
   // Where a guest's links point. A custom address per event (D-C6, PR 119) replaces this one value.
   const guestOrigin = baseUrl;

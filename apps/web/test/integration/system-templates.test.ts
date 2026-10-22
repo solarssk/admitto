@@ -203,6 +203,25 @@ describe("system (registration-*) mail templates", () => {
     expect(preview.status).toBe(400);
   });
 
+  it("refuses a registration-confirm template without its link, on save and on preview: the mail would be of no use", async () => {
+    const confirm = await insertSystemRow("registration-confirm");
+    const body = { body_template: "<p>Hi {{first_name}}, please confirm your address.</p>", template_format: "html" };
+
+    const put = await api(`/templates/${confirm.id}`, { method: "PUT", body });
+    expect(put.status).toBe(400);
+    expect(await put.json()).toEqual({
+      error: "template_validation_failed",
+      errors: ["Missing required placeholder: confirm_url"],
+    });
+    expect((await api(`/templates/${confirm.id}/preview`, { method: "POST", body })).status).toBe(400);
+    const stored = await prisma.mailTemplate.findUniqueOrThrow({ where: { id: confirm.id } });
+    expect(stored.body_template).toBe("{{first_name}}");
+
+    // The other registration mails carry no link to confirm, so they are not asked for one.
+    const received = await insertSystemRow("registration-received");
+    expect((await api(`/templates/${received.id}`, { method: "PUT", body })).status).toBe(200);
+  });
+
   it("accepts confirm_url and the contact placeholders on a registration-* template", async () => {
     const row = await insertSystemRow("registration-confirm");
     const res = await api(`/templates/${row.id}`, {
