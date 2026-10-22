@@ -670,6 +670,28 @@ describe("a ticket row", () => {
     expect(messages).toHaveLength(1);
   });
 
+  it("makes no resend when the ticket staff queued is delivered between the check and the handover", async () => {
+    const { attendee, mail } = await acceptedAttendee();
+    const { messages, deps } = collectMail();
+    await sendTicketEmails(EVENT_ID, { attendeeIds: [attendee.id] }, prisma, TEST_ENV, deps);
+
+    // The check saw a queued ticket. The ticket drain sends it just before the handover starts: from then on the ticket is out.
+    let delivered = false;
+    vi.mocked(sendTicketEmails).mockImplementationOnce(async (...args) => {
+      await drainPendingDeliveries(prisma, TEST_ENV, deps, { baseUrl: BASE_URL });
+      delivered = true;
+      const actual = await vi.importActual<typeof import("../src/send.js")>("../src/send.js");
+      return actual.sendTicketEmails(...args);
+    });
+
+    expect(await drain(deps)).toMatchObject({ claimed: 1, sent: 1 });
+
+    expect(delivered).toBe(true);
+    expect(await mailRow(mail.id)).toMatchObject({ status: "sent" });
+    expect(await deliveriesOf(attendee.id)).toHaveLength(1);
+    expect(messages).toHaveLength(1);
+  });
+
   it("is cancelled, with no delivery, when the attendee can no longer get a ticket", async () => {
     const { attendee, mail } = await acceptedAttendee("revoked");
     const { deps } = collectMail();

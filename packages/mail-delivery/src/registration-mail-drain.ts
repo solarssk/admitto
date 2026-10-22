@@ -253,7 +253,7 @@ async function handOverTicket(context: EventMailContext, row: QueuedRegistration
   try {
     result = await sendTicketEmails(
       context.eventId,
-      { attendeeIds: [attendeeId], purpose: "initial", baseUrl: context.baseUrl },
+      { attendeeIds: [attendeeId], purpose: "initial", automated: true, baseUrl: context.baseUrl },
       context.prisma,
       context.env,
       context.deps,
