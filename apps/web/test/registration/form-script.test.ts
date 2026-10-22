@@ -319,6 +319,20 @@ describe("what is sent", () => {
 });
 
 describe("what the server answers", () => {
+  it("names the address that was sent, even when the guest edited the field while the request was out", async () => {
+    let release: (answer: Answer) => void = () => undefined;
+    const pending = new Promise<Answer>((resolve) => {
+      release = resolve;
+    });
+    const page = boot({ fetchMock: stubFetch(() => pending) });
+    fillValid(page);
+    send(page);
+    type(page, "f-email", "someone.else@contoso.example");
+    release({ status: 200, body: { ok: true } });
+    await until(() => expect(page.doc.getElementById("reg-done").hidden).toBe(false));
+    expect(page.doc.getElementById("reg-done-email").textContent).toBe("anna.kowalska@contoso.example");
+  });
+
   it("shows Check your inbox for ok, with the address as text, and moves focus there", async () => {
     const page = boot();
     fillValid(page);

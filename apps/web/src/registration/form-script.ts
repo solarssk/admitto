@@ -179,10 +179,11 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     }
   }
 
-  function succeed() {
+  // The address shown is the one that was sent, not what the field holds now: the guest can edit it while the request is out.
+  function succeed(email) {
     resetChallenge();
     setBusy(false);
-    doneEmail.textContent = control(form.querySelector('[data-field="email"]')).value.trim();
+    doneEmail.textContent = email;
     regions.forEach(function (region) { region.hidden = true; });
     done.hidden = false;
     doneTitle.focus();
@@ -215,7 +216,7 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
       );
     }).then(function (answer) {
       if (timer) clearTimeout(timer);
-      if (answer.status === 200 && answer.data && answer.data.ok === true) succeed();
+      if (answer.status === 200 && answer.data && answer.data.ok === true) succeed(body.email || "");
       else fail(answer.status, answer.data);
     }, function () {
       if (timer) clearTimeout(timer);
