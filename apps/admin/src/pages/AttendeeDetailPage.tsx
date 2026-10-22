@@ -102,6 +102,7 @@ import {
   allCustomDataEntries,
   customDataApiErrorMessage,
   fetchAttendeeCustomFields,
+  isLongAnswer,
   readCustomDataField,
   validateCustomFieldsForm,
 } from "../attendees/customData.js";
@@ -1063,7 +1064,7 @@ function AttendeeOverviewTab({
           ) : (
             <div className="attendee-detail-readonly">
               {customDataEntries.map(([key, label, value]) => (
-                <div className="attendee-detail-row" key={key}>
+                <div className={`attendee-detail-row${isLongAnswer(value) ? " attendee-detail-row--long" : ""}`} key={key}>
                   <span>{label}</span>
                   <span>{value}</span>
                 </div>
@@ -2736,7 +2737,7 @@ export function AttendeeDetailPage() {
   const attendeeSource = deriveAttendeeSource(detail.action_log_first_action_type);
   // Seeded together with `detail` by applyDetail, so it exists whenever a detail does.
   const activityLog = activity.log!;
-  const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
+  const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey, event.timezone);
   // Falls back to [] against a stale API response missing this field (e.g. an apps/web dev
   // server running from before event_items was added - it doesn't hot-reload) instead of
   // crashing the whole page on detail.event_items.length.
@@ -3144,6 +3145,7 @@ export function AttendeeDetailPage() {
                   <CustomDataFieldInput
                     key={field.source_field}
                     field={field}
+                    eventTimeZone={event.timezone}
                     value={form.customFields[field.source_field] ?? ""}
                     disabled={saving || reloading || staleWrite}
                     onChange={(next) =>

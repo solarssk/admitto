@@ -2506,6 +2506,7 @@ export function AttendeesPage() {
 
       <AddAttendeeModal
         eventId={eventId}
+        eventTimeZone={event.timezone}
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onCreated={handleCreated}

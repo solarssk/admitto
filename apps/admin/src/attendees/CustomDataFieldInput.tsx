@@ -1,21 +1,123 @@
-import { Input } from "@admitto/ui";
+import { CONTACT_PHONE_MAX_LENGTH, sanitizeContactPhoneInput } from "@admitto/shared";
+import { Input, type InputProps } from "@admitto/ui";
+import { DatePicker } from "../components/DatePicker.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
+import { TimeInput } from "../components/TimeInput.js";
+import { answerHint, codePointLength, joinDateTime, longTextLimit, splitDateTime } from "./answerFormat.js";
 import { customDataFieldLabel, type CustomDataFieldDef } from "./customData.js";
+import "./custom-data-field-input.css";
 
 export interface CustomDataFieldInputProps {
   field: CustomDataFieldDef;
   value: string;
   disabled?: boolean;
   onChange: (value: string) => void;
+  /** The event's time zone: a date and time answer is the time on the clock there, and the input says so. */
+  eventTimeZone?: string;
+}
+
+/** A long answer: a box that grows by hand, with a count of the characters as the server counts them (an emoji is one) against
+ * the limit, so that a text that is too long is seen before it is sent. */
+function LongTextInput({ field, value, disabled, onChange }: Readonly<CustomDataFieldInputProps>) {
+  const fieldId = `custom-field-${field.source_field}`;
+  const limit = longTextLimit(field);
+  const count = codePointLength(value.trim());
+  const over = count > limit;
+  const hint = answerHint(field);
+  const describedBy = [hint ? `${fieldId}-hint` : null, `${fieldId}-count`].filter(Boolean).join(" ");
+  return (
+    <div className="at-field">
+      <label className="at-label" htmlFor={fieldId}>
+        {customDataFieldLabel(field)}
+      </label>
+      <textarea
+        id={fieldId}
+        className={`at-textarea${over ? " at-textarea--invalid" : ""}`}
+        rows={4}
+        value={value}
+        disabled={disabled}
+        required={field.required}
+        aria-invalid={over || undefined}
+        aria-describedby={describedBy}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <div className="custom-data-field__meta">
+        {hint ? (
+          <span id={`${fieldId}-hint`} className="at-hint">
+            {hint}
+          </span>
+        ) : null}
+        <span id={`${fieldId}-count`} className={`at-hint custom-data-field__count${over ? " at-hint--error" : ""}`}>
+          {over ? `${count} / ${limit}, ${count - limit} too many` : `${count} / ${limit}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** A date and a time of day side by side, held as one answer (`YYYY-MM-DDTHH:mm`, the time at the event). While only one half is
+ * filled in, the answer is the half with an empty other (`2026-11-04T`), which the form refuses to send. */
+function DateTimeInput({ field, value, disabled, onChange, eventTimeZone }: Readonly<CustomDataFieldInputProps>) {
+  const labelId = `custom-field-${field.source_field}-label`;
+  const { date, time } = splitDateTime(value);
+  const hint = answerHint(field, eventTimeZone);
+  return (
+    <div className="at-field" role="group" aria-labelledby={labelId}>
+      <span className="at-label" id={labelId}>
+        {customDataFieldLabel(field)}
+      </span>
+      <div className="custom-data-field__datetime">
+        <DatePicker
+          ariaLabel={`${field.label}, date`}
+          value={date}
+          disabled={disabled}
+          onChange={(next) => onChange(joinDateTime(next, time))}
+        />
+        <TimeInput
+          ariaLabel={`${field.label}, time`}
+          value={time}
+          disabled={disabled}
+          onChange={(next) => onChange(joinDateTime(date, next))}
+          // A time that was typed and cannot be read must not leave the one before it in the answer: it counts as no time.
+          onValidityChange={(valid) => {
+            if (!valid) onChange(joinDateTime(date, ""));
+          }}
+        />
+      </div>
+      {hint ? <span className="at-hint">{hint}</span> : null}
+    </div>
+  );
+}
+
+/** The keyboard a phone shows for the field: the one of a phone number, or the one of digits. */
+function lineInputMode(field: CustomDataFieldDef): InputProps["inputMode"] {
+  if (field.type === "phone") return "tel";
+  return field.rules?.digits_only ? "numeric" : undefined;
+}
+
+/** A short answer, and a phone number: a line of text, with what the field asks for under it. A phone number takes only what a
+ * number is written with. */
+function LineInput({ field, value, disabled, onChange }: Readonly<CustomDataFieldInputProps>) {
+  const isPhone = field.type === "phone";
+  return (
+    <Input
+      label={customDataFieldLabel(field)}
+      value={value}
+      disabled={disabled}
+      required={field.required}
+      hint={answerHint(field)}
+      type={isPhone ? "tel" : undefined}
+      inputMode={lineInputMode(field)}
+      maxLength={isPhone ? CONTACT_PHONE_MAX_LENGTH : undefined}
+      autoComplete={isPhone ? "off" : undefined}
+      onChange={(e) => onChange(isPhone ? sanitizeContactPhoneInput(e.target.value, true) : e.target.value)}
+    />
+  );
 }
 
 /** Render one event-item custom_data field with type-aware controls. */
-export function CustomDataFieldInput({
-  field,
-  value,
-  disabled,
-  onChange,
-}: Readonly<CustomDataFieldInputProps>) {
+export function CustomDataFieldInput(props: Readonly<CustomDataFieldInputProps>) {
+  const { field, value, disabled, onChange } = props;
   const label = customDataFieldLabel(field);
   const type = field.type ?? "text";
   const fieldId = `custom-field-${field.source_field}`;
@@ -73,13 +175,19 @@ export function CustomDataFieldInput({
     );
   }
 
-  return (
-    <Input
-      label={label}
-      value={value}
-      disabled={disabled}
-      required={field.required}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  );
+  if (type === "long_text") return <LongTextInput {...props} />;
+  if (type === "datetime") return <DateTimeInput {...props} />;
+  if (type === "date") {
+    return (
+      <DatePicker
+        id={fieldId}
+        label={field.label}
+        required={field.required}
+        value={value}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    );
+  }
+  return <LineInput {...props} />;
 }

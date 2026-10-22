@@ -175,9 +175,9 @@ Every row gets its own pass or fail reason in the preview before you commit. Not
 | Field key | Derived automatically. Lowercase letters, numbers and underscore only |
 | Label | Required, up to 60 characters |
 | Description | Optional, up to 500 characters |
-| Type | Text, long text, date, date and time, phone, select, or yes/no. The field editor offers text, select and yes/no. The other types are set through the admin API |
+| Type | Text, long text, date, date and time, phone, select (shown as Single choice), or yes/no. The field editor offers all seven |
 | Select options | At least one for a select field. Up to 20 options, each up to 60 characters |
-| Format rules | Optional, for text, long text and phone fields only. See "Format rules" below |
+| Format rules | Optional, for text, long text and phone fields only. Set in the field editor. See "Format rules" below |
 
 **Limits and protections**
 
@@ -191,6 +191,7 @@ Every row gets its own pass or fail reason in the preview before you commit. Not
 - A select answer must be one of the configured options.
 - A yes/no answer accepts Yes, No, true or false, in any letter case.
 - An answer that does not fit its type or format rules is refused when you add an attendee, when you save one and when you import a file. Nothing is guessed. The one thing that is cut is a text answer in an import, which is cut to 100 characters.
+- The Add attendee dialog and the attendee page check an answer with the same limits before they send it, and say which field is wrong.
 
 | Type | An answer is |
 |---|---|
@@ -215,7 +216,8 @@ Text, long text and phone fields can carry rules about what an answer looks like
 
 - A length counts characters as a person sees them: an emoji is one character.
 - A phone number is checked in its saved form, so its length counts the `+`, and "digits only" refuses a number that starts with `+`.
-- A date, date and time, select or yes/no field takes no rules. Saving one with rules is refused.
+- A date, date and time, select or yes/no field takes no rules. Saving one with rules is refused. The field editor shows no rules for these types, and removes the rules of a field that becomes one of them.
+- The field editor refuses a length that is not a whole number from 1 to what the type holds, a shortest answer longer than the longest, and phone lengths that no number can meet (a saved number has 3 to 16 characters, or 3 to 15 with digits only). It also refuses an example of more than 100 characters, or one with an invisible character.
 - A rule applies to every answer entered after it is set, and to the answers already saved. An attendee whose older answer breaks a new rule can't be saved until that answer is fixed.
 - An export writes a phone number as saved, with its `+`, so an exported file can be imported again.
 

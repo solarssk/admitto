@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
+import { CUSTOM_FIELD_TYPES } from "../../src/requirements/customFieldType.js";
 import { EventCustomFieldModal } from "../../src/requirements/EventCustomFieldModal.js";
 import { advanceTimers, deferred, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
 import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
@@ -240,7 +241,6 @@ describe("EventCustomFieldModal — edit", () => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-dietary", {
         label: "Dietary needs",
         description: null,
-        type: "text",
         required: true,
       });
     });
@@ -273,7 +273,6 @@ describe("EventCustomFieldModal — edit", () => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-dietary", {
         label: "Dietary requirements",
         description: "New description",
-        type: "text",
         required: false,
       });
     });
@@ -316,7 +315,6 @@ describe("EventCustomFieldModal — edit", () => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
         label: "Shirt size",
         description: null,
-        type: "select",
         required: true,
       });
     });
@@ -341,7 +339,6 @@ describe("EventCustomFieldModal — edit", () => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-territory", {
         label: "Territory",
         description: null,
-        type: "select",
         required: true,
       });
     });
@@ -379,7 +376,6 @@ describe("EventCustomFieldModal — edit", () => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
         label: "Shirt size",
         description: null,
-        type: "select",
         required: false,
         options: ["S", "M", "L", "XL"],
       });
@@ -461,7 +457,6 @@ describe("EventCustomFieldModal — edit", () => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
         label: "Shirt size",
         description: null,
-        type: "select",
         required: false,
         options: ["M", "S", "L"],
       });
@@ -479,7 +474,6 @@ describe("EventCustomFieldModal — edit", () => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
         label: "Shirt size",
         description: null,
-        type: "select",
         required: false,
         options: ["M", "S", "L"],
       });
@@ -518,7 +512,6 @@ describe("EventCustomFieldModal — edit", () => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
         label: "Shirt sizes",
         description: null,
-        type: "select",
         required: false,
       });
     });
@@ -583,7 +576,6 @@ describe("EventCustomFieldModal — edit", () => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
         label: "Shirt size",
         description: null,
-        type: "select",
         required: false,
         options: ["S", "Medium", "L"],
       });
@@ -608,7 +600,6 @@ describe("EventCustomFieldModal — edit", () => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
         label: "Shirt size",
         description: null,
-        type: "select",
         required: false,
         options: ["S", "L"],
       });
@@ -862,5 +853,533 @@ describe("EventCustomFieldModal: the option usage lookup", () => {
     renderModal({ ...selectField, id: "field-text", type: "text", options: null });
     await act(async () => {});
     expect(fetchEventCustomFieldOptionUsage).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The answer types long text, date, date and time and phone, and the format rules (v0.8).
+// ---------------------------------------------------------------------------------------------
+
+const typeButton = (name: string) => screen.getByRole("button", { name });
+const rulesEditor = () => screen.queryByRole("group", { name: "Format rules" });
+const createButton = () => screen.getByRole("button", { name: "Create field" });
+const saveButton = () => screen.getByRole("button", { name: "Save" });
+const digitsOnlySwitch = () => screen.getByRole("switch", { name: "Digits only" }) as HTMLInputElement;
+const setBox = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+const lastCall = (mock: typeof createEventCustomField | typeof updateEventCustomField) => mock.mock.calls.at(-1)![mock === createEventCustomField ? 1 : 2] as Record<string, unknown>;
+
+/** A field that exists, with the rules and type of the test; everything else is as plain as can be. */
+function existingField(changes: Partial<EventCustomFieldDto>): EventCustomFieldDto {
+  return { ...dietaryField, id: "field-ruled", source_field: "postcode", label: "Postcode", ...changes };
+}
+
+describe("EventCustomFieldModal: the answer types", () => {
+  it("offers every answer type as a button with its name, text first and pressed, in a group named Field type", () => {
+    renderModal(null);
+    const group = screen.getByRole("group", { name: "Field type" });
+    const buttons = Array.from(group.querySelectorAll("button"));
+    expect(buttons.map((button) => button.textContent)).toEqual(["Text", "Long text", "Date", "Date and time", "Phone", "Single choice", "Yes / No"]);
+    expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false", "false", "false", "false", "false", "false"]);
+    expect(group.querySelectorAll("button i.ti")).toHaveLength(7);
+  });
+
+  it.each(CUSTOM_FIELD_TYPES)("presses $label, drops the pressed state of the one before it and shows its hint", ({ label, hint }) => {
+    renderModal(null);
+    fireEvent.click(typeButton(label));
+    expect(typeButton(label).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getAllByRole("button", { pressed: true }).filter((button) => button.closest(".custom-field-types"))).toHaveLength(1);
+    expect(screen.getByText(hint)).toBeTruthy();
+  });
+
+  it.each(["long_text", "date", "datetime", "phone"] as const)("creates a %s field, with no rules", async (type) => {
+    vi.mocked(createEventCustomField).mockResolvedValueOnce({ ...dietaryField, type });
+    renderModal(null);
+    setBox("Display label", "Arrival");
+    fireEvent.click(typeButton(CUSTOM_FIELD_TYPES.find((entry) => entry.value === type)!.label));
+    fireEvent.click(createButton());
+    await waitFor(() => {
+      expect(createEventCustomField).toHaveBeenCalledWith("evt-1", {
+        source_field: "arrival",
+        label: "Arrival",
+        description: undefined,
+        type,
+        required: false,
+        options: undefined,
+      });
+    });
+    expect(lastCall(createEventCustomField)).not.toHaveProperty("rules");
+  });
+
+  it("keeps the type buttons off while the field is being saved, with the one that was pressed still pressed", async () => {
+    const saved = deferred<EventCustomFieldDto>();
+    vi.mocked(createEventCustomField).mockReturnValueOnce(saved.promise);
+    renderModal(null);
+    setBox("Display label", "Arrival");
+    fireEvent.click(typeButton("Date"));
+    fireEvent.click(createButton());
+    await waitFor(() => expect(createButton().getAttribute("aria-busy")).toBe("true"));
+
+    for (const entry of CUSTOM_FIELD_TYPES) expect(typeButton(entry.label).hasAttribute("disabled"), entry.label).toBe(true);
+    expect(typeButton("Date").getAttribute("aria-pressed")).toBe("true");
+    await act(async () => saved.resolve(dietaryField));
+    expect(typeButton("Date").hasAttribute("disabled")).toBe(false);
+  });
+
+  it("shows a type the editor lists in a field that is edited, pressed, and edits it into another", async () => {
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...dietaryField, type: "datetime" });
+    renderModal({ ...dietaryField, type: "date" });
+    expect(typeButton("Date").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(typeButton("Date and time"));
+    fireEvent.click(saveButton());
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-dietary", {
+        label: "Dietary requirements",
+        description: null,
+        type: "datetime",
+        required: false,
+      });
+    });
+  });
+});
+
+describe("EventCustomFieldModal: the format rules", () => {
+  it.each([
+    ["Text", true],
+    ["Long text", true],
+    ["Phone", true],
+    ["Date", false],
+    ["Date and time", false],
+    ["Single choice", false],
+    ["Yes / No", false],
+  ])("%s: the rules editor is there: %s", (label, there) => {
+    renderModal(null);
+    fireEvent.click(typeButton(label));
+    expect(rulesEditor() !== null).toBe(there);
+  });
+
+  it("names the boxes, and says what the lengths take, for the type that is picked", () => {
+    renderModal(null);
+    expect(screen.getByLabelText("Shortest answer")).toBeTruthy();
+    expect(screen.getByLabelText("Longest answer")).toBeTruthy();
+    expect(screen.getByLabelText("Example")).toBeTruthy();
+    expect(digitsOnlySwitch().checked).toBe(false);
+    expect(screen.getByText("Whole numbers, up to 100 characters.")).toBeTruthy();
+    fireEvent.click(typeButton("Long text"));
+    expect(screen.getByText("Whole numbers, up to 1000 characters.")).toBeTruthy();
+    fireEvent.click(typeButton("Phone"));
+    expect(screen.getByText(/a leading \+ and its digits, 3 to 16 characters/)).toBeTruthy();
+    expect(screen.getByText("Only the digits 0 to 9, so a number written with a + is refused.")).toBeTruthy();
+  });
+
+  it("creates a text field with the rules an operator sets, the example without the spaces around it", async () => {
+    vi.mocked(createEventCustomField).mockResolvedValueOnce(dietaryField);
+    renderModal(null);
+    setBox("Display label", "Postcode");
+    setBox("Shortest answer", "5");
+    setBox("Longest answer", "5");
+    fireEvent.click(digitsOnlySwitch());
+    setBox("Example", "  01234 ");
+    fireEvent.click(createButton());
+    await waitFor(() => {
+      expect(createEventCustomField).toHaveBeenCalledWith("evt-1", {
+        source_field: "postcode",
+        label: "Postcode",
+        description: undefined,
+        type: "text",
+        required: false,
+        options: undefined,
+        rules: { min_length: 5, max_length: 5, digits_only: true, example: "01234" },
+      });
+    });
+  });
+
+  it.each(["long_text", "phone"] as const)("creates a %s field with its rules, too", async (type) => {
+    vi.mocked(createEventCustomField).mockResolvedValueOnce({ ...dietaryField, type });
+    renderModal(null);
+    setBox("Display label", "Answer");
+    fireEvent.click(typeButton(type === "phone" ? "Phone" : "Long text"));
+    setBox("Longest answer", "12");
+    fireEvent.click(createButton());
+    await waitFor(() => expect(createEventCustomField).toHaveBeenCalled());
+    expect(lastCall(createEventCustomField)).toMatchObject({ type, rules: { max_length: 12 } });
+  });
+
+  it("leaves a rule out that is empty or turned off, and sends no rules at all when there are none", async () => {
+    vi.mocked(createEventCustomField).mockResolvedValueOnce(dietaryField);
+    renderModal(null);
+    setBox("Display label", "Diet");
+    fireEvent.click(digitsOnlySwitch());
+    fireEvent.click(digitsOnlySwitch());
+    setBox("Example", "   ");
+    fireEvent.click(createButton());
+    await waitFor(() => expect(createEventCustomField).toHaveBeenCalled());
+    expect(lastCall(createEventCustomField)).not.toHaveProperty("rules");
+  });
+
+  it("takes only digits in a length box, whatever is typed or pasted", () => {
+    renderModal(null);
+    setBox("Shortest answer", "a1 b-2.5");
+    expect((screen.getByLabelText("Shortest answer") as HTMLInputElement).value).toBe("125");
+    expect((screen.getByLabelText("Shortest answer") as HTMLInputElement).inputMode).toBe("numeric");
+  });
+
+  describe("a rule the server would refuse", () => {
+    function fillLabel() {
+      setBox("Display label", "Postcode");
+    }
+
+    it.each([
+      ["Text", "Longest answer", "101", "Enter a whole number from 1 to 100."],
+      ["Text", "Shortest answer", "0", "Enter a whole number from 1 to 100."],
+      ["Long text", "Longest answer", "1001", "Enter a whole number from 1 to 1000."],
+      ["Phone", "Longest answer", "17", "Enter a whole number from 1 to 16."],
+    ])("%s, %s %s: says so where the boxes are, marks the box, and keeps Create field off until it is fixed", (type, box, value, message) => {
+      renderModal(null);
+      fillLabel();
+      fireEvent.click(typeButton(type));
+      setBox(box, value);
+      expect(screen.getByRole("alert").textContent).toBe(message);
+      expect(screen.getByLabelText(box).getAttribute("aria-invalid")).toBe("true");
+      expect(createButton().hasAttribute("disabled")).toBe(true);
+
+      setBox(box, "5");
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByLabelText(box).getAttribute("aria-invalid")).toBeNull();
+      expect(createButton().hasAttribute("disabled")).toBe(false);
+    });
+
+    it("refuses a shortest answer longer than the longest, naming both boxes", () => {
+      renderModal(null);
+      fillLabel();
+      setBox("Shortest answer", "10");
+      setBox("Longest answer", "9");
+      expect(screen.getByRole("alert").textContent).toBe("The longest answer can't be shorter than the shortest.");
+      expect(screen.getByLabelText("Shortest answer").getAttribute("aria-invalid")).toBe("true");
+      expect(screen.getByLabelText("Longest answer").getAttribute("aria-invalid")).toBe("true");
+      expect(createButton().hasAttribute("disabled")).toBe(true);
+    });
+
+    it("refuses the lengths of a phone field that no number can meet, and lets the same lengths through on a text field", () => {
+      renderModal(null);
+      fillLabel();
+      setBox("Longest answer", "2");
+      expect(screen.queryByRole("alert")).toBeNull();
+      fireEvent.click(typeButton("Phone"));
+      expect(screen.getByRole("alert").textContent).toBe("No phone number fits these rules: a saved number has 3 to 16 characters.");
+      expect(createButton().hasAttribute("disabled")).toBe(true);
+
+      setBox("Longest answer", "");
+      fireEvent.click(digitsOnlySwitch());
+      setBox("Shortest answer", "16");
+      expect(screen.getByRole("alert").textContent).toBe("No phone number fits these rules: a saved number has 3 to 15 characters.");
+    });
+
+    it("refuses an example that is too long, counting an emoji as one character, or has an invisible one", () => {
+      renderModal(null);
+      fillLabel();
+      const emoji = String.fromCodePoint(0x1f600);
+      setBox("Example", emoji.repeat(100));
+      expect(screen.queryByRole("alert")).toBeNull();
+      setBox("Example", emoji.repeat(101));
+      expect(screen.getByRole("alert").textContent).toBe("Use at most 100 characters.");
+      expect(createButton().hasAttribute("disabled")).toBe(true);
+      setBox("Example", `a${String.fromCodePoint(0x200b)}b`);
+      expect(screen.getByRole("alert").textContent).toBe("Use plain text on one line, with no invisible characters.");
+      setBox("Example", "ok");
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(createButton().hasAttribute("disabled")).toBe(false);
+    });
+
+    it("keeps the room of the line under the lengths when its text turns into an error and back", () => {
+      renderModal(null);
+      const note = document.getElementById("cf-rules-lengths-note")!;
+      expect(note.querySelector(".at-hint--error")).toBeNull();
+      setBox("Longest answer", "999");
+      expect(note.querySelector(".at-hint--error")).not.toBeNull();
+      expect(document.getElementById("cf-rules-lengths-note")).toBe(note);
+    });
+  });
+
+  describe("when the type is changed", () => {
+    it("keeps what was typed and judges it by the new type: a longest answer of 50 is fine for a text and too long for a phone number", () => {
+      renderModal(null);
+      setBox("Display label", "Answer");
+      setBox("Longest answer", "50");
+      expect(createButton().hasAttribute("disabled")).toBe(false);
+      fireEvent.click(typeButton("Phone"));
+      expect((screen.getByLabelText("Longest answer") as HTMLInputElement).value).toBe("50");
+      expect(screen.getByRole("alert").textContent).toBe("Enter a whole number from 1 to 16.");
+      expect(createButton().hasAttribute("disabled")).toBe(true);
+      fireEvent.click(typeButton("Long text"));
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(createButton().hasAttribute("disabled")).toBe(false);
+    });
+
+    it("takes the rules away with a type that has none, whatever the boxes hold, and gives them back with the type that has them", async () => {
+      vi.mocked(createEventCustomField).mockResolvedValueOnce({ ...dietaryField, type: "date" });
+      renderModal(null);
+      setBox("Display label", "Arrival");
+      setBox("Longest answer", "999");
+      expect(createButton().hasAttribute("disabled")).toBe(true);
+
+      fireEvent.click(typeButton("Date"));
+      expect(rulesEditor()).toBeNull();
+      expect(createButton().hasAttribute("disabled")).toBe(false);
+      fireEvent.click(typeButton("Text"));
+      expect((screen.getByLabelText("Longest answer") as HTMLInputElement).value).toBe("999");
+      expect(createButton().hasAttribute("disabled")).toBe(true);
+
+      fireEvent.click(typeButton("Date"));
+      fireEvent.click(createButton());
+      await waitFor(() => expect(createEventCustomField).toHaveBeenCalled());
+      expect(lastCall(createEventCustomField)).toMatchObject({ type: "date" });
+      expect(lastCall(createEventCustomField)).not.toHaveProperty("rules");
+    });
+  });
+
+  describe("a field that exists", () => {
+    const ruled = existingField({ rules: { min_length: 5, max_length: 5, digits_only: true, example: "01234" } });
+
+    it("opens with its rules in the boxes", () => {
+      renderModal(ruled);
+      expect((screen.getByLabelText("Shortest answer") as HTMLInputElement).value).toBe("5");
+      expect((screen.getByLabelText("Longest answer") as HTMLInputElement).value).toBe("5");
+      expect(digitsOnlySwitch().checked).toBe(true);
+      expect((screen.getByLabelText("Example") as HTMLInputElement).value).toBe("01234");
+    });
+
+    it("sends no rules when only something else is edited, so the rules stay as they are", async () => {
+      vi.mocked(updateEventCustomField).mockResolvedValueOnce(ruled);
+      renderModal(ruled);
+      setBox("Display label", "Post code");
+      fireEvent.click(saveButton());
+      await waitFor(() => {
+        expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-ruled", {
+          label: "Post code",
+          description: null,
+          required: false,
+        });
+      });
+      expect(lastCall(updateEventCustomField)).not.toHaveProperty("rules");
+    });
+
+    it("sends all the rules, changed, when one is edited: an object replaces them", async () => {
+      vi.mocked(updateEventCustomField).mockResolvedValueOnce(ruled);
+      renderModal(ruled);
+      setBox("Longest answer", "6");
+      fireEvent.click(saveButton());
+      await waitFor(() => {
+        expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-ruled", {
+          label: "Postcode",
+          description: null,
+          required: false,
+          rules: { min_length: 5, max_length: 6, digits_only: true, example: "01234" },
+        });
+      });
+    });
+
+    it("sends null when every rule is cleared, which is how the server is asked to drop them", async () => {
+      vi.mocked(updateEventCustomField).mockResolvedValueOnce(existingField({}));
+      renderModal(ruled);
+      setBox("Shortest answer", "");
+      setBox("Longest answer", "");
+      fireEvent.click(digitsOnlySwitch());
+      setBox("Example", "");
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(updateEventCustomField).toHaveBeenCalled());
+      expect(lastCall(updateEventCustomField)).toMatchObject({ rules: null });
+    });
+
+    it("does not offer Save for rules typed while the type was one that takes them and left behind when it was put back", () => {
+      renderModal(existingField({ type: "date" }));
+      expect(isOff(saveButton())).toBe(true);
+      fireEvent.click(typeButton("Text"));
+      setBox("Longest answer", "9");
+      expect(isOff(saveButton())).toBe(false);
+      fireEvent.click(typeButton("Date"));
+      expect(isOff(saveButton())).toBe(true);
+    });
+
+    it("does not offer Save for rules that were typed and put back as they were", () => {
+      renderModal(ruled);
+      expect(isOff(saveButton())).toBe(true);
+      setBox("Longest answer", "6");
+      expect(isOff(saveButton())).toBe(false);
+      setBox("Longest answer", "5");
+      expect(isOff(saveButton())).toBe(true);
+    });
+
+    it("sends null for the rules and the new type when it becomes a type that takes none, the pair the server needs", async () => {
+      vi.mocked(updateEventCustomField).mockResolvedValueOnce(existingField({ type: "date" }));
+      renderModal(ruled);
+      fireEvent.click(typeButton("Date"));
+      fireEvent.click(saveButton());
+      await waitFor(() => {
+        expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-ruled", {
+          label: "Postcode",
+          description: null,
+          type: "date",
+          required: false,
+          rules: null,
+        });
+      });
+    });
+
+    it("sends no rules for a type that takes none when the field has none", async () => {
+      vi.mocked(updateEventCustomField).mockResolvedValueOnce(existingField({ type: "datetime" }));
+      renderModal(existingField({}));
+      fireEvent.click(typeButton("Date and time"));
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(updateEventCustomField).toHaveBeenCalled());
+      expect(lastCall(updateEventCustomField)).toMatchObject({ type: "datetime" });
+      expect(lastCall(updateEventCustomField)).not.toHaveProperty("rules");
+    });
+
+    it("keeps the rules, and sends none, when a text field becomes a long text: they fit, so the server keeps them", async () => {
+      vi.mocked(updateEventCustomField).mockResolvedValueOnce(existingField({ type: "long_text", rules: ruled.rules }));
+      renderModal(ruled);
+      fireEvent.click(typeButton("Long text"));
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(updateEventCustomField).toHaveBeenCalled());
+      expect(lastCall(updateEventCustomField)).toMatchObject({ type: "long_text" });
+      expect(lastCall(updateEventCustomField)).not.toHaveProperty("rules");
+    });
+
+    it("has to be given rules that fit a phone number before a text field with long rules becomes one", async () => {
+      const wide = existingField({ rules: { max_length: 100 } });
+      vi.mocked(updateEventCustomField).mockResolvedValueOnce(existingField({ type: "phone", rules: { max_length: 16 } }));
+      renderModal(wide);
+      fireEvent.click(typeButton("Phone"));
+      expect(screen.getByRole("alert").textContent).toBe("Enter a whole number from 1 to 16.");
+      expect(isOff(saveButton())).toBe(true);
+
+      setBox("Longest answer", "16");
+      fireEvent.click(saveButton());
+      await waitFor(() => {
+        expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-ruled", {
+          label: "Postcode",
+          description: null,
+          type: "phone",
+          required: false,
+          rules: { max_length: 16 },
+        });
+      });
+    });
+
+    it("names the type of a choice field only when it changes, since the server refuses a choice that comes without its options", async () => {
+      const shirt = existingField({ source_field: "shirt_size", label: "Shirt size", type: "select", options: ["S", "M"] });
+      vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValue({});
+      vi.mocked(updateEventCustomField).mockResolvedValue(shirt);
+      renderModal(shirt);
+      await waitForUsageLoaded();
+      fireEvent.click(screen.getByRole("button", { name: "Required" }));
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(updateEventCustomField).toHaveBeenCalledTimes(1));
+      expect(lastCall(updateEventCustomField)).not.toHaveProperty("type");
+      expect(lastCall(updateEventCustomField)).not.toHaveProperty("options");
+      expect(lastCall(updateEventCustomField)).not.toHaveProperty("rules");
+    });
+
+    it("sends a new type together with the options when a text field becomes a choice", async () => {
+      vi.mocked(updateEventCustomField).mockResolvedValueOnce(existingField({ type: "select", options: ["A"] }));
+      renderModal(existingField({}));
+      fireEvent.click(typeButton("Single choice"));
+      addOptionRow("A");
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(updateEventCustomField).toHaveBeenCalled());
+      expect(lastCall(updateEventCustomField)).toMatchObject({ type: "select", options: ["A"] });
+    });
+  });
+
+  describe("the warning about the answers already saved", () => {
+    const warning = () => screen.queryByText(/Answers already saved are not changed/);
+
+    it("is there once a field that exists is given another type, and goes when the type is put back", () => {
+      renderModal(existingField({}));
+      expect(warning()).toBeNull();
+      fireEvent.click(typeButton("Phone"));
+      expect(warning()).toBeTruthy();
+      expect(warning()!.textContent).toContain("can't be edited until that answer is replaced or cleared");
+      fireEvent.click(typeButton("Text"));
+      expect(warning()).toBeNull();
+    });
+
+    it("is there once a rule is changed, and goes when the rule is put back", () => {
+      renderModal(existingField({ rules: { max_length: 5 } }));
+      expect(warning()).toBeNull();
+      setBox("Longest answer", "6");
+      expect(warning()).toBeTruthy();
+      setBox("Longest answer", "5");
+      expect(warning()).toBeNull();
+    });
+
+    it("is not there for another edit, and not for rules typed and left behind by a type that takes none", () => {
+      renderModal(existingField({ type: "date" }));
+      setBox("Display label", "Arrival");
+      fireEvent.click(typeButton("Text"));
+      setBox("Longest answer", "9");
+      fireEvent.click(typeButton("Date"));
+      expect(warning()).toBeNull();
+    });
+
+    it("is not there for a field that is being created, whatever is typed", () => {
+      renderModal(null);
+      fireEvent.click(typeButton("Phone"));
+      setBox("Longest answer", "9");
+      expect(warning()).toBeNull();
+    });
+
+    it("is told to assistive technology as a status, with the warning icon", () => {
+      renderModal(existingField({}));
+      fireEvent.click(typeButton("Phone"));
+      const notice = warning()!.closest("output")!;
+      expect(notice.className).toContain("at-notice--warning");
+      expect(notice.querySelector(".ti-alert-triangle")).not.toBeNull();
+    });
+  });
+
+  describe("when the server refuses the save", () => {
+    it("says why through the shared messages, keeps the dialog open with what was typed, and gives the button back", async () => {
+      vi.mocked(updateEventCustomField).mockRejectedValueOnce(new ApiError(422, "invalid_field_rules", "invalid_field_rules"));
+      renderModal(existingField({ rules: { max_length: 5 } }));
+      setBox("Longest answer", "6");
+      fireEvent.click(saveButton());
+
+      await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.stringContaining("format rules do not fit the field"), "error"));
+      expect(screen.getByRole("dialog", { hidden: true })).toBeTruthy();
+      expect((screen.getByLabelText("Longest answer") as HTMLInputElement).value).toBe("6");
+      expect(saveButton().getAttribute("aria-busy")).not.toBe("true");
+      expect(isOff(saveButton())).toBe(false);
+    });
+
+    it("never shows the server's own words", async () => {
+      vi.mocked(createEventCustomField).mockRejectedValueOnce(new ApiError(422, "secret_internal_detail", "secret_internal_detail"));
+      renderModal(null);
+      setBox("Display label", "Diet");
+      fireEvent.click(createButton());
+      await waitFor(() => expect(addToast).toHaveBeenCalled());
+      expect(addToast.mock.calls[0]![0]).not.toContain("secret_internal_detail");
+    });
+  });
+
+  describe("while the field is saved", () => {
+    it("keeps the rule boxes on screen with what they hold, read-only, and ignores a switch of Digits only", async () => {
+      const saved = deferred<EventCustomFieldDto>();
+      vi.mocked(updateEventCustomField).mockReturnValueOnce(saved.promise);
+      renderModal(existingField({ rules: { max_length: 5, example: "01234" } }));
+      setBox("Longest answer", "6");
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(saveButton().getAttribute("aria-busy")).toBe("true"));
+
+      for (const label of ["Shortest answer", "Longest answer", "Example"]) {
+        expect((screen.getByLabelText(label) as HTMLInputElement).readOnly, label).toBe(true);
+      }
+      expect((screen.getByLabelText("Longest answer") as HTMLInputElement).value).toBe("6");
+      expect(digitsOnlySwitch().getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(digitsOnlySwitch());
+      expect(digitsOnlySwitch().checked).toBe(false);
+      expect(updateEventCustomField).toHaveBeenCalledTimes(1);
+      await act(async () => saved.resolve(existingField({})));
+    });
   });
 });

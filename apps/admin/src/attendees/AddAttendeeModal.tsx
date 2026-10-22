@@ -22,6 +22,8 @@ import "./add-attendee-modal.css";
 
 type AddAttendeeModalProps = {
   eventId: string;
+  /** The event's time zone, which a date and time answer is read in. */
+  eventTimeZone?: string;
   open: boolean;
   onClose: () => void;
   onCreated: (attendee: AttendeeDetailDto) => void;
@@ -57,7 +59,7 @@ function FieldsSkeleton() {
   );
 }
 
-export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly<AddAttendeeModalProps>) {
+export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCreated }: Readonly<AddAttendeeModalProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -425,6 +427,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
             <CustomDataFieldInput
               key={field.source_field}
               field={field}
+              eventTimeZone={eventTimeZone}
               value={customFields[field.source_field] ?? ""}
               disabled={submitting}
               onChange={(next) => {

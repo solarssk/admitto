@@ -1351,6 +1351,19 @@
   text-align: right;
 }
 
+/* A long answer, or one with line breaks (a long text field), is read under its label, from the left, with its line breaks kept:
+   in the right-hand column beside the label it would be a ragged block. */
+.attendee-detail-row--long {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.attendee-detail-row--long > :last-child {
+  text-align: left;
+  white-space: pre-wrap;
+}
+
 /* Event items list - matches the design mockup's .att-item-row exactly (values pulled
    from ui_kits/admin/index.html, not eyeballed: 8px icon radius not a circle, 500-weight
    body-sized label, 600-weight xs-sized state, muted/disabled text tokens for "not yet"). */

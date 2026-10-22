@@ -1,0 +1,31 @@
+/* The inputs of the custom fields that take a longer answer or a date and a time (CustomDataFieldInput). */
+
+/* A date and a time of day side by side, the date a little wider, since its text is longer. At a phone's width they stack, so that
+   neither is squeezed. */
+.custom-data-field__datetime {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-2);
+  align-items: start;
+}
+
+@media (max-width: 480px) {
+  .custom-data-field__datetime {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The hint (what the field asks for) on the left and the count on the right of one line. With no hint, the count is still at the
+   right. When both do not fit, the hint wraps in its own column and the count keeps its width. */
+.custom-data-field__meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.custom-data-field__count {
+  margin-left: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

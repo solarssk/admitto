@@ -14,6 +14,7 @@ import {
   formatRelativeAdmissionDisplay,
   formatUtcDateTime,
   formatUtcPrimaryTime,
+  formatWallClockDateTime,
   calendarDateValidationHint,
   localeDateInputPattern,
   parseFlexibleCalendarDate,
@@ -498,5 +499,43 @@ describe("truncatedToEventHour", () => {
 
   it("works before 1970, where the milliseconds count backwards", () => {
     expect(truncatedToEventHour("1969-12-31T23:59:59.250Z", "UTC")).toBe("1969-12-31T23:00:00.000Z");
+  });
+});
+
+describe("formatWallClockDateTime", () => {
+  afterEach(() => setPreferredLocale(null));
+
+  it("formats the digits of a date and time answer in the account's date format, naming the zone it is read in", () => {
+    setPreferredLocale("en-GB");
+    expect(formatWallClockDateTime("2026-11-04T10:30", "Europe/Warsaw")).toBe("04 Nov 2026, 10:30 (Europe/Warsaw)");
+    expect(formatWallClockDateTime("2026-11-04T22:05", "America/New_York")).toBe("04 Nov 2026, 22:05 (America/New_York)");
+    expect(formatWallClockDateTime("2026-11-04T00:00", "UTC")).toBe("04 Nov 2026, 00:00 (UTC)");
+    setPreferredLocale("en-US");
+    expect(formatWallClockDateTime("2026-11-04T10:30", "Europe/Warsaw")).toBe("Nov 04, 2026, 10:30 AM (Europe/Warsaw)");
+  });
+
+  it("converts nothing, so a time on either side of a clock change reads as written, whatever the zone", () => {
+    setPreferredLocale("en-GB");
+    // 02:30 on 8 March 2026 does not exist on a New York clock (it jumped from 02:00 to 03:00): the digits are still shown as given.
+    expect(formatWallClockDateTime("2026-03-08T02:30", "America/New_York")).toBe("08 Mar 2026, 02:30 (America/New_York)");
+    expect(formatWallClockDateTime("2026-10-25T02:30", "Europe/Warsaw")).toBe("25 Oct 2026, 02:30 (Europe/Warsaw)");
+  });
+
+  it("leaves the zone out when it is not known", () => {
+    setPreferredLocale("en-GB");
+    expect(formatWallClockDateTime("2026-11-04T10:30")).toBe("04 Nov 2026, 10:30");
+  });
+
+  it("returns a value that is not a date and time as it came", () => {
+    expect(formatWallClockDateTime("next week", "Europe/Warsaw")).toBe("next week");
+    expect(formatWallClockDateTime("2026-11-04", "Europe/Warsaw")).toBe("2026-11-04");
+    expect(formatWallClockDateTime("2026-11-04T10:30:00Z", "Europe/Warsaw")).toBe("2026-11-04T10:30:00Z");
+    expect(formatWallClockDateTime("", "Europe/Warsaw")).toBe("");
+  });
+
+  it("reads a year before 100 as that year, not as 19xx", () => {
+    setPreferredLocale("en-GB");
+    expect(formatWallClockDateTime("0050-01-02T03:04", "UTC")).toContain("50");
+    expect(formatWallClockDateTime("0050-01-02T03:04", "UTC")).not.toContain("1950");
   });
 });

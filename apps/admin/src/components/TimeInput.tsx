@@ -12,6 +12,7 @@ import {
   type RefObject,
 } from "react";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
+import { usePopoverEscape } from "./useDropdownMenu.js";
 import { useFloatingPlacement } from "./useFloatingPlacement.js";
 import { getPreferredTimeFormat } from "../utils/locale-store.js";
 import "../staff.css";
@@ -332,6 +333,12 @@ export function TimeInput({
   };
 
   useClickOutside(containerRef, pickerOpen, closePicker, [pickerRef]);
+  // The picker is a popover over whatever holds the field (a dialog, which would close with it): Escape closes it wherever the focus
+  // is, in the input or on a row of the list, and puts the focus back in the input.
+  usePopoverEscape(pickerOpen, () => {
+    closePicker();
+    document.getElementById(controlId)?.focus();
+  });
 
   // Fixed coordinates (not an absolute panel inside `.time-input`) so a field near the bottom of a
   // scrolled page flips the picker above instead of forcing the page to grow to fit it: an absolutely

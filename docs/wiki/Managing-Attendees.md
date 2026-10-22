@@ -32,8 +32,8 @@ Open the correct event. Check its ticket types and custom attendee fields before
 1. Open **Attendees**.
 2. Select **Add attendee**.
 3. Enter the required first name, last name, and email. Last name is required even for a single-name attendee.
-4. Select a ticket type and complete any event-specific fields when needed.
-5. Save the attendee.
+4. Select a ticket type and complete any event-specific fields when needed. A line under a field says what it asks for. A date has a date picker. A date and time has a date picker and a time field, and names the event's time zone under them. A long text has a box with a count of the characters, and a phone number has a telephone field.
+5. Save the attendee. A field that breaks its type or rules is named in a message, and nothing is saved until you fix it.
 6. Open the new record and check the displayed details.
 
 ### Find attendees on the list
@@ -67,6 +67,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
 2. The profile is read-only until you open **Edit** in the header. Save profile changes from that dialog.
 3. Review the status strip: **Pass**, Attendance, Ticket delivery, Check-in, and Wallet.
 4. Use **Additional information** for custom fields, **Notes** for shared operator notes, and **Activity** for a plain-language history of changes, newest first.
+   - **Additional information** shows a date in your date format. A date and time shows the time at the event, with the event's time zone named, so every colleague reads the same text. A long answer shows under its label with its line breaks.
    - Activity is paged like the other tables. Pick **Rows per page** (10, 25, 50, or 100) and use **Previous** and **Next** at the bottom to reach older entries.
    - While you browse older pages, the list stays fixed even if colleagues add entries. Go back to page 1 to see the newest.
    - The tab you are on is kept in the page address (`?tab=activity` or `?tab=notes`), so you can bookmark or share a link that opens straight to it.
