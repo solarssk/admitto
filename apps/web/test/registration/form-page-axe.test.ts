@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
 import { REGISTRATION_FORM_SCRIPT } from "../../src/registration/form-script.js";
-import { closedModel, formModel, requiredNewKinds } from "../helpers/registration-form-fixtures.js";
+import { closedModel, formModel, panelModel, question, requiredNewKinds, type Dom } from "../helpers/registration-form-fixtures.js";
 
 // axe-core checks the markup of the page the way an audit tool does: labels, ARIA attributes and
 // their targets, landmarks, headings, duplicate ids. jsdom has no layout, so the colour contrast
@@ -78,6 +78,21 @@ describe("axe-core finds nothing to report", () => {
     expect(await violations(window)).toEqual([]);
   });
 
+  it("on a form whose choices are opened one after the other, the short one and the one with a search box, with one marked as an error", async () => {
+    const choices = [
+      question({ key: "day", label: "Which days will you attend?", type: "select", required: true, options: ["Both days", "Day 1 only"] }),
+      question({ key: "city", label: "City", type: "select", options: ["Amsterdam", "Berlin", "Copenhagen", "Dublin", "Edinburgh", "Frankfurt", "Geneva"] }),
+    ];
+    const window = running(renderRegistrationFormPage(formModel({ questions: choices }), { nonce: NONCE }));
+    window.document.getElementById("reg-submit").click();
+    // Opening a choice moves the focus into its panel, which shuts the one that was open: one panel is open at a time.
+    window.document.getElementById("f-q0-trigger").click();
+    expect(await violations(window)).toEqual([]);
+    window.document.getElementById("f-q1-trigger").click();
+    expect(window.document.querySelectorAll("[data-picker-panel]:not([hidden])")).toHaveLength(1);
+    expect(await violations(window)).toEqual([]);
+  });
+
   it("on a form whose long text, date, time and phone questions are required, with every one of them left empty", async () => {
     const window = running(renderRegistrationFormPage(formModel({ questions: requiredNewKinds() }), { nonce: NONCE }));
     window.document.getElementById("reg-submit").click();
@@ -118,5 +133,64 @@ describe("axe-core finds nothing to report", () => {
 
   it("on the page of an event that is over", async () => {
     expect(await violations(open(renderRegistrationClosedPage(closedModel())))).toEqual([]);
+  });
+});
+
+describe("axe-core finds nothing to report on the form with icons, panels and suggestions", { timeout: 30_000 }, () => {
+  const html = renderRegistrationFormPage(panelModel(), { nonce: NONCE });
+  const change = (window: ReturnType<typeof open>, id: string, set: (el: Dom) => void) => {
+    const el = window.document.getElementById(id);
+    set(el);
+    el.dispatchEvent(new window.Event("change", { bubbles: true }));
+  };
+
+  it("with every panel closed, as the server writes it", async () => {
+    expect(await violations(open(html))).toEqual([]);
+  });
+
+  it("with the script running and every panel open", async () => {
+    const window = running(html);
+    change(window, "f-q0", (el) => (el.value = "Both days"));
+    change(window, "f-q2", (el) => (el.checked = true));
+    change(window, "f-q4", (el) => (el.checked = true));
+    expect(window.document.querySelectorAll(".reg-reveal:not([hidden])")).toHaveLength(3);
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the list of suggestions open, a row active and the box described by what it says", async () => {
+    const window = running(html);
+    change(window, "f-q4", (el) => (el.checked = true));
+    const box = window.document.getElementById("f-q5");
+    box.focus();
+    box.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    expect(box.getAttribute("aria-expanded")).toBe("true");
+    expect(box.getAttribute("aria-activedescendant")).toBe("f-q5-opt0");
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the list showing what was typed, the offer of it as written and no match", async () => {
+    const window = running(html);
+    change(window, "f-q4", (el) => (el.checked = true));
+    const box = window.document.getElementById("f-q5");
+    box.focus();
+    box.value = "zzz";
+    box.dispatchEvent(new window.Event("input", { bubbles: true }));
+    expect(window.document.querySelector("[data-combo-empty]").hidden).toBe(false);
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the questions in a panel left empty and marked as errors", async () => {
+    const model = formModel({
+      questions: [
+        question({ key: "parking", label: "Parking", type: "boolean", icon: "parking" }),
+        question({ key: "plate", label: "Plate", type: "text", required: true, icon: "car", suggestions: ["WA 1"], showWhen: { field: "parking", value: true } }),
+        question({ key: "note", label: "Note", type: "long_text", required: true, showWhen: { field: "parking", value: true } }),
+      ],
+    });
+    const window = running(renderRegistrationFormPage(model, { nonce: NONCE }));
+    change(window, "f-q0", (el) => (el.checked = true));
+    window.document.getElementById("reg-submit").click();
+    expect(window.document.querySelectorAll(".reg-reveal .has-error")).toHaveLength(2);
+    expect(await violations(window)).toEqual([]);
   });
 });

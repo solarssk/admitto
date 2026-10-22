@@ -36,7 +36,14 @@ export interface RegistrationSubmitBody {
    * the server reads in the event's time zone; a phone number as the guest typed it (the server keeps
    * an optional `+` and the digits). A question the guest did not answer is not in the object, and the
    * object is left out when there is none. The page checks that a required question has an answer and
-   * that a date or time is complete, and no format or rule of a question: the server judges every answer. */
+   * that a date or time is complete, and no format or rule of a question: the server judges every answer.
+   *
+   * A question with a condition (`rules.show_when`) is asked only while the answer to the question it names is the
+   * one that shows it. The page leaves a question that is not asked out of the object, whatever its box holds (the
+   * guest may have typed something before changing the answer that shows it), and it neither checks nor requires
+   * it. The server does not depend on that: `buildRegistrantCustomData` does not read the answer to a question
+   * whose condition the other answers do not meet, and does not require it, so a body that carries one is not
+   * refused and its answer is not stored. The route that answers this body must not rely on the page for it. */
   custom_data?: Record<string, string>;
   /** Always `true`: the page does not send a form whose terms are not accepted. */
   terms: boolean;
