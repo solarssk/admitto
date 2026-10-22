@@ -66,9 +66,50 @@ export type PlaceRegistrationResult =
   | { outcome: "full" }
   | { outcome: "busy" };
 
+/** Mail rows an event may queue within the window, whatever its size: the base of {@link eventMailCap}. */
+export const EVENT_MAIL_CAP_PER_SEAT = 3;
+
+/**
+ * The most registration mail rows (every template) an event may queue within a window: the larger of the configured
+ * base and three per seat of the event, so a big event is not cut short by a base meant for a small one. An event
+ * without a limit has the base.
+ */
+export function eventMailCap(base: number, capacity: number | null): number {
+  return Math.max(base, EVENT_MAIL_CAP_PER_SEAT * (capacity ?? 0));
+}
+
+/**
+ * What the caller decided about the mail a submission would queue (MN-05). Neither limit stops the registration:
+ * it is stored all the same, and the answer to the guest does not change. Only the mail is withheld.
+ */
+export type SubmissionMailLimits = {
+  /**
+   * The check of the address's mail budget, a limiter that lives outside the database. It is asked inside the
+   * transaction, once, and only for a registration that is about to be stored and that the event's budget allows:
+   * never for an address that has a place already, for a full event, for a request that finds a lock held, or for one
+   * whose registration is not stored in the end. So a guest who is told to try again, or sends the same form twice,
+   * does not use up the budget of their own address. False withholds the mail. It holds the locks of the event while
+   * it runs: it must be quick, and it must not throw. Default: always true.
+   */
+  addressAllowed?: () => Promise<boolean>;
+  /**
+   * The event's budget of queued mail: no more rows than `eventMailCap(base, capacity)` in the last `windowMs`,
+   * counted in the database under the registration queue, so that guests submitting at once cannot get past it and
+   * a restart does not reset it.
+   */
+  event?: { base: number; windowMs: number };
+  /**
+   * Told when the mail of a registration that is stored is withheld, and by which budget. For an operator's signal and
+   * nothing else: it runs inside the transaction, so it must not wait for anything, and it must not throw.
+   */
+  onWithheld?: (reason: "address" | "event") => void;
+};
+
 export type PlacementOptions = PublicWriteOptions & {
   /** The moment of the request; tests set it. */
   now?: Date;
+  /** Limits on the mail this submission queues. Default: none. */
+  mail?: SubmissionMailLimits;
 };
 
 /** A guest's request does not wait long for a transaction: the work of one is a few queries. */
@@ -138,7 +179,25 @@ type SubmissionContext = {
   now: Date;
   registrant: RegistrantSubmission;
   verifiedByProvider: boolean;
+  /** Whether the event has budget left for one more mail (see SubmissionMailLimits). */
+  eventBudgetLeft: boolean;
+  mail: SubmissionMailLimits | undefined;
 };
+
+/** Queues the mail of a moment for a new registration, unless a limit withholds it. The address's budget is asked
+ * last, so that it is spent only by a mail that is queued. */
+async function queueMailFor(context: SubmissionContext, registrationId: string, moment: RegistrationMailMoment): Promise<void> {
+  const { mail } = context;
+  if (!context.eventBudgetLeft) {
+    mail?.onWithheld?.("event");
+    return;
+  }
+  if (mail?.addressAllowed && !(await mail.addressAllowed())) {
+    mail.onWithheld?.("address");
+    return;
+  }
+  await enqueueMailsForMoment(context.tx, context.eventId, [registrationId], moment);
+}
 
 function registrationColumns({ eventId, now, registrant }: SubmissionContext) {
   return {
@@ -167,7 +226,7 @@ async function insertPlaced(context: SubmissionContext, status: PlacedStatus): P
   };
   if (status !== "accepted") {
     const row = await tx.registration.create({ data: columns, select: { id: true } });
-    await enqueueMailsForMoment(tx, eventId, [row.id], momentOf(status, false));
+    await queueMailFor(context, row.id, momentOf(status, false));
     return;
   }
   const attendeeId = await createAttendeeFromRegistration(
@@ -182,13 +241,13 @@ async function insertPlaced(context: SubmissionContext, status: PlacedStatus): P
     data: { ...columns, attendee_id: attendeeId, decided_at: now },
     select: { id: true },
   });
-  await enqueueMailsForMoment(tx, eventId, [row.id], { to: "accepted" });
+  await queueMailFor(context, row.id, { to: "accepted" });
   await writeAcceptanceLog(tx, eventId, [{ registrationId: row.id, attendeeId }], {}, true);
 }
 
 /** A new registration that waits for its address to be confirmed: no seat, no ticket, a link valid for 24 hours. */
 async function insertAwaitingEmail(context: SubmissionContext): Promise<void> {
-  const { tx, eventId, now } = context;
+  const { tx, now } = context;
   const row = await tx.registration.create({
     data: {
       ...registrationColumns(context),
@@ -197,7 +256,7 @@ async function insertAwaitingEmail(context: SubmissionContext): Promise<void> {
     },
     select: { id: true },
   });
-  await enqueueMailsForMoment(tx, eventId, [row.id], { to: "awaiting_email" });
+  await queueMailFor(context, row.id, { to: "awaiting_email" });
 }
 
 /**
@@ -230,12 +289,32 @@ async function addressHasAPlace(context: SubmissionContext): Promise<boolean> {
 const needsAddressConfirmation = (settings: OpenSettings, method: RegistrationAccessMethod): boolean =>
   method !== "sso" && settings.verify_email;
 
+/**
+ * Whether the event has not yet queued its share of mail within the window (SubmissionMailLimits). The rows are counted
+ * for every submission, a known address included, so that the reads do not tell one address from another. Read under
+ * the registration queue, which every writer of these rows holds, so the count is not out of date when the row is
+ * added.
+ */
+async function eventBudgetLeft(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  capacity: number | null,
+  now: Date,
+  limit: SubmissionMailLimits["event"],
+): Promise<boolean> {
+  if (!limit) return true;
+  const since = new Date(now.getTime() - limit.windowMs);
+  const queued = await tx.registrationMail.count({ where: { event_id: eventId, queued_at: { gt: since } } });
+  return queued < eventMailCap(limit.base, capacity);
+}
+
 /** One submission, in the transaction that holds the capacity lock and the registration queue. */
 async function submitInTransaction(
   tx: Prisma.TransactionClient,
   input: PlaceRegistrationInput,
   registrant: RegistrantSubmission,
   now: Date,
+  mail: SubmissionMailLimits | undefined,
 ): Promise<Exclude<PlaceRegistrationResult, { outcome: "busy" }>> {
   const { eventId } = input;
   await lockQueueWithoutWaiting(tx, eventId);
@@ -244,7 +323,15 @@ async function submitInTransaction(
   // Before the address is looked at, so that a full event answers every address alike.
   const placement = decidePlacement(event.settings, await readSeatState(tx, eventId, event.capacity), seatsNeeded([]));
   if (placement === "full") return { outcome: "full" };
-  const context: SubmissionContext = { tx, eventId, now, registrant, verifiedByProvider: input.method === "sso" };
+  const context: SubmissionContext = {
+    tx,
+    eventId,
+    now,
+    registrant,
+    verifiedByProvider: input.method === "sso",
+    eventBudgetLeft: await eventBudgetLeft(tx, eventId, event.capacity, now, mail?.event),
+    mail,
+  };
   if (await addressHasAPlace(context)) {
     return input.method === "sso" ? { outcome: "already_registered" } : { outcome: "received" };
   }
@@ -276,9 +363,10 @@ function checkedRegistrant(registrant: RegistrantSubmission): RegistrantSubmissi
  * transaction with nothing written, a short pause with no connection, a new try; after about two seconds the answer
  * is `busy`, which the caller turns into `503 try_again`.
  *
- * The answer does not tell a new address from a known one (PlaceRegistrationResult). Not done here, for the callers:
- * the checks of the terms and the consents, the limits, the challenge, and the re-send of the confirmation link to
- * an address whose registration still waits for it.
+ * The answer does not tell a new address from a known one (PlaceRegistrationResult). The mail of a new registration can
+ * be withheld by limits the caller passes (`options.mail`, SubmissionMailLimits): the registration is stored all the
+ * same. Not done here, for the callers: the checks of the terms and the consents, the request limits, the challenge,
+ * and the re-send of the confirmation link to an address whose registration still waits for it.
  *
  * @throws RegistrantInputError when the address is refused by the input boundary.
  */
@@ -295,7 +383,7 @@ export async function placeRegistration(
         db,
         input.eventId,
         noPrepare,
-        (tx) => submitInTransaction(tx, input, registrant, now),
+        (tx) => submitInTransaction(tx, input, registrant, now, options.mail),
         PUBLIC_TRANSACTION_POLICY,
         { tryLock: true },
       ),
