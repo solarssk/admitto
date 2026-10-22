@@ -24,6 +24,8 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add long text, date, date and time and phone answer types, with format rules, to the field editor, attendee form and import columns list ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Show an avatar with the attendee's initials before the name on the attendee page ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Show icons, questions that open under another answer, and a list of suggestions on the guest registration form, as in the approved design ([#1786](https://github.com/solarssk/admitto/pull/1786))
+- Add sending the guest registration form, with a bot check and one answer for every address; off until an event turns registration on
+- Add `registration:mail-event`, a daily cap on the registration mail one event queues (1000, or 3 per seat), tunable with `RATE_LIMIT_OVERRIDES`
 
 ### Changed
 
