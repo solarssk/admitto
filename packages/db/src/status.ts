@@ -102,7 +102,10 @@ export type AttendeeActionType =
   | 'attendees_bulk_erased'
   | 'pass_revoked'
   | 'pass_restored'
-  | 'mail_bulk_send_cancelled';
+  | 'mail_bulk_send_cancelled'
+  | 'registration_accepted'
+  | 'registration_rejected'
+  | 'registrations_deleted';
 
 export const ATTENDEE_ACTION_TYPE = [
   'check_in',
@@ -126,6 +129,9 @@ export const ATTENDEE_ACTION_TYPE = [
   'pass_revoked',
   'pass_restored',
   'mail_bulk_send_cancelled',
+  'registration_accepted',
+  'registration_rejected',
+  'registrations_deleted',
 ] as const satisfies AttendeeActionType[];
 
 /** Maximum note body length (API validation — Lock #8). */
