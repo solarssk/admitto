@@ -61,6 +61,7 @@ The field appears in supported attendee and import workflows with the label, typ
 - A **Text** field is a box for a short answer of up to 100 characters. A **Select** field is a list, and the guest picks one option.
 - An optional **Yes/No** field is a checkbox. A guest who leaves it unticked sends no answer, so Admitto does not record a "No". A **Required** Yes/No field is a list of Yes and No instead, because the guest has to answer.
 - A guest cannot send the form until every **Required** field is answered.
+- A question can be shown only when another yes/no or select question has a certain answer. A question that is not shown is not required, and a guest's answer to it is never saved. Admitto keeps an answer that was saved while the question was shown. The rules for conditions, icons and suggestions are in the [Validation Reference](Validation-Reference#custom-attendee-fields-requirements-page).
 
 ## What changes after this action
 
@@ -79,7 +80,7 @@ The field becomes part of the event's attendee data. Editing its label, descript
 | **The field ID is not what you need** | Delete and recreate the unused field before importing data. It cannot be renamed later |
 | **A Select field cannot be saved** | Add at least one option |
 | **An import value is invalid** | Use the field ID as the column and match the selected type or option |
-| **The field cannot be deleted** | Remove its use from event items first |
+| **The field cannot be deleted** | Remove its use from event items first, and change or remove the condition of any field that is shown only for an answer to it |
 | **A Required field cannot be saved because of the registration form** | The event accepts registrations, and a guest cannot answer a field that is not on the form. Put the field on the form, or clear **Required** |
 | **An attendee's Select value now shows as unset** | Someone renamed or removed the option it used to match. Open the attendee and choose a current option to reassign it. The confirmation shown when the option was edited names which attendees were affected |
 

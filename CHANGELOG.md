@@ -20,6 +20,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a worker job that sends guest registration mail and deletes registrations not confirmed in 24 hours, with a Health check row for its queue ([#1775](https://github.com/solarssk/admitto/pull/1775))
 - Add the guest registration form at /r/<event slug> for events that use the public link; it stays a not-found page until an event turns registration on ([#1776](https://github.com/solarssk/admitto/pull/1776))
 - Add long text, date, date and time and phone questions to the registration form, with the field's rules as hints ([#1783](https://github.com/solarssk/admitto/pull/1783))
+- Add icons, suggestions and "show only when" conditions to attendee fields (admin API); a question that is not shown is never required or saved
 
 ### Fixed
 
