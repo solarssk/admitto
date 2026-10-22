@@ -511,6 +511,37 @@ describe("EventCustomFieldsCard: the Registration page", () => {
       expect(pressed.hasAttribute("aria-busy")).toBe(false);
     });
 
+    it("leave the switches busy while a move is on its way, and ignore a switch made then", async () => {
+      const request = deferred<EventCustomFieldDto[]>();
+      vi.mocked(reorderEventCustomFields).mockReturnValueOnce(request.promise);
+      renderCard([dietaryField, shirtField, parkingField], "registration");
+      fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
+      const toggle = screen.getByRole("switch", { name: "Shirt size on the form" });
+      expect(toggle.getAttribute("aria-busy")).toBe("true");
+
+      // The answer of the move is the whole list: a switch flipped now could be put back by it.
+      fireEvent.click(toggle);
+      expect(updateEventCustomField).not.toHaveBeenCalled();
+
+      await act(async () => request.resolve([shirtField, dietaryField, parkingField]));
+      expect(toggle.hasAttribute("aria-busy")).toBe(false);
+    });
+
+    it("ignore a move made while a switch request is on its way, and move again once it has landed", async () => {
+      const request = deferred<EventCustomFieldDto>();
+      vi.mocked(updateEventCustomField).mockReturnValueOnce(request.promise);
+      vi.mocked(reorderEventCustomFields).mockResolvedValueOnce([shirtField, dietaryField, parkingField]);
+      renderCard([dietaryField, shirtField, parkingField], "registration");
+      fireEvent.click(screen.getByRole("switch", { name: "Shirt size on the form" }));
+
+      fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
+      expect(reorderEventCustomFields).not.toHaveBeenCalled();
+
+      await act(async () => request.resolve({ ...shirtField, show_on_form: true }));
+      fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
+      await waitFor(() => expect(reorderEventCustomFields).toHaveBeenCalledTimes(1));
+    });
+
     it("give the focus back to the arrow that was pressed once its row has moved", async () => {
       vi.mocked(reorderEventCustomFields).mockImplementation(async (_eventId, ids) =>
         ids.map((id) => [dietaryField, shirtField, parkingField].find((field) => field.id === id)!),

@@ -29,7 +29,9 @@ interface FieldFormControlsOptions {
  * What the Registration page's card does besides what the Requirements card does: an "On the form" switch for each field
  * and arrows that put a field one place up or down. A switch has a request of its own for each field; reorders run one at a
  * time, because a reorder sends the whole list and a second one made from the list before the first has landed would put
- * the first back. The answer is shown at once (`onUpdated`), so nothing is read again except after a refused move.
+ * the first back. For the same reason a switch and a reorder do not run together: the answer of a reorder is the whole list,
+ * and it would put back a switch whose request is still out (or the other way round). The one that comes second is ignored.
+ * The answer is shown at once (`onUpdated`), so nothing is read again except after a refused move.
  */
 export function useFieldFormControls({ eventId, fields, onChanged, onUpdated, rootRef }: FieldFormControlsOptions) {
   const { addToast } = useToast();
@@ -37,6 +39,8 @@ export function useFieldFormControls({ eventId, fields, onChanged, onUpdated, ro
   // The arrow whose reorder is on its way; the ref is the same fact, read before the next render can have it.
   const [moving, setMoving] = useState<string | null>(null);
   const movingRef = useRef(false);
+  // How many switch requests are out, read before the next render can have it.
+  const switchesOutRef = useRef(0);
   // The arrow that gets the focus back once the rows are in their new order.
   const refocusRef = useRef<{ fieldId: string; direction: MoveDirection } | null>(null);
 
@@ -46,7 +50,8 @@ export function useFieldFormControls({ eventId, fields, onChanged, onUpdated, ro
   }
 
   async function toggleOnForm(field: EventCustomFieldDto) {
-    if (!startSwitch(field.id)) return;
+    if (movingRef.current || !startSwitch(field.id)) return;
+    switchesOutRef.current += 1;
     try {
       const updated = await updateEventCustomField(eventId, field.id, { show_on_form: !field.show_on_form });
       show((current) => current.map((item) => (item.id === updated.id ? updated : item)));
@@ -54,6 +59,7 @@ export function useFieldFormControls({ eventId, fields, onChanged, onUpdated, ro
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to update the field."), "error");
     } finally {
+      switchesOutRef.current -= 1;
       finishSwitch(field.id);
     }
   }
@@ -61,7 +67,7 @@ export function useFieldFormControls({ eventId, fields, onChanged, onUpdated, ro
   async function move(index: number, direction: MoveDirection) {
     const field = fields[index];
     const target = direction === "up" ? index - 1 : index + 1;
-    if (!field || target < 0 || target >= fields.length || movingRef.current) return;
+    if (!field || target < 0 || target >= fields.length || movingRef.current || switchesOutRef.current > 0) return;
     movingRef.current = true;
     const key = moveKey(field.id, direction);
     setMoving(key);

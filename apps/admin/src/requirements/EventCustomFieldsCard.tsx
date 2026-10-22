@@ -282,7 +282,8 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
                 formControls={
                   onRegistrationPage
                     ? {
-                        switchBusy: form.switching.has(field.id),
+                        // Also while a move is on its way: a switch made then is ignored.
+                        switchBusy: form.switching.has(field.id) || form.moving !== null,
                         first: index === 0,
                         last: index === fields.length - 1,
                         moving: form.moving,
