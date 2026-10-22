@@ -935,6 +935,9 @@ describe("AddAttendeeModal: the answer types of a custom field", { timeout: 30_0
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
     // The first mount of the pickers is slow on a busy machine: wait for as long as it takes, not for a time.
     await screen.findByLabelText("Abstract", undefined, { timeout: 10_000 });
+    // The pickers mount when the answer arrives, outside act(). A busy machine gets back to the test before their effects have run, and the
+    // first change then runs them: the date picker puts its empty text back over the date that was typed. Let the effects run first.
+    await act(async () => {});
   }
 
   const typeAndLeave = (label: string, text: string) => {
