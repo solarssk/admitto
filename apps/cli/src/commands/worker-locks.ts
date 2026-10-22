@@ -12,6 +12,7 @@ export const WORKER_LOCK_KEYS = {
   bounce: "admitto:worker:bounce",
   retention: "admitto:worker:retention",
   mail_delivery: "admitto:worker:mail_delivery",
+  registration_mail: "admitto:worker:registration_mail",
   import: "admitto:worker:import",
   export: "admitto:worker:export",
   wallet_sync: "admitto:worker:wallet_sync",

@@ -14,6 +14,7 @@ import {
   disallowedPlaceholdersForTemplate,
   isReservedTemplateName,
   isSystemTemplateName,
+  requiredPlaceholdersForTemplate,
   assertRenderableCompiledHtml,
   compileTemplate,
   findMissingRequiredPlaceholders,
@@ -222,6 +223,10 @@ async function collectTemplateSourceErrors(
     for (const missing of findMissingRequiredPlaceholders(subject, body)) {
       errors.push(`Missing required placeholder: ${missing}`);
     }
+  }
+  // The mail that confirms a guest's address is useless without its link (see requiredPlaceholdersForTemplate).
+  for (const missing of findMissingRequiredPlaceholders("", body, requiredPlaceholdersForTemplate(templateName ?? DEFAULT_TEMPLATE_NAME))) {
+    errors.push(`Missing required placeholder: ${missing}`);
   }
 
   try {

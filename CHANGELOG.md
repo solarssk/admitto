@@ -17,6 +17,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Give attendee fields a saved order and a registration-form setting, and refuse a Required field the form would not ask ([#1766](https://github.com/solarssk/admitto/pull/1766))
 - Show tabs between an event's published legal texts on the public /legal pages ([#1770](https://github.com/solarssk/admitto/pull/1770))
 - Add long text, date, date and time and phone answer types and format rules for attendee fields, in the API and the import ([#1773](https://github.com/solarssk/admitto/pull/1773))
+- Add a worker job that sends guest registration mail and deletes registrations not confirmed in 24 hours, with a Health check row for its queue ([#1775](https://github.com/solarssk/admitto/pull/1775))
 
 ### Fixed
 
