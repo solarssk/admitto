@@ -20,7 +20,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Fixed
 
-- Save an attendee's email in lower case when staff add or edit it, and refuse an address that differs from another's only in capitals
+- Save an attendee's email in lower case when staff add or edit it, and refuse an address that differs from another's only in capitals ([#1781](https://github.com/solarssk/admitto/pull/1781))
 
 ### Security
 
