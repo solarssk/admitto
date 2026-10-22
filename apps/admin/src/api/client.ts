@@ -715,6 +715,21 @@ export async function updateEventCustomField(
   return parseJson<EventCustomFieldDto>(res);
 }
 
+/** Puts an event's custom fields in a new order: `ids` are the ids of ALL the event's fields, each once, in the order
+ * they should appear, and the answer is the fields in that order. Rejected with 409 `stale_write` when the event has
+ * other fields now (one was added or deleted since the list was read): read the list again. */
+export async function reorderEventCustomFields(
+  eventId: string,
+  ids: readonly string[],
+): Promise<EventCustomFieldDto[]> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/custom-fields/order`,
+    jsonPutInit({ ids }),
+  );
+  const data = await parseJson<EventCustomFieldsListResponse>(res);
+  return data.items;
+}
+
 /** How many attendees currently have each option value of a select-type custom field - fetched
  * on demand when the edit modal opens, not part of the list/create/patch responses above. */
 export async function fetchEventCustomFieldOptionUsage(

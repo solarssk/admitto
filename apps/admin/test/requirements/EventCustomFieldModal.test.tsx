@@ -120,6 +120,35 @@ describe("EventCustomFieldModal — create", () => {
     });
   });
 
+  it("creates the field on the registration form when it is opened from the Registration page", async () => {
+    vi.mocked(createEventCustomField).mockResolvedValueOnce(dietaryField);
+    renderWithToast(<EventCustomFieldModal eventId="evt-1" field={null} showOnForm onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Display label"), {
+      target: { value: "Dietary requirements" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create field" }));
+    await waitFor(() => {
+      expect(createEventCustomField).toHaveBeenCalledWith("evt-1", {
+        source_field: "dietary_requirements",
+        label: "Dietary requirements",
+        description: undefined,
+        type: "text",
+        required: false,
+        options: undefined,
+        show_on_form: true,
+      });
+    });
+  });
+
+  it("sends no show_on_form otherwise, so the API's own default (off the form) applies", async () => {
+    vi.mocked(createEventCustomField).mockResolvedValueOnce(dietaryField);
+    renderModal(null);
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Dietary requirements" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create field" }));
+    await waitFor(() => expect(createEventCustomField).toHaveBeenCalled());
+    expect(vi.mocked(createEventCustomField).mock.calls[0]![1]).not.toHaveProperty("show_on_form");
+  });
+
   it("creates a select field with the options an operator adds and required", async () => {
     vi.mocked(createEventCustomField).mockResolvedValueOnce({
       ...dietaryField,
@@ -215,6 +244,15 @@ describe("EventCustomFieldModal — edit", () => {
         required: true,
       });
     });
+  });
+
+  it("leaves the registration form alone when a field is edited, also from the Registration page", async () => {
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...dietaryField, required: true });
+    renderWithToast(<EventCustomFieldModal eventId="evt-1" field={dietaryField} showOnForm onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Required" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updateEventCustomField).toHaveBeenCalled());
+    expect(vi.mocked(updateEventCustomField).mock.calls[0]![2]).not.toHaveProperty("show_on_form");
   });
 
   it("pre-fills an existing description and sends the edited value", async () => {

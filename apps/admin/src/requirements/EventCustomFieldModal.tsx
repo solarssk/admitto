@@ -19,6 +19,9 @@ export interface EventCustomFieldModalProps {
   field: EventCustomFieldDto | null;
   onClose: () => void;
   onSaved: () => void;
+  /** A new field is created on the registration form, which is where the Registration page adds it from; left out, it starts
+   * off the form, as the API does by default. Only a new field takes it: an edit leaves the form alone. */
+  showOnForm?: boolean;
 }
 
 type FormState = {
@@ -46,7 +49,7 @@ function formFromField(field: EventCustomFieldDto): FormState {
 }
 
 /** Add/edit modal for one EventCustomField registry row (dietary, shirt size, ...). */
-export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: EventCustomFieldModalProps) {
+export function EventCustomFieldModal({ eventId, field, onClose, onSaved, showOnForm = false }: Readonly<EventCustomFieldModalProps>) {
   const { addToast } = useToast();
   const isEdit = field !== null;
   const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
@@ -147,6 +150,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
           type: form.type,
           required: form.required,
           options: form.type === "select" ? options : undefined,
+          ...(showOnForm ? { show_on_form: true } : {}),
         });
       }
       onSaved();
