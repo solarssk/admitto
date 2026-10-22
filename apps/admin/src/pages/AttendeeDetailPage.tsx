@@ -105,6 +105,7 @@ import {
   fetchAttendeeCustomFields,
   isLongAnswer,
   readCustomDataField,
+  shownCustomFields,
   validateCustomFieldsForm,
 } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
@@ -931,7 +932,11 @@ function itemStateTone(state: string): "ok" | "muted" {
  * custom data) — extracted out of the component (SonarCloud S3776: keeps the comparison chain out
  * of the component's own cognitive-complexity count, the same way EventOverviewPage.tsx extracts
  * buildReadinessItems). */
-function isAttendeeFormDirty(form: AttendeeFormState | null, baseline: AttendeeFormState | null): boolean {
+function isAttendeeFormDirty(
+  form: AttendeeFormState | null,
+  baseline: AttendeeFormState | null,
+  attributeFields: CustomDataFieldDef[],
+): boolean {
   if (form === null || baseline === null) return false;
   return (
     form.first_name !== baseline.first_name ||
@@ -941,7 +946,10 @@ function isAttendeeFormDirty(form: AttendeeFormState | null, baseline: AttendeeF
     form.department !== baseline.department ||
     form.ticket_type !== baseline.ticket_type ||
     form.rsvp_status !== baseline.rsvp_status ||
-    JSON.stringify(form.customFields) !== JSON.stringify(baseline.customFields)
+    // An answer typed for a question that a condition now hides is not an edit: it is not saved.
+    shownCustomFields(attributeFields, form.customFields).some(
+      (field) => (form.customFields[field.source_field] ?? "") !== (baseline.customFields[field.source_field] ?? ""),
+    )
   );
 }
 
@@ -1680,7 +1688,8 @@ function buildAttendeePatch(
   if (form.rsvp_status !== detail.rsvp_status) patch.rsvp_status = form.rsvp_status;
 
   const customDataPatch: Record<string, string | null> = {};
-  for (const field of attributeFields) {
+  // Only the questions that are asked: what is typed for one that a condition hides is not sent, and what is saved for it stays.
+  for (const field of shownCustomFields(attributeFields, form.customFields)) {
     const key = field.source_field;
     const next = form.customFields[key] ?? "";
     const current = readCustomDataField(detail.custom_data, key) ?? "";
@@ -2162,7 +2171,7 @@ export function AttendeeDetailPage() {
   const mailConfigured = useMailConfigured(eventId);
 
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
-  const isDirty = isAttendeeFormDirty(form, baseline);
+  const isDirty = isAttendeeFormDirty(form, baseline, attributeFields);
 
   /** Removes this attendee from the event for good, with the reason chosen in the dialog. The attendee's page is gone
    * after that, so the operator goes back to the list. */
@@ -3154,7 +3163,7 @@ export function AttendeeDetailPage() {
                     onChange={(e) => setForm({ ...form, department: e.target.value })}
                   />
                   {attributeFields.length > 0 && <SectionLabel className="attendee-fields-grid__full">Custom fields</SectionLabel>}
-                  {attributeFields.map((field) => (
+                  {shownCustomFields(attributeFields, form.customFields).map((field) => (
                     <CustomDataFieldInput
                       key={field.source_field}
                       field={field}

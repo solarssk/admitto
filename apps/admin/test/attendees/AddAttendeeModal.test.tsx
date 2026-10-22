@@ -1088,3 +1088,190 @@ describe("AddAttendeeModal: the answer types of a custom field", { timeout: 30_0
     expect((screen.getByLabelText("Arrival, time") as HTMLInputElement).disabled).toBe(true);
   });
 });
+
+describe("AddAttendeeModal: questions that are shown only for an answer", { timeout: 30_000 }, () => {
+  const parking = answerField("parking", "Parking", "boolean");
+  const plate = answerField("plate", "Plate number", "text", {
+    required: true,
+    rules: { show_when: { field: "parking", value: true }, max_length: 8 },
+  });
+  const meal = answerField("meal", "Meal", "select", { options: ["Standard", "Vegan"] });
+  const veganNote = answerField("vegan_note", "Vegan note", "text", { required: true, rules: { show_when: { field: "meal", value: "Vegan" } } });
+  const badge = answerField("badge", "Badge name", "text");
+  const optionalNote = answerField("parking_note", "Parking note", "text", { rules: { show_when: { field: "parking", value: true } } });
+  const FIELDS = [parking, plate, optionalNote, meal, veganNote, badge];
+
+  async function openWith(fields: unknown[]) {
+    mockFetchEventCustomFields.mockResolvedValue(fields as never);
+    mockCreateAttendee.mockResolvedValue({} as never);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
+    fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
+    await screen.findByRole("button", { name: /^Parking,/ });
+  }
+  afterEach(() => {
+    mockFetchEventCustomFields.mockResolvedValue([]);
+    mockCreateAttendee.mockReset();
+  });
+
+  /** Picks `option` in the select whose label is `label` (a yes/no question or a choice question). */
+  const pick = (label: string, option: string) => {
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label},`) }));
+    fireEvent.click(screen.getByRole("button", { name: option, exact: true }));
+  };
+  const submit = () => fireEvent.click(screen.getByRole("button", { name: "Add attendee" }));
+  const sentCustomData = () => (mockCreateAttendee.mock.calls[0]![1] as { custom_data?: Record<string, string> }).custom_data;
+  const asked = (label: RegExp | string) => screen.queryByLabelText(label) !== null;
+
+  describe.each([
+    {
+      kind: "a yes/no question",
+      controller: "Parking",
+      met: "Yes",
+      unmet: "No",
+      answer: "true",
+      dependent: /^Plate number/,
+      label: "Plate number",
+      typed: "AB 123",
+      requiredMessage: "Plate number is required.",
+    },
+    {
+      kind: "a choice question",
+      controller: "Meal",
+      met: "Vegan",
+      unmet: "Standard",
+      answer: "Vegan",
+      dependent: /^Vegan note/,
+      label: "Vegan note",
+      typed: "no eggs",
+      requiredMessage: "Vegan note is required.",
+    },
+  ])("a question that depends on $kind", ({ controller, met, unmet, answer, dependent, typed, requiredMessage }) => {
+    it("is not asked until the answer shows it, and not asked again when the answer changes to another", async () => {
+      await openWith(FIELDS);
+      expect(asked(dependent)).toBe(false);
+      pick(controller, met);
+      expect(asked(dependent)).toBe(true);
+      pick(controller, unmet);
+      expect(asked(dependent)).toBe(false);
+      pick(controller, met);
+      expect(asked(dependent)).toBe(true);
+    });
+
+    it("is not required while it is hidden: the attendee is added without it, and nothing is sent for it", async () => {
+      await openWith(FIELDS);
+      submit();
+      await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+      expect(sentCustomData()).toBeUndefined();
+      expect(screen.queryByText(requiredMessage)).toBeNull();
+    });
+
+    it("is required once it is shown, and the attendee is not added until it is answered", async () => {
+      await openWith(FIELDS);
+      pick(controller, met);
+      submit();
+      expect(await screen.findByText(requiredMessage)).toBeTruthy();
+      expect(mockCreateAttendee).not.toHaveBeenCalled();
+      fireEvent.change(screen.getByLabelText(dependent), { target: { value: typed } });
+      submit();
+      await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+      expect(sentCustomData()).toMatchObject({ [controller === "Parking" ? "plate" : "vegan_note"]: typed });
+    });
+
+    it("sends nothing for what was typed in it and then hidden, and is not required any more", async () => {
+      await openWith(FIELDS);
+      pick(controller, met);
+      fireEvent.change(screen.getByLabelText(dependent), { target: { value: typed } });
+      pick(controller, unmet);
+      submit();
+      await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+      expect(Object.keys(sentCustomData() ?? {})).not.toContain(controller === "Parking" ? "plate" : "vegan_note");
+      expect(sentCustomData()).toEqual({ [controller === "Parking" ? "parking" : "meal"]: controller === "Parking" ? "false" : unmet });
+    });
+
+    it("gives back what was typed when the answer shows it again", async () => {
+      await openWith(FIELDS);
+      pick(controller, met);
+      fireEvent.change(screen.getByLabelText(dependent), { target: { value: typed } });
+      pick(controller, unmet);
+      pick(controller, met);
+      expect((screen.getByLabelText(dependent) as HTMLInputElement).value).toBe(typed);
+    });
+
+  });
+
+  it("draws a question that depends on another right after it, even when the event lists it elsewhere, so that the answer that shows it does not move", async () => {
+    await openWith([veganNote, plate, badge, parking, meal]);
+    const customLabels = () => {
+      const all = Array.from(document.querySelectorAll<HTMLElement>(".add-attendee-modal__fields label.at-label")).map((label) => label.textContent);
+      return all.slice(all.indexOf("Ticket type") + 1);
+    };
+    expect(customLabels()).toEqual(["Badge name", "Parking", "Meal"]);
+    pick("Parking", "Yes");
+    expect(customLabels()).toEqual(["Badge name", "Parking", "Plate number *", "Meal"]);
+    pick("Meal", "Vegan");
+    expect(customLabels()).toEqual(["Badge name", "Parking", "Plate number *", "Meal", "Vegan note *"]);
+    // The question that was picked stays where it was, with the one it shows right behind it.
+    const parkingField = screen.getByRole("button", { name: /^Parking,/ }).closest(".searchable-select")!.parentElement!;
+    expect(parkingField.nextElementSibling?.querySelector("label")?.textContent).toBe("Plate number *");
+    const mealField = screen.getByRole("button", { name: /^Meal,/ }).closest(".searchable-select")!.parentElement!;
+    expect(mealField.nextElementSibling?.querySelector("label")?.textContent).toBe("Vegan note *");
+    pick("Parking", "No");
+    expect(customLabels()).toEqual(["Badge name", "Parking", "Meal", "Vegan note *"]);
+  });
+
+  it("asks the other conditional question of the same answer too, and an optional one is optional", async () => {
+    await openWith(FIELDS);
+    pick("Parking", "Yes");
+    expect(asked(/^Parking note/)).toBe(true);
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "AB 123" } });
+    submit();
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(sentCustomData()).toEqual({ parking: "true", plate: "AB 123" });
+  });
+
+  it("judges a question that is shown by its own rules, and says why it is refused", async () => {
+    await openWith(FIELDS);
+    pick("Parking", "Yes");
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "far too long for it" } });
+    submit();
+    expect(await screen.findByText("Plate number must be at most 8 characters.")).toBeTruthy();
+    expect(mockCreateAttendee).not.toHaveBeenCalled();
+  });
+
+  it("keeps the questions that have no condition as they were: asked, required and sent whatever the answers are", async () => {
+    await openWith([parking, plate, answerField("must", "Must have", "text", { required: true })]);
+    submit();
+    expect(await screen.findByText("Must have is required.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/^Must have/), { target: { value: "x" } });
+    submit();
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(sentCustomData()).toEqual({ must: "x" });
+  });
+
+  it("sends the answer to the question that shows another, whatever it is: Yes is true and No is false", async () => {
+    await openWith(FIELDS);
+    pick("Parking", "No");
+    submit();
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(sentCustomData()).toEqual({ parking: "false" });
+  });
+
+  it("starts the next attendee with the conditional questions hidden again, as the form is cleared", async () => {
+    await openWith(FIELDS);
+    pick("Parking", "Yes");
+    expect(asked(/^Plate number/)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(asked(/^Plate number/)).toBe(false);
+    expect(screen.getByRole("button", { name: "Parking, none selected" })).toBeTruthy();
+  });
+
+  it("draws a question with a condition that the form cannot meet as hidden for good, and does not ask for it", async () => {
+    await openWith([parking, answerField("orphan", "Orphan", "text", { required: true, rules: { show_when: { field: "nothing", value: true } } })]);
+    expect(asked(/^Orphan/)).toBe(false);
+    submit();
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(sentCustomData()).toBeUndefined();
+  });
+});

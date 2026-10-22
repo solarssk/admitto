@@ -72,6 +72,23 @@
   flex: 1 1 auto;
 }
 
+/* The icon a question carries on the registration form, before its name. */
+.requirements-item-form-icon {
+  display: inline-flex;
+  margin-right: var(--space-1);
+  vertical-align: -0.1em;
+  color: var(--primary);
+}
+
+/* "Shown only when Parking is Yes", under the name of a question that has a condition. It wraps, never cut: it names the question
+   the row depends on. */
+.requirements-item-condition {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
 .requirements-item-desc-col {
   /* Flexible middle column - status + actions stay content-sized on the right. */
   width: auto;
@@ -528,6 +545,46 @@
 #cf-options {
   min-height: 4.5rem;
 }
+
+/* What a question carries on the registration form (FormRulesEditor): a fieldset named by its labelled break, with the icon, the
+   condition and the suggestions stacked. The condition is a group of its own, a fieldset again, with the same four things taken off. The
+   line under a control keeps the room of one line, so the dialog does not jump when an error comes and goes. */
+.form-rules,
+.form-rules__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.form-rules {
+  gap: var(--space-3);
+}
+
+.form-rules__condition {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+/* The question is a label that a guest reads (up to 60 characters), so it takes the row; the answer is short and takes half of the next. */
+.form-rules__condition > :first-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .form-rules__condition {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.form-rules__note {
+  min-height: calc(var(--fs-xs) * var(--lh-normal));
+}
+
 
 .contents-row__required {
   display: flex;

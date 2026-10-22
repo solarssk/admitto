@@ -7,6 +7,7 @@ import {
   EVENT_CUSTOM_FIELD_TYPES,
   GUEST_FORM_ICONS,
   eventCustomFieldRulesMaxLength,
+  guestFormDrawsIcon,
   hasForbiddenSuggestionCharacter,
   isFreeInputCustomFieldType,
   isQuestionShown,
@@ -57,6 +58,36 @@ describe("GUEST_FORM_ICONS", () => {
     for (const icon of ["parking", "food", "accessible", "bed", "user-plus", "car", "building", "users"]) {
       expect(GUEST_FORM_ICONS).toContain(icon);
     }
+  });
+});
+
+describe("guestFormDrawsIcon", () => {
+  it("is true for the one-line answers: text, date, date and time and phone, required or not", () => {
+    for (const type of ["text", "date", "datetime", "phone"]) {
+      expect(guestFormDrawsIcon({ type, required: false }), type).toBe(true);
+      expect(guestFormDrawsIcon({ type, required: true }), `${type}, required`).toBe(true);
+    }
+  });
+
+  it("is true for an optional yes/no question, the row with a tick, and false for a required one, which is two buttons", () => {
+    expect(guestFormDrawsIcon({ type: "boolean", required: false })).toBe(true);
+    expect(guestFormDrawsIcon({ type: "boolean", required: true })).toBe(false);
+  });
+
+  it("is false for a single choice and for a long text, whether required or not", () => {
+    for (const type of ["select", "long_text"]) {
+      expect(guestFormDrawsIcon({ type, required: false }), type).toBe(false);
+      expect(guestFormDrawsIcon({ type, required: true }), `${type}, required`).toBe(false);
+    }
+  });
+
+  it("is false for a type this version does not know: nothing is promised for it", () => {
+    for (const type of ["mystery", "", "Text", "constructor"]) expect(guestFormDrawsIcon({ type, required: false }), type).toBe(false);
+  });
+
+  it("says something for every type of answer, so a new type has to be decided here", () => {
+    const drawn = EVENT_CUSTOM_FIELD_TYPES.filter((type) => guestFormDrawsIcon({ type, required: false }));
+    expect([...drawn].sort()).toEqual(["boolean", "date", "datetime", "phone", "text"]);
   });
 });
 

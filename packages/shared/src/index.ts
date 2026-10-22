@@ -23,6 +23,7 @@ export {
   EVENT_CUSTOM_FIELD_TEXT_MAX,
   EVENT_CUSTOM_FIELD_TYPES,
   GUEST_FORM_ICONS,
+  guestFormDrawsIcon,
   hasForbiddenSuggestionCharacter,
   isFreeInputCustomFieldType,
   isQuestionShown,

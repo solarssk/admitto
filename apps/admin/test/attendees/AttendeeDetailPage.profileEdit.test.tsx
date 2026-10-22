@@ -6,7 +6,7 @@ import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { baseAttendeeDetailEvent, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
 import { setPreferredLocale, setPreferredTimeFormat } from "../../src/utils/locale-store.js";
-import { ANSWER_TYPE_FIELDS } from "./answerTypeFixtures.js";
+import { ANSWER_TYPE_FIELDS, answerField } from "./answerTypeFixtures.js";
 import { bitwardenTreatsAsSearchField } from "../checkin/bitwardenSearchField.js";
 
 const updateAttendee = vi.fn();
@@ -1301,5 +1301,163 @@ describe("AttendeeDetailPage: the answer types of a custom field", { timeout: 30
     }
     resolveSave(baseDetail({ custom_data: { ...ANSWERS, abstract: "Changed" } }));
     await waitFor(() => expect(screen.queryByLabelText("Abstract")).toBeNull());
+  });
+});
+
+describe("AttendeeDetailPage: questions that are shown only for an answer", { timeout: 30_000 }, () => {
+  const parking = answerField("parking", "Parking", "boolean");
+  const plate = answerField("plate", "Plate number", "text", {
+    required: true,
+    rules: { show_when: { field: "parking", value: true }, max_length: 8 },
+  });
+  const meal = answerField("meal", "Meal", "select", { options: ["Standard", "Vegan"] });
+  const veganNote = answerField("vegan_note", "Vegan note", "text", { required: true, rules: { show_when: { field: "meal", value: "Vegan" } } });
+  const FIELDS = [parking, plate, meal, veganNote];
+
+  async function openPage(customData: Record<string, string>, fields = FIELDS) {
+    loadAttendeeDetailData.mockResolvedValueOnce({ detail: baseDetail({ custom_data: customData }), attributeFields: fields, itemsWarning: null });
+    fetchEventCustomFields.mockResolvedValue(fields);
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await screen.findByRole("button", { name: /^Parking,/ });
+  }
+  /** Picks `option` in the select whose label is `label`. */
+  const pick = (label: string, option: string) => {
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label},`) }));
+    fireEvent.click(screen.getByRole("button", { name: option, exact: true }));
+  };
+  const asked = (label: RegExp) => screen.queryByLabelText(label) !== null;
+  const save = () => fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const saveButton = () => screen.getByRole("button", { name: "Save" });
+  const sentPatch = () => updateAttendee.mock.calls[0]![2] as { custom_data_fields?: Record<string, string | null> };
+
+  it("asks a question that is shown for the answer the attendee has, with the answer that was saved in it", async () => {
+    await openPage({ parking: "true", plate: "AB 123" });
+    expect((screen.getByLabelText(/^Plate number/) as HTMLInputElement).value).toBe("AB 123");
+    expect(screen.queryByLabelText(/^Vegan note/)).toBeNull();
+  });
+
+  it("does not ask a question that the answer of the attendee hides, though an answer to it is saved", async () => {
+    await openPage({ parking: "false", plate: "KR 999", meal: "Standard" });
+    expect(asked(/^Plate number/)).toBe(false);
+    expect(asked(/^Vegan note/)).toBe(false);
+    expect(screen.getByRole("button", { name: "Parking, No" })).toBeTruthy();
+  });
+
+  it("does not ask a question whose condition has no answer at all", async () => {
+    await openPage({});
+    expect(asked(/^Plate number/)).toBe(false);
+  });
+
+  it("hides a question when the answer is changed so that it no longer shows it, and shows it again with what was typed", async () => {
+    await openPage({ parking: "true", plate: "AB 123" });
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "XY 789" } });
+    pick("Parking", "No");
+    expect(asked(/^Plate number/)).toBe(false);
+    pick("Parking", "Yes");
+    expect((screen.getByLabelText(/^Plate number/) as HTMLInputElement).value).toBe("XY 789");
+  });
+
+  it("saves the answer that was changed, and sends nothing for a question that is hidden: no value and no null, so what is saved for it stays", async () => {
+    await openPage({ parking: "true", plate: "AB 123" });
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { parking: "false", plate: "AB 123" } }));
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "XY 789" } });
+    pick("Parking", "No");
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ parking: "false" });
+    expect(Object.keys(sentPatch().custom_data_fields ?? {})).not.toContain("plate");
+  });
+
+  it("does not send a question that is hidden although it was cleared before it was hidden", async () => {
+    await openPage({ parking: "true", plate: "AB 123" });
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { parking: "false", plate: "AB 123" } }));
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "" } });
+    pick("Parking", "No");
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ parking: "false" });
+  });
+
+  it("asks for a required question once the answer shows it, empty, and does not save until it is answered", async () => {
+    await openPage({ parking: "false" });
+    pick("Parking", "Yes");
+    const input = screen.getByLabelText(/^Plate number/) as HTMLInputElement;
+    expect(input.value).toBe("");
+    // The browser holds the save back with its own prompt, as it does for any required field of the form.
+    expect(input.required).toBe(true);
+    save();
+    expect(input.validity.valueMissing).toBe(true);
+    expect(updateAttendee).not.toHaveBeenCalled();
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { parking: "true", plate: "AB 1" } }));
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "AB 1" } });
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ parking: "true", plate: "AB 1" });
+  });
+
+  it("does not make the browser ask for a required question while it is hidden, so an attendee can be saved without it", async () => {
+    await openPage({ parking: "false" });
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { parking: "false", meal: "Standard" } }));
+    pick("Meal", "Standard");
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ meal: "Standard" });
+  });
+
+  it("works for a choice question as it does for a yes/no question: the option shows the question, another hides it", async () => {
+    await openPage({ meal: "Vegan", vegan_note: "no eggs" });
+    expect((screen.getByLabelText(/^Vegan note/) as HTMLInputElement).value).toBe("no eggs");
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { meal: "Standard", vegan_note: "no eggs" } }));
+    pick("Meal", "Standard");
+    expect(asked(/^Vegan note/)).toBe(false);
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ meal: "Standard" });
+  });
+
+  it("draws the question that is shown right after the one that shows it, in the same grid", async () => {
+    await openPage({ parking: "true", plate: "AB 123", meal: "Vegan", vegan_note: "x" });
+    const labels = Array.from(document.querySelectorAll<HTMLElement>(".attendee-fields-grid label.at-label")).map((label) => label.textContent);
+    expect(labels.slice(labels.indexOf("Department") + 1)).toEqual(["Parking", "Plate number *", "Meal", "Vegan note *"]);
+    const parkingField = screen.getByRole("button", { name: /^Parking,/ }).closest(".searchable-select")!.parentElement!;
+    expect(parkingField.nextElementSibling?.contains(screen.getByLabelText(/^Plate number/))).toBe(true);
+    expect(document.querySelectorAll(".attendee-fields-grid__full").length).toBeGreaterThan(0);
+  });
+
+  it("takes what was typed in a question and then hidden for no edit: Save is off, and Cancel leaves without asking", async () => {
+    await openPage({});
+    expect(saveButton().hasAttribute("disabled") || saveButton().getAttribute("aria-disabled") === "true").toBe(true);
+    pick("Parking", "Yes");
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "AB 1" } });
+    expect(saveButton().getAttribute("aria-disabled")).not.toBe("true");
+    expect(saveButton().hasAttribute("disabled")).toBe(false);
+    // The answer goes back to what it was: nothing is left to save, though a text was typed for the question that it showed.
+    pick("Parking", "-");
+    expect(asked(/^Plate number/)).toBe(false);
+    expect(saveButton().hasAttribute("disabled") || saveButton().getAttribute("aria-disabled") === "true").toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(/Discard/)).toBeNull();
+  });
+
+  it("keeps the questions that have no condition as they were: asked, required and saved whatever the answers are", async () => {
+    const must = answerField("must", "Must have", "text", { required: true });
+    await openPage({ must: "x" }, [parking, plate, must]);
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { must: "y" } }));
+    fireEvent.change(screen.getByLabelText(/^Must have/), { target: { value: "y" } });
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ must: "y" });
+  });
+
+  it("is told by the server about a question it has found to be missing, in the words of the field, as before", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    await openPage({ parking: "false" });
+    updateAttendee.mockRejectedValueOnce(new ApiError(400, "required_custom_data_field_missing", "required_custom_data_field_missing", undefined, "plate"));
+    pick("Parking", "Yes");
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "AB 1" } });
+    save();
+    expect(await screen.findByText("Plate number is required.")).toBeTruthy();
   });
 });

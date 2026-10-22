@@ -78,6 +78,24 @@ export const GUEST_FORM_ICONS = [
 
 export type GuestFormIcon = (typeof GUEST_FORM_ICONS)[number];
 
+/** True when the registration form draws the icon of a question of this kind. It is drawn on the row of an optional yes/no question (the
+ * one with a tick) and in a one-line answer: text, date, date and time and phone. A single choice, a long text and a required yes/no
+ * question (two buttons) have no place for it: the icon can still be saved, and is not drawn. The admin app's field editor says so by
+ * this rule, and the registration form follows it, so a field never promises an icon that the form does not show. */
+export function guestFormDrawsIcon(field: { type: string; required: boolean }): boolean {
+  switch (field.type) {
+    case "text":
+    case "date":
+    case "datetime":
+    case "phone":
+      return true;
+    case "boolean":
+      return !field.required;
+    default:
+      return false;
+  }
+}
+
 /** A condition on a question (`rules.show_when`): ask it only when another question of the event, the one
  * whose `source_field` is `field`, has this answer. `value` is `true` when that question is a yes/no field
  * (the answer "true"), and the text of one of its options when it is a select field. */

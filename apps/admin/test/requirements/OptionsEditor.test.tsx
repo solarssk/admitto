@@ -336,3 +336,125 @@ describe("OptionsEditor: counts that are being read, and a save under way", () =
     expect((screen.getByLabelText("Option text") as HTMLInputElement).readOnly).toBe(false);
   });
 });
+
+describe("OptionsEditor: a list of suggestions (no attendee counts)", () => {
+  const suggestionRows = (...texts: string[]): OptionRow[] => texts.map((text, index) => ({ key: `s${index}`, text, originalText: "" }));
+
+  it("names its controls after what a row is, and says nothing about options", () => {
+    render(<OptionsEditor rows={suggestionRows("Vegan")} usageCounts={null} showUsage={false} noun="suggestion" onChange={vi.fn()} />);
+    expect(screen.getByLabelText("Suggestion text")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove suggestion" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Add suggestion" })).toBeTruthy();
+    expect(screen.queryByLabelText("Option text")).toBeNull();
+    expect(screen.queryByRole("button", { name: /option/i })).toBeNull();
+  });
+
+  it("keeps the names of options when no noun is given", () => {
+    render(<OptionsEditor rows={optionRowsFromOptions(["S"])} usageCounts={{}} onChange={vi.fn()} />);
+    expect(screen.getByLabelText("Option text")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove option" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Add option" })).toBeTruthy();
+  });
+
+  it("shows no count, no 'Unused' and no 'Unknown', and reads nothing, though no counts are given", () => {
+    const { container } = render(
+      <OptionsEditor rows={suggestionRows("Vegan", "Halal")} usageCounts={null} showUsage={false} noun="suggestion" onChange={vi.fn()} />,
+    );
+    expect(container.querySelector(".options-editor__usage")).toBeNull();
+    expect(container.querySelector(".options-editor__usage-skeleton")).toBeNull();
+    expect(screen.queryByText("Unused")).toBeNull();
+    expect(screen.queryByText("Unknown")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(container.querySelector(".options-editor__list--plain")).toBeTruthy();
+  });
+
+  it("keeps the counts of a list of options as they were: a column for them, and a status region", () => {
+    const { container } = render(<OptionsEditor rows={optionRowsFromOptions(["S"])} usageCounts={{ S: 2 }} onChange={vi.fn()} />);
+    expect(container.querySelector(".options-editor__usage")?.textContent).toBe("2 attendees");
+    expect(container.querySelector(".options-editor__list--plain")).toBeNull();
+    expect(screen.getByRole("status")).toBeTruthy();
+  });
+
+  it("removes a row at once, with no confirmation: nobody holds a suggestion", () => {
+    const onChange = vi.fn();
+    render(<OptionsEditor rows={suggestionRows("Vegan", "Halal")} usageCounts={null} showUsage={false} noun="suggestion" onChange={onChange} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove suggestion" })[0]!);
+    expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ text: "Halal" })]);
+    expect(screen.queryByText(/currently have this value/)).toBeNull();
+  });
+
+  it("does not warn about a rename or a blanked row, which touches no attendee", () => {
+    const { container } = render(
+      <OptionsEditor rows={[{ key: "s0", text: "Vegan food", originalText: "Vegan" }]} usageCounts={null} showUsage={false} noun="suggestion" onChange={vi.fn()} />,
+    );
+    expect(container.querySelector(".options-editor__warning")).toBeNull();
+    expect(container.querySelector(".options-editor__row--warning")).toBeNull();
+  });
+
+  it("adds a row at the end and puts the focus in it, as a list of options does", async () => {
+    render(<ControlledSuggestions initial={suggestionRows("Vegan")} />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add suggestion" }));
+    const inputs = screen.getAllByLabelText("Suggestion text") as HTMLInputElement[];
+    expect(inputs).toHaveLength(2);
+    await vi.waitFor(() => expect(document.activeElement).toBe(inputs[1]));
+  });
+
+  it("turns '+ Add' off at the most rows it takes, and on again below it", () => {
+    const { rerender } = render(
+      <OptionsEditor rows={suggestionRows("a", "b")} usageCounts={null} showUsage={false} noun="suggestion" max={3} onChange={vi.fn()} />,
+    );
+    expect((screen.getByRole("button", { name: "+ Add suggestion" }) as HTMLButtonElement).disabled).toBe(false);
+    rerender(<OptionsEditor rows={suggestionRows("a", "b", "c")} usageCounts={null} showUsage={false} noun="suggestion" max={3} onChange={vi.fn()} />);
+    expect((screen.getByRole("button", { name: "+ Add suggestion" }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(<OptionsEditor rows={suggestionRows("a", "b")} usageCounts={null} showUsage={false} noun="suggestion" max={3} onChange={vi.fn()} />);
+    expect((screen.getByRole("button", { name: "+ Add suggestion" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("takes any number of rows when no most is given", () => {
+    render(<OptionsEditor rows={optionRowsFromOptions(Array.from({ length: 40 }, (_, i) => `o${i}`))} usageCounts={{}} onChange={vi.fn()} />);
+    expect((screen.getByRole("button", { name: "+ Add option" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("marks the rows it is told are wrong, and points them at the message that says what is wrong", () => {
+    render(
+      <>
+        <OptionsEditor
+          rows={suggestionRows("Vegan", "vegan", "Halal")}
+          usageCounts={null}
+          showUsage={false}
+          noun="suggestion"
+          invalidKeys={new Set(["s0", "s1"])}
+          errorId="suggestions-note"
+          onChange={vi.fn()}
+        />
+        <span id="suggestions-note">Duplicate</span>
+      </>,
+    );
+    const [first, second, third] = screen.getAllByLabelText("Suggestion text") as HTMLInputElement[];
+    for (const input of [first!, second!]) {
+      expect(input.getAttribute("aria-invalid")).toBe("true");
+      expect(input.getAttribute("aria-describedby")).toBe("suggestions-note");
+      expect(input.classList.contains("at-input--invalid")).toBe(true);
+    }
+    expect(third!.hasAttribute("aria-invalid")).toBe(false);
+    expect(third!.hasAttribute("aria-describedby")).toBe(false);
+    expect(third!.classList.contains("at-input--invalid")).toBe(false);
+  });
+
+  it("marks no row when it is told none is wrong", () => {
+    render(<OptionsEditor rows={suggestionRows("a")} usageCounts={null} showUsage={false} noun="suggestion" invalidKeys={new Set()} onChange={vi.fn()} />);
+    expect(screen.getByLabelText("Suggestion text").hasAttribute("aria-invalid")).toBe(false);
+  });
+
+  it("moves a row with the arrow keys on its handle, as a list of options does", () => {
+    const onChange = vi.fn();
+    render(<OptionsEditor rows={suggestionRows("a", "b", "c")} usageCounts={null} showUsage={false} noun="suggestion" onChange={onChange} />);
+    fireEvent.keyDown(screen.getAllByLabelText(/Drag to reorder/)[0]!, { key: "ArrowDown" });
+    expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ text: "b" }), expect.objectContaining({ text: "a" }), expect.objectContaining({ text: "c" })]);
+  });
+});
+
+function ControlledSuggestions({ initial }: { initial: OptionRow[] }) {
+  const [rows, setRows] = useState(initial);
+  return <OptionsEditor rows={rows} usageCounts={null} showUsage={false} noun="suggestion" onChange={setRows} />;
+}

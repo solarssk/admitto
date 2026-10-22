@@ -34,6 +34,16 @@ export interface OptionsEditorProps {
   /** The row's fields cannot be changed (a save is under way): a field stays focusable, read-only, since a disabled one would
    * drop the focus of an operator who pressed Enter in it. */
   disabled?: boolean;
+  /** What a row is called in the names of its controls ("Option text", "Remove option", "+ Add option"). */
+  noun?: string;
+  /** Say how many attendees hold each option, and warn before a rename or a removal that touches them. Off for a list that is not
+   * answered by attendees (the suggestions of a text field): it has no count, so nothing is read for it and `usageCounts` is not used. */
+  showUsage?: boolean;
+  /** The most rows the list takes: "+ Add" is off when it has that many. */
+  max?: number;
+  /** The rows whose text is wrong: their field is marked invalid. What is wrong is said by the caller, in the element `errorId`. */
+  invalidKeys?: ReadonlySet<string>;
+  errorId?: string;
   onChange: (rows: OptionRow[]) => void;
 }
 
@@ -58,12 +68,57 @@ function usageLabelFor(usage: number, usageKnown: boolean, gate: LoadingGate): R
   return "Unused";
 }
 
+/** The text field of one row. A row that is wrong is marked for the eye and for assistive tech, and tied to the message that says what is
+ * wrong. It stays focusable while a save is under way, read-only, so that a field that Enter submitted keeps the focus. */
+function OptionTextInput({
+  rowKey,
+  text,
+  noun,
+  readOnly,
+  invalid,
+  errorId,
+  onChange,
+}: Readonly<{
+  rowKey: string;
+  text: string;
+  noun: string;
+  readOnly: boolean | undefined;
+  invalid: boolean;
+  errorId: string | undefined;
+  onChange: (text: string) => void;
+}>) {
+  return (
+    <input
+      name={`${noun}-text`}
+      className={`at-input options-editor__input${invalid ? " at-input--invalid" : ""}`}
+      data-key={rowKey}
+      value={text}
+      readOnly={readOnly}
+      aria-label={`${noun.charAt(0).toUpperCase()}${noun.slice(1)} text`}
+      aria-invalid={invalid ? true : undefined}
+      aria-describedby={invalid ? errorId : undefined}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
 /** Structured editor for a select field's option list - replaces the old plain "one per line"
  * textarea. Each row shows how many attendees currently have that value, warns inline when
  * renaming a value that's in use, and turns delete into an in-row confirm instead of removing
  * silently. Reordering is drag (mouse/touch/pen via Pointer Events - no DnD library in this
  * repo) with an Up/Down-arrow keyboard equivalent on the same handle. */
-export function OptionsEditor({ rows, usageCounts, usageLoading = false, disabled, onChange }: Readonly<OptionsEditorProps>) {
+export function OptionsEditor({
+  rows,
+  usageCounts,
+  usageLoading = false,
+  disabled,
+  noun = "option",
+  showUsage = true,
+  max,
+  invalidKeys,
+  errorId,
+  onChange,
+}: Readonly<OptionsEditorProps>) {
   const usageGate = useLoadingGate(usageLoading);
   const usageSlow = useDelayedLoading(usageLoading, SLOW_NOTICE_MS);
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
@@ -229,11 +284,13 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
 
   return (
     <div className="options-editor">
-      <output>
-        {usageLoading && usageGate.showIndicator ? <span className="sr-only">Checking how many attendees use each option</span> : null}
-        {usageSlow ? <span className="at-hint options-editor__slow-note">{SLOW_NOTICE_TEXT}</span> : null}
-      </output>
-      <div className="options-editor__list" ref={listRef}>
+      {showUsage ? (
+        <output>
+          {usageLoading && usageGate.showIndicator ? <span className="sr-only">Checking how many attendees use each option</span> : null}
+          {usageSlow ? <span className="at-hint options-editor__slow-note">{SLOW_NOTICE_TEXT}</span> : null}
+        </output>
+      ) : null}
+      <div className={`options-editor__list${showUsage ? "" : " options-editor__list--plain"}`} ref={listRef}>
         {rows.map((row) => {
           const usage = usageOf(usageCounts, row.originalText);
           const trimmed = row.text.trim();
@@ -244,7 +301,8 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
           const blanked = trimmed === "" && row.originalText !== "";
           const renamed = !blanked && trimmed !== row.originalText && trimmed !== "";
           const risky = (blanked || renamed) && usage > 0;
-          const usageKnown = usageCounts !== null;
+          // A list with no counts has nothing to wait for: its rows can always be removed.
+          const usageKnown = !showUsage || usageCounts !== null;
 
           if (confirmingKey === row.key) {
             return (
@@ -294,20 +352,22 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
               >
                 <i className="ti ti-grip-vertical" aria-hidden="true" />
               </button>
-              <input
-                name="option-text"
-                className="at-input options-editor__input"
-                data-key={row.key}
-                value={row.text}
+              <OptionTextInput
+                rowKey={row.key}
+                text={row.text}
+                noun={noun}
                 readOnly={disabled}
-                aria-label="Option text"
-                onChange={(e) => updateRow(row.key, e.target.value)}
+                invalid={invalidKeys?.has(row.key) === true}
+                errorId={errorId}
+                onChange={(text) => updateRow(row.key, text)}
               />
-              <span className={`options-editor__usage${usage === 0 ? " options-editor__usage--unused" : ""}`}>
-                {usageLabelFor(usage, usageKnown, usageGate)}
-              </span>
+              {showUsage ? (
+                <span className={`options-editor__usage${usage === 0 ? " options-editor__usage--unused" : ""}`}>
+                  {usageLabelFor(usage, usageKnown, usageGate)}
+                </span>
+              ) : null}
               <IconButton
-                label="Remove option"
+                label={`Remove ${noun}`}
                 icon={<i className="ti ti-x" />}
                 disabled={disabled || !usageKnown}
                 onClick={() => handleDeleteClick(row)}
@@ -325,8 +385,13 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
           );
         })}
       </div>
-      <button type="button" className="options-editor__add" disabled={disabled} onClick={addRow}>
-        + Add option
+      <button
+        type="button"
+        className="options-editor__add"
+        disabled={disabled || (max !== undefined && rows.length >= max)}
+        onClick={addRow}
+      >
+        + Add {noun}
       </button>
     </div>
   );
