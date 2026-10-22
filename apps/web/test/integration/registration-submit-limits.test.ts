@@ -187,7 +187,11 @@ describe("the mail budget of an address", () => {
 
     const key = store.keys.find((k) => k.startsWith("registration:mail-recipient:"));
     expect(key).toMatch(/^registration:mail-recipient:[0-9a-f]{64}$/);
-    expect(store.keys.some((k) => k.includes(email) || k.includes("example.com"))).toBe(false);
+    // Neither the address nor its domain is in any key. The domain is read from the address, so that no host name is
+    // written into a substring check (CodeQL reads that as a URL check).
+    const domain = email.slice(email.indexOf("@") + 1);
+    expect(domain).not.toBe("");
+    expect(store.keys.some((k) => k.includes(email) || k.includes(domain))).toBe(false);
   });
 
   it("is spent only by a registration that is stored and mailed: not by an address that has a place, a full event, a refused form or a closed one", async () => {
