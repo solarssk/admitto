@@ -111,6 +111,7 @@ export {
 } from "./event-custom-fields.js";
 export {
   buildCustomDataFromInput,
+  keepShownAnswers,
   normalizeCustomDataFieldValue,
   validateCustomDataPatch,
   assertCustomDataMeetsRequirements,
@@ -121,6 +122,8 @@ export {
   hasNoRules,
   readStoredFieldRules,
 } from "./custom-field-rules.js";
+export { controlsOtherFields, findShowWhenProblem } from "./custom-field-conditions.js";
+export type { ConditionField, ShowWhenProblem } from "./custom-field-conditions.js";
 export {
   MAX_CUSTOM_FIELDS_PER_EVENT,
   REGISTRANT_EMAIL_MAX,
