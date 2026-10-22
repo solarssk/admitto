@@ -14,11 +14,13 @@ import {
   defaultTemplateLabel,
   disallowedPlaceholdersForTemplate,
   extractPlaceholderTokens,
+  findMissingRequiredPlaceholders,
   getBuiltinTemplate,
   getBuiltinTemplateSource,
   isReservedTemplateName,
   isSystemTemplateName,
   renderTemplate,
+  requiredPlaceholdersForTemplate,
   resolveEventContactVars,
   resolveTemplateForEvent,
   setMailTemplate,
@@ -67,12 +69,13 @@ describe("system template names", () => {
     expect(isReservedTemplateName("registration_received")).toBe(false);
   });
 
-  it("forbid the ticket, QR and wallet placeholders for system names only", () => {
+  it("forbid the ticket, QR, wallet and ticket type placeholders for system names only", () => {
     expect([...SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS].sort()).toEqual([
       "apple_wallet_url",
       "download_page_url",
       "google_wallet_url",
       "qr_image_url",
+      "ticket_type",
       "ticket_url",
     ]);
     expect(disallowedPlaceholdersForTemplate("registration-confirm")).toBe(SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS);
@@ -128,7 +131,7 @@ describe("built-in registry", () => {
     expect(validateTemplate({ subject: source.subject, body: source.body }, undefined, forbidden)).toEqual([]);
     const tokens = [...extractPlaceholderTokens(source.subject), ...extractPlaceholderTokens(source.body)];
     expect(tokens.filter((t) => forbidden.has(t))).toEqual([]);
-    expect(tokens).toEqual(expect.arrayContaining(["event_name", "first_name", "contact_line"]));
+    expect(tokens).toEqual(expect.arrayContaining(["event_name", "contact_line"]));
 
     const compiled = await getBuiltinTemplate(name);
     expect(compiled.source).toBe("builtin");
@@ -140,6 +143,33 @@ describe("built-in registry", () => {
       DEFAULT_SAMPLE_VARS,
     );
     expect(rendered.html).not.toMatch(/\{\{/);
+  });
+
+  it("greets no one by name, because a mail to an unconfirmed address is rendered without the guest's names", () => {
+    for (const name of SYSTEM_TEMPLATE_NAMES) {
+      const source = getBuiltinTemplateSource(name);
+      const tokens = [...extractPlaceholderTokens(source.subject), ...extractPlaceholderTokens(source.body)];
+      expect(tokens.filter((token) => ["first_name", "last_name", "full_name"].includes(token))).toEqual([]);
+      expect(source.body).toContain("Hello,");
+    }
+  });
+
+  it("tells whoever did not register to ignore the three mails that can reach an unconfirmed address", () => {
+    for (const name of ["registration-confirm", "registration-received", "registration-waitlist"] as const) {
+      expect(getBuiltinTemplateSource(name).body).toContain("you can ignore this email");
+    }
+    expect(getBuiltinTemplateSource("registration-rejected").body).not.toContain("you can ignore this email");
+  });
+
+  it("requires the confirmation link in the confirmation mail only, and every built-in mail meets its own requirement", () => {
+    expect([...requiredPlaceholdersForTemplate("registration-confirm")]).toEqual(["confirm_url"]);
+    for (const name of ["registration-received", "registration-waitlist", "registration-rejected", "ticket", "reminder"]) {
+      expect(requiredPlaceholdersForTemplate(name).size, name).toBe(0);
+    }
+    for (const name of SYSTEM_TEMPLATE_NAMES) {
+      const { body } = getBuiltinTemplateSource(name);
+      expect(findMissingRequiredPlaceholders("", body, requiredPlaceholdersForTemplate(name)), name).toEqual([]);
+    }
   });
 
   it("puts the confirm button only in registration-confirm", () => {

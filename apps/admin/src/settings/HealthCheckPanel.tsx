@@ -32,6 +32,7 @@ const CHECK_ICONS: Record<string, string> = {
   data_encryption: "lock",
   background_worker: "activity-heartbeat",
   mail_delivery_queue: "mail-forward",
+  registration_mail: "mail-opened",
   instance_url: "link",
   file_storage: "folder",
   email_sending: "mail",

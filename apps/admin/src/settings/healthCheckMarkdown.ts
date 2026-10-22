@@ -12,6 +12,7 @@ const MARKDOWN_SAFE_DETAIL_KEYS = new Set([
   "migrations",
   "queued",
   "failed_retryable",
+  "failed_terminal",
   "degraded_threshold",
   "provider",
   "configured",
@@ -42,6 +43,7 @@ const DETAIL_LABELS: Record<string, string> = {
   wallet_incomplete_events: "Events not fully set up",
   events_with_registration: "Events with registration on",
   failed_retryable: "Failed retryable",
+  failed_terminal: "Failed, not retried",
   degraded_threshold: "Degraded threshold",
   live_check: "Live check",
   display_name: "Display name",
@@ -61,6 +63,7 @@ export function formatHealthDetailValue(key: string, value: string): string {
       return /^\d+$/.test(value) ? `${value} ms` : value;
     case "queued":
     case "failed_retryable":
+    case "failed_terminal":
     case "degraded_threshold":
       return /^\d+$/.test(value) ? `${value} messages` : value;
     case "max_zoom":

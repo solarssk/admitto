@@ -31,16 +31,28 @@ export function isReservedTemplateName(name: string): boolean {
   return name === DEFAULT_TEMPLATE_NAME || isSystemTemplateName(name);
 }
 
-/** Ticket, QR and wallet links belong to an Attendee. A registration mail goes out before one
- * exists, so these have no value there: `render.ts` would throw `MissingRequiredPlaceholderError`
- * on an empty `ticket_url`, and a wallet or download link would be dead. */
+/** Ticket, QR and wallet links and the ticket type belong to an Attendee. A registration mail goes out
+ * before one exists, so these have no value there: `render.ts` would throw `MissingRequiredPlaceholderError`
+ * on an empty `ticket_url`, a wallet or download link would be dead, and `ticket_type` would render as blank text. */
 export const SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS: ReadonlySet<string> = new Set([
   "ticket_url",
   "qr_image_url",
   "apple_wallet_url",
   "google_wallet_url",
   "download_page_url",
+  "ticket_type",
 ]);
+
+const NO_REQUIRED_PLACEHOLDERS: ReadonlySet<string> = new Set();
+const CONFIRM_REQUIRED_PLACEHOLDERS: ReadonlySet<string> = new Set(["confirm_url"]);
+
+/** Placeholders the body of a template of this name cannot do without. The mail that confirms an address is the only
+ * way a guest has to confirm it, so one without its link is an email nobody can act on, sent as if it were fine, and
+ * the unconfirmed registration is deleted after 24 hours. Pass it as the `required` argument of
+ * `findMissingRequiredPlaceholders`, with an empty subject (a link in a subject line cannot be clicked). */
+export function requiredPlaceholdersForTemplate(name: string): ReadonlySet<string> {
+  return name === "registration-confirm" ? CONFIRM_REQUIRED_PLACEHOLDERS : NO_REQUIRED_PLACEHOLDERS;
+}
 
 /** Only the confirmation mail carries a confirmation link. */
 const NON_CONFIRM_SYSTEM_FORBIDDEN: ReadonlySet<string> = new Set([

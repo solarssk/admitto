@@ -1,9 +1,10 @@
 import { useSearchParams } from "react-router";
 import { EmptyState, PageHeader, Tabs } from "@admitto/ui";
+import { RegistrationLegalTab } from "../registration/RegistrationLegalTab.js";
 import { registrationTabFromSearch, registrationTabItems, type RegistrationTab } from "../registration/registrationTabs.js";
 
 /** What each tab will hold. The PR that builds a tab replaces its entry with the tab's content. */
-const TAB_PLACEHOLDERS: Record<RegistrationTab["id"], string> = {
+const TAB_PLACEHOLDERS: Record<Exclude<RegistrationTab["id"], "legal">, string> = {
   requests: "Registration requests from guests will be listed here.",
   fields: "The questions guests answer on the registration form will be managed here.",
   access: "The registration mode and the ways guests can sign up will be set here.",
@@ -24,7 +25,7 @@ export function RegistrationPage() {
       />
       {/* Keyed by the tab, so the panel enters with the same fade as every other tab's content. */}
       <div key={tab.id} role="tabpanel" aria-label={tab.label}>
-        <EmptyState title={TAB_PLACEHOLDERS[tab.id]} />
+        {tab.id === "legal" ? <RegistrationLegalTab /> : <EmptyState title={TAB_PLACEHOLDERS[tab.id]} />}
       </div>
     </div>
   );

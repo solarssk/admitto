@@ -5,6 +5,7 @@ export const REGISTRATION_TABS = [
   { id: "requests", label: "Requests" },
   { id: "fields", label: "Fields" },
   { id: "access", label: "Access" },
+  { id: "legal", label: "Legal" },
 ] as const;
 
 export type RegistrationTab = (typeof REGISTRATION_TABS)[number];

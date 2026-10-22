@@ -89,6 +89,10 @@ import type {
   SaveMapsSettingsBody,
   RegistrationTurnstileDto,
   SaveRegistrationTurnstileBody,
+  LegalDocumentDto,
+  LegalDocumentsListResponse,
+  LegalDocumentWithContentDto,
+  SaveLegalDocumentBody,
   NotificationSettingsResponse,
   SaveNotificationSettingsBody,
   NotificationSettingsTestResponse,
@@ -2437,6 +2441,52 @@ export async function fetchRegistrationTurnstile(signal?: AbortSignal): Promise<
 export async function saveRegistrationTurnstile(body: SaveRegistrationTurnstileBody): Promise<RegistrationTurnstileDto> {
   const res = await fetch("/api/admin/registration/turnstile", jsonPutInit(body));
   return parseJson<RegistrationTurnstileDto>(res);
+}
+
+function legalDocumentsUrl(eventId: string, ref?: string): string {
+  const base = `/api/admin/events/${encodeURIComponent(eventId)}/legal-documents`;
+  return ref === undefined ? base : `${base}/${encodeURIComponent(ref)}`;
+}
+
+/** The legal texts of an event, without their HTML, with what registration still lacks and the limits an editor keeps to. */
+export async function fetchLegalDocuments(eventId: string, signal?: AbortSignal): Promise<LegalDocumentsListResponse> {
+  const res = await fetch(legalDocumentsUrl(eventId), { credentials: "same-origin", signal });
+  return parseJson<LegalDocumentsListResponse>(res);
+}
+
+/** One legal text with its cleaned HTML. 404 `not_found` for a text that has not been written. */
+export async function fetchLegalDocument(eventId: string, ref: string, signal?: AbortSignal): Promise<LegalDocumentWithContentDto> {
+  const res = await fetch(legalDocumentsUrl(eventId, ref), { credentials: "same-origin", signal });
+  return parseJson<LegalDocumentWithContentDto>(res);
+}
+
+/** Creates the text or replaces it; its publication is not touched, so a published text changes on its public page at once.
+ * The answer carries the HTML as it was cleaned, which can differ from `content_html`. */
+export async function saveLegalDocument(
+  eventId: string,
+  ref: string,
+  body: SaveLegalDocumentBody,
+): Promise<LegalDocumentWithContentDto> {
+  const res = await fetch(legalDocumentsUrl(eventId, ref), jsonPutInit(body));
+  return parseJson<LegalDocumentWithContentDto>(res);
+}
+
+/** Makes the saved text readable on its public page. Idempotent. */
+export async function publishLegalDocument(eventId: string, ref: string): Promise<LegalDocumentDto> {
+  const res = await fetch(`${legalDocumentsUrl(eventId, ref)}/publish`, jsonPostInit({}));
+  return parseJson<LegalDocumentDto>(res);
+}
+
+/** Takes the text off its public page. Idempotent. 409 `legal_document_in_use` while registration is on and needs it. */
+export async function unpublishLegalDocument(eventId: string, ref: string): Promise<LegalDocumentDto> {
+  const res = await fetch(`${legalDocumentsUrl(eventId, ref)}/unpublish`, jsonPostInit({}));
+  return parseJson<LegalDocumentDto>(res);
+}
+
+/** Deletes the text. 409 `legal_document_in_use` while registration is on and needs it. */
+export async function deleteLegalDocument(eventId: string, ref: string): Promise<void> {
+  const res = await fetch(legalDocumentsUrl(eventId, ref), jsonDeleteInit());
+  await parseJson<{ ok: boolean }>(res);
 }
 
 /** Probe weather provider from a draft (no persist). */

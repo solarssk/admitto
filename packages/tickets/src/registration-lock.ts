@@ -62,3 +62,45 @@ export async function tryLockRegistrationQueue(tx: Prisma.TransactionClient, eve
   );
   return row?.locked === true;
 }
+
+/** The columns of a registration that a decision reads (admission, rejection, confirmation of the address). */
+const LOCKED_REGISTRATION_SELECT = {
+  id: true,
+  status: true,
+  email: true,
+  first_name: true,
+  last_name: true,
+  company: true,
+  department: true,
+  custom_data: true,
+  companions: true,
+  confirm_expires_at: true,
+  attendee_id: true,
+} satisfies Prisma.RegistrationSelect;
+
+export type LockedRegistration = Prisma.RegistrationGetPayload<{ select: typeof LOCKED_REGISTRATION_SELECT }>;
+
+/**
+ * Locks registration rows `FOR UPDATE`, in id order (step 6 of the order in lockRegistrationQueue: after the
+ * registration queue, so a caller holds that first), until the transaction ends, and returns them as they are
+ * now, in id order. An id that does not exist, or belongs to another event, is not among them. For a transaction
+ * that changes the rows it names: whatever another transaction decided about one of them has committed by then
+ * (the queue is held), and the row cannot change under this one.
+ */
+export async function lockRegistrationsForUpdate(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  ids: readonly string[],
+): Promise<LockedRegistration[]> {
+  const locked = await tx.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "Registration"
+    WHERE "event_id" = ${eventId} AND "id" = ANY(${[...new Set(ids)]}::text[])
+    ORDER BY "id"
+    FOR UPDATE
+  `;
+  return tx.registration.findMany({
+    where: { id: { in: locked.map((row) => row.id) } },
+    select: LOCKED_REGISTRATION_SELECT,
+    orderBy: { id: "asc" },
+  });
+}

@@ -75,6 +75,7 @@ export {
   isSystemTemplateName,
   isReservedTemplateName,
   disallowedPlaceholdersForTemplate,
+  requiredPlaceholdersForTemplate,
 } from "./systemTemplates.js";
 export type { SystemTemplateName } from "./systemTemplates.js";
 export { resolveEventContactVars } from "./contactVars.js";
