@@ -188,11 +188,13 @@ const RSVP_STATUSES = ATTENDEE_EXPORT_RSVP_STATUSES;
 type RsvpStatus = (typeof RSVP_STATUSES)[number];
 const rsvpStatusSchema = z.enum(RSVP_STATUSES);
 
-/** An attendee's email: a valid address that is not in the namespace reserved for the placeholders
- * of erased attendees (see isErasedPlaceholderEmail). */
+/** An attendee's email: a valid address, in lower case like the import and the registration form store
+ * it (the unique index on (event, email) tells apart only the same spelling), that is not in the
+ * namespace reserved for the placeholders of erased attendees (see isErasedPlaceholderEmail). */
 const attendeeEmailSchema = z
   .string()
   .trim()
+  .toLowerCase()
   .email()
   .max(254)
   .refine((value) => !isErasedPlaceholderEmail(value), "reserved address");
@@ -1834,6 +1836,43 @@ async function guardPatchTicketTypeChange(
   if (ticketTypeError) throw new TransactionResponseError(c.json(ticketTypeError, 400));
 }
 
+/** Whether an attendee of the event (other than `exceptAttendeeId`) holds this address in any letters.
+ * The unique index tells apart only the same spelling, and an address saved before addresses were
+ * lower-cased can still have capitals. The address is compared as text, the way the admission of a
+ * registration compares it (`lower(btrim(email))`), not as a pattern: a case-insensitive Prisma
+ * `equals` is an ILIKE on PostgreSQL, where an `_` in the address stands for any character. */
+async function attendeeAddressIsTaken(
+  client: Prisma.TransactionClient,
+  eventId: string,
+  address: string,
+  exceptAttendeeId?: string,
+): Promise<boolean> {
+  const except = exceptAttendeeId === undefined ? Prisma.empty : Prisma.sql`AND "id" <> ${exceptAttendeeId}`;
+  const rows = await client.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "Attendee"
+    WHERE "event_id" = ${eventId} AND lower(btrim("email")) = lower(btrim(${address}::text)) ${except}
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+/** A changed address must not be another attendee's address in other letters, which the create route
+ * refuses the same way. Throws a TransactionResponseError for the transaction's catch to surface as
+ * the same 409 the unique index gives for the same spelling. */
+async function guardPatchEmailChange(
+  c: Context,
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  attendeeId: string,
+  profileChanges: ReturnType<typeof computePatchChanges>,
+  nextEmail: string | undefined,
+): Promise<void> {
+  if (!profileChanges?.fields.includes("email") || nextEmail === undefined) return;
+  if (await attendeeAddressIsTaken(tx, eventId, nextEmail, attendeeId)) {
+    throw new TransactionResponseError(c.json({ error: "email_conflict" }, 409));
+  }
+}
+
 /** Re-checks event capacity when a PATCH restores a previously non-admittable attendee to an
  * admittable status (capacity_reactivation), under the same advisory lock the create/check-in
  * paths use — returns the forced-admit detail for the audit log, or undefined when nothing
@@ -1905,6 +1944,7 @@ async function runPatchAttendeeTransaction(
     attendeeId: string;
     existing: { status: string; admitted_at: Date | null };
     profileChanges: ReturnType<typeof computePatchChanges>;
+    profilePatchEmail: string | undefined;
     profilePatchTicketType: string | null | undefined;
     rsvpChange: ReturnType<typeof computeRsvpChange>;
     statusChange: PatchAttendeeStatusChange;
@@ -1918,6 +1958,7 @@ async function runPatchAttendeeTransaction(
     attendeeId,
     existing,
     profileChanges,
+    profilePatchEmail,
     profilePatchTicketType,
     rsvpChange,
     statusChange,
@@ -1925,6 +1966,7 @@ async function runPatchAttendeeTransaction(
     updateData,
   } = ctx;
 
+  await guardPatchEmailChange(c, tx, eventId, attendeeId, profileChanges, profilePatchEmail);
   await guardPatchTicketTypeChange(c, tx, eventId, profileChanges, profilePatchTicketType);
 
   const restoreCapacityForced = await guardPatchCapacityRestore(
@@ -2078,6 +2120,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       attendeeId,
       existing,
       profileChanges,
+      profilePatchEmail: profilePatch.email,
       profilePatchTicketType: profilePatch.ticket_type,
       rsvpChange,
       statusChange,
@@ -3880,11 +3923,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
   const { email, first_name, last_name, company, department, ticket_type, custom_data } = parsed.data;
   const name = [first_name, last_name].filter(Boolean).join(" ");
 
-  const duplicate = await db.attendee.findFirst({
-    where: { event_id: eventId, email: { equals: email, mode: "insensitive" } },
-    select: { id: true },
-  });
-  if (duplicate) {
+  if (await attendeeAddressIsTaken(db, eventId, email)) {
     return c.json(
       { code: "email_taken", error: "This email is already registered for this event." },
       409,

@@ -18,6 +18,10 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Show tabs between an event's published legal texts on the public /legal pages ([#1770](https://github.com/solarssk/admitto/pull/1770))
 - Add long text, date, date and time and phone answer types and format rules for attendee fields, in the API and the import ([#1773](https://github.com/solarssk/admitto/pull/1773))
 
+### Fixed
+
+- Save an attendee's email in lower case when staff add or edit it, and refuse an address that differs from another's only in capitals ([#1781](https://github.com/solarssk/admitto/pull/1781))
+
 ### Security
 
 - Add a strict nonce-based security policy and a uniform not-found page for the coming public registration form ([#1752](https://github.com/solarssk/admitto/pull/1752))
