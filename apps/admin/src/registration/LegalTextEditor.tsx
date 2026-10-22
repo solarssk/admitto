@@ -340,7 +340,8 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
   return (
     <div className="legal-editor">
       <div>
-        <Button variant="ghost" icon={<i className="ti ti-arrow-left" aria-hidden="true" />} onClick={() => (dirty ? setDiscardOpen(true) : onBack())}>
+        {/* Inert while a request is out: discarding does not stop a save, which would still land after the person was told the changes went. */}
+        <Button variant="ghost" icon={<i className="ti ti-arrow-left" aria-hidden="true" />} aria-disabled={busy} onClick={() => (dirty ? setDiscardOpen(true) : onBack())}>
           Back to legal texts
         </Button>
       </div>
@@ -428,7 +429,8 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
         }}
         onCancelDialogDismiss={() => setDiscardOpen(false)}
         blockerDialogOpen={blocker.state === "blocked"}
-        onBlockerDialogConfirm={() => blocker.proceed?.()}
+        // The same while a save is out: the person stays, and the save finishes.
+        onBlockerDialogConfirm={() => (saving ? blocker.reset?.() : blocker.proceed?.())}
         onBlockerDialogDismiss={() => blocker.reset?.()}
       />
     </div>

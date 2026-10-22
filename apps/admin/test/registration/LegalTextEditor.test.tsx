@@ -643,6 +643,62 @@ describe("LegalTextEditor: leaving with unsaved changes", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
+  /** A save that stays out until `finish` is called; it then answers with the text as it was sent. */
+  function holdTheSave() {
+    const hold = { finish: () => {} };
+    saveLegalDocument.mockImplementationOnce(
+      (_event, _ref, body) =>
+        new Promise((resolve) => {
+          hold.finish = () => resolve(stored({ title: body.title, content_html: body.content_html }));
+        }),
+    );
+    return hold;
+  }
+
+  it("does not start a discard from Back while a save is on its way, since the save would still land", async () => {
+    const save = holdTheSave();
+    renderEditor();
+    await textbox();
+    await write("Words.");
+    fireEvent.click(button("Save"));
+    await waitFor(() => expect(saveLegalDocument).toHaveBeenCalledTimes(1));
+
+    expect(isOff(button("Back to legal texts"))).toBe(true);
+    fireEvent.click(button("Back to legal texts"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onBack).not.toHaveBeenCalled();
+
+    // Once the save has landed there is nothing left to discard, and Back goes back at once.
+    await act(async () => {
+      save.finish();
+    });
+    await waitFor(() => expect(isOff(button("Back to legal texts"))).toBe(false));
+    fireEvent.click(button("Back to legal texts"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the person on the page when they discard through the address while a save is on its way", async () => {
+    const save = holdTheSave();
+    const { router } = renderEditor();
+    await textbox();
+    await write("Words.");
+    fireEvent.click(button("Save"));
+    await waitFor(() => expect(saveLegalDocument).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await router.navigate("/elsewhere");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(router.state.location.pathname).toBe("/admin/events/evt-1/registration");
+    await act(async () => {
+      save.finish();
+    });
+    expect(addToast).toHaveBeenCalledWith("Text saved.", "success");
+  });
+
   it("asks before the page is left by the address (another tab, the menu), and goes on when the person discards", async () => {
     const { router } = renderEditor();
     await textbox();
