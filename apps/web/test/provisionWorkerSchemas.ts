@@ -142,6 +142,29 @@ async function runPg(command: PgCommand, args: string[], input?: string): Promis
 }
 
 /**
+ * The dump of the canonical `public` schema, ready to be replayed into a worker schema: without the bootstrap of
+ * `public` itself (this repo's schema always exists already), and without `SET transaction_timeout = 0;`. A
+ * `pg_dump` from PostgreSQL 17 or later writes that line into its preamble, and a server older than 17 does not know
+ * the setting and refuses the whole replay ("unrecognized configuration parameter"). The runner image now ships a
+ * newer client than the PostgreSQL 16 service the tests run against, so every web test run stopped at its start. The
+ * line only puts a timeout back to its default, which a fresh worker schema has anyway, so dropping it is safe for
+ * every client and server pair.
+ */
+export function stripDumpForWorkerSchema(dump: string): string {
+  return dump
+    .split("\n")
+    .filter(
+      (line) =>
+        !/^CREATE SCHEMA public;$/.test(line) &&
+        !/^ALTER SCHEMA public OWNER TO/.test(line) &&
+        !/^COMMENT ON SCHEMA public IS/.test(line) &&
+        !/^-- Name: SCHEMA public;/.test(line) &&
+        !/^SET transaction_timeout = 0;$/.test(line),
+    )
+    .join("\n");
+}
+
+/**
  * Builds each worker's isolated schema by dumping the canonical `public` schema's CURRENT
  * structure (already migrated by ensureIntegrationTestSchema) and replaying it, schema-qualified,
  * into `test_worker_<id>` - not by replaying all ~110 migrations per worker. That sidesteps two
@@ -176,16 +199,7 @@ export async function provisionWorkerSchemas(workerCount: number): Promise<void>
   // everything else is fully `public.`-qualified by pg_dump (confirmed: it sets
   // `search_path = ''` in its own preamble specifically so it can't rely on an ambient default),
   // so a plain word-boundary rewrite of that one prefix retargets the entire dump.
-  const strippedDump = dump
-    .split("\n")
-    .filter(
-      (line) =>
-        !/^CREATE SCHEMA public;$/.test(line) &&
-        !/^ALTER SCHEMA public OWNER TO/.test(line) &&
-        !/^COMMENT ON SCHEMA public IS/.test(line) &&
-        !/^-- Name: SCHEMA public;/.test(line),
-    )
-    .join("\n");
+  const strippedDump = stripDumpForWorkerSchema(dump);
 
   await Promise.all(
     Array.from({ length: workerCount }, (_, i) => i + 1).map(async (workerId) => {
