@@ -242,9 +242,10 @@ async function runRegistrationMailJob(db: PrismaClient, locks: WorkerLockClient)
     return false;
   }
   try {
-    const expired = await sweepExpiredRegistrationsOrLog(db);
-    // Twenty sends behind a slow or unreachable provider can take longer than the heartbeat stays fresh, so the heartbeat is
-    // refreshed while the drain runs, as for the other jobs that call out.
+    // The sweep can wait behind the queue locks of many events, and twenty sends behind a slow or unreachable provider can
+    // take as long: either can outlast the time the heartbeat stays fresh, so it is refreshed while each runs, as for the
+    // other jobs that call out.
+    const expired = await withHeartbeatRefresh(db, "registration_mail", () => sweepExpiredRegistrationsOrLog(db));
     const drained =
       (await whileNoOtherWorkerSendsTickets(locks, () =>
         withHeartbeatRefresh(db, "registration_mail", () => drainRegistrationMailsOfTheTick(db)),
