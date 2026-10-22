@@ -1,4 +1,14 @@
+import { EVENT_CUSTOM_FIELD_TEXT_MAX, eventCustomFieldRulesMaxLength } from "@admitto/shared";
 import { customDataValue } from "./custom-data.js";
+import {
+  codePointLength,
+  normalizeDateAnswer,
+  normalizeDateTimeAnswer,
+  normalizeLongTextAnswer,
+  normalizePhoneAnswer,
+  truncateToCodePoints,
+} from "./custom-field-formats.js";
+import { breaksFieldRules } from "./custom-field-rules.js";
 import type { EventItemContent } from "./types.js";
 
 const BOOLEAN_TRUE = new Set(["true", "yes", "1"]);
@@ -12,7 +22,39 @@ function setOwnCustomDataValue<T>(values: Record<string, T>, key: string, value:
   Object.defineProperty(values, key, { value, enumerable: true, configurable: true, writable: true });
 }
 
-/** Normalize and validate one custom_data value for a configured field. */
+function normalizeBooleanAnswer(trimmed: string): string | null {
+  const lower = trimmed.toLowerCase();
+  if (BOOLEAN_TRUE.has(lower)) return "true";
+  return BOOLEAN_FALSE.has(lower) ? "false" : null;
+}
+
+/** `trimmed` as a field of this type stores it, or null when it is not an answer to such a field.
+ * A `text` answer, and one to a type this version does not know, is cut to the short text limit:
+ * the staff and import paths have always done that (the guest path refuses the same text, see
+ * buildRegistrantCustomData). Every other type refuses what does not fit. */
+function normalizeByType(field: EventItemContent, type: string, trimmed: string): string | null {
+  switch (type) {
+    case "boolean":
+      return normalizeBooleanAnswer(trimmed);
+    case "select":
+      return (field.options ?? []).find((option) => option === trimmed) ?? null;
+    case "date":
+      return normalizeDateAnswer(trimmed);
+    case "datetime":
+      return normalizeDateTimeAnswer(trimmed);
+    case "phone":
+      return normalizePhoneAnswer(trimmed);
+    case "long_text":
+      return normalizeLongTextAnswer(trimmed);
+    default:
+      return truncateToCodePoints(trimmed, EVENT_CUSTOM_FIELD_TEXT_MAX);
+  }
+}
+
+/** Normalize and validate one custom_data value for a configured field: the value as its type
+ * stores it, then the field's format rules (`rules`, for `text`, `long_text` and `phone`). Throws
+ * `invalid_custom_data_value:<source_field>` for a value that does not fit, with no value in the
+ * message. */
 export function normalizeCustomDataFieldValue(
   field: EventItemContent,
   raw: string | null | undefined,
@@ -22,19 +64,12 @@ export function normalizeCustomDataFieldValue(
   if (!trimmed) return null;
 
   const type = field.type ?? "text";
-  if (type === "boolean") {
-    const lower = trimmed.toLowerCase();
-    if (BOOLEAN_TRUE.has(lower)) return "true";
-    if (BOOLEAN_FALSE.has(lower)) return "false";
+  const normalized = normalizeByType(field, type, trimmed);
+  const takesRules = eventCustomFieldRulesMaxLength(type) !== null;
+  if (normalized === null || (takesRules && breaksFieldRules(normalized, field.rules))) {
     throw new Error(`invalid_custom_data_value:${field.source_field}`);
   }
-  if (type === "select") {
-    const options = field.options ?? [];
-    const match = options.find((option) => option === trimmed);
-    if (!match) throw new Error(`invalid_custom_data_value:${field.source_field}`);
-    return match;
-  }
-  return trimmed.slice(0, 100);
+  return normalized;
 }
 
 function assertRequiredFieldsPresent(
@@ -57,10 +92,25 @@ function assertStoredCustomDataValid(
   for (const field of fields) {
     const raw = ownCustomDataValue(values, field.source_field);
     if (raw) {
-      normalizeCustomDataFieldValue(field, raw);
+      const canonical = normalizeCustomDataFieldValue(field, raw);
+      // A field retyped to `phone` can still hold "+48 600-100-200". That is a number, but not in the form a phone
+      // number is stored in: an edit would keep it as typed, and the list filter, which looks for digits and a +,
+      // would not find it. Like an answer that no longer fits the type, it is refused until it is entered again.
+      if (field.type === "phone" && canonical !== null && canonical !== raw) {
+        throw new Error(`invalid_custom_data_value:${field.source_field}`);
+      }
     }
   }
   assertRequiredFieldsPresent(fields, values);
+}
+
+/** An answer given through the admin API or the Add attendee form to a field that is not a long text
+ * holds at most the short text limit: it is refused, never cut. (The import reads whole files, so it
+ * cuts a text answer in normalizeCustomDataFieldValue instead.) */
+function assertWithinAnswerLimit(field: EventItemContent, key: string, value: string): void {
+  if (field.type !== "long_text" && codePointLength(value.trim()) > EVENT_CUSTOM_FIELD_TEXT_MAX) {
+    throw new Error(`validation_failed:${key}`);
+  }
 }
 
 /** Normalize one raw input entry and assign it into `out`, or throw for invalid input. */
@@ -74,6 +124,7 @@ function assignCustomDataEntry(
   if (!field) throw new Error(`unknown_custom_data_field:${key}`);
   if (value === null || value === undefined || value === "") return;
   if (typeof value !== "string") throw new Error(`validation_failed:${key}`);
+  assertWithinAnswerLimit(field, key, value);
   const normalized = normalizeCustomDataFieldValue(field, value);
   if (normalized) setOwnCustomDataValue(out, key, normalized);
 }
@@ -117,6 +168,7 @@ export function validateCustomDataPatch(
       setOwnCustomDataValue(normalizedPatch, key, null);
       continue;
     }
+    assertWithinAnswerLimit(field, key, value);
     const normalized = normalizeCustomDataFieldValue(field, value);
     setOwnCustomDataValue(merged, key, normalized);
     setOwnCustomDataValue(normalizedPatch, key, normalized);

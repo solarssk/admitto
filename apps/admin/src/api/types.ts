@@ -1,5 +1,7 @@
 import type {
   DeliveryDto,
+  EventCustomFieldRules,
+  EventCustomFieldType,
   EventWalletReportsResponse as EventWalletReportsDto,
   HealthOverallStatus,
   HealthRowStatus,
@@ -707,7 +709,9 @@ export interface EventImageAssetsListResponse {
   items: EventImageAssetDto[];
 }
 
-export type EventCustomFieldType = "text" | "select" | "boolean";
+// The answer types of a custom field and its format rules come from @admitto/shared, the one list the
+// API, the import and the registration form read too.
+export type { EventCustomFieldRules, EventCustomFieldType };
 
 /** A definition in the event's custom attendee data field registry (dietary, shirt size, ...) -
  * the single source of truth for a field; EventItem.config.content_fields only references these
@@ -725,6 +729,8 @@ export interface EventCustomFieldDto {
    * endpoint already returns the fields in order, so a screen has no need to sort by this. */
   display_order: number | null;
   options: string[] | null;
+  /** Format rules of a text, long text or phone field; null = none. */
+  rules: EventCustomFieldRules | null;
   created_at: string;
 }
 
@@ -748,6 +754,8 @@ export interface CreateEventCustomFieldBody {
   /** Left out = off. The Registration page sends true for the fields it creates. */
   show_on_form?: boolean;
   options?: string[];
+  /** Only for a text, long text or phone field; left out or null = none. */
+  rules?: EventCustomFieldRules | null;
 }
 
 /** `source_field` is immutable after create - see EventCustomFieldDto. */
@@ -760,6 +768,9 @@ export interface UpdateEventCustomFieldPatch {
   show_on_form?: boolean;
   /** null clears a previous select's options; omit to leave options untouched. */
   options?: string[] | null;
+  /** null clears the rules (send it when the field becomes a type that takes none); omit to leave
+   * them untouched; an object replaces them. */
+  rules?: EventCustomFieldRules | null;
 }
 
 /** The 8 curated colors a ticket type may use - kept in sync by hand with
