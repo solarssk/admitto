@@ -175,6 +175,17 @@ describe("CustomDataFieldInput: date", () => {
     expect(onChange).toHaveBeenLastCalledWith("2026-11-04");
   });
 
+  it("passes a day before the year 1000 on with its four digits, as the server keeps it, and not as 1-01-01", () => {
+    const onChange = renderInput(arrival);
+    const input = screen.getByLabelText("Arrival day");
+    fireEvent.change(input, { target: { value: "0001-01-01" } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenLastCalledWith("0001-01-01");
+    fireEvent.change(input, { target: { value: "0050-3-9" } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenLastCalledWith("0050-03-09");
+  });
+
   it("clears the answer when what was typed is not a date, and says so beside the box", () => {
     const onChange = renderInput(arrival, "2026-11-04");
     const input = screen.getByLabelText("Arrival day");

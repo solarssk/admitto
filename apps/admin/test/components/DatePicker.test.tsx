@@ -225,6 +225,25 @@ describe("DatePicker", () => {
     expect(onChange).toHaveBeenCalledWith("2026-08-20");
   });
 
+  it("keeps the year of a date before the year 1000 as written: a day picked in it is written with four digits, and the next month is of that year", () => {
+    const onChange = vi.fn();
+    mockOpenCalendarBasics();
+    vi.spyOn(eventDates, "formatCalendarMonth").mockImplementation((year, month) => `${year}-${month}`);
+
+    render(<DatePicker value="0050-03-15" onChange={onChange} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    expect(screen.getByText("50-3")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("gridcell", { name: "0050-03-20" }));
+    expect(onChange).toHaveBeenLastCalledWith("0050-03-20");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    expect(screen.getByText("50-4")).toBeTruthy();
+    fireEvent.click(screen.getByRole("gridcell", { name: "0050-04-02" }));
+    expect(onChange).toHaveBeenLastCalledWith("0050-04-02");
+  });
+
   it("threads ariaLabel to both the input and the calendar toggle button when there's no visible label", () => {
     vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
     render(<DatePicker value="" onChange={() => {}} ariaLabel="From" placeholder="From (dd/mm/yyyy)" />);

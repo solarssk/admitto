@@ -17,7 +17,10 @@ import {
   formatWallClockDateTime,
   calendarDateValidationHint,
   localeDateInputPattern,
+  isoDateOfParts,
+  formatCalendarMonth,
   parseFlexibleCalendarDate,
+  utcCalendarDate,
   utcDayEndIso,
   utcDayStartIso,
   zonedDayEndIso,
@@ -537,5 +540,39 @@ describe("formatWallClockDateTime", () => {
     setPreferredLocale("en-GB");
     expect(formatWallClockDateTime("0050-01-02T03:04", "UTC")).toContain("50");
     expect(formatWallClockDateTime("0050-01-02T03:04", "UTC")).not.toContain("1950");
+  });
+});
+
+describe("early years, which Date.UTC would read as 19xx", () => {
+  it("utcCalendarDate keeps the year as written, and the calendar of that year", () => {
+    expect(utcCalendarDate(50, 2, 1).getUTCFullYear()).toBe(50);
+    // The weekday of 1 March 0050 is the one of the proleptic Gregorian calendar, which an ISO string with a four digit year reads as.
+    expect(utcCalendarDate(50, 2, 1).getUTCDay()).toBe(new Date("0050-03-01T00:00:00.000Z").getUTCDay());
+    expect(utcCalendarDate(50, 2, 0).getUTCDate()).toBe(28);
+    expect(utcCalendarDate(2028, 2, 0).getUTCDate()).toBe(29);
+    expect(utcCalendarDate(2028, 2, 0).getUTCMonth()).toBe(1);
+  });
+
+  it("isoDateOfParts writes the year with four digits, and the month and the day with two", () => {
+    expect(isoDateOfParts(1, 1, 1)).toBe("0001-01-01");
+    expect(isoDateOfParts(50, 3, 9)).toBe("0050-03-09");
+    expect(isoDateOfParts(999, 12, 31)).toBe("0999-12-31");
+    expect(isoDateOfParts(2026, 7, 5)).toBe("2026-07-05");
+  });
+
+  it("parseFlexibleCalendarDate keeps a typed early year as four digits, and counts its days as that year does", () => {
+    expect(parseFlexibleCalendarDate("0001-01-01")).toBe("0001-01-01");
+    expect(parseFlexibleCalendarDate("0050-03-15")).toBe("0050-03-15");
+    expect(parseFlexibleCalendarDate("0099-12-31")).toBe("0099-12-31");
+    expect(parseFlexibleCalendarDate("0400-02-29")).toBe("0400-02-29");
+    expect(parseFlexibleCalendarDate("0100-02-29")).toBeNull();
+    expect(parseFlexibleCalendarDate("0050-02-29")).toBeNull();
+  });
+
+  it("formatCalendarMonth heads the month of an early year with that year, not with 19xx", () => {
+    setPreferredLocale("en-GB");
+    expect(formatCalendarMonth(50, 3)).toContain("50");
+    expect(formatCalendarMonth(50, 3)).not.toContain("1950");
+    setPreferredLocale(null);
   });
 });
