@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { GuestFormIcon } from "@admitto/shared";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
 import { closedModel, documentOf, formModel, question, type Dom } from "../helpers/registration-form-fixtures.js";
 
@@ -51,6 +52,18 @@ describe.each(PAYLOADS)("organiser text %j on the form", (payload) => {
       question({ key: payload, label: payload, type: "date", description: payload }),
       question({ key: "k_datetime", label: payload, type: "datetime", description: payload }),
       question({ key: `${payload} phone`, label: payload, type: "phone", description: payload, rules: { digits_only: true, min_length: 3, example: payload } }),
+      // A row with an icon named by the payload, the questions that wait for it, a list of suggestions and a condition on a choice.
+      question({ key: "k_row", label: payload, type: "boolean", description: payload, icon: payload as GuestFormIcon }),
+      question({ key: "k_wait", label: payload, type: "text", description: payload, icon: payload as GuestFormIcon, showWhen: { field: "k_row", value: true } }),
+      question({
+        key: "k_list",
+        label: payload,
+        type: "text",
+        description: payload,
+        suggestions: [payload, `${payload} 2`],
+        showWhen: { field: payload, value: true },
+      }),
+      question({ key: "k_choice", label: payload, type: "text", suggestions: [payload], showWhen: { field: "k_select", value: payload } }),
     ],
     consents: [{ key: payload, title: payload, path: `/legal/x/consent-${payload}` }],
     contact: { name: payload, email: payload },
@@ -98,6 +111,34 @@ describe.each(PAYLOADS)("organiser text %j on the form", (payload) => {
     const phone = doc.querySelector("input[type=tel]").closest(".at-field");
     expect(phone.getAttribute("data-custom")).toBe(`${payload} phone`);
     expect(phone.querySelector(".reg-slot__hint").textContent).toBe(`${payload}\nAt least 3 digits. For example: ${payload}`);
+  });
+
+  it("prints a suggestion twice, as the text of its row and as an attribute value, and makes no element of it", () => {
+    for (const key of ["k_list", "k_choice"]) {
+      const rows = [...doc.querySelectorAll(`[data-custom=${key}] [role=option][data-value]`)];
+      expect(rows.map((el: Dom) => el.getAttribute("data-value")), key).toEqual(key === "k_list" ? [payload, `${payload} 2`] : [payload]);
+      expect(rows.map((el: Dom) => el.textContent), key).toEqual(rows.map((el: Dom) => el.getAttribute("data-value")));
+      for (const row of rows) {
+        expect(row.querySelectorAll("*"), key).toHaveLength(1);
+        expect(row.querySelector(".searchable-select__name").children, key).toHaveLength(0);
+      }
+    }
+    expect(doc.querySelectorAll(".combo [role=listbox]")).toHaveLength(2);
+  });
+
+  it("prints a condition as two attribute values and never reads them as markup", () => {
+    const list = doc.querySelector("[data-custom=k_list]");
+    expect([list.getAttribute("data-show-when-field"), list.getAttribute("data-show-when-value")]).toEqual([payload, "true"]);
+    const choice = doc.querySelector("[data-custom=k_choice]");
+    expect([choice.getAttribute("data-show-when-field"), choice.getAttribute("data-show-when-value")]).toEqual(["k_select", payload]);
+    expect(doc.querySelector("[data-custom=k_wait]").getAttribute("data-show-when-field")).toBe("k_row");
+  });
+
+  it("prints the name of an icon as an attribute value of a reference and draws nothing from it", () => {
+    for (const selector of ["[data-custom=k_row] svg.ic use", "[data-custom=k_wait] .at-inputgroup__icon use"]) {
+      expect(doc.querySelector(selector).getAttribute("href"), selector).toBe(`#i-${payload}`);
+    }
+    expect(doc.querySelector("[data-custom=k_row]").querySelectorAll("script, img, iframe")).toHaveLength(0);
   });
 
   it("prints a consent's title as text and its key and link as attributes", () => {

@@ -118,7 +118,7 @@ describe("loadRegistrationPage, and the questions it draws", () => {
 
   it.each(["long_text", "date", "datetime", "phone"] as const)("draws a required %s question, and the form stays open", async (type) => {
     expect(await questionsOf([field({ source_field: "q", type, required: true })])).toEqual([
-      { key: "q", label: "q", description: null, required: true, type, options: [], rules: null },
+      { key: "q", label: "q", description: null, required: true, type, options: [], rules: null, icon: null, showWhen: null, suggestions: [] },
     ]);
   });
 
@@ -185,5 +185,135 @@ describe("loadRegistrationPage, and the questions it draws", () => {
       vi.mocked(db.event.findUnique).mockResolvedValueOnce({ ...row, timezone: none } as never);
       expect(await zone(), String(none)).toBe("UTC");
     }
+  });
+
+  describe("an icon, a condition and suggestions", () => {
+    const parking = field({ source_field: "parking", type: "boolean" });
+    const plate = (rules: RegistrantFormField["rules"], overrides: Partial<RegistrantFormField> = {}) =>
+      field({ source_field: "plate", type: "text", rules, ...overrides });
+    const when = { field: "parking", value: true } as const;
+    const keysOf = async (fields: RegistrantFormField[]) => (await questionsOf(fields)).map((q) => q.key);
+
+    it("reads them into fields of their own, and keeps only the format rules in `rules`", async () => {
+      const [, drawn] = await questionsOf([
+        parking,
+        plate({ icon: "car", show_when: when, suggestions: ["WA 1", "KR 2"], min_length: 2, max_length: 9, digits_only: false, example: "WA 12345" }),
+      ]);
+      expect(drawn).toEqual({
+        key: "plate",
+        label: "plate",
+        description: null,
+        required: false,
+        type: "text",
+        options: [],
+        rules: { min_length: 2, max_length: 9, digits_only: false, example: "WA 12345" },
+        icon: "car",
+        showWhen: when,
+        suggestions: ["WA 1", "KR 2"],
+      });
+    });
+
+    it("has no format rules for a question that has only an icon, a condition or suggestions", async () => {
+      const drawn = await questionsOf([parking, plate({ icon: "car", show_when: when, suggestions: ["WA 1"] })]);
+      expect(drawn[1]!.rules).toBeNull();
+    });
+
+    it("has none of the three for a question saved without rules", async () => {
+      const [drawn] = await questionsOf([plate(undefined)]);
+      expect([drawn!.icon, drawn!.showWhen, drawn!.suggestions]).toEqual([null, null, []]);
+    });
+
+    it("keeps the icon of a question of every type, which all take one", async () => {
+      const types = ["text", "long_text", "date", "datetime", "phone", "select", "boolean"] as const;
+      const drawn = await questionsOf(
+        types.map((type) => field({ source_field: type, type, rules: { icon: "pin" }, options: type === "select" ? ["One"] : undefined })),
+      );
+      expect(drawn.map((q) => [q.type, q.icon])).toEqual(types.map((type) => [type, "pin"]));
+    });
+
+    it("offers suggestions on a text question only, whatever a row holds", async () => {
+      const suggestions = ["One", "Two"];
+      const drawn = await questionsOf(
+        (["text", "long_text", "phone", "date", "select", "boolean"] as const).map((type) =>
+          field({ source_field: type, type, rules: { suggestions }, options: type === "select" ? ["One"] : undefined }),
+        ),
+      );
+      expect(drawn.map((q) => [q.key, q.suggestions])).toEqual([
+        ["text", suggestions],
+        ["long_text", []],
+        ["phone", []],
+        ["date", []],
+        ["select", []],
+        ["boolean", []],
+      ]);
+    });
+
+    it("draws a question with a condition, in the organiser's order, even before the question it names", async () => {
+      expect(await keysOf([plate({ show_when: when }), parking])).toEqual(["plate", "parking"]);
+    });
+
+    it("draws a question under a choice, for an option of it", async () => {
+      const day = field({ source_field: "day", type: "select", options: ["Both days", "Day 1"] });
+      const hotel = field({ source_field: "hotel", rules: { show_when: { field: "day", value: "Both days" } } });
+      expect(await keysOf([day, hotel])).toEqual(["day", "hotel"]);
+    });
+
+    it("leaves out a question with a condition that nothing can meet, whatever it asks, and does not close the form for it", async () => {
+      const nothingToShow: Array<[string, RegistrantFormField[]]> = [
+        ["a question that is not on the page", [plate({ show_when: when })]],
+        ["a question that is off the form", [{ ...parking, show_on_form: false }, plate({ show_when: when })]],
+        ["a question that is not a Yes/No or a choice", [field({ source_field: "parking", type: "text" }), plate({ show_when: when })]],
+        ["a question that has a condition of its own", [parking, field({ source_field: "mid", rules: { show_when: when } }), plate({ show_when: { field: "mid", value: true } })]],
+        ["the question itself", [plate({ show_when: { field: "plate", value: true } })]],
+        ["a choice with no choices", [field({ source_field: "parking", type: "select" }), plate({ show_when: when })]],
+      ];
+      for (const [name, fields] of nothingToShow) {
+        expect((await keysOf(fields)).includes("plate"), name).toBe(false);
+        expect(await pageWith([...fields, plate({ show_when: when }, { required: true })]), `${name}, required`).not.toEqual({ kind: "not_found" });
+      }
+    });
+
+    it("does not ask a required question that nothing can show, so it does not close the form", async () => {
+      const state = await pageWith([plate({ show_when: when }, { required: true })]);
+      expect(state.kind).toBe("open");
+      if (state.kind === "open") expect(state.form.questions).toEqual([]);
+    });
+
+    it("closes the form for a required question it cannot draw when a guest can ask it, and not when nothing can", async () => {
+      const stuck = (overrides: Partial<RegistrantFormField>) => field({ source_field: "later", type: unknownType, required: true, ...overrides });
+      expect(await pageWith([parking, stuck({ rules: { show_when: when } })])).toEqual({ kind: "not_found" });
+      expect((await pageWith([stuck({ rules: { show_when: when } })])).kind).toBe("open");
+      expect(await pageWith([stuck({})])).toEqual({ kind: "not_found" });
+      const noChoices = field({ source_field: "pick", type: "select", required: true, options: [], rules: { show_when: when } });
+      expect(await pageWith([parking, noChoices])).toEqual({ kind: "not_found" });
+      expect((await pageWith([noChoices])).kind).toBe("open");
+    });
+
+    it("closes the form for a required question it cannot draw only when the answer its condition asks for can be given", async () => {
+      const stuck = (show_when: { field: string; value: string | true }) =>
+        field({ source_field: "later", type: unknownType, required: true, rules: { show_when } });
+      const meal = field({ source_field: "meal", type: "select", options: ["Standard", "Vegan"] });
+      expect(await pageWith([meal, stuck({ field: "meal", value: "Vegan" })])).toEqual({ kind: "not_found" });
+      // An option that was removed, or an answer a Yes/No cannot have, shows nothing, so nobody is stuck.
+      expect((await pageWith([meal, stuck({ field: "meal", value: "Kosher" })])).kind).toBe("open");
+      expect((await pageWith([parking, stuck({ field: "parking", value: "maybe" })])).kind).toBe("open");
+      // A tick can only say Yes; a list of Yes and No can say No as well.
+      expect((await pageWith([parking, stuck({ field: "parking", value: "false" })])).kind).toBe("open");
+      expect(await pageWith([{ ...parking, required: true }, stuck({ field: "parking", value: "false" })])).toEqual({ kind: "not_found" });
+    });
+
+    it("leaves out a question whose condition asks for an answer its question cannot have, and does not close the form for it", async () => {
+      const day = field({ source_field: "day", type: "select", options: ["Both days", "Day 1"] });
+      const hotel = (value: string, overrides: Partial<RegistrantFormField> = {}) =>
+        field({ source_field: "hotel", rules: { show_when: { field: "day", value } }, ...overrides });
+      expect(await keysOf([day, hotel("Both days")])).toEqual(["day", "hotel"]);
+      expect(await keysOf([day, hotel("Day 3")])).toEqual(["day"]);
+      expect(await keysOf([parking, plate({ show_when: { field: "parking", value: "false" } })])).toEqual(["parking"]);
+      expect((await pageWith([day, hotel("Day 3", { required: true })])).kind).toBe("open");
+    });
+
+    it("does not draw an optional question it cannot draw, under a condition or not", async () => {
+      expect(await keysOf([parking, field({ source_field: "later", type: unknownType, rules: { show_when: when } })])).toEqual(["parking"]);
+    });
   });
 });

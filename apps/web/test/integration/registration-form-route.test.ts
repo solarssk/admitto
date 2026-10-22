@@ -345,6 +345,163 @@ describe("the organiser's questions", () => {
   });
 });
 
+describe("questions with an icon, a condition and suggestions", { timeout: 30_000 }, () => {
+  /** An event whose questions are the mockup's: a row with an icon and a field that waits for it, twice. */
+  async function addPanelEvent(slug: string) {
+    const id = await addEvent(slug, { settings: { mode: "approval" } });
+    await addField(id, { source_field: "parking", label: "I will arrive by car", type: "boolean", display_order: 0, rules: { icon: "parking" } });
+    await addField(id, {
+      source_field: "plate",
+      label: "Car registration number",
+      type: "text",
+      display_order: 1,
+      rules: { icon: "car", max_length: 9, example: "WA 12345", show_when: { field: "parking", value: true } },
+    });
+    await addField(id, { source_field: "diet", label: "Dietary requirements", type: "boolean", display_order: 2, rules: { icon: "food" } });
+    await addField(id, {
+      source_field: "diet_details",
+      label: "What should we know?",
+      type: "text",
+      display_order: 3,
+      required: true,
+      rules: { icon: "food", suggestions: ["No pork", "Vegetarian", "Vegan"], show_when: { field: "diet", value: true } },
+    });
+    await addField(id, { source_field: "notes", label: "Anything else?", type: "long_text", display_order: 4 });
+    return id;
+  }
+
+  it("draws the icon of a row, the panel that follows it and the list of suggestions, from the rules the organiser saved", async () => {
+    await addPanelEvent("reg113f-panels");
+    const res = await get("/r/reg113f-panels");
+    expect(res.status).toBe(200);
+    const doc = documentOf(await res.text());
+    const href = (selector: string) => doc.querySelector(`${selector} use`)?.getAttribute("href");
+    expect(href("[data-custom=parking] svg.ic")).toBe("#i-parking");
+    expect(href("[data-custom=plate] .at-inputgroup__icon")).toBe("#i-car");
+    const rows = doc.querySelector(".reg-opts");
+    expect([...rows.children].map((el: Dom) => el.getAttribute("data-custom") ?? el.id)).toEqual(["parking", "f-q0-reveal", "diet", "f-q2-reveal"]);
+    const plate = doc.querySelector("[data-custom=plate]");
+    expect([plate.hasAttribute("hidden"), plate.getAttribute("data-show-when-field"), plate.getAttribute("data-show-when-value")]).toEqual([true, "parking", "true"]);
+    expect(plate.querySelector("[data-control]").hasAttribute("disabled")).toBe(true);
+    expect(doc.querySelector("[data-custom=plate] .reg-slot__hint").textContent).toBe("Up to 9 characters. For example: WA 12345");
+    const details = doc.querySelector("[data-custom=diet_details]");
+    expect(details.hasAttribute("data-required")).toBe(true);
+    expect(details.querySelector("[data-control]").hasAttribute("required")).toBe(false);
+    expect([...details.querySelectorAll("[role=option][data-value]")].map((el: Dom) => el.getAttribute("data-value"))).toEqual(["No pork", "Vegetarian", "Vegan"]);
+    expect(details.querySelector("[data-control]").getAttribute("role")).toBe("combobox");
+  });
+
+  it("sends the same headers as any other open form: nothing the panels need changes the policy, the cache rule or the cookies", async () => {
+    await addPanelEvent("reg113f-headers");
+    await addEvent("reg113f-plain", { settings: { mode: "approval" } });
+    const [panels, plain] = [await get("/r/reg113f-headers"), await get("/r/reg113f-plain")];
+    expect([panels.status, plain.status]).toEqual([200, 200]);
+    const comparable = (res: Response) => {
+      const headers = headersOf(res);
+      return {
+        policy: headers["content-security-policy"]?.replace(/'nonce-[^']+'/, "'nonce-N'"),
+        rest: Object.fromEntries(Object.entries(headers).filter(([name]) => name !== "content-security-policy" && name !== "content-length")),
+      };
+    };
+    expect(comparable(panels)).toEqual(comparable(plain));
+    expect(directive(panels.headers.get("content-security-policy") ?? "", "style-src")).toBe("style-src 'unsafe-inline'");
+    expect(panels.headers.getSetCookie()).toEqual([]);
+    const doc = documentOf(await panels.text());
+    expect(doc.querySelectorAll("script:not([src])[nonce]")).toHaveLength(1);
+    expect(doc.querySelectorAll("script:not([nonce])")).toHaveLength(1);
+  });
+
+  it("is the same page whatever the query string says, so that nothing of it can change what the panels show", async () => {
+    await addPanelEvent("reg113f-query");
+    const [one, two] = await Promise.all([get("/r/reg113f-query"), get("/r/reg113f-query?parking=true&diet=1&q=%3Cb%3E")]);
+    expect(await bodyWithoutNonce(two)).toBe(await bodyWithoutNonce(one));
+  });
+
+  it("asks a question always, with no icon and no condition, when its rules cannot be read, and it keeps its Required", async () => {
+    const id = await addEvent("reg113f-unreadable", { settings: { mode: "approval" } });
+    await addField(id, { source_field: "parking", label: "Parking", type: "boolean", display_order: 0 });
+    await addField(id, {
+      source_field: "plate",
+      label: "Plate",
+      type: "text",
+      required: true,
+      display_order: 1,
+      rules: { icon: "not-an-icon", show_when: { field: "parking", value: true }, suggestions: ["A"] },
+    });
+    await addField(id, {
+      source_field: "other",
+      label: "Other",
+      type: "text",
+      display_order: 2,
+      rules: { show_when: { field: "parking", value: true }, extra_key: 1 },
+    });
+    const doc = documentOf(await (await get("/r/reg113f-unreadable")).text());
+    expect([...doc.querySelectorAll("[data-custom]")].map((el: Dom) => el.getAttribute("data-custom"))).toEqual(["parking", "plate", "other"]);
+    expect(doc.querySelectorAll("[data-show-when-field], [data-reveal], [data-combo]")).toHaveLength(0);
+    const plate = doc.querySelector("[data-custom=plate]");
+    expect(plate.hasAttribute("hidden")).toBe(false);
+    expect(plate.querySelector("[data-control]").hasAttribute("required")).toBe(true);
+    expect(plate.querySelector(".at-inputgroup__icon")).toBeNull();
+    expect(plate.querySelector("[data-control]").getAttribute("role")).toBeNull();
+  });
+
+  it("does not draw a question whose controlling question is not on the form, and stays open though it is required", async () => {
+    const id = await addEvent("reg113f-orphan", { settings: { mode: "approval" } });
+    await addField(id, { source_field: "parking", label: "Parking", type: "boolean", display_order: 0, show_on_form: false });
+    await addField(id, {
+      source_field: "plate",
+      label: "Plate",
+      type: "text",
+      required: true,
+      display_order: 1,
+      rules: { show_when: { field: "parking", value: true } },
+    });
+    await addField(id, { source_field: "nickname", label: "Nickname", type: "text", display_order: 2 });
+    const res = await get("/r/reg113f-orphan");
+    expect(res.status).toBe(200);
+    const doc = documentOf(await res.text());
+    expect([...doc.querySelectorAll("[data-custom]")].map((el: Dom) => el.getAttribute("data-custom"))).toEqual(["nickname"]);
+    expect(doc.body.textContent).not.toContain("Plate");
+  });
+
+  it("prints every word of a suggestion, a condition and an icon as text or as an attribute value, never as markup", async () => {
+    const payload = '<img src=x onerror=alert(1)>"\'</style></script><svg onload=alert(1)>';
+    const short = '<img src=x onerror=alert(1)>"\'';
+    const id = await addEvent("reg113f-xss", { settings: { mode: "approval" } });
+    await addField(id, { source_field: "pick", label: payload, type: "select", options: [short, "Other"], display_order: 0, description: payload, rules: { icon: "pin" } });
+    await addField(id, { source_field: "row", label: payload, type: "boolean", display_order: 1, description: payload, rules: { icon: "shirt" } });
+    await addField(id, {
+      source_field: "details",
+      label: payload,
+      type: "text",
+      display_order: 2,
+      description: payload,
+      rules: { example: payload, suggestions: [payload, `${payload} 2`], show_when: { field: "pick", value: short } },
+    });
+    await addField(id, { source_field: "more", label: payload, type: "text", display_order: 3, rules: { show_when: { field: "row", value: true }, suggestions: [short] } });
+    const res = await get("/r/reg113f-xss");
+    const html = await res.text();
+    const doc = documentOf(html);
+    expect(res.status).toBe(200);
+    expect(doc.querySelectorAll("script")).toHaveLength(2);
+    expect(doc.querySelectorAll("[onerror], [onload], [onfocus], [onclick]")).toHaveLength(0);
+    expect(html.split("<style").length - 1).toBe(1);
+    expect(html.split("</script").length - 1).toBe(2);
+    expect(html).not.toContain("<img src=x onerror");
+    expect(html).not.toContain("<svg onload");
+    const details = doc.querySelector("[data-custom=details]");
+    expect(details.getAttribute("data-show-when-field")).toBe("pick");
+    expect(details.getAttribute("data-show-when-value")).toBe(short);
+    const rows = [...details.querySelectorAll("[role=option][data-value]")];
+    expect(rows.map((el: Dom) => el.getAttribute("data-value"))).toEqual([payload, `${payload} 2`]);
+    expect(rows.map((el: Dom) => el.textContent)).toEqual([payload, `${payload} 2`]);
+    expect(details.querySelector(".reg-slot__hint").textContent).toBe(`${payload}\nFor example: ${payload}`);
+    expect(doc.querySelector("[data-custom=pick] .at-label").textContent).toBe(payload);
+    expect(doc.querySelector("[data-custom=more]").getAttribute("data-show-when-field")).toBe("row");
+    expect([...doc.querySelectorAll("[data-custom=pick] option")].map((o: Dom) => o.textContent)).toEqual(["Choose one", short, "Other"]);
+  });
+});
+
 describe("an event that is over", () => {
   it("says registration is closed, with no form, no script and no widget", async () => {
     await addEvent("reg94b-over", {

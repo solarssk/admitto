@@ -21,7 +21,7 @@ import {
   renderGeneratedModule,
   writeGuestPageCss,
 } from "../../src/scripts/guest-page-css.js";
-import { closedModel, documentOf, formModel, type Dom } from "../helpers/registration-form-fixtures.js";
+import { closedModel, documentOf, formModel, panelModel, type Dom } from "../helpers/registration-form-fixtures.js";
 
 const readFromProduct = (relativePath: string) => readProductStyle(productStylesRoot(), relativePath);
 
@@ -84,24 +84,36 @@ describe("the product stylesheet of the guest pages is the product's own CSS", (
 describe("every class of the product the pages use has its rules in the stylesheet", () => {
   const pages = [
     renderRegistrationFormPage(formModel({ mode: "automatic", askDepartment: false }), { nonce: "bm9uY2U=" }),
+    // The form with panels, icons and a list of suggestions: the classes of the product's searchable select too.
+    renderRegistrationFormPage(panelModel(), { nonce: "bm9uY2U=" }),
     renderRegistrationClosedPage(closedModel()),
   ];
   const used = new Set<string>();
   for (const html of pages) {
     for (const el of documentOf(html).querySelectorAll("[class]") as Iterable<Dom>) {
-      for (const name of (el.getAttribute("class") ?? "").split(/\s+/)) if (name.startsWith("at-")) used.add(name);
+      for (const name of (el.getAttribute("class") ?? "").split(/\s+/)) {
+        if (name.startsWith("at-") || name.startsWith("searchable-select")) used.add(name);
+      }
     }
   }
 
-  it("lists every at- class a page uses among the classes the generator copies", () => {
+  it("lists every at- and searchable-select class a page uses among the classes the generator copies", () => {
     expect(used.size).toBeGreaterThan(10);
+    expect([...used].filter((name) => name.startsWith("searchable-select")).length).toBeGreaterThanOrEqual(4);
     for (const name of used) expect(GUEST_PAGE_COMPONENT_CLASSES, name).toContain(name);
   });
 
   it("lists the classes the page script adds, and the stylesheet has a rule for each", () => {
     const added = new Set([...REGISTRATION_FORM_SCRIPT.matchAll(/classList\.(?:add|remove|toggle)\("([\w-]+)"/g)].map((match) => match[1]!));
-    expect([...added].sort()).toEqual(["at-input--invalid", "at-select--invalid", "at-textarea--invalid", "has-error"]);
-    for (const name of [...added].filter((n) => n.startsWith("at-"))) expect(GUEST_PAGE_COMPONENT_CLASSES, name).toContain(name);
+    expect([...added].sort()).toEqual([
+      "at-input--invalid",
+      "at-select--invalid",
+      "at-textarea--invalid",
+      "has-error",
+      "searchable-select__trigger--invalid",
+      "searchable-select__trigger--open",
+    ]);
+    for (const name of [...added].filter((n) => n.startsWith("at-") || n.startsWith("searchable-select"))) expect(GUEST_PAGE_COMPONENT_CLASSES, name).toContain(name);
     expect(REGISTRATION_PAGE_CSS).toContain(".has-error .reg-slot__err { visibility: visible; }");
   });
 
@@ -127,9 +139,83 @@ describe("every class of the product the pages use has its rules in the styleshe
   });
 });
 
+describe("a choice and the list of suggestions are drawn with the product's own searchable select", () => {
+  it("copies the rules of its button, label, placeholder, arrow, search box, panel, list, rows, name and empty line from the admin app's own stylesheet", () => {
+    for (const expected of [
+      ".searchable-select__trigger { display: flex;",
+      ".searchable-select__trigger--invalid { border-color: var(--status-error); }",
+      ".searchable-select__trigger--open .searchable-select__chevron { transform: rotate(180deg); }",
+      ".searchable-select__label { min-width: 0;",
+      ".searchable-select__placeholder { min-width: 0;",
+      ".searchable-select__chevron { margin-left: auto;",
+      ".searchable-select__search { width: 100%;",
+      ".searchable-select__panel { z-index: var(--z-dropdown);",
+      ".searchable-select__list { list-style: none;",
+      ".searchable-select__option { display: flex;",
+      ".searchable-select__name { flex: 1;",
+      ".searchable-select__empty { padding:",
+      "/* apps/admin/src/components/searchable-select.css: the rules of the classes the guest pages use */",
+    ]) {
+      expect(GUEST_PAGE_PRODUCT_CSS, expected).toContain(expected);
+    }
+  });
+
+  it("leaves out what the form has no use for: the other panel modes and the multi select", () => {
+    for (const unwanted of ["searchable-select__panel--up", "searchable-select__panel--inline", "multi-select"]) {
+      expect(GUEST_PAGE_PRODUCT_CSS, unwanted).not.toContain(unwanted);
+    }
+  });
+
+  it("comes after the rules of components.css, and before the form's own rules, so that the form can refine them", () => {
+    const css = buildRegistrationPageStyles();
+    expect(css.indexOf("/* apps/admin/src/components/searchable-select.css")).toBeGreaterThan(css.indexOf("/* components.css"));
+    expect(css.indexOf(".combo .searchable-select__name {")).toBeGreaterThan(css.indexOf(".searchable-select__name { flex: 1;"));
+  });
+});
+
+describe("the form's own rules for a panel under a row and the list under a text box", () => {
+  const css = REGISTRATION_PAGE_CSS;
+
+  it("sinks a panel into a box of its own that is joined to the row above it", () => {
+    expect(css).toContain(".reg-reveal { margin: -2px 0 2px; padding: var(--space-3); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-md); display: grid; gap: var(--space-3); }");
+  });
+
+  it("hides a panel, a question and a row of the list by the hidden attribute, which no rule of the form can override", () => {
+    expect(css).toContain("[hidden] { display: none !important; }");
+  });
+
+  it("puts the list over what follows, as wide as the box, and wraps a long suggestion instead of cutting it", () => {
+    expect(css).toContain(".combo { position: relative; }");
+    expect(css).toContain(".combo__panel { position: absolute; left: 0; right: 0; top: calc(100% + 4px); margin: 0; }");
+    expect(css).toContain(".combo .searchable-select__name { white-space: normal; overflow-wrap: anywhere; }");
+  });
+
+  it("shows the row that is active by aria-selected, which is also what assistive technology reads", () => {
+    expect(css).toContain('.combo .searchable-select__option[aria-selected="true"] { background: var(--surface-hover, var(--surface-sunken)); }');
+  });
+
+  it("keeps the words of a row without an icon in line with the rows that have one, in a run that has any", () => {
+    expect(css).toContain(".reg-opts--icons > .reg-opt--bare .reg-opt__text { margin-left: calc(18px + var(--space-2)); }");
+  });
+});
+
 describe("buildGuestPageProductCss, on a stylesheet written for the test", () => {
   const build = (components: string, tokens = ":root { --a: 1; }") =>
     buildGuestPageProductCss((relativePath) => (relativePath === "components.css" ? components : tokens)).split("\n");
+
+  it("reads the admin's searchable select the same way: the rules of the classes the pages use, and no other", () => {
+    const lines = buildGuestPageProductCss((relativePath) =>
+      relativePath.endsWith("searchable-select.css")
+        ? ".searchable-select__option { a: 1; } .searchable-select__panel--up { b: 2; } .searchable-select__option .multi-select__actions { c: 3; } .searchable-select__name, .searchable-select__panel--inline { d: 4; }"
+        : ":root { --x: 1; }",
+    ).split("\n");
+    expect(lines).toContain("/* apps/admin/src/components/searchable-select.css: the rules of the classes the guest pages use */");
+    expect(lines).toContain(".searchable-select__option { a: 1; }");
+    expect(lines).toContain(".searchable-select__name { d: 4; }");
+    expect(lines.join("\n")).not.toContain("panel--up");
+    expect(lines.join("\n")).not.toContain("multi-select");
+    expect(lines.join("\n")).not.toContain("panel--inline");
+  });
 
   it("copies a rule whose every class is on the list, and none whose classes are not", () => {
     const lines = build(".at-btn { a: 1; } .at-iconbtn { b: 2; } .at-btn .at-spinner { c: 3; } .at-btn--primary:hover { d: 4; } p { e: 5; }");
@@ -361,6 +447,18 @@ describe("the whole stylesheet", () => {
   it("gives the form's own rules no colour of their own, only tokens", () => {
     expect(REGISTRATION_PAGE_CSS).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(REGISTRATION_PAGE_CSS).not.toMatch(/\b(rgb|rgba|hsl|hsla)\(/);
+  });
+
+  it("spaces the rows of the form by the gap of the admin forms and the product's scale, not by sizes of its own", () => {
+    const adminGrid = readFromProduct("../../../../apps/admin/src/attendees/attendee-fields-grid.css");
+    const adminGap = /\.attendee-fields-grid \{[^}]*\bgap: (var\(--space-\d\))/.exec(adminGrid)?.[1];
+    expect(adminGap).toMatch(/^var\(--space-\d\)$/);
+    const bodyOf = (selector: string): string => {
+      const start = REGISTRATION_PAGE_CSS.indexOf(`\n${selector} {`);
+      return REGISTRATION_PAGE_CSS.slice(start, REGISTRATION_PAGE_CSS.indexOf("}", start));
+    };
+    for (const selector of [".reg-form", ".reg-row", ".reg-section"]) expect(bodyOf(selector), selector).toContain(`gap: ${adminGap}`);
+    for (const selector of [".reg-opts", ".reg-checks"]) expect(bodyOf(selector), selector).toMatch(/gap: var\(--space-\d\);/);
   });
 
   it("has the self-hosted font of the ticket page and no request to another host", () => {
