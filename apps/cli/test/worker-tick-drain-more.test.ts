@@ -71,7 +71,7 @@ vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }))
 vi.mock("../src/commands/wallet-expire.js", () => ({ runWalletExpiry }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn() }));
 
-const { runWorkerTick } = await import("../src/commands/worker.js");
+const { logLevel, runWorkerTick } = await import("../src/commands/worker.js");
 const { createRetentionSchedule } = await import("../src/commands/worker-retention-schedule.js");
 const { registrationMailMock } = await import("./registration-mail-mock.js");
 const { publishActivityChanged } = await import("../src/lib/sse-publish.js");
@@ -375,11 +375,13 @@ describe("runWorkerTick - the registration mail job", () => {
 
     expect(drainRegistrationMails).toHaveBeenCalledOnce();
     expect(registrationLines()).toEqual([
-      expect.stringMatching(/sweep FAILED error_class=TransactionTimeout$/),
+      expect.stringMatching(/FAILED sweep error_class=TransactionTimeout$/),
       expect.stringMatching(/ok claimed=2 sent=2 failed=0 cancelled=0 skipped=0 expired=0$/),
     ]);
     expect(logLines.join("\n")).not.toContain("example.com");
     expect(vi.mocked(publishActivityChanged)).toHaveBeenCalledWith(["evt1"]);
+    // A clean-up that keeps failing leaves personal data undeleted: the System logs must show an error, not an info line.
+    expect(logLevel("FAILED sweep error_class=TransactionTimeout")).toBe("error");
   });
 
   it("logs a clean-up failure that is no Error as unknown, and goes on", async () => {
@@ -388,7 +390,7 @@ describe("runWorkerTick - the registration mail job", () => {
     await tick();
 
     expect(drainRegistrationMails).toHaveBeenCalledOnce();
-    expect(registrationLines()).toEqual([expect.stringMatching(/sweep FAILED error_class=unknown$/), expect.stringMatching(/idle$/)]);
+    expect(registrationLines()).toEqual([expect.stringMatching(/FAILED sweep error_class=unknown$/), expect.stringMatching(/idle$/)]);
     expect(logLines.join("\n")).not.toContain("example.com");
   });
 });

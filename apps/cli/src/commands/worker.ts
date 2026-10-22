@@ -192,7 +192,8 @@ async function sweepExpiredRegistrationsOrLog(db: PrismaClient): Promise<SweepEx
   try {
     return await sweepExpiredRegistrations(db);
   } catch (err) {
-    log("registration_mail", `sweep FAILED error_class=${err instanceof Error ? err.name : "unknown"}`);
+    // Starts with FAILED, which is what makes the line an error in the System logs (logLevel).
+    log("registration_mail", `FAILED sweep error_class=${err instanceof Error ? err.name : "unknown"}`);
     return { deleted: 0, eventIds: [], more: false };
   }
 }

@@ -350,6 +350,59 @@ describe("a row that cannot be sent", () => {
     expect(await drain({}, { nowMs: later + 600_000 })).toMatchObject({ claimed: 0 });
   });
 
+  it("takes a due retry even when more older rows than a batch are still in backoff", async () => {
+    const now = Date.now();
+    const rows = await Promise.all(Array.from({ length: 6 }, () => queuedMailFor(prisma, EVENT_ID, "registration-confirm")));
+    // Five older rows that failed a second ago (the backoff of 30 seconds has not run out), and a newer one that failed
+    // two minutes ago: with a batch of one, the old reading of four rows never got past the first five.
+    await Promise.all(
+      rows.map(({ mail }, index) =>
+        prisma.registrationMail.update({
+          where: { id: mail.id },
+          data: {
+            status: "failed",
+            retryable: true,
+            attempts: 1,
+            attempted_at: new Date(now - (index < 5 ? 1_000 : 120_000)),
+            queued_at: new Date(now - 3_600_000 + index * 1_000),
+          },
+        }),
+      ),
+    );
+    const { messages, deps } = collectMail();
+
+    expect(await drain(deps, { limit: 1, nowMs: now })).toMatchObject({ claimed: 1, sent: 1 });
+
+    expect(messages.map((message) => message.to)).toEqual([rows[5]!.registration.email]);
+    expect((await mailRow(rows[5]!.mail.id)).status).toBe("accepted");
+    expect((await mailRow(rows[0]!.mail.id)).status).toBe("failed");
+  });
+
+  it("does not take a retry whose backoff has not run out, whatever its attempts, and takes one at the cap after five minutes", async () => {
+    const now = Date.now();
+    const rows = await Promise.all(Array.from({ length: 3 }, () => queuedMailFor(prisma, EVENT_ID, "registration-confirm")));
+    // attempts 3 waits two minutes, attempts 7 waits the cap of five.
+    const states = [
+      { attempts: 3, ago: 100_000 },
+      { attempts: 3, ago: 130_000 },
+      { attempts: 7, ago: 301_000 },
+    ];
+    await Promise.all(
+      rows.map(({ mail }, index) =>
+        prisma.registrationMail.update({
+          where: { id: mail.id },
+          data: { status: "failed", retryable: true, attempts: states[index]!.attempts, attempted_at: new Date(now - states[index]!.ago) },
+        }),
+      ),
+    );
+    const { messages, deps } = collectMail();
+
+    expect(await drain(deps, { nowMs: now })).toMatchObject({ claimed: 2 });
+
+    expect(messages.map((message) => message.to).sort()).toEqual([rows[1]!.registration.email, rows[2]!.registration.email].sort());
+    expect((await mailRow(rows[0]!.mail.id)).status).toBe("failed");
+  });
+
   it("is recorded as a failure with no text of the error when the mailer throws", async () => {
     const { registration, mail } = await queuedMailFor(prisma, EVENT_ID, "registration-confirm");
     vi.mocked(createMailer).mockResolvedValue(mailerAnswering(new Error(`550 no such user <${registration.email}>`)));

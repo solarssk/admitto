@@ -18,7 +18,7 @@ import type { PrismaClient } from "@admitto/db";
 import { resolveTemplateForEvent, type RenderedTemplate, type ResolvedTemplate } from "@admitto/mail-templates";
 import { createMailer, isSendSuccess, type MailerAdapter, type MailMessage, type SendResult } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
-import { MAX_MAIL_DRAIN_ATTEMPTS, isMailDrainRetryDue } from "./drain-retry.js";
+import { MAX_MAIL_DRAIN_ATTEMPTS, mailDrainRetryBackoffMs } from "./drain-retry.js";
 import { withDeliveryOwnership } from "./ownership.js";
 import {
   checkRegistrationMailBeforeSend,
@@ -74,6 +74,21 @@ interface Resolution {
   data: MailResult;
 }
 
+/**
+ * The `where` of the failed rows whose backoff has run out at `nowMs`: the rule of isMailDrainRetryDue, written for the
+ * database. Rows that are still in backoff must not fill the batch that is read and hide the due rows behind them,
+ * which an older broken event could do tick after tick. A row that has used all its attempts is none of them:
+ * `attempts` runs from 0 to one below the cap.
+ */
+function retryDue(nowMs: number) {
+  return {
+    OR: Array.from({ length: MAX_MAIL_DRAIN_ATTEMPTS }, (_, attempts) => ({
+      attempts,
+      OR: [{ attempted_at: null }, { attempted_at: { lte: new Date(nowMs - mailDrainRetryBackoffMs(attempts)) } }],
+    })),
+  };
+}
+
 /** The rows to take: the queued ones first (oldest first), then failed ones whose backoff has run out. */
 async function selectDrainCandidates(prisma: PrismaClient, limit: number, nowMs: number): Promise<QueuedRegistrationMail[]> {
   const notExhausted = { attempts: { lt: MAX_MAIL_DRAIN_ATTEMPTS } };
@@ -86,15 +101,13 @@ async function selectDrainCandidates(prisma: PrismaClient, limit: number, nowMs:
   });
   if (queued.length >= limit) return queued;
 
-  const remaining = limit - queued.length;
-  // More than needed are read, because the backoff is applied in memory.
   const retryable = await prisma.registrationMail.findMany({
-    where: { status: "failed", retryable: true, ...notExhausted },
+    where: { status: "failed", retryable: true, ...retryDue(nowMs) },
     orderBy: oldestFirst,
-    take: Math.min(remaining * 4, Math.max(remaining, 200)),
+    take: limit - queued.length,
     select: QUEUED_MAIL_SELECT,
   });
-  return [...queued, ...retryable.filter((row) => isMailDrainRetryDue(row, nowMs)).slice(0, remaining)];
+  return [...queued, ...retryable];
 }
 
 /** The same event's rows together, so that they share what is read once (the event, the templates, the mailer). */
