@@ -18,7 +18,7 @@ Guests cannot open the form yet. It opens for an event only when registration is
 
 | Type | What the guest gets | What the guest can enter |
 |---|---|---|
-| Text | A one-line box | A short answer, up to 100 characters |
+| Text | A one-line box. A list of suggestions opens under it when the field has some | A short answer, up to 100 characters |
 | Long text | A box four lines tall that can be pulled taller | Up to 1000 characters, with line breaks |
 | Date | The browser's date picker | One day |
 | Date and time | The browser's date and time picker | One day and a time on the clock |
@@ -28,6 +28,43 @@ Guests cannot open the form yet. It opens for an event only when registration is
 
 - The label is the question, so write it as a question. A star marks a required one.
 - A guest cannot send the form until every required question is answered. A box that holds only spaces or empty lines counts as empty.
+
+## Icons
+
+A question can carry an icon. The organiser picks it from a fixed list (see the [Validation Reference](Validation-Reference)). Where it shows depends on the control:
+
+| Question | Where the icon shows |
+|---|---|
+| Yes / No as a tick box | After the box, before the words |
+| Text, Date, Date and time and Phone | Inside the box, on the left |
+| Single choice, Long text and a required Yes / No | Nowhere. These controls have no place for one |
+
+A tick box with no icon is the box and its words. When some tick boxes in a block have an icon, the words of the others line up with theirs. A ticked box is highlighted, and so is its icon.
+
+## Questions that wait for another answer
+
+A question can be asked only after another answer is given. For example, "Car registration number" can wait for the tick box "I will arrive by car".
+
+What a guest sees:
+
+1. The question is not on the page at first. It opens in a panel right under the tick box or the list it waits for: when the box is ticked, or when the guest picks the option the organiser named.
+2. Every question that waits for one answer sits in that panel, in the order of the fields. Under a list, each question appears for its own option.
+3. A question that is not shown is not required. Nothing the guest typed in it is sent.
+4. A guest who clears the answer and gives it again finds what they had typed.
+
+Admitto decides this on its own side too. If a changed form sends an answer for a question that is not shown, the answer is ignored and the guest sees no error.
+
+A question that waits for a question that is not on the form is never shown. It is never required either, so it does not keep the form from opening.
+
+## Suggestions
+
+A Text question can have a list of suggestions, for example the usual dietary needs. What a guest sees:
+
+- The list opens under the box when the guest taps it or comes to it, with every suggestion. Typing keeps the suggestions that contain the typed text, in any letter case, and marks the match in bold.
+- The last row, `Use "..." as written`, offers the text as it was typed. It is not there when the typed text is a suggestion already.
+- The keys work as in any list: the arrows move, Enter picks the highlighted row, Escape closes the list, Tab moves on to the next field.
+- The list only helps. A guest can write any text, and Admitto never checks an answer against the list.
+- A guest who picks a suggestion sends it exactly as written in the list. Any other text is sent as typed, like the answer to any Text question.
 
 ## The hint under a box
 
@@ -77,6 +114,9 @@ What the guest typed stays in the form, so the guest can correct it.
 | A guest sees "Enter a valid date" with a date typed in | One part of the date is still empty. Every part must be filled |
 | A guest's time is an hour out | The guest may have entered their own local time. The time is read as the clock at the event. Check the time zone saved for the event, and say in the description which clock to use |
 | The form says "not found" although registration is on | A required question that the form cannot show keeps it closed, for example a required Single choice field with no options. Add the options, or clear **Required** |
+| A question never appears under the tick box or the list it waits for | The question it waits for must be on the form, and must be a Yes / No or a Single choice field. For a list, the condition must name an option that exists, written exactly |
+| A field has suggestions, but the guest sees no list | Suggestions fit Text fields only. Check that the field is a Text field, and that its own condition is met |
+| A field has an icon, but the guest sees none | A Single choice, a Long text and a required Yes / No have no place for an icon |
 
 ## Related pages
 
