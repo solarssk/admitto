@@ -33,6 +33,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add the four guest registration emails to Communication > Templates, where you can read them, edit them and revert them to the built-in text ([#1791](https://github.com/solarssk/admitto/pull/1791))
 - Show who accepted, rejected or deleted guest registrations in Organisation settings > Logs > Audit, and filter by these actions ([#1794](https://github.com/solarssk/admitto/pull/1794))
 - Add the page behind the guest confirmation link: opening it confirms nothing, its button does, and the link works for 24 hours ([#1795](https://github.com/solarssk/admitto/pull/1795))
+- Add the Requests tab to the Registration page, listing the requests guests sent with search, filters and pages, and a Registrations row on the Overview checklist ([#1796](https://github.com/solarssk/admitto/pull/1796))
 - Add "Add suggested questions" on the Registration page's Fields tab: one click adds parking, travel and accommodation questions, and a new event has no fields
 
 ### Changed
@@ -41,6 +42,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Hide a question that is shown only for another answer in the Add attendee and Edit attendee forms, and do not require or save it ([#1787](https://github.com/solarssk/admitto/pull/1787))
 - Give the Communication template picker a row of its own on a phone, so the open template's name is not cut off ([#1791](https://github.com/solarssk/admitto/pull/1791))
 - Mail the same confirmation link again when a guest sends the form again for an address that still waits, at most every 10 minutes ([#1795](https://github.com/solarssk/admitto/pull/1795))
+- Show the number on a tab in a darker grey, so it can be read on the grey page background ([#1796](https://github.com/solarssk/admitto/pull/1796))
 
 ### Fixed
 
@@ -55,6 +57,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a strict nonce-based security policy and a uniform not-found page for the coming public registration form ([#1752](https://github.com/solarssk/admitto/pull/1752))
 - Clear an attendee's earlier addresses, recorded when staff edited them, from other attendees' mail and saved import results when the attendee is erased or removed ([#1768](https://github.com/solarssk/admitto/pull/1768))
 - Redact the guest confirmation link in the access log, and keep a short hash that tells links apart ([#1795](https://github.com/solarssk/admitto/pull/1795))
+- Bump `zod` to 4.6.6 (high: memory exhaustion on oversized collections, GHSA-mrhx-c7xc-m3w5), and `hono` and `ip-address` past moderate advisories ([#1797](https://github.com/solarssk/admitto/pull/1797))
 
 ## [0.7.7] - 2026-10-18
 
