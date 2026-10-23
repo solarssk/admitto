@@ -289,3 +289,36 @@ describe("the pieces of the second review round (Reports chart, Danger zone, tab
     expect(sets(bodyOf(preview, ".wallet-message-preview"), "gap", "var\\(--space-4\\)")).toBe(true);
   });
 });
+
+describe("the Registration page's suggested questions: the card header, the window and its badges (looked at in real Chrome at 1280px and 390px)", () => {
+  const requirements = parse(read("apps/admin/src/requirements/requirements.css"));
+  const suggested = parse(read("apps/admin/src/registration/suggested-questions.css"));
+
+  it("lets the header of the card grow on a phone, with the title first and the two buttons under it, instead of a button hanging out of the card", () => {
+    const header = bodyOf(requirements, ".requirements-section--registration .at-card__header", "@media (max-width: 640px)");
+    expect(sets(header, "flex-wrap", "wrap")).toBe(true);
+    expect(sets(header, "height", "auto")).toBe(true);
+    expect(sets(bodyOf(requirements, ".requirements-section--registration .at-card__actions", "@media (max-width: 640px)"), "flex-wrap", "wrap")).toBe(true);
+  });
+
+  it("gives the two buttons of the header a line each, as wide as the card, from 480px down, as on the Legal tab", () => {
+    expect(sets(bodyOf(requirements, ".requirements-section--registration .at-card__actions > *", "@media (max-width: 480px)"), "flex", "1 1 100%")).toBe(true);
+    expect(sets(bodyOf(requirements, ".requirements-section--registration .at-card__actions .at-btn", "@media (max-width: 480px)"), "width", "100%")).toBe(true);
+  });
+
+  it("scrolls the window of the questions on a screen too short for it, so that its buttons can still be reached", () => {
+    const body = bodyOf(suggested, ".confirm-dialog__panel:has(.suggested-questions)");
+    expect(sets(body, "max-height", "100%")).toBe(true);
+    expect(sets(body, "overflow-y", "auto")).toBe(true);
+  });
+
+  it("puts the badge of a question under its words on a phone, as wide as its own words and not as a bar across the row", () => {
+    expect(sets(bodyOf(suggested, ".suggested-questions__row", "@media (max-width: 480px)"), "grid-template-columns", String.raw`minmax\(0, 1fr\)`)).toBe(true);
+    expect(sets(bodyOf(suggested, ".suggested-questions__row .at-badge", "@media (max-width: 480px)"), "justify-self", "start")).toBe(true);
+  });
+
+  it("wraps the words of a question inside their column instead of cutting them", () => {
+    expect(sets(bodyOf(suggested, ".suggested-questions__title"), "overflow-wrap", "anywhere")).toBe(true);
+    expect(sets(bodyOf(suggested, ".suggested-questions__text"), "min-width", "0")).toBe(true);
+  });
+});

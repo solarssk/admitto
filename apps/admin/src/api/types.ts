@@ -758,6 +758,14 @@ export interface CreateEventCustomFieldBody {
   rules?: EventCustomFieldRules | null;
 }
 
+/** What adding the suggested questions answers: the keys it created, in the order it created them, and those it left out (`exists`: the
+ * event has a field under that key already; `condition`: it depends on a field that cannot be what it depends on). Mirrors
+ * `AddSuggestedFieldsDto` of the server. */
+export interface AddSuggestedFieldsResponse {
+  added: string[];
+  skipped: { source_field: string; reason: "exists" | "condition" }[];
+}
+
 /** `source_field` is immutable after create - see EventCustomFieldDto. */
 export interface UpdateEventCustomFieldPatch {
   label?: string;

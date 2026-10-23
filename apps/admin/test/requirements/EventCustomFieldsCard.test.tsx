@@ -16,6 +16,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
   return {
     ...actual,
+    addSuggestedEventCustomFields: vi.fn(),
     deleteEventCustomField: vi.fn(),
     createEventCustomField: vi.fn(),
     updateEventCustomField: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 });
 
 import {
+  addSuggestedEventCustomFields,
   createEventCustomField,
   deleteEventCustomField,
   reorderEventCustomFields,
@@ -290,6 +292,7 @@ describe.each([
     ];
     if (placement === "registration") {
       controls.push(
+        screen.getByRole("button", { name: "Add suggested questions" }),
         screen.getByRole("switch", { name: "Dietary requirements on the form" }),
         screen.getByRole("button", { name: "Move Dietary requirements down" }),
         screen.getByRole("button", { name: "Move Shirt size up" }),
@@ -303,6 +306,13 @@ describe.each([
 });
 
 describe("EventCustomFieldsCard: the Requirements page (the default)", () => {
+  it("has no Add suggested questions button: the suggested questions are a matter of the registration form", () => {
+    renderCard([dietaryField]);
+
+    expect(screen.getByRole("button", { name: "Add field" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add suggested questions" })).toBeNull();
+  });
+
   it("is the card as it was: no On the form column, switch or arrows", () => {
     renderCard([dietaryField, shirtField]);
 
@@ -371,6 +381,105 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(updateEventCustomField).toHaveBeenCalled());
     expect(vi.mocked(updateEventCustomField).mock.calls[0]![2]).not.toHaveProperty("show_on_form");
+  });
+
+  describe("the Add suggested questions button", () => {
+    const ADDED = { added: ["parking", "parking_plate", "travel", "arrival", "accommodation"], skipped: [] };
+    const suggestButton = () => screen.getByRole("button", { name: "Add suggested questions" });
+    const suggestDialog = () => screen.queryByRole("dialog", { name: "Add suggested questions" });
+
+    it("stands beside Add field, before it, as a secondary button", () => {
+      renderCard([dietaryField], "registration");
+
+      const buttons = within(document.querySelector(".at-card__actions") as HTMLElement).getAllByRole("button");
+      expect(buttons.map((button) => button.textContent)).toEqual(["Add suggested questions", "Add field"]);
+      expect(suggestButton().className).toContain("at-btn--secondary");
+      expect(suggestDialog()).toBeNull();
+    });
+
+    it("opens the window for the fields the event has now, and Cancel closes it without asking the server, with the focus back on the button", () => {
+      renderCard([{ ...parkingField, show_on_form: true }], "registration");
+
+      fireEvent.click(suggestButton());
+
+      const dialog = suggestDialog() as HTMLElement;
+      expect(within(dialog).getAllByText("Already in your list")).toHaveLength(1);
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(suggestDialog()).toBeNull();
+      expect(addSuggestedEventCustomFields).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(suggestButton());
+    });
+
+    it("gives the focus back to the button when the window is closed with Escape", () => {
+      renderCard([], "registration");
+      fireEvent.click(suggestButton());
+
+      fireEvent.keyDown(document, { key: "Escape" });
+
+      expect(suggestDialog()).toBeNull();
+      expect(document.activeElement).toBe(suggestButton());
+    });
+
+    it("adds the questions, says how many, reads the list again, closes the window and gives the focus back", async () => {
+      vi.mocked(addSuggestedEventCustomFields).mockResolvedValueOnce(ADDED);
+      const { onChanged } = renderCard([], "registration");
+      fireEvent.click(suggestButton());
+
+      fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 5 questions" }));
+
+      await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+      expect(addSuggestedEventCustomFields).toHaveBeenCalledWith("evt-1");
+      expect(addToast).toHaveBeenCalledWith("Added 5 suggested questions.", "success");
+      expect(suggestDialog()).toBeNull();
+      expect(document.activeElement).toBe(suggestButton());
+    });
+
+    it("says so, and still reads the list again, when another admin had added the questions first and none was added", async () => {
+      vi.mocked(addSuggestedEventCustomFields).mockResolvedValueOnce({
+        added: [],
+        skipped: ADDED.added.map((source_field) => ({ source_field, reason: "exists" as const })),
+      });
+      const { onChanged } = renderCard([], "registration");
+      fireEvent.click(suggestButton());
+
+      fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 5 questions" }));
+
+      await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+      expect(addToast).toHaveBeenCalledWith("The suggested questions are already in your list.", "info");
+    });
+
+    it("keeps the window open with the refusal, and neither reads the list again nor says it added anything", async () => {
+      vi.mocked(addSuggestedEventCustomFields).mockRejectedValueOnce(new ApiError(422, "field_limit_reached", "field_limit_reached"));
+      const { onChanged } = renderCard([], "registration");
+      fireEvent.click(suggestButton());
+
+      fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 5 questions" }));
+
+      expect((await screen.findByRole("alert")).textContent).toBe("This event has reached its custom field limit.");
+      expect(suggestDialog()).not.toBeNull();
+      expect(onChanged).not.toHaveBeenCalled();
+      expect(addToast).not.toHaveBeenCalled();
+    });
+
+    it("tells an event over the limit by how much, and asks nothing of the server", () => {
+      const own: EventCustomFieldDto[] = Array.from({ length: 18 }, (_, index) => ({ ...dietaryField, id: `f-${index}`, source_field: `own_${index}`, label: `Own ${index}` }));
+      renderCard(own, "registration");
+
+      fireEvent.click(suggestButton());
+
+      expect((suggestDialog() as HTMLElement).textContent).toContain("This event has 18 of 20 fields, and adding 5 questions would take it to 23. Delete 3 fields first");
+      expect(addSuggestedEventCustomFields).not.toHaveBeenCalled();
+    });
+
+    it("is locked for an archived event, with the reason, and opens nothing", () => {
+      renderCard([], "registration", archivedEvent);
+
+      fireEvent.click(suggestButton());
+
+      expect((suggestButton() as HTMLButtonElement).disabled).toBe(true);
+      expect(getTooltipText(suggestButton())).toBe(ARCHIVED_ACTION_TOOLTIP);
+      expect(suggestDialog()).toBeNull();
+    });
   });
 
   describe("the On the form switch", () => {
