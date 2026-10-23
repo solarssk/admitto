@@ -331,7 +331,7 @@ Where an Administrator or Superadmin reaches the removal (`apps/admin`).
 ### The API
 
 - `POST /api/admin/events/:eventId/registrations/delete` with `{ "ids": [...] }`. One registration is a list of one. At most 500 ids.
-- `POST /api/admin/events/:eventId/registrations/delete-by-filter` with `{ "status", "older_than", "q", "expected", "selection_digest" }`. The filter is the one of the list, `expected` is the `total` the list showed for it, and `selection_digest` is the name the list gave the registrations it showed (the list answers it for a filter that selects at most 500).
+- `POST /api/admin/events/:eventId/registrations/delete-by-filter` with `{ "status", "older_than", "q", "expected", "selection_digest" }`. The filter is the one of the list, `expected` is the `total` the list showed for it, and `selection_digest` is the name the list gave the registrations it showed (the list answers it for a filter that selects at most 500, read in the same snapshot as its page and its total, so it names the registrations those were read from).
 
 Both are open to the Administrator and Superadmin of the event, and both are allowed on an archived event, like Erase: a request to delete data does not expire with the event. They spend the attendee bulk-mutation budget (20 a minute), and the wallet bulk budget as well when the event has wallet credentials.
 

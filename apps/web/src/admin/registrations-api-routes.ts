@@ -16,8 +16,8 @@
 import type { Context } from "hono";
 import {
   REGISTRATION_STATUS,
+  Prisma,
   type EmailDeliveryStatus,
-  type Prisma,
   type PrismaClient,
   type RegistrationMailTemplateName,
   type RegistrationMode,
@@ -343,7 +343,7 @@ async function lastMailByRegistration(
 
 /** The name `delete-by-filter` needs, for a filter that selects no more registrations than one deletion may take. */
 async function selectionDigestOf(
-  db: PrismaClient,
+  db: Prisma.TransactionClient,
   where: Prisma.RegistrationWhereInput,
   filter: RegistrationListFilter,
   total: number,
@@ -373,16 +373,23 @@ export async function handleListEventRegistrations(c: Context, db: PrismaClient)
   const pageSize = positiveIntQuery(c.req.query("pageSize"), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const where = registrationListWhere(event.id, filter, new Date());
 
-  const [total, rows] = await Promise.all([
-    db.registration.count({ where }),
-    db.registration.findMany({
-      where,
-      orderBy: [{ created_at: "asc" }, { id: "asc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      select: LIST_SELECT,
-    }),
-  ]);
+  // One snapshot for the count, the page and the digest. The digest names the registrations that the page and the total
+  // were read from: read apart, a registration that replaced one of the page in between would be in the digest and not
+  // on the page, and a deletion by filter that sent it back would take what the staff member never saw.
+  const { total, rows, selectionDigest } = await db.$transaction(
+    async (tx) => {
+      const matching = await tx.registration.count({ where });
+      const pageRows = await tx.registration.findMany({
+        where,
+        orderBy: [{ created_at: "asc" }, { id: "asc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: LIST_SELECT,
+      });
+      return { total: matching, rows: pageRows, selectionDigest: await selectionDigestOf(tx, where, filter, matching) };
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+  );
   const lastMails = await lastMailByRegistration(
     db,
     event.id,
@@ -394,7 +401,7 @@ export async function handleListEventRegistrations(c: Context, db: PrismaClient)
     total,
     page,
     pageSize,
-    selection_digest: await selectionDigestOf(db, where, filter, total),
+    selection_digest: selectionDigest,
   };
   return c.json(body);
 }

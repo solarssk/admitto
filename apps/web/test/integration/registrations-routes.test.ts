@@ -286,6 +286,45 @@ describe("who may read", () => {
   });
 });
 
+/**
+ * The client, with a writer that acts on the real one once the first page of a list has been read inside its
+ * transaction: what another request does between the queries of this one. Only `$transaction` and the `findMany` of
+ * `registration` are touched; everything else is passed through.
+ */
+function clientWithWriterAfterPage(between: () => Promise<void>): PrismaClient {
+  return new Proxy(prisma, {
+    get(target, key, receiver) {
+      if (key !== "$transaction") return Reflect.get(target, key, receiver);
+      return (run: unknown, options?: unknown) => {
+        if (typeof run !== "function") return Reflect.apply(target.$transaction, target, [run, options]);
+        return target.$transaction(
+          async (tx) => {
+            let done = false;
+            const registration = new Proxy(tx.registration, {
+              get(model, name, modelReceiver) {
+                const value: unknown = Reflect.get(model, name, modelReceiver);
+                if (name !== "findMany" || typeof value !== "function") return value;
+                return async (...args: unknown[]) => {
+                  const result: unknown = await Reflect.apply(value, model, args);
+                  if (!done) {
+                    done = true;
+                    await between();
+                  }
+                  return result;
+                };
+              },
+            });
+            return (run as (client: unknown) => unknown)(
+              new Proxy(tx, { get: (inner, name, innerReceiver) => (name === "registration" ? registration : Reflect.get(inner, name, innerReceiver)) }),
+            );
+          },
+          options as never,
+        );
+      };
+    },
+  });
+}
+
 describe("the list", () => {
   beforeAll(() => {
     app = freshApp();
@@ -770,6 +809,30 @@ describe("the list", () => {
       const second = await addRegistration({ email: "joins-2@example.com", status: "rejected" });
       expect((await list("status=rejected")).selection_digest).toBe(registrationSelectionDigest([first, second]));
       expect((await list("status=waitlist")).selection_digest).toBe(registrationSelectionDigest([]));
+    });
+
+    it("is read in the snapshot of the page and the total: a registration that replaces one of the page meanwhile is not in it", async () => {
+      const first = await addRegistration({ email: "snap-1@example.com", status: "rejected", createdAt: new Date("2026-10-01T10:00:00Z") });
+      const second = await addRegistration({ email: "snap-2@example.com", status: "rejected", createdAt: new Date("2026-10-02T10:00:00Z") });
+      const replacement = await addRegistration({ email: "snap-3@example.com", status: "pending", createdAt: new Date("2026-10-03T10:00:00Z") });
+      const racing = buildTestApp({
+        prisma: clientWithWriterAfterPage(async () => {
+          // After the page was read, the second leaves the filter and the third joins it: the number is still two.
+          await prisma.registration.update({ where: { id: second }, data: { status: "pending" } });
+          await prisma.registration.update({ where: { id: replacement }, data: { status: "rejected" } });
+        }),
+        checkinToken: "regs-checkin-token-32-characters!!",
+        adminDistRoot,
+      });
+
+      const res = await racing.request(`${regsUrl(EVENT_A)}?status=rejected`, { headers: { Cookie: cookies.adminA } });
+      const body = (await res.json()) as RegistrationListDto;
+
+      expect(ids(body)).toEqual([first, second]);
+      expect(body.total).toBe(2);
+      expect(body.selection_digest).toBe(registrationSelectionDigest([first, second]));
+      // The change did happen: read now, the filter selects the first and the third.
+      expect((await list("status=rejected")).selection_digest).toBe(registrationSelectionDigest([first, replacement]));
     });
 
     it("is null for a filter that selects more than a deletion may take, and given at the cap", async () => {
