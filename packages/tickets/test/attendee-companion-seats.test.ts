@@ -250,6 +250,21 @@ describe("admitting a registration that brings a companion", () => {
     expect(await admit(eventId, [another.id])).toEqual({ status: "not_enough_seats", free: 1, needed: 2 });
   });
 
+  it("writes no companion for a guest whose address an attendee holds already: the registration goes and nothing is made", async () => {
+    const eventId = await eventWith(0);
+    const holder = await make.attendee(eventId);
+    const registration = await make.registration(eventId, { status: "pending", email: holder.email, companions: [plusOne()] });
+
+    expect(await admit(eventId, [registration.id])).toEqual({
+      status: "done",
+      outcomes: [{ id: registration.id, outcome: "already_attendee" }],
+    });
+
+    expect(await db.attendeeCompanion.count({ where: { attendee: { event_id: eventId } } })).toBe(0);
+    expect(await seats(eventId)).toBe(1);
+    expect(await db.registration.count({ where: { id: registration.id } })).toBe(0);
+  });
+
   it("does not check an event without a limit, and still writes the companion", async () => {
     const eventId = await eventWith(0, { capacity: null });
     const registration = await make.registration(eventId, { status: "pending", companions: [plusOne()] });
