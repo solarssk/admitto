@@ -1,8 +1,7 @@
 import type { Prisma } from "@admitto/db";
-import { writeAdminAuditLog } from "./admin-audit.js";
 import { eraseAttendees, type EraseAttendeesResult } from "./erase-attendees.js";
 import { writeBulkActionLog } from "./ops-audit.js";
-import type { StaffActor } from "./registration-decisions.js";
+import { writeStaffRegistrationAudit, type StaffActor } from "./registration-decisions.js";
 import { MAX_REGISTRATION_BULK_IDS, registrationListWhere, type RegistrationListFilter } from "./registration-list.js";
 import { lockRegistrationQueue, lockRegistrationsForUpdate, type LockedRegistration } from "./registration-lock.js";
 import { isEmptyRegistrationFilter, registrationSelectionDigest } from "./registration-selection.js";
@@ -121,16 +120,7 @@ async function recordDeletion(
     ...(target.kind === "filter" ? { filter: describeFilter(target.filter) } : {}),
   };
   await writeBulkActionLog(tx, { event_id: eventId, action_type: "registrations_deleted", audit: actor, metadata });
-  const event = await tx.event.findUniqueOrThrow({ where: { id: eventId }, select: { organization_id: true, title: true } });
-  await writeAdminAuditLog(tx, {
-    organizationId: event.organization_id,
-    actorUserId: actor.operator,
-    sessionId: actor.sessionId,
-    ip: actor.ip,
-    timezone: actor.timezone,
-    actionType: "registrations_deleted",
-    metadata: { event_id: eventId, event_title: event.title, ...metadata },
-  });
+  await writeStaffRegistrationAudit(tx, { eventId, actor, actionType: "registrations_deleted", metadata });
 }
 
 /** The registrations the request names, locked in id order: by id, or by what its filter selects once the counts agree. */

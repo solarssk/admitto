@@ -1,4 +1,6 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
+import type { AttendeeActionType } from "@admitto/db/status";
+import { writeAdminAuditLog } from "./admin-audit.js";
 import { runEventCapacityTransaction } from "./event-capacity.js";
 import { writeBulkActionLog, type OpsAuditContext } from "./ops-audit.js";
 import {
@@ -13,6 +15,27 @@ import { readFreeSeats, seatsNeeded } from "./registration-seats.js";
 
 /** A staff member who decides: the operator is who `decided_by` names. The rest is what the activity log records. */
 export type StaffActor = OpsAuditContext & { operator: string };
+
+/**
+ * The entry of the central admin audit log for what a staff member did to registrations, in the transaction of the
+ * change: the type of the entry the event's activity log has for it (written by the caller), the event's id and title,
+ * and the ids and counts of `metadata`, never a name, an address or an answer.
+ */
+export async function writeStaffRegistrationAudit(
+  tx: Prisma.TransactionClient,
+  { eventId, actor, actionType, metadata }: { eventId: string; actor: StaffActor; actionType: AttendeeActionType; metadata: Record<string, unknown> },
+): Promise<void> {
+  const event = await tx.event.findUniqueOrThrow({ where: { id: eventId }, select: { organization_id: true, title: true } });
+  await writeAdminAuditLog(tx, {
+    organizationId: event.organization_id,
+    actorUserId: actor.operator,
+    sessionId: actor.sessionId,
+    ip: actor.ip,
+    timezone: actor.timezone,
+    actionType,
+    metadata: { event_id: eventId, event_title: event.title, ...metadata },
+  });
+}
 
 /** A request of staff may wait for a lock as long as the statement timeout lets it. */
 const DECISION_TRANSACTION_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
@@ -161,7 +184,19 @@ async function admitInTransaction(
   const free = await readFreeSeats(tx, eventId, event.capacity);
   if (needed > free) return { status: "not_enough_seats", free, needed };
   const accepted = await acceptCandidates(tx, { eventId, actor, now }, sorted);
-  if (accepted.length > 0) await writeAcceptanceLog(tx, eventId, accepted, actor, false);
+  if (accepted.length > 0) {
+    await writeAcceptanceLog(tx, eventId, accepted, actor, false);
+    await writeStaffRegistrationAudit(tx, {
+      eventId,
+      actor,
+      actionType: "registration_accepted",
+      metadata: {
+        count: accepted.length,
+        registration_ids: accepted.map((row) => row.registrationId),
+        attendee_ids: accepted.map((row) => row.attendeeId),
+      },
+    });
+  }
   await deleteHeldRegistrations(tx, eventId, sorted.held, actor);
   return { status: "done", outcomes: ids.flatMap((id) => sorted.outcomes.get(id) ?? []) };
 }
@@ -235,12 +270,9 @@ async function rejectInTransaction(
     data: { status: "rejected", decided_at: now, decided_by: actor.operator },
   });
   await enqueueMailsForMoment(tx, eventId, rejected, { to: "rejected", notify });
-  await writeBulkActionLog(tx, {
-    event_id: eventId,
-    action_type: "registration_rejected",
-    audit: actor,
-    metadata: { count: rejected.length, registration_ids: rejected, notify },
-  });
+  const metadata = { count: rejected.length, registration_ids: rejected, notify };
+  await writeBulkActionLog(tx, { event_id: eventId, action_type: "registration_rejected", audit: actor, metadata });
+  await writeStaffRegistrationAudit(tx, { eventId, actor, actionType: "registration_rejected", metadata });
   return { outcomes };
 }
 

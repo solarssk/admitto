@@ -360,6 +360,19 @@ describe("what a request must look like", () => {
 });
 
 describe("accept", () => {
+  it("decides while registration is switched off for the event: closing the form takes no decision from the organiser", async () => {
+    await prisma.eventRegistrationSettings.create({ data: { event_id: EVENT_A, mode: null } });
+    const [toAccept, toReject] = await addRegistrations(2);
+
+    expect(outcomes(await acceptOk([toAccept!]))).toEqual(["accepted"]);
+    const rejected = await reject([toReject!]);
+
+    expect(rejected.status).toBe(200);
+    expect(outcomes((await rejected.json()) as RejectRegistrationsDto)).toEqual(["rejected"]);
+    expect(await statusOf(toAccept!)).toBe("accepted");
+    expect(await statusOf(toReject!)).toBe("rejected");
+  });
+
   it("makes the attendee, decides the registration for the staff member, queues the ticket mail and logs it", async () => {
     const guest = await addRegistration();
     const heard: unknown[] = [];
@@ -382,6 +395,14 @@ describe("accept", () => {
     expect(log).toMatchObject({ actor_user_id: users.adminA, attendee_id: null });
     expect(log.metadata).toEqual({ count: 1, registration_ids: [guest.id], attendee_ids: [attendee.id] });
     expect(JSON.stringify(log)).not.toContain(guest.email);
+    // The central audit log has the decision too, for the staff member, with ids and counts only.
+    const central = await prisma.adminAuditLog.findMany({
+      where: { organization_id: ORG_A, action_type: "registration_accepted", metadata: { path: ["registration_ids"], array_contains: [guest.id] } },
+    });
+    expect(central).toHaveLength(1);
+    expect(central[0]).toMatchObject({ actor_user_id: users.adminA });
+    expect(central[0]?.metadata).toMatchObject({ event_id: EVENT_A, count: 1, registration_ids: [guest.id], attendee_ids: [attendee.id] });
+    expect(JSON.stringify(central[0])).not.toContain(guest.email);
     // The attendees list and the Overview of the event are told that people were added.
     expect(heard).toEqual([{ type: "activity_changed" }]);
 
@@ -551,6 +572,12 @@ describe("reject", () => {
     const log = await prisma.attendeeActionLog.findFirstOrThrow({ where: { event_id: EVENT_A, action_type: "registration_rejected" } });
     expect(log).toMatchObject({ actor_user_id: users.adminA });
     expect(log.metadata).toEqual({ count: 2, registration_ids: [pending, waiting], notify: false });
+    const central = await prisma.adminAuditLog.findMany({
+      where: { organization_id: ORG_A, action_type: "registration_rejected", metadata: { path: ["registration_ids"], array_contains: [pending, waiting] } },
+    });
+    expect(central).toHaveLength(1);
+    expect(central[0]).toMatchObject({ actor_user_id: users.adminA });
+    expect(central[0]?.metadata).toMatchObject({ event_id: EVENT_A, count: 2, registration_ids: [pending, waiting], notify: false });
     expect(await attendeeCount()).toBe(0);
   });
 

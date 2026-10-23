@@ -113,7 +113,8 @@ export async function createAttendeeFromRegistration(
  * The audit entry of attendees created from registrations, one for a decision (a batch of an organiser, or the one
  * guest an automatic event accepted): an event-level entry of the activity log, ids and counts only, never a name or
  * an address. `audit` is empty for an automatic acceptance: there is no operator, and the request of a guest has no
- * staff session or IP worth recording. The central admin audit log gets none (it needs a staff user).
+ * staff session or IP worth recording. The central admin audit log gets none here (it needs a staff user): a decision
+ * of staff writes its own entry, writeStaffRegistrationAudit in registration-decisions.ts.
  */
 export async function writeAcceptanceLog(
   tx: Prisma.TransactionClient,

@@ -47,6 +47,9 @@ async function queue(options: EventOptions = {}, statuses: string[] = ["pending"
 }
 
 const statusOf = async (id: string) => (await db.registration.findUnique({ where: { id } }))?.status;
+/** The entries of the central admin audit log for a type of decision in an event. */
+const centralOf = (eventId: string, actionType: string) =>
+  db.adminAuditLog.findMany({ where: { action_type: actionType, metadata: { path: ["event_id"], equals: eventId } } });
 
 describe("admitRegistrations: the attendee, the registration and the mail", () => {
   it("makes the attendee from the registration, links and decides it, queues the ticket, and logs the decision", async () => {
@@ -101,6 +104,18 @@ describe("admitRegistrations: the attendee, the registration and the mail", () =
     });
     expect(logs[0]?.metadata).toEqual({ count: 1, registration_ids: [registration.id], attendee_ids: [attendee.id] });
     expect(JSON.stringify(logs[0])).not.toContain(registration.email);
+    // The central log has the decision as well: the same type, the event's id and title, ids and counts only.
+    const central = await centralOf(eventId, "registration_accepted");
+    expect(central).toHaveLength(1);
+    expect(central[0]).toMatchObject({ actor_user_id: actor.operator, session_id: actor.sessionId, ip: actor.ip, actor_timezone: actor.timezone });
+    expect(central[0]?.metadata).toMatchObject({
+      event_id: eventId,
+      count: 1,
+      registration_ids: [registration.id],
+      attendee_ids: [attendee.id],
+    });
+    expect(JSON.stringify(central[0])).not.toContain(registration.email);
+    expect(JSON.stringify(central[0])).not.toContain(registration.name);
   });
 
   it("admits from the waiting list and from rejected (D-B8), in one request", async () => {
@@ -167,6 +182,7 @@ describe("admitRegistrations: the attendee, the registration and the mail", () =
 
     expect(await make.counts(eventId)).toEqual(before);
     expect(await statusOf(rows[0]!.id)).toBe("pending");
+    expect(await centralOf(eventId, "registration_accepted")).toEqual([]);
   });
 
   it("decides nothing in an archived event, or one that does not exist", async () => {
@@ -364,6 +380,22 @@ describe("rejectRegistrations (D-B8)", () => {
     expect(logs[0]).toMatchObject({ action_type: "registration_rejected", actor_user_id: actor.operator, attendee_id: null });
     expect(logs[0]?.metadata).toEqual({ count: 2, registration_ids: rows.map((row) => row.id), notify: false });
     expect(await db.attendee.count({ where: { event_id: eventId } })).toBe(0);
+    const central = await centralOf(eventId, "registration_rejected");
+    expect(central).toHaveLength(1);
+    expect(central[0]).toMatchObject({ actor_user_id: actor.operator, session_id: actor.sessionId, ip: actor.ip });
+    expect(central[0]?.metadata).toMatchObject({ event_id: eventId, count: 2, registration_ids: rows.map((row) => row.id), notify: false });
+  });
+
+  it("writes no entry, in the event's log or the central one, for a request that decided nothing", async () => {
+    const { eventId, rows } = await queue({}, ["pending"]);
+    await reject(eventId, [rows[0]!.id]);
+    const entries = async () => [await db.attendeeActionLog.count({ where: { event_id: eventId } }), (await centralOf(eventId, "registration_rejected")).length];
+    expect(await entries()).toEqual([1, 1]);
+
+    expect((await reject(eventId, [rows[0]!.id])).outcomes).toEqual([{ id: rows[0]!.id, outcome: "already_decided" }]);
+    expect((await reject(eventId, ["no-such-registration"])).outcomes).toEqual([{ id: "no-such-registration", outcome: "gone" }]);
+
+    expect(await entries()).toEqual([1, 1]);
   });
 
   it("queues the rejection mail only when the organiser asked to inform the guest", async () => {
@@ -408,6 +440,7 @@ describe("rejectRegistrations (D-B8)", () => {
 
     expect(await make.counts(eventId)).toEqual(before);
     expect(await statusOf(rows[0]!.id)).toBe("pending");
+    expect(await centralOf(eventId, "registration_rejected")).toEqual([]);
   });
 
   it("leaves a rejected guest unable to register again until staff delete the row, and able to be admitted later", async () => {
