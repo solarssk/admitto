@@ -233,6 +233,9 @@ describe("registrationListWhere", () => {
 });
 
 describe("canRetryRegistrationMail", () => {
+  const NOW = Date.parse("2026-10-23T10:00:00Z");
+  const pending = { status: "pending", confirm_expires_at: null };
+
   it.each([
     ["failed", false, true],
     ["failed", null, true],
@@ -244,6 +247,25 @@ describe("canRetryRegistrationMail", () => {
     ["delivered", null, false],
     ["cancelled", false, false],
   ] as const)("%s with retryable %s: %s", (status, retryable, expected) => {
-    expect(canRetryRegistrationMail({ status, retryable })).toBe(expected);
+    expect(canRetryRegistrationMail({ template_name: "registration-received", status, retryable }, pending, NOW)).toBe(expected);
+  });
+
+  describe("for a mail that failed for good", () => {
+    const failed = { status: "failed", retryable: false };
+
+    it("is not offered once the registration has moved on without a newer mail: the worker would cancel it", () => {
+      // A rejection with no notice leaves the failed "received" mail behind.
+      const rejected = { status: "rejected", confirm_expires_at: null };
+      expect(canRetryRegistrationMail({ template_name: "registration-received", ...failed }, rejected, NOW)).toBe(false);
+      expect(canRetryRegistrationMail({ template_name: "registration-received", ...failed }, pending, NOW)).toBe(true);
+    });
+
+    it("is not offered for a confirmation whose link has expired, the moment of the expiry included", () => {
+      const awaiting = (expiry: number) => ({ status: "awaiting_email", confirm_expires_at: new Date(expiry) });
+      const confirm = { template_name: "registration-confirm", ...failed };
+      expect(canRetryRegistrationMail(confirm, awaiting(NOW + 1), NOW)).toBe(true);
+      expect(canRetryRegistrationMail(confirm, awaiting(NOW), NOW)).toBe(false);
+      expect(canRetryRegistrationMail(confirm, awaiting(NOW - 1), NOW)).toBe(false);
+    });
   });
 });

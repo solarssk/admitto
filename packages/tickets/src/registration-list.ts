@@ -10,6 +10,7 @@
 import type { Prisma } from "@admitto/db/client";
 import { REGISTRATION_STATUS, type RegistrationStatus } from "@admitto/db/status";
 import { REGISTRANT_EMAIL_MAX, normalizeRegistrantText } from "./registrant-input.js";
+import { registrationMailMisfit } from "./registration-mail-queue.js";
 
 /**
  * The most registration ids one bulk request (admit, reject or delete) may carry. The same limit as the
@@ -150,10 +151,19 @@ export function registrationListWhere(
 }
 
 /**
- * A queued registration mail that staff may send again (D-B15): it failed, and the worker is not
- * trying it again by itself. One that is still being tried (`retryable`), waits, went out, or was
- * cancelled because the registration changed is not offered.
+ * A queued registration mail that staff may send again (D-B15): it failed, the worker is not trying it again by
+ * itself, and its registration still fits it (registrationMailMisfit), as the worker would cancel it otherwise. One
+ * that is still being tried (`retryable`), waits, went out, or was cancelled because the registration changed is not
+ * offered.
  */
-export function canRetryRegistrationMail(mail: { status: string; retryable: boolean | null }): boolean {
-  return mail.status === "failed" && mail.retryable !== true;
+export function canRetryRegistrationMail(
+  mail: { template_name: string; status: string; retryable: boolean | null },
+  registration: { status: string; confirm_expires_at: Date | null },
+  nowMs: number,
+): boolean {
+  return (
+    mail.status === "failed" &&
+    mail.retryable !== true &&
+    registrationMailMisfit(mail.template_name, registration, nowMs) === null
+  );
 }

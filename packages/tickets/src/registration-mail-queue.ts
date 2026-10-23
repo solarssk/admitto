@@ -1,5 +1,5 @@
 import type { Prisma } from "@admitto/db";
-import type { RegistrationMailTemplateName } from "@admitto/db/status";
+import type { RegistrationMailTemplateName, RegistrationStatus } from "@admitto/db/status";
 
 /**
  * A moment at which the registration system mails the guest, in the terms of the decision that causes it (D-D1,
@@ -37,6 +37,37 @@ export function registrationMailFor(moment: RegistrationMailMoment): Registratio
     case "rejected":
       return moment.notify ? "registration-rejected" : null;
   }
+}
+
+/** The status each mail is for (D-D2): the one its registration has when the mail's moment happens. */
+const STATUS_FOR_MAIL: Record<RegistrationMailTemplateName, RegistrationStatus> = {
+  "registration-confirm": "awaiting_email",
+  "registration-received": "pending",
+  "registration-waitlist": "waitlist",
+  "registration-rejected": "rejected",
+  ticket: "accepted",
+};
+const STATUS_BY_TEMPLATE: ReadonlyMap<string, string> = new Map(Object.entries(STATUS_FOR_MAIL));
+
+/** Why a queued mail no longer fits its registration. */
+export type RegistrationMailMisfit = "registration_changed" | "confirmation_expired";
+
+/**
+ * Whether a queued mail still fits its registration, or why not: a mail goes out only while the registration has the
+ * status the mail is for, and a confirmation link only until it expires. A change of state that queues no newer mail
+ * (a rejection with no notice) leaves the old mail behind, and the worker cancels it at its last check
+ * (`@admitto/mail-delivery`, registration-mail-check.ts). That check and the staff's retry (canRetryRegistrationMail)
+ * both ask this, so a retry is never offered, or recorded, for a mail the worker would cancel.
+ */
+export function registrationMailMisfit(
+  template: string,
+  registration: { status: string; confirm_expires_at: Date | null },
+  nowMs: number,
+): RegistrationMailMisfit | null {
+  if (registration.status !== STATUS_BY_TEMPLATE.get(template)) return "registration_changed";
+  const expiry = registration.confirm_expires_at;
+  if (template === "registration-confirm" && expiry !== null && expiry.getTime() <= nowMs) return "confirmation_expired";
+  return null;
 }
 
 export type RegistrationMailEntry = {

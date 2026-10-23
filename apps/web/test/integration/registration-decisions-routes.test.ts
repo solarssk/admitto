@@ -631,6 +631,21 @@ describe("retry-mail (D-B15)", () => {
     expect(log.metadata).toEqual({ count: 1, registration_ids: [id] });
   });
 
+  it("does not queue again a mail the worker would cancel, because the registration has moved on", async () => {
+    // Turned down with no notice: the failed "received" mail is still the last one, and the registration no longer fits it.
+    const [id] = await addRegistrations(1, { status: "rejected" });
+    const mailId = await addFailedMail(id!);
+    expect((await listOf()).items[0]?.last_mail).toMatchObject({ status: "failed", can_retry: false });
+    const before = await prisma.registrationMail.findUniqueOrThrow({ where: { id: mailId } });
+
+    const res = await retryMail([id!]);
+
+    expect(res.status).toBe(200);
+    expect((await res.json()) as RetryRegistrationMailsDto).toEqual({ results: [{ id, outcome: "not_retryable" }] });
+    expect(await prisma.registrationMail.findUniqueOrThrow({ where: { id: mailId } })).toEqual(before);
+    expect(await logCount("registration_mail_retried")).toBe(0);
+  });
+
   it("answers for each registration, and leaves a mail that cannot be sent again alone", async () => {
     const [failed, tried, silent] = await addRegistrations(3);
     await addFailedMail(failed!);

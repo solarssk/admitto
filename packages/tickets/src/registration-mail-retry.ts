@@ -19,7 +19,8 @@ export type RetryRegistrationMailsParams = {
 /**
  * What became of one registration of a retry:
  * - `retried`: its last mail is queued again, and the worker sends it on its next tick (the reset wakes it);
- * - `not_retryable`: its last mail is not one that staff may send again (canRetryRegistrationMail), or it has none;
+ * - `not_retryable`: its last mail is not one that staff may send again (canRetryRegistrationMail: it did not fail for good,
+ *   or the registration no longer fits it, so the worker would cancel it), or it has none;
  * - `gone`: no such registration in the event (deleted, erased, or never there);
  * - `closed`: the event is archived or gone, and nothing is changed in it.
  */
@@ -45,11 +46,20 @@ async function retryInTransaction(
     where: { event_id: eventId, id: { in: [...ids] } },
     select: {
       id: true,
-      mails: { orderBy: [{ queued_at: "desc" }, { id: "desc" }], take: 1, select: { id: true, status: true, retryable: true } },
+      status: true,
+      confirm_expires_at: true,
+      mails: {
+        orderBy: [{ queued_at: "desc" }, { id: "desc" }],
+        take: 1,
+        select: { id: true, template_name: true, status: true, retryable: true },
+      },
     },
   });
   const lastMail = new Map(rows.map((row) => [row.id, row.mails.at(0)]));
-  const mailIds = [...lastMail.values()].flatMap((mail) => (mail && canRetryRegistrationMail(mail) ? [mail.id] : []));
+  const mailIds = rows.flatMap((row) => {
+    const mail = row.mails.at(0);
+    return mail && canRetryRegistrationMail(mail, row, now.getTime()) ? [mail.id] : [];
+  });
 
   // canRetryRegistrationMail is the one rule, applied above under the registration queue. Nothing can move these
   // rows before this update: every writer of a mail row takes the queue, except the worker's write of a send result,

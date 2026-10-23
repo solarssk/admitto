@@ -136,6 +136,7 @@ const LIST_SELECT = {
   company: true,
   department: true,
   status: true,
+  confirm_expires_at: true,
   created_at: true,
   companions: true,
 } as const satisfies Prisma.RegistrationSelect;
@@ -196,12 +197,16 @@ function plainObjectOrNull(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function mailBrief(mail: { template_name: string; status: string; retryable: boolean | null }): RegistrationMailBriefDto {
+function mailBrief(
+  mail: { template_name: string; status: string; retryable: boolean | null },
+  registration: { status: string; confirm_expires_at: Date | null },
+  nowMs: number,
+): RegistrationMailBriefDto {
   return {
     template_name: mail.template_name as RegistrationMailTemplateName,
     status: mail.status as EmailDeliveryStatus,
     retryable: mail.retryable,
-    can_retry: canRetryRegistrationMail(mail),
+    can_retry: canRetryRegistrationMail(mail, registration, nowMs),
   };
 }
 
@@ -238,9 +243,13 @@ function serializeConsents(value: unknown): Record<string, string> {
   return Object.fromEntries(given);
 }
 
-function serializeMail(row: MailRow): RegistrationMailDto {
+function serializeMail(
+  row: MailRow,
+  registration: { status: string; confirm_expires_at: Date | null },
+  nowMs: number,
+): RegistrationMailDto {
   return {
-    ...mailBrief(row),
+    ...mailBrief(row, registration, nowMs),
     id: row.id,
     attempts: row.attempts,
     queued_at: row.queued_at.toISOString(),
@@ -261,6 +270,7 @@ function serializeDetail(
   row: DetailRow,
   decidedBy: RegistrationDetailDto["decided_by"],
   mails: MailRow[],
+  nowMs: number,
 ): RegistrationDetailDto {
   return {
     id: row.id,
@@ -281,7 +291,7 @@ function serializeDetail(
     decided_by: decidedBy,
     locale: row.locale,
     attendee_id: row.attendee_id,
-    mails: mails.map(serializeMail),
+    mails: mails.map((mail) => serializeMail(mail, row, nowMs)),
   };
 }
 
@@ -317,17 +327,20 @@ function readFilter(c: Context): RegistrationListFilter | Response {
 async function lastMailByRegistration(
   db: PrismaClient,
   eventId: string,
-  registrationIds: string[],
+  rows: readonly ListRow[],
+  nowMs: number,
 ): Promise<Map<string, RegistrationMailBriefDto>> {
   const last = new Map<string, RegistrationMailBriefDto>();
-  if (registrationIds.length === 0) return last;
+  if (rows.length === 0) return last;
+  const registrations = new Map(rows.map((row) => [row.id, row]));
   const mails = await db.registrationMail.findMany({
-    where: { event_id: eventId, registration_id: { in: registrationIds } },
+    where: { event_id: eventId, registration_id: { in: [...registrations.keys()] } },
     select: LAST_MAIL_SELECT,
     orderBy: [{ queued_at: "desc" }, { id: "desc" }],
   });
   for (const mail of mails) {
-    if (!last.has(mail.registration_id)) last.set(mail.registration_id, mailBrief(mail));
+    const registration = registrations.get(mail.registration_id);
+    if (registration && !last.has(mail.registration_id)) last.set(mail.registration_id, mailBrief(mail, registration, nowMs));
   }
   return last;
 }
@@ -347,7 +360,8 @@ export async function handleListEventRegistrations(c: Context, db: PrismaClient)
 
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
-  const where = registrationListWhere(event.id, filter, new Date());
+  const now = new Date();
+  const where = registrationListWhere(event.id, filter, now);
 
   const [total, rows] = await Promise.all([
     db.registration.count({ where }),
@@ -359,11 +373,7 @@ export async function handleListEventRegistrations(c: Context, db: PrismaClient)
       select: LIST_SELECT,
     }),
   ]);
-  const lastMails = await lastMailByRegistration(
-    db,
-    event.id,
-    rows.map((row) => row.id),
-  );
+  const lastMails = await lastMailByRegistration(db, event.id, rows, now.getTime());
 
   const body: RegistrationListDto = {
     items: rows.map((row) => serializeListItem(row, lastMails.get(row.id))),
@@ -411,5 +421,5 @@ export async function handleGetEventRegistration(c: Context, db: PrismaClient): 
     }),
     decidedByOf(db, row.decided_by),
   ]);
-  return c.json(serializeDetail(row, decidedBy, mails));
+  return c.json(serializeDetail(row, decidedBy, mails, Date.now()));
 }

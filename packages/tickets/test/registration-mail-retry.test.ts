@@ -115,6 +115,39 @@ describe("retryRegistrationMails", () => {
     expect((await mailRow(mail.id)).status).toBe("queued");
   });
 
+  it("leaves a failed mail alone when its registration has moved on without a newer mail: the worker would cancel it", async () => {
+    // A guest whose "received" mail failed was turned down with no notice. Nothing newer was queued, so the failed mail
+    // is still the last one, and the registration no longer fits it.
+    const eventId = await make.event({ mode: "approval" });
+    const registration = await make.registration(eventId, { status: "rejected" });
+    const mail = await addMail(registration.id, eventId, "registration-received");
+    const before = await mailRow(mail.id);
+
+    const result = await retry(eventId, [registration.id]);
+
+    expect(result.outcomes).toEqual([{ id: registration.id, outcome: "not_retryable" }]);
+    expect(await mailRow(mail.id)).toEqual(before);
+    expect(await db.attendeeActionLog.count({ where: { event_id: eventId } })).toBe(0);
+  });
+
+  it("leaves a failed confirmation alone once its link has expired, and sends it again while the link is valid", async () => {
+    const eventId = await make.event();
+    const now = new Date();
+    const expired = await make.registration(eventId, { status: "awaiting_email", expiresAt: new Date(now.getTime() - 1) });
+    const valid = await make.registration(eventId, { status: "awaiting_email", expiresAt: new Date(now.getTime() + 3_600_000) });
+    const expiredMail = await addMail(expired.id, eventId, "registration-confirm");
+    const validMail = await addMail(valid.id, eventId, "registration-confirm");
+
+    const result = await retry(eventId, [expired.id, valid.id], now);
+
+    expect(result.outcomes).toEqual([
+      { id: expired.id, outcome: "not_retryable" },
+      { id: valid.id, outcome: "retried" },
+    ]);
+    expect((await mailRow(expiredMail.id)).status).toBe("failed");
+    expect((await mailRow(validMail.id)).status).toBe("queued");
+  });
+
   it.each([
     ["queued", { status: "queued", attempts: 0, retryable: null, error_code: null, error: null, attempted_at: null }],
     ["sent", { status: "sent", retryable: null, error_code: null, error: null, sent_at: LONG_AGO }],
