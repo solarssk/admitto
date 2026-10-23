@@ -12,7 +12,7 @@ export { CAPACITY_EXCLUDED_STATUSES };
 
 export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS, runEventCapacityTransaction } from "@admitto/tickets";
 
-export { countActiveAdmittedAttendees, countActiveAttendees, countSeatsInUse } from "@admitto/tickets";
+export { countActiveAdmittedAttendees, countActiveAttendees, countSeatsInUse, countSeatsOfAttendee } from "@admitto/tickets";
 
 /** Audit metadata when a superadmin bypasses capacity with `?force=1`. */
 export type CapacityOverrideMeta = {
@@ -29,15 +29,26 @@ export function isCapacityReactivation(fromStatus: string, toStatus: string | un
   );
 }
 
+/** How a refusal for want of room is worded when more than one seat is asked for. */
+export type CapacityRequest = {
+  /**
+   * The request restores an attendee, who comes back with their companions: `incomingCount` is the seats of the
+   * attendee and each companion, and the refusal says so in places, not in a number of people to import.
+   */
+  restoring?: boolean;
+};
+
 /**
  * Returns a 409 Response when capacity would be exceeded, null when OK,
- * or override metadata when superadmin uses ?force=1.
+ * or override metadata when superadmin uses ?force=1. `incomingCount` is a number of seats (an attendee is
+ * one, and so is each companion), not of people.
  */
 export async function assertEventCapacityForIncoming(
   c: Context,
   db: CapacityDb,
   eventId: string,
   incomingCount: number,
+  request: CapacityRequest = {},
 ): Promise<Response | CapacityOverrideMeta | null> {
   if (incomingCount <= 0) return null;
 
@@ -70,10 +81,13 @@ export async function assertEventCapacityForIncoming(
     );
   }
 
+  const free = Math.max(0, event.capacity - current);
   return c.json(
     {
       code: "event_full",
-      error: `Import would exceed capacity. ${current} existing + ${incomingCount} new = ${projected} > ${event.capacity}.`,
+      error: request.restoring
+        ? `Not enough free places: restoring this attendee needs ${incomingCount} (the attendee and ${incomingCount - 1} companion${incomingCount === 2 ? "" : "s"}), and ${free} ${free === 1 ? "is" : "are"} free.`
+        : `Import would exceed capacity. ${current} existing + ${incomingCount} new = ${projected} > ${event.capacity}.`,
       capacity: event.capacity,
       current,
       incoming: incomingCount,

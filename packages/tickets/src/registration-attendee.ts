@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@admitto/db";
+import { readRegistrationCompanions } from "./attendee-companion.js";
 import { customDataValue } from "./custom-data.js";
 import { filterCustomDataAttributeFields } from "./custom-data-reserved.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
@@ -16,11 +17,18 @@ export type RegistrationAttendeeSource = {
   company: string | null;
   department: string | null;
   custom_data: Prisma.JsonValue | null;
+  /** `Registration.companions`: the companions the guest brings, which become the attendee's companions (absent: none). */
+  companions?: Prisma.JsonValue;
 };
 
 /** The event's custom fields an admitted guest's answers pass through: the fixed profile columns are not among them. */
 export async function loadAdmissionFields(tx: Prisma.TransactionClient, eventId: string): Promise<EventItemContent[]> {
   return filterCustomDataAttributeFields(await loadEventCustomDataFields(tx, eventId));
+}
+
+/** The event's questions about a companion, which the answers of an admitted guest's companions pass through. */
+export async function loadCompanionAdmissionFields(tx: Prisma.TransactionClient, eventId: string): Promise<EventItemContent[]> {
+  return filterCustomDataAttributeFields(await loadEventCustomDataFields(tx, eventId, "companion"));
 }
 
 /**
@@ -67,6 +75,30 @@ export async function findAttendeeAddresses(
 }
 
 /**
+ * Writes the companions of an accepted registration for the attendee made from it (D-E5): one row each, in the slots 1
+ * to n, with the name the registration holds and the answers that still fit the event's companion questions, as the
+ * guest's own answers do (attendeeCustomDataFromAnswers). The companions are those the seats were counted for
+ * (readRegistrationCompanions, which seatsNeeded counts too). Nothing is read when the registration holds none.
+ */
+async function createCompanions(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  attendeeId: string,
+  stored: Prisma.JsonValue | undefined,
+  preloaded: readonly EventItemContent[] | undefined,
+): Promise<void> {
+  const companions = readRegistrationCompanions(stored);
+  if (companions.length === 0) return;
+  const fields = preloaded ?? (await loadCompanionAdmissionFields(tx, eventId));
+  await tx.attendeeCompanion.createMany({
+    data: companions.map((companion, index) => {
+      const answers = attendeeCustomDataFromAnswers(fields, companion.custom_data);
+      return { attendee_id: attendeeId, slot: index + 1, name: companion.name, ...(answers ? { custom_data: answers } : {}) };
+    }),
+  });
+}
+
+/**
  * Creates the attendee of an accepted registration and returns its id, or null when an attendee with this exact
  * address is there already: `INSERT ... ON CONFLICT DO NOTHING`, because a unique violation inside the transaction
  * would abort it, and the one writer that holds no lock of ours (an edit of an attendee's address) can still
@@ -75,17 +107,21 @@ export async function findAttendeeAddresses(
  * What the attendee gets (D-B9): the address, the name (first and last name), company and department, the answers
  * that still fit the event's fields (attendeeCustomDataFromAnswers), status `registered`, RSVP `none` with no
  * source (the guest was not added by staff and did not answer an invitation), and no ticket type: nobody receives
- * a category automatically. The ticket token is minted by the send of the ticket, not here.
+ * a category automatically. The ticket token is minted by the send of the ticket, not here. Its companions, when
+ * the registration holds any, are written in the same transaction (createCompanions), which is what makes the seat
+ * the caller counted (seatsNeeded) a seat in use (countSeatsInUse).
  *
- * The caller holds the capacity lock and the registration queue, has counted the seat and has checked the
- * address (findAttendeeAddresses: the unique index tells apart only the same spelling). It writes the registration's
- * own side (status, link, decision) and the audit entry.
+ * The caller holds the capacity lock and the registration queue, has counted the seats (the guest's and each
+ * companion's) and has checked the address (findAttendeeAddresses: the unique index tells apart only the same
+ * spelling). It writes the registration's own side (status, link, decision) and the audit entry. `companionFields`
+ * (loadCompanionAdmissionFields) spares a batch from reading the companion questions once for each guest.
  */
 export async function createAttendeeFromRegistration(
   tx: Prisma.TransactionClient,
   eventId: string,
   source: RegistrationAttendeeSource,
   fields: readonly EventItemContent[],
+  companionFields?: readonly EventItemContent[],
 ): Promise<string | null> {
   const customData = attendeeCustomDataFromAnswers(fields, source.custom_data);
   const [created] = await tx.attendee.createManyAndReturn({
@@ -106,7 +142,9 @@ export async function createAttendeeFromRegistration(
     skipDuplicates: true,
     select: { id: true },
   });
-  return created?.id ?? null;
+  if (!created) return null;
+  await createCompanions(tx, eventId, created.id, source.companions, companionFields);
+  return created.id;
 }
 
 /**

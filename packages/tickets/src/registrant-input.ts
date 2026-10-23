@@ -187,9 +187,9 @@ export const registrantEmailSchema = z
   .refine((value) => !isErasedPlaceholderEmail(value), "reserved_address");
 
 /** A custom field as the public form sees it: the registry row plus the two columns that decide
- * whether an anonymous registrant may answer it. `applies_to` is absent until companions exist and
- * then means `guest`. `description` is the organiser's note shown under the question; absent when
- * the field has none. */
+ * whether an anonymous registrant may answer it. `applies_to` is whose answer the question asks for;
+ * absent means `guest` (loadRegistrantFormFields sets it only for a question about a companion).
+ * `description` is the organiser's note shown under the question; absent when the field has none. */
 export type RegistrantFormField = EventItemContent & {
   show_on_form: boolean;
   applies_to?: "guest" | "companion";

@@ -1,10 +1,15 @@
 import type { Prisma } from "@admitto/db";
 import type { RegistrationMode } from "@admitto/db/status";
+import { readRegistrationCompanions } from "./attendee-companion.js";
 import { countSeatsInUse } from "./event-seats.js";
 
-/** The seats a registration takes once it is accepted: the guest and each companion (D-B3, D-E5). */
+/**
+ * The seats a registration takes once it is accepted: the guest and each companion (D-B3, D-E5). The companions are
+ * those the admission will write (readRegistrationCompanions), so the seats a registration is given and the rows it
+ * gets are always the same number.
+ */
 export function seatsNeeded(companions: Prisma.JsonValue): number {
-  return 1 + (Array.isArray(companions) ? companions.length : 0);
+  return 1 + readRegistrationCompanions(companions).length;
 }
 
 /**

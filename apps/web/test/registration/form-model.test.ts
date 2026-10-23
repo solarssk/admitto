@@ -149,6 +149,16 @@ describe("loadRegistrationPage, and the questions it draws", () => {
     expect(drawn.map((q) => q.key)).toEqual(["ok"]);
   });
 
+  it("does not draw a question about a companion, required or not, and does not close the form for it", async () => {
+    const drawn = await questionsOf([
+      field({ source_field: "diet", type: "select", options: ["Vegan"] }),
+      field({ source_field: "companion_badge", required: true, applies_to: "companion" }),
+      field({ source_field: "companion_note", applies_to: "companion" }),
+      field({ source_field: "companion_pick", type: "select", required: true, options: [], applies_to: "companion" }),
+    ]);
+    expect(drawn.map((q) => q.key)).toEqual(["diet"]);
+  });
+
   it("closes the form for a required choice with no choices, as before", async () => {
     expect(await pageWith([field({ source_field: "pick", type: "select", required: true, options: [] })])).toEqual({ kind: "not_found" });
   });

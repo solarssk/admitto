@@ -7,6 +7,7 @@ import {
   createAttendeeFromRegistration,
   findAttendeeAddresses,
   loadAdmissionFields,
+  loadCompanionAdmissionFields,
   writeAcceptanceLog,
 } from "./registration-attendee.js";
 import { lockRegistrationQueue, lockRegistrationsForUpdate, type LockedRegistration } from "./registration-lock.js";
@@ -133,10 +134,14 @@ async function acceptCandidates(
   sorted: Sorted,
 ): Promise<{ registrationId: string; attendeeId: string }[]> {
   const fields = await loadAdmissionFields(tx, eventId);
+  // The questions about a companion are read once for the batch, and only when a guest of it brings one.
+  const companionFields = sorted.candidates.some((row) => seatsNeeded(row.companions) > 1)
+    ? await loadCompanionAdmissionFields(tx, eventId)
+    : undefined;
   const created = await Promise.all(
     sorted.candidates.map(async (row) => ({
       registrationId: row.id,
-      attendeeId: await createAttendeeFromRegistration(tx, eventId, row, fields),
+      attendeeId: await createAttendeeFromRegistration(tx, eventId, row, fields, companionFields),
     })),
   );
   const accepted: { registrationId: string; attendeeId: string }[] = [];
