@@ -33,6 +33,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add the four guest registration emails to Communication > Templates, where you can read them, edit them and revert them to the built-in text ([#1791](https://github.com/solarssk/admitto/pull/1791))
 - Show who accepted, rejected or deleted guest registrations in Organisation settings > Logs > Audit, and filter by these actions ([#1794](https://github.com/solarssk/admitto/pull/1794))
 - Add the page behind the guest confirmation link: opening it confirms nothing, its button does, and the link works for 24 hours ([#1795](https://github.com/solarssk/admitto/pull/1795))
+- Add "Add suggested questions" on the Registration page's Fields tab: one click adds parking, travel and accommodation questions, and a new event has no fields
 
 ### Changed
 

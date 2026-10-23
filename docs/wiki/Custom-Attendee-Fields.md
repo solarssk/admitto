@@ -69,6 +69,38 @@ Text, long text and phone fields can limit what an answer looks like. Open **For
 - The editor checks the rules before you save. It refuses a length above what the type holds (100 for text, 1000 for long text, 16 for a phone number), a shortest answer longer than the longest, and phone lengths that no number can meet. The line under the two length boxes says which.
 - Date, Date and time, Single choice and Yes / No fields take no format rules. When you change a field to one of them, its format rules are removed. An icon and a condition that the field has stay.
 
+### Suggested questions
+
+**Add suggested questions** gives an event a ready set of questions about parking, travel and accommodation. You press it yourself. Admitto never adds these questions on its own: a new event has no custom fields until you add them.
+
+The button is on the **Fields** tab of the event's **Registration** page, next to **Add field**. That page is not in the event menu yet, so the button cannot be reached from the menu.
+
+| Question | The guest answers | Notes |
+|---|---|---|
+| Do you need a parking space? | Yes / No | |
+| Registration number | Text, up to 12 characters | Asked only when the answer to the parking question is Yes |
+| How will you get here? | Single choice: Car, Train, Plane, Other | |
+| Arrival (date and time) | Date and time | A guess is fine, the description says |
+| Do you need accommodation? | Yes / No | |
+
+1. Open the **Fields** tab and select **Add suggested questions**.
+2. Read the list. Each question says what will happen to it: **Will be added**, **Already in your list** or **Not added**.
+3. Select **Add** and the number of questions, for example **Add 5 questions**.
+
+- Every question is optional and is on the registration form. Change or delete it afterwards like any other field.
+- The questions go to the end of the list, in the order above.
+- Press the button again whenever you like. A question that is in the list stays exactly as you left it. Only a question you deleted comes back.
+- The set has no question about health, disability or accessibility needs. If you add one yourself, it is special-category personal data, and your organisation decides whether it may ask for it.
+- The button is off for an archived event, like **Add field**.
+
+What the window does when something is in the way:
+
+| Situation | What you see | Result |
+|---|---|---|
+| The event has a field with the same ID as a suggested question | **Already in your list** | That field is left as it is |
+| The event's own **parking** field is not a Yes / No question on the registration form | **Not added** on the registration number, with the reason | The other questions are added. Fix the field and press the button again |
+| The questions would take the event over 20 fields | **Would be added** on each question, and a warning that says how many fields to delete | Nothing is added. Delete fields, or add the questions you want one at a time with **Add field** |
+
 ### Icon, condition and suggestions
 
 Under **Registration form** in the field editor, every field can have an icon and a condition. A Text field can also have suggestions. All three are optional, and none of them changes what an answer may be.
@@ -165,6 +197,9 @@ A phone number is saved as a + and its digits. A number saved earlier in another
 | **A Required field cannot be saved because of the registration form** | The event accepts registrations, and a guest cannot answer a field that is not on the form. Put the field on the form, or clear **Required** |
 | **The editor says a change can't be saved because other questions are shown for an answer to this field** | Open each of those questions and set **Show only when** to **No condition**, or undo the change. The same applies to deleting the field |
 | **The editor says a question shows no icon** | The registration form draws an icon only next to an optional Yes / No question and next to a one-line answer. For a Single choice, a Long text or a Required Yes / No question the icon stays saved and is not drawn. Choose **No icon**, or change the type or **Required** |
+| **Add suggested questions says a question is not added** | The registration number waits for a Yes / No question with the ID `parking` that is on the registration form. The event has a field with that ID that is something else, or is off the form. Change that field, or add the question by hand |
+| **Add suggested questions would take the event over the limit** | An event can have 20 fields. Delete the number of fields the warning names, or add the questions you want one at a time with **Add field** |
+| **Add suggested questions is off** | The event is archived. A Superadmin can restore it |
 | **Show only when is off** | The field is one that other questions are shown for, or the event has no Yes / No or Single choice question without a condition. The line under the control says which |
 | **A suggestion is refused** | Read the line under the list. A suggestion is 1 to 100 characters on one plain line, and the same text twice is refused whatever its capital letters |
 | **The editor does not accept a rule** | Read the line under the two length boxes, or under **Example**. A length has to be a whole number from 1 to what the type holds, and the shortest answer cannot be longer than the longest |
