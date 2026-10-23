@@ -24,10 +24,13 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add long text, date, date and time and phone answer types, with format rules, to the field editor, attendee form and import columns list ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Show an avatar with the attendee's initials before the name on the attendee page ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Show icons, questions that open under another answer, and a list of suggestions on the guest registration form, as in the approved design ([#1786](https://github.com/solarssk/admitto/pull/1786))
+- Add icons, "show only when" conditions and suggestions to the attendee field editor, and show them on the field list ([#1787](https://github.com/solarssk/admitto/pull/1787))
+- Warn in the field editor, and in the delete dialog, when other fields are shown only for an answer to the field ([#1787](https://github.com/solarssk/admitto/pull/1787))
 
 ### Changed
 
 - Use the width of the screen in the Add attendee and Edit attendee forms, two fields to a row, with the custom fields under their own heading ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Hide a question that is shown only for another answer in the Add attendee and Edit attendee forms, and do not require or save it ([#1787](https://github.com/solarssk/admitto/pull/1787))
 
 ### Fixed
 

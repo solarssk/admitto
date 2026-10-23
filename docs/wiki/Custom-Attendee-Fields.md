@@ -20,8 +20,9 @@ Decide which information is necessary for this event. Choose a stable field name
 6. Choose the type of answer: **Text**, **Long text**, **Date**, **Date and time**, **Phone**, **Single choice** or **Yes / No**. See [Types of answer](#types-of-answer).
 7. For a Single choice field, select **+ Add option** for each value attendees can choose, and drag a row's handle (or, with it focused, use the up/down arrow keys) to reorder the list.
 8. For a Text, Long text or Phone field, you can limit the answer under **Format rules**. See [Format rules](#format-rules).
-9. Mark the field **Required** only when every attendee must have a valid value.
-10. Create the field and test it with a synthetic attendee or dry-run import.
+9. Under **Registration form**, you can give the question an icon, show it only for a certain answer to another question, and, for a Text field, offer suggestions. See [Icon, condition and suggestions](#icon-condition-and-suggestions).
+10. Mark the field **Required** only when every attendee must have a valid value.
+11. Create the field and test it with a synthetic attendee or dry-run import.
 
 ## Expected result
 
@@ -37,7 +38,7 @@ The field appears in supported attendee and import workflows with the label, typ
 - Select values must match an allowed option.
 - A field used by an event item cannot be deleted until that reference is removed.
 
-**Types of answer**
+### Types of answer
 
 | Type | The attendee enters | In the attendee form |
 |---|---|---|
@@ -51,7 +52,7 @@ The field appears in supported attendee and import workflows with the label, typ
 
 The registration form for guests asks the same types in its own way. See [Registration Form Fields](Registration-Form-Fields). The exact limits are in the [Validation Reference](Validation-Reference).
 
-**Format rules**
+### Format rules
 
 Text, long text and phone fields can limit what an answer looks like. Open **Format rules** in the field editor. All the rules are optional, and you never type a pattern.
 
@@ -67,6 +68,48 @@ Text, long text and phone fields can limit what an answer looks like. Open **For
 - In the attendee form, a phone number pasted with its country code, such as +48 601 200 300, sets the country picker and fills the number box.
 - The editor checks the rules before you save. It refuses a length above what the type holds (100 for text, 1000 for long text, 16 for a phone number), a shortest answer longer than the longest, and phone lengths that no number can meet. The line under the two length boxes says which.
 - Date, Date and time, Single choice and Yes / No fields take no format rules. When you change a field to one of them, its format rules are removed. An icon and a condition that the field has stay.
+
+### Icon, condition and suggestions
+
+Under **Registration form** in the field editor, every field can have an icon and a condition. A Text field can also have suggestions. All three are optional, and none of them changes what an answer may be.
+
+| Setting | What it does | Fits |
+|---|---|---|
+| **Icon** | A small picture drawn next to the question on the registration form. Choose one of 16, or **No icon**. The field list shows it before the field's name | Every type |
+| **Show only when** | The question is asked only when a guest gives a certain answer to another question. Leave it at **No condition** to ask everyone | Every type |
+| **Suggestions** | Texts offered while a guest types. A guest can still type any text | Text |
+
+The icons are Parking, Car, Food, Accessibility, Accommodation, Extra guest, Group, Company, Calendar, Clock, Telephone, Email, Location, Flight, Train and T-shirt.
+
+To set **Show only when**:
+
+1. Choose the other question. The list holds the Yes / No and Single choice questions of the event that have no condition of their own.
+2. Choose the answer. For a Yes / No question it is **Yes**. For a Single choice question, choose one of its options.
+
+- The registration form draws an icon next to an optional Yes / No question and next to a one-line answer (Text, Date, Date and time, Phone). A Single choice, a Long text and a Required Yes / No question show none. You can still save an icon for them, and the editor says so under the icons.
+- A question that is not shown is not required, and a guest's answer to it is never saved.
+- On the registration form, a question with a condition appears in a panel under the question it depends on, as soon as a guest gives the answer.
+- The field list says "Shown only when “Parking” is Yes" under a question that has a condition.
+- A question with a condition can be on the registration form only together with the question it depends on. If you add or edit a question that is on the form, the list marks a question that is not on the form with "(not on the form)". The editor holds back the save until you choose another question, or put that question on the form first.
+- A question that other questions are shown for cannot have a condition itself. Its **Show only when** control is off, and the line under it names those questions.
+
+**Questions that other questions are shown for**
+
+A Yes / No or Single choice question can have other questions that wait for one of its answers. For such a question:
+
+- You cannot change its type, and you cannot remove or rename an option that a question is shown for.
+- You cannot delete it.
+- Before you save, the editor names those questions and the answer each waits for, and keeps **Save** off. The **Delete** dialog says the same and keeps **Delete** off.
+- To go on, open the other question and set **Show only when** to **No condition**, or undo your change.
+
+**Suggestions**
+
+- Up to 30 suggestions, each 1 to 100 characters on one plain line. The same suggestion twice is refused, whatever its capital letters.
+- Select **+ Add suggestion** for each one. Drag a row's handle, or with it focused use the up and down arrow keys, to change the order.
+- They only suggest. A guest can still type any text, and Admitto never checks an answer against the list.
+- On the registration form the list narrows as a guest types. It keeps the suggestions that contain what was typed.
+- The line under the list says what is wrong before you save.
+- When a Text field becomes another type, its suggestions are removed. Its icon and condition stay.
 
 **Wallet passes**
 
@@ -93,7 +136,7 @@ Text, long text and phone fields can limit what an answer looks like. Open **For
 - A **Text** field is a box for a short answer of up to 100 characters. A **Select** field is a list, and the guest picks one option.
 - An optional **Yes/No** field is a checkbox. A guest who leaves it unticked sends no answer, so Admitto does not record a "No". A **Required** Yes/No field is a list of Yes and No instead, because the guest has to answer.
 - A guest cannot send the form until every **Required** field is answered.
-- A question can be shown only when another yes/no or select question has a certain answer. A question that is not shown is not required, and a guest's answer to it is never saved. Admitto keeps an answer that was saved while the question was shown. The rules for conditions, icons and suggestions are in the [Validation Reference](Validation-Reference#custom-attendee-fields-requirements-page).
+- A question can be shown only when another yes/no or select question has a certain answer. A question that is not shown is not required, and a guest's answer to it is never saved. Admitto keeps an answer that was saved while the question was shown. Set it under **Registration form** in the field editor, see [Icon, condition and suggestions](#icon-condition-and-suggestions). The rules are in the [Validation Reference](Validation-Reference#custom-attendee-fields-requirements-page).
 
 ## What changes after this action
 
@@ -102,6 +145,8 @@ The field becomes part of the event's attendee data. Editing its label, descript
 **Changing the type or the rules of a field that already has answers.** Saved answers are not converted. They are checked against the new type and rules the next time someone edits that attendee. An attendee whose saved answer no longer fits cannot be edited until that answer is replaced or cleared. For example, a Text field that held "next week" and became a Date field leaves that attendee uneditable until the date is entered again. The field editor shows a warning when you change the type or a rule of a field that exists.
 
 A phone number is saved as a + and its digits. A number saved earlier in another form, such as "+1 555 0100" in a field that was a Text field, must be entered again after the field becomes a Phone field.
+
+**A question that is not shown.** The Add attendee dialog and an attendee's edit form hide it. They do not ask for it, even when the field is Required, and they do not send an answer typed for it. What was typed stays in the form while you work, so it is back when the answer shows the question again. An answer that was saved while the question was shown stays on the attendee.
 
 **Editing a Select field.** When you reopen an existing Select field, each option shows how many attendees currently have it selected.
 
@@ -118,6 +163,10 @@ A phone number is saved as a + and its digits. A number saved earlier in another
 | **An import value is invalid** | Use the field ID as the column and match the selected type or option |
 | **The field cannot be deleted** | Remove its use from event items first, and change or remove the condition of any field that is shown only for an answer to it |
 | **A Required field cannot be saved because of the registration form** | The event accepts registrations, and a guest cannot answer a field that is not on the form. Put the field on the form, or clear **Required** |
+| **The editor says a change can't be saved because other questions are shown for an answer to this field** | Open each of those questions and set **Show only when** to **No condition**, or undo the change. The same applies to deleting the field |
+| **The editor says a question shows no icon** | The registration form draws an icon only next to an optional Yes / No question and next to a one-line answer. For a Single choice, a Long text or a Required Yes / No question the icon stays saved and is not drawn. Choose **No icon**, or change the type or **Required** |
+| **Show only when is off** | The field is one that other questions are shown for, or the event has no Yes / No or Single choice question without a condition. The line under the control says which |
+| **A suggestion is refused** | Read the line under the list. A suggestion is 1 to 100 characters on one plain line, and the same text twice is refused whatever its capital letters |
 | **The editor does not accept a rule** | Read the line under the two length boxes, or under **Example**. A length has to be a whole number from 1 to what the type holds, and the shortest answer cannot be longer than the longest |
 | **An attendee cannot be saved after a field was changed** | A saved answer does not fit the new type or rules. Open the attendee, replace or clear that answer, and save again |
 | **A Date and time answer is refused** | Choose both the date and the time. The time is the time at the event |
