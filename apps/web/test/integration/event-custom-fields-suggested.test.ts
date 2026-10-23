@@ -312,7 +312,7 @@ describe("a second request", () => {
     expect(res.status).toBe(200);
     expect(await outcomeOf(res)).toEqual({ added: [], skipped: SUGGESTED_KEYS.map((source_field) => ({ source_field, reason: "exists" })) });
     expect(await fieldsOf()).toEqual(before);
-    expect((await createdLog()).length).toBe(logBefore.length);
+    expect(await createdLog()).toHaveLength(logBefore.length);
   });
 
   it("leaves a question the organiser changed as the organiser left it", async () => {
@@ -474,7 +474,7 @@ describe("two requests at once", () => {
     expect([first.status, second.status].sort((a, b) => a - b)).toEqual([200, 201]);
     expect(outcomes.map((outcome) => outcome.added.length).sort((a, b) => a - b)).toEqual([0, 5]);
     expect(await keysOf()).toEqual(SUGGESTED_KEYS);
-    expect((await createdLog()).length).toBe(SUGGESTED_KEYS.length);
+    expect(await createdLog()).toHaveLength(SUGGESTED_KEYS.length);
   });
 
   it("never leave the event over the limit or with some of the questions: the five are added together or not at all", async () => {
