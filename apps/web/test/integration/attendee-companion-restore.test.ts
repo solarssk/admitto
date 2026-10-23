@@ -142,6 +142,19 @@ describe("restoring an attendee who has a companion", () => {
     expect(body.error).toBe("Not enough free places: restoring this attendee needs 2 (the attendee and 1 companion), and 0 are free.");
   });
 
+  it("says companions in the plural when the attendee has several, which the table allows and a later release may use", async () => {
+    await attendee();
+    await attendee();
+    const guest = await attendee({ status: "revoked", companion: true });
+    await prisma.attendeeCompanion.create({ data: { attendee_id: guest.id, slot: 2, name: "Second Companion Example" } });
+
+    const body = (await (await restore(guest.id)).json()) as { error: string; incoming: number };
+
+    expect(body.incoming).toBe(3);
+    expect(body.error).toBe("Not enough free places: restoring this attendee needs 3 (the attendee and 2 companions), and 1 is free.");
+    expect(await statusOf(guest.id)).toBe("revoked");
+  });
+
   it("lets a superadmin force the restore over the limit, and an administrator not", async () => {
     await attendee();
     await attendee();
