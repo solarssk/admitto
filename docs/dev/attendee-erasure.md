@@ -372,6 +372,10 @@ The deletion takes the locks of an erasure, in the order of [Rules for code](#ru
 
 It takes no capacity lock. It takes no seat, and a seat it frees is freed under the attendee's row.
 
+### What is left
+
+A registration mail that was already handed to the mail provider when the deletion runs can still go out once, as for an erasure ([Not done by the function](#not-done-by-the-function)). What the guest already received stays in their mailbox and in the provider's Sent Items.
+
 ### Tests
 
 - `registration-deletion.test.ts` in `packages/tickets/test`: each state, an accepted registration (ticket, place, an admitted guest, an archived event), the filter, the caps, the audit entries, the rollback, and the deletion against an admission, an erasure, a writer that holds the capacity lock, a guest, and another deletion, each side first.
@@ -970,7 +974,7 @@ A pass whose request left no trace on the row at all. Only a request from before
   - The custom-field answers (deleted at erasure) land in "not answered".
   - Their rows are read with plain queries and no last check. So a report or a CSV read while an erasure is still open carries that person's name and address. It is the one place the check described above does not reach yet.
 - **Outside Admitto:** the mail provider's Sent Items (registration mails too) and relay logs, proxy logs, and database backups (14 days by default). A restore must re-run the erasures.
-- **A registration mail already handed to the provider** when an erasure, a removal or a deletion of the registration runs can still go out once too. The last check takes the registration queue and ends with its transaction, before the send, and the result is one conditional update that finds no row once the registration is gone. A registration mail row stores a code and a fixed sentence, never the provider's text.
+- **A registration mail already handed to the provider** when the erasure runs can still go out once too. The last check takes the registration queue and ends with its transaction, before the send, and the result is one conditional update that finds no row once the registration is gone. A registration mail row stores a code and a fixed sentence, never the provider's text.
 - **A mail already handed to the sender** when the erasure runs can still go out once.
   - Its outcome is not written back. An emptied delivery (no recipient) is skipped by every write-back, so it stays cancelled.
   - The last check before a message goes to the mailer (`readDeliveriesBeforeSend`: a retry, the worker, a synchronous send) reads the delivery under the attendee's row lock. So an erasure that is still open is waited for, and a message never starts for someone it is erasing.
