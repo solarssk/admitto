@@ -93,9 +93,10 @@ export type SubmissionMailLimits = {
    */
   addressAllowed?: () => Promise<boolean>;
   /**
-   * The event's budget of queued mail: no more rows than `eventMailCap(base, capacity)` in the last `windowMs`,
-   * counted in the database under the registration queue, so that guests submitting at once cannot get past it and
-   * a restart does not reset it.
+   * The event's budget of queued mail: no more rows than `eventMailCap(base, capacity)` in the last `windowMs`, for the
+   * registrations created in the last `windowMs`, counted in the database under the registration queue, so that guests
+   * submitting at once cannot get past it and a restart does not reset it. The mail that staff queue by deciding on an
+   * older registration is not the guests' and does not use it up.
    */
   event?: { base: number; windowMs: number };
   /**
@@ -290,10 +291,12 @@ const needsAddressConfirmation = (settings: OpenSettings, method: RegistrationAc
   method !== "sso" && settings.verify_email;
 
 /**
- * Whether the event has not yet queued its share of mail within the window (SubmissionMailLimits). The rows are counted
- * for every submission, a known address included, so that the reads do not tell one address from another. Read under
- * the registration queue, which every writer of these rows holds, so the count is not out of date when the row is
- * added.
+ * Whether the event has not yet queued its share of mail within the window (SubmissionMailLimits). Only the rows queued
+ * for registrations created within the window are counted: it is a brake on strangers who submit the form, and the mail
+ * that a decision of staff on an older registration queues (a ticket, a rejection) would otherwise use up the budget of
+ * the guests who come after. The rows are counted for every submission, a known address included, so that the reads do
+ * not tell one address from another. Read under the registration queue, which every writer of these rows holds, so the
+ * count is not out of date when the row is added.
  */
 async function eventBudgetLeft(
   tx: Prisma.TransactionClient,
@@ -304,7 +307,9 @@ async function eventBudgetLeft(
 ): Promise<boolean> {
   if (!limit) return true;
   const since = new Date(now.getTime() - limit.windowMs);
-  const queued = await tx.registrationMail.count({ where: { event_id: eventId, queued_at: { gt: since } } });
+  const queued = await tx.registrationMail.count({
+    where: { event_id: eventId, queued_at: { gt: since }, registration: { created_at: { gt: since } } },
+  });
   return queued < eventMailCap(limit.base, capacity);
 }
 

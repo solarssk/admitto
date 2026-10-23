@@ -107,7 +107,8 @@ export const INLINE_RATE_LIMITS = {
   /** Mails to one address (HMAC of the lowercased address), instance-wide, across all events.
    * Gates only the queueing of a registration mail; the response to the registrant is unchanged. */
   "registration:mail-recipient": { windowMs: 24 * 3_600_000, max: 3 },
-  /** Registration mail rows (every template) one event may queue within the window. `max` is the base: the
+  /** Registration mail rows (every template) one event may queue within the window, for the registrations created
+   * within it (the mail that staff queue by deciding on an older registration is not counted). `max` is the base: the
    * cap is the larger of it and three per seat of the event (`eventMailCap` in `@admitto/tickets`), so a big
    * event is not cut short. Unlike the limits above this one is counted in Postgres, under the registration
    * queue (a restart does not reset it, and guests submitting at once cannot get past it), and the store is not
