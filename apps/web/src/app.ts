@@ -285,6 +285,8 @@ import { MAX_LEGAL_BODY_BYTES } from "./legal/legal-documents.js";
 import { loadPublishedLegalPage, respondLegalPage } from "./legal/legal-page.js";
 import { respondRegistrationNotFound } from "./registration-page-security.js";
 import { handleGetRegistrationForm } from "./registration/form-routes.js";
+import { registrationSubmitGuards } from "./registration/submit-guards.js";
+import { handlePostRegistration, type RegistrationSubmitDeps } from "./registration/submit-route.js";
 import {
   handleListEventTicketTypes,
   handleCreateEventTicketType,
@@ -508,6 +510,9 @@ export interface CreateAppOptions {
   opsHealthToken?: string | null;
   /** JSON access log per request (defaults to `LOG_HTTP_REQUESTS` env). */
   logHttpRequests?: boolean;
+  /** Test-only injection points of `POST /r/:slug`: the transport of the bot challenge, the wait for a lock and the
+   * floor of time of an answer. */
+  registrationSubmit?: Pick<RegistrationSubmitDeps, "challenge" | "placement" | "pace">;
 }
 
 /**
@@ -3221,6 +3226,21 @@ export function createApp(options: CreateAppOptions = {}) {
       loadTheme: loadOptionalBrandingTheme,
       serverError: (ctx) => renderPublicHtmlError(ctx, 500),
     }),
+  );
+  // The same form, sent (95c): the cross-site check, the limiter per IP and the body cap come first, then the route
+  // checks the bot challenge before it writes anything. One answer for every address (D-B14); its order and its
+  // answers are in registration/submit-route.ts. The event is looked up by the rules of the page above, so the
+  // 404 here is the one 404 of the registration routes.
+  app.post(
+    "/r/:slug",
+    ...registrationSubmitGuards(rateLimitStore),
+    (c) =>
+      handlePostRegistration(c, {
+        db,
+        store: rateLimitStore,
+        injectedBaseUrl: mailInjectedBaseUrl,
+        ...options.registrationSubmit,
+      }),
   );
 
   // A published legal text. Anything else (no such event, no such text, a draft, a ref that is not
