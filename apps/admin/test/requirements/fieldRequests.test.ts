@@ -1,7 +1,7 @@
 import { EVENT_CUSTOM_FIELD_TYPES } from "@admitto/shared";
 import { describe, expect, it } from "vitest";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
-import { createFieldBody, updateFieldPatch, type FieldSave } from "../../src/requirements/fieldRequests.js";
+import { createFieldBody, fieldSaveOf, sameFieldSave, updateFieldPatch, type FieldSave } from "../../src/requirements/fieldRequests.js";
 
 const save = (changes: Partial<FieldSave> = {}): FieldSave => ({
   type: "text",
@@ -114,39 +114,52 @@ describe("updateFieldPatch", () => {
     expect(patch).not.toHaveProperty("rules");
   });
 
-  describe("the rules the editor has no boxes for (an icon, a condition, suggestions)", () => {
+  describe("the complete rules of a field: format rules, an icon, a condition and suggestions", () => {
     const condition = { field: "parking", value: true } as const;
-    const stored = field({ rules: { max_length: 5, icon: "car", show_when: condition, suggestions: ["AB 123"] } });
+    const all = { max_length: 5, icon: "car", show_when: condition, suggestions: ["AB 123"] } as const;
+    const stored = field({ rules: { ...all } });
 
-    it("sends them again with the rules it edits, since a save with rules replaces all of them", () => {
-      expect(updateFieldPatch(stored, save({ rules: { max_length: 6 } })).rules).toEqual({
-        max_length: 6,
-        icon: "car",
-        show_when: condition,
-        suggestions: ["AB 123"],
+    it("sends all of them when one changes, since a save with rules replaces all of them", () => {
+      expect(updateFieldPatch(stored, save({ rules: { ...all, max_length: 6 } })).rules).toEqual({ ...all, max_length: 6 });
+    });
+
+    it("sends nothing about the rules when none changed, whatever the form rules are", () => {
+      expect(updateFieldPatch(stored, save({ rules: { ...all } }))).not.toHaveProperty("rules");
+      expect(updateFieldPatch(field({ rules: { icon: "car", show_when: condition } }), save({ label: "Plate", rules: { icon: "car", show_when: condition } }))).not.toHaveProperty("rules");
+    });
+
+    it("sends a change of the icon, the condition or the suggestions on its own", () => {
+      expect(updateFieldPatch(stored, save({ rules: { ...all, icon: "pin" } })).rules).toMatchObject({ icon: "pin" });
+      expect(updateFieldPatch(stored, save({ rules: { ...all, show_when: { field: "meal", value: "Vegan" } } })).rules).toMatchObject({
+        show_when: { field: "meal", value: "Vegan" },
+      });
+      expect(updateFieldPatch(stored, save({ rules: { ...all, suggestions: ["AB 123", "CD 456"] } })).rules).toMatchObject({
+        suggestions: ["AB 123", "CD 456"],
+      });
+      expect(updateFieldPatch(stored, save({ rules: { ...all, suggestions: ["CD 456", "AB 123"] } })).rules).toMatchObject({
+        suggestions: ["CD 456", "AB 123"],
       });
     });
 
-    it("sends the rules of the form on a field that has none of its own, and no rules when nothing changed", () => {
-      expect(updateFieldPatch(stored, save({ rules: { max_length: 5 } }))).not.toHaveProperty("rules");
-      expect(updateFieldPatch(field({ rules: { icon: "car", show_when: condition } }), save({ label: "Plate" }))).not.toHaveProperty("rules");
-    });
-
-    it("keeps the icon and the condition of a field that becomes a type with no format rules, and sends nothing of its format rules or suggestions", () => {
-      expect(updateFieldPatch(stored, save({ type: "date", rules: null }))).toMatchObject({ type: "date", rules: { icon: "car", show_when: condition } });
-    });
-
-    it("leaves the suggestions out when a text field becomes another type that takes format rules, since they fit text fields only", () => {
-      expect(updateFieldPatch(stored, save({ type: "long_text", rules: { max_length: 5 } })).rules).toEqual({
+    it("sends only what the editor leaves on a field that becomes another type: the icon and the condition stay, and what the type does not take goes", () => {
+      expect(updateFieldPatch(stored, save({ type: "date", rules: { icon: "car", show_when: condition } }))).toMatchObject({
+        type: "date",
+        rules: { icon: "car", show_when: condition },
+      });
+      expect(updateFieldPatch(stored, save({ type: "long_text", rules: { max_length: 5, icon: "car", show_when: condition } })).rules).toEqual({
         max_length: 5,
         icon: "car",
         show_when: condition,
       });
     });
 
-    it("sends null when nothing is left of the rules, and clears an icon that was the only rule only through a save that drops it", () => {
+    it("sends null when nothing is left of the rules", () => {
       expect(updateFieldPatch(field({ rules: { suggestions: ["a"] } }), save({ type: "boolean", rules: null })).rules).toBeNull();
-      expect(updateFieldPatch(field({ rules: { icon: "car" } }), save({ rules: null }))).not.toHaveProperty("rules");
+      expect(updateFieldPatch(field({ rules: { icon: "car" } }), save({ rules: null })).rules).toBeNull();
+    });
+
+    it("sends the rules in the form the server stores them in: no key for a rule that is off", () => {
+      expect(updateFieldPatch(field({ rules: { digits_only: false } }), save({ rules: null }))).not.toHaveProperty("rules");
     });
   });
 
@@ -156,5 +169,42 @@ describe("updateFieldPatch", () => {
       const patch = updateFieldPatch(before, save({ type: to, options: to === "select" ? options : [] }));
       if (patch.type === "select") expect(patch.options).toEqual(options);
     }
+  });
+});
+
+describe("fieldSaveOf and sameFieldSave", () => {
+  const choice = field({ type: "select", options: ["S", "M"], description: "Pick one", required: true, rules: { icon: "shirt" } });
+
+  it("is the save that leaves a field as it is: a save of the stored values is no edit", () => {
+    expect(fieldSaveOf(choice)).toEqual({
+      type: "select",
+      label: "Postcode",
+      description: "Pick one",
+      required: true,
+      options: ["S", "M"],
+      rules: { icon: "shirt" },
+    });
+    expect(sameFieldSave(fieldSaveOf(choice), fieldSaveOf(choice))).toBe(true);
+    expect(fieldSaveOf(field()).description).toBe("");
+    expect(fieldSaveOf(field()).options).toEqual([]);
+    expect(fieldSaveOf(field({ type: "text", options: ["left over"] })).options).toEqual([]);
+  });
+
+  it("sees a difference in each part of the save", () => {
+    const base = fieldSaveOf(choice);
+    expect(sameFieldSave(base, { ...base, type: "text" })).toBe(false);
+    expect(sameFieldSave(base, { ...base, label: "Size" })).toBe(false);
+    expect(sameFieldSave(base, { ...base, description: "" })).toBe(false);
+    expect(sameFieldSave(base, { ...base, required: false })).toBe(false);
+    expect(sameFieldSave(base, { ...base, options: ["M", "S"] })).toBe(false);
+    expect(sameFieldSave(base, { ...base, rules: { icon: "car" } })).toBe(false);
+    expect(sameFieldSave(base, { ...base, rules: null })).toBe(false);
+  });
+
+  it("takes no rules, an empty object and rules that are off as the same", () => {
+    const plain = fieldSaveOf(field());
+    expect(sameFieldSave(plain, { ...plain, rules: null })).toBe(true);
+    expect(sameFieldSave(plain, { ...plain, rules: {} })).toBe(true);
+    expect(sameFieldSave(fieldSaveOf(field({ rules: { digits_only: false } })), plain)).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
-import type { EventCustomFieldRules, ShowWhen } from "@admitto/shared";
+import type { EventCustomFieldRules, ShowWhen } from "./customFieldTypes.js";
 
-/** A custom field as the checks of its conditions see it: what a condition depends on, and nothing else. */
+/** A custom field as the checks of its conditions see it: what a condition depends on, and nothing else. The server judges a save with
+ * these checks, and the field editor of the admin app asks the same ones before it saves, so the two never disagree. */
 export type ConditionField = {
   source_field: string;
   type: string;
@@ -22,7 +23,7 @@ export type ShowWhenProblem = "invalid_show_when" | "show_when_not_on_form" | "f
 
 /** True when `condition` names an answer that `controller` can have: `true` for a yes/no field, one of the
  * options for a select field, and nothing for any other type. */
-function acceptsCondition(controller: ConditionField, condition: ShowWhen): boolean {
+export function acceptsCondition(controller: ConditionField, condition: ShowWhen): boolean {
   if (controller.type === "boolean") return condition.value === true;
   if (controller.type === "select") {
     return typeof condition.value === "string" && (controller.options ?? []).includes(condition.value);
@@ -30,8 +31,9 @@ function acceptsCondition(controller: ConditionField, condition: ShowWhen): bool
   return false;
 }
 
-/** The fields of `fields`, other than the field `sourceField` itself, whose condition depends on it. */
-function dependentsOf(sourceField: string, fields: readonly ConditionField[]): ConditionField[] {
+/** The fields of `fields`, other than the field `sourceField` itself, whose condition depends on it. It keeps the shape of the fields
+ * it is given, so a screen can name them by their own label. */
+export function dependentsOf<T extends ConditionField>(sourceField: string, fields: readonly T[]): T[] {
   return fields.filter((field) => field.source_field !== sourceField && field.rules?.show_when?.field === sourceField);
 }
 

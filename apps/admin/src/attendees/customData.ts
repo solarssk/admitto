@@ -1,4 +1,4 @@
-import { isDateAnswer, isDateTimeAnswer } from "@admitto/shared";
+import { isDateAnswer, isDateTimeAnswer, isQuestionShown } from "@admitto/shared";
 import { filterCustomDataAttributeFields } from "@admitto/tickets/custom-data-reserved";
 import { fetchEventCustomFields } from "../api/client.js";
 import type { EventCustomFieldDto } from "../api/types.js";
@@ -36,6 +36,27 @@ export function initialCustomFieldValues(fields: CustomDataFieldDef[]): Record<s
   return Object.fromEntries(fields.map((field) => [field.source_field, ""]));
 }
 
+/** The fields an attendee form draws for the answers it holds, in the order it draws them. A question is drawn only when it is asked
+ * (`isQuestionShown` of `@admitto/shared`, the one place that decides: the registration form, the server and these forms all call it),
+ * and a question that is shown for an answer to another is drawn right after that other one, so that the answer that makes it appear
+ * never moves. A question that is not asked is hidden: it is not required and not sent, and what is saved for it stays as it is. */
+export function shownCustomFields(fields: readonly CustomDataFieldDef[], answers: Record<string, string>): CustomDataFieldDef[] {
+  const conditionOf = (field: CustomDataFieldDef) => field.rules?.show_when?.field;
+  const shown: CustomDataFieldDef[] = [];
+  const place = (field: CustomDataFieldDef) => {
+    if (isQuestionShown(field, answers)) shown.push(field);
+    for (const other of fields) {
+      if (conditionOf(other) === field.source_field && other !== field) place(other);
+    }
+  };
+  for (const field of fields) {
+    // A question with a condition is placed after the question it depends on, unless the form has no such question.
+    const controller = conditionOf(field);
+    if (controller === undefined || !fields.some((other) => other.source_field === controller)) place(field);
+  }
+  return shown;
+}
+
 /** Client-side validation before save/create; returns user-facing message or null. */
 function isAcceptedBooleanValue(value: string): boolean {
   const lower = value.trim().toLowerCase();
@@ -67,6 +88,8 @@ export function validateCustomFieldsForm(
   values: Record<string, string>,
 ): string | null {
   for (const field of fields) {
+    // A question that is not asked is not required, and what is typed for it is not sent, so it is not judged either.
+    if (!isQuestionShown(field, values)) continue;
     const raw = values[field.source_field] ?? "";
     const trimmed = raw.trim();
 
