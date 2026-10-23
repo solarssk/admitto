@@ -258,6 +258,7 @@ import {
 import {
   handleListEventCustomFields,
   handleCreateEventCustomField,
+  handleAddSuggestedEventCustomFields,
   handlePatchEventCustomField,
   handleReorderEventCustomFields,
   handleDeleteEventCustomField,
@@ -2051,6 +2052,12 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleCreateEventCustomField(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/custom-fields/suggested",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleAddSuggestedEventCustomFields(c, db)),
   );
   app.put(
     "/api/admin/events/:eventId/custom-fields/order",

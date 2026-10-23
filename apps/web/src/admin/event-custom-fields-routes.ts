@@ -5,8 +5,10 @@ import { z } from "zod";
 import {
   CUSTOM_FIELD_NOT_ANSWERED_KEY,
   EVENT_CUSTOM_FIELD_TYPES,
+  planSuggestedFields,
   type EventCustomFieldRules,
   type EventCustomFieldType,
+  type SuggestedEventField,
 } from "@admitto/shared";
 import {
   MAX_CUSTOM_FIELDS_PER_EVENT,
@@ -64,6 +66,17 @@ class ShowWhenError extends Error {
  * deleted since the client loaded the list, or never belonged to this event. Mapped to 409
  * `stale_write`: reload and try again. */
 class FieldSetChangedError extends Error {}
+
+/** Thrown when the suggested questions that would be added do not fit in what is left of the per-event cap: the action is all or
+ * nothing, so none is created. Carries the room left and the room needed, in fields. Mapped to 422 `field_limit_reached`. */
+class SuggestedFieldsLimitError extends Error {
+  constructor(
+    readonly free: number,
+    readonly needed: number,
+  ) {
+    super("suggested questions do not fit in the field limit");
+  }
+}
 
 /** Serializes the writes to one event's custom-field registry (create, update, delete, reorder)
  * against each other, and against event-items-api-routes.ts's content_fields validation - without
@@ -148,6 +161,10 @@ const reorderFieldsSchema = z
   .object({ ids: z.array(z.string().min(1).max(128)).max(100) })
   .strict();
 
+/** What "add the suggested questions" takes: nothing. The set is the server's own (SUGGESTED_EVENT_FIELDS), so a body that names
+ * anything is refused instead of being read as a question of the client's. */
+const suggestedFieldsBodySchema = z.object({}).strict();
+
 /** Admin API shape for a single event custom field. */
 export type EventCustomFieldDto = {
   id: string;
@@ -163,6 +180,14 @@ export type EventCustomFieldDto = {
    * registration form; null = none. */
   rules: EventCustomFieldRules | null;
   created_at: string;
+};
+
+/** What POST /api/admin/events/:eventId/custom-fields/suggested answers: the keys of the questions it created, in the order it
+ * created them, and the ones it left out. `exists`: the event has a field under that key, and it stays as it is. `condition`: the
+ * question depends on a field of the event that cannot be what it depends on, so it was not added. */
+export type AddSuggestedFieldsDto = {
+  added: string[];
+  skipped: { source_field: string; reason: "exists" | "condition" }[];
 };
 
 type CustomFieldRow = {
@@ -405,6 +430,93 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
     });
     return c.json(serializeCustomField(created), 201);
   } catch (err) {
+    return createFieldFailure(c, err);
+  }
+}
+
+/** A suggested question as the ordinary create takes it (what POST /custom-fields is sent for a field added by hand): optional, and on
+ * the form, as every suggested question is. The options and the rules are copied, so nothing done to a row can reach the shared set. */
+function suggestedFieldInput(suggested: SuggestedEventField): z.infer<typeof createFieldSchema> {
+  return {
+    source_field: suggested.source_field,
+    label: suggested.label,
+    description: suggested.description,
+    type: suggested.type,
+    required: false,
+    show_on_form: true,
+    options: suggested.options ? [...suggested.options] : undefined,
+    rules: suggested.rules ? structuredClone(suggested.rules) : undefined,
+  };
+}
+
+/** The answer to a request that carries a body where none is taken: 400 for anything but an empty body or `{}`, null otherwise. */
+async function refuseBody(c: Context): Promise<Response | null> {
+  const raw = await c.req.text();
+  if (raw.trim() === "") return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  return suggestedFieldsBodySchema.safeParse(body).success ? null : c.json({ error: "validation_failed" }, 400);
+}
+
+/** 422 for suggested questions that do not fit in the cap: the code of a field that is added by hand at the cap, and how much room there
+ * is and how much the questions need, so the caller can say how many fields to remove. */
+function suggestedFieldsLimitResponse(c: Context, err: SuggestedFieldsLimitError): Response {
+  return c.json({ error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT, free: err.free, needed: err.needed }, 422);
+}
+
+/** POST /api/admin/events/:eventId/custom-fields/suggested
+ * Adds the suggested questions the event does not have yet (SUGGESTED_EVENT_FIELDS), each the way "Add field" adds one, in one
+ * transaction under the custom-fields lock, so the cap is counted again there and no other write to the event's fields comes between.
+ * An explicit action of the organiser and never part of creating an event. Idempotent by `source_field`: a key the event has stays
+ * exactly as the organiser left it, and a question that depends on a field that cannot be what it depends on is left out. All or
+ * nothing for the cap: when the questions to add do not fit, none is added (422 `field_limit_reached`, with `free` and `needed`).
+ * They are created in the order of the set, so a question comes after the one it depends on. Takes no body. Answers 201 when it created
+ * something and 200 when it created nothing, each time with the keys it added and the ones it left out (AddSuggestedFieldsDto). */
+export async function handleAddSuggestedEventCustomFields(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const refused = await refuseBody(c);
+  if (refused) return refused;
+
+  try {
+    const plan = await db.$transaction(async (tx) => {
+      await acquireEventCustomFieldsLock(tx, eventId);
+      // Read under the lock, so what the plan is made from is what the rows are written next to.
+      const fields = await loadConditionFields(tx, eventId);
+      const planned = planSuggestedFields(fields);
+      if (planned.overLimitBy > 0) {
+        throw new SuggestedFieldsLimitError(Math.max(0, MAX_CUSTOM_FIELDS_PER_EVENT - fields.length), planned.add.length);
+      }
+      for (const suggested of planned.add) {
+        const row = await tx.eventCustomField.create({ data: newFieldData(eventId, suggestedFieldInput(suggested)) }); // NOSONAR - statements in one transaction run one at a time, in the order of the set
+        await writeBulkActionLog(tx, { // NOSONAR - statements in one transaction run one at a time
+          event_id: eventId,
+          action_type: "event_custom_field_created",
+          audit: adminAuditFromContext(c),
+          metadata: { source_field: row.source_field },
+        });
+      }
+      return planned;
+    });
+    const outcome: AddSuggestedFieldsDto = {
+      added: plan.add.map((suggested) => suggested.source_field),
+      skipped: [
+        ...plan.present.map((suggested) => ({ source_field: suggested.source_field, reason: "exists" as const })),
+        ...plan.blocked.map((suggested) => ({ source_field: suggested.source_field, reason: "condition" as const })),
+      ],
+    };
+    return c.json(outcome, plan.add.length > 0 ? 201 : 200);
+  } catch (err) {
+    if (err instanceof SuggestedFieldsLimitError) return suggestedFieldsLimitResponse(c, err);
     return createFieldFailure(c, err);
   }
 }
