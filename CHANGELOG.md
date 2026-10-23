@@ -31,6 +31,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add sending the guest registration form, with a bot check and one answer for every address; off until an event turns registration on ([#1790](https://github.com/solarssk/admitto/pull/1790))
 - Add `registration:mail-event`, a daily cap on the registration mail one event queues (1000, or 3 per seat), tunable with `RATE_LIMIT_OVERRIDES` ([#1790](https://github.com/solarssk/admitto/pull/1790))
 - Add the four guest registration emails to Communication > Templates, where you can read them, edit them and revert them to the built-in text ([#1791](https://github.com/solarssk/admitto/pull/1791))
+- Show who accepted, rejected or deleted guest registrations in Organisation settings > Logs > Audit, and filter by these actions ([#1794](https://github.com/solarssk/admitto/pull/1794))
 
 ### Changed
 
