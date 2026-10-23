@@ -159,7 +159,7 @@ async function handle(c: Context, deps: RegistrationConfirmDeps, confirm: boolea
 
 /** A failure nobody expected. Only the class of the error is logged: the message of a database error can carry a value,
  * and the path carries the link. */
-async function answerFailure(c: Context, deps: RegistrationConfirmDeps, error: unknown): Promise<Response> {
+function answerFailure(c: Context, deps: RegistrationConfirmDeps, error: unknown): Response | Promise<Response> {
   const code = prismaCode(error);
   // The event was deleted while the request ran: as if it had never been there.
   if (code === "P2003") return respondRegistrationNotFound(c);
