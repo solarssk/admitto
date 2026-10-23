@@ -11,11 +11,16 @@ import type { RegistrationListFilter } from "./registration-list.js";
 export const isEmptyRegistrationFilter = (filter: RegistrationListFilter): boolean =>
   !filter.status && !filter.olderThan && (filter.words?.length ?? 0) === 0;
 
+/** Not `localeCompare`: the order, and so the digest, must be the same on every server. */
+function byCodeUnit(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
+
 /**
  * The name of a set of registrations: the SHA-256 of their ids in order, one to a line, as 64 lower-case hex digits. It
  * guards against a list that went stale, not against anyone: it is no secret, and whoever may list the ids can work it out.
  */
 export function registrationSelectionDigest(ids: readonly string[]): string {
-  const ordered = [...ids].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return createHash("sha256").update(ordered.join("\n")).digest("hex");
+  return createHash("sha256").update([...ids].sort(byCodeUnit).join("\n")).digest("hex");
 }
