@@ -1,8 +1,8 @@
 /** The rules of registration that need no database: which mail a moment queues, where a guest goes, what a seat is. */
 import { describe, expect, it } from "vitest";
-import { REGISTRATION_MAIL_TEMPLATE_NAME } from "@admitto/db/status";
+import { REGISTRATION_MAIL_TEMPLATE_NAME, REGISTRATION_STATUS, type RegistrationStatus } from "@admitto/db/status";
 import { attendeeCustomDataFromAnswers } from "../src/registration-attendee.js";
-import { registrationMailFor, type RegistrationMailMoment } from "../src/registration-mail-queue.js";
+import { registrationMailFor, registrationMailMisfit, type RegistrationMailMoment } from "../src/registration-mail-queue.js";
 import { decidePlacement, seatsNeeded } from "../src/registration-seats.js";
 
 describe("registrationMailFor (D-D2)", () => {
@@ -25,6 +25,46 @@ describe("registrationMailFor (D-D2)", () => {
   it("reaches each of the five templates of D-D1 and no other (the database holds the same list)", () => {
     const queued = new Set(cases.flatMap(([moment]) => registrationMailFor(moment) ?? []));
     expect([...queued].sort()).toEqual([...REGISTRATION_MAIL_TEMPLATE_NAME].sort());
+  });
+});
+
+describe("registrationMailMisfit (D-D2)", () => {
+  const NOW = Date.parse("2026-10-23T10:00:00Z");
+  const LATER = new Date(NOW + 60_000);
+
+  // The status a registration has when each moment happens: the mail of the moment is for it, and for no other.
+  const reached: [RegistrationMailMoment, RegistrationStatus][] = [
+    [{ to: "awaiting_email" }, "awaiting_email"],
+    [{ to: "pending", afterConfirmation: false }, "pending"],
+    [{ to: "waitlist" }, "waitlist"],
+    [{ to: "accepted" }, "accepted"],
+    [{ to: "rejected", notify: true }, "rejected"],
+  ];
+  it.each(reached)("%j: the mail fits a registration that is %s, and one in any other status does not", (moment, status) => {
+    const template = registrationMailFor(moment);
+    expect(template).not.toBeNull();
+    expect(registrationMailMisfit(template!, { status, confirm_expires_at: LATER }, NOW)).toBeNull();
+    for (const other of REGISTRATION_STATUS.filter((candidate) => candidate !== status)) {
+      expect(registrationMailMisfit(template!, { status: other, confirm_expires_at: null }, NOW)).toBe("registration_changed");
+    }
+  });
+
+  it("covers the five templates the database holds, and no other", () => {
+    const covered = reached.flatMap(([moment]) => registrationMailFor(moment) ?? []);
+    expect(covered.sort()).toEqual([...REGISTRATION_MAIL_TEMPLATE_NAME].sort());
+  });
+
+  it("lets a confirmation go only until its link expires, the moment of the expiry included", () => {
+    const status = "awaiting_email";
+    expect(registrationMailMisfit("registration-confirm", { status, confirm_expires_at: new Date(NOW + 1) }, NOW)).toBeNull();
+    expect(registrationMailMisfit("registration-confirm", { status, confirm_expires_at: new Date(NOW) }, NOW)).toBe("confirmation_expired");
+    expect(registrationMailMisfit("registration-confirm", { status, confirm_expires_at: new Date(NOW - 1) }, NOW)).toBe("confirmation_expired");
+  });
+
+  it("names a changed registration before an expired link, and takes an unknown template for a changed registration", () => {
+    const expired = new Date(NOW - 1);
+    expect(registrationMailMisfit("registration-confirm", { status: "pending", confirm_expires_at: expired }, NOW)).toBe("registration_changed");
+    expect(registrationMailMisfit("a-mail-nobody-queues", { status: "pending", confirm_expires_at: null }, NOW)).toBe("registration_changed");
   });
 });
 

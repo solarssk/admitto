@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { setMailTemplate } from "@admitto/mail-templates";
 import { createMailer } from "@admitto/mailer";
-import { generateToken } from "@admitto/tickets";
+import { generateToken, retryRegistrationMails } from "@admitto/tickets";
 import {
   DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT,
   drainPendingDeliveries,
@@ -144,6 +144,31 @@ describe("a registration mail", () => {
     const link = buildConfirmUrl(BASE_URL, EVENT_SLUG, registration.id);
     expect(messages).toHaveLength(2);
     expect(messages.every((message) => message.html.includes(link))).toBe(true);
+  });
+
+  it("goes out after staff retried it (D-B15), though the mail had failed for good and used up its attempts", async () => {
+    const { registration, mail } = await queuedMailFor(prisma, EVENT_ID, "registration-confirm");
+    await prisma.registrationMail.update({
+      where: { id: mail.id },
+      data: {
+        status: "failed",
+        attempts: MAX_MAIL_DRAIN_ATTEMPTS,
+        retryable: false,
+        error_code: "send_rejected",
+        error: "The mail provider refused the message.",
+        attempted_at: new Date(Date.now() - 3_600_000),
+      },
+    });
+    const { messages, deps } = collectMail();
+    expect(await drain(deps, { nowMs: Date.now() + 86_400_000 })).toMatchObject({ claimed: 0 });
+
+    const retried = await retryRegistrationMails(prisma, { eventId: EVENT_ID, ids: [registration.id], actor: { operator: "staff-user-1" } });
+    expect(retried.outcomes).toEqual([{ id: registration.id, outcome: "retried" }]);
+
+    expect(await drain(deps)).toMatchObject({ claimed: 1, sent: 1 });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.html).toContain(buildConfirmUrl(BASE_URL, EVENT_SLUG, registration.id));
+    expect(await mailRow(mail.id)).toMatchObject({ status: "accepted", attempts: 1, retryable: null, error_code: null, error: null });
   });
 
   it("has the wording of its state: received, waiting list, declined", async () => {
