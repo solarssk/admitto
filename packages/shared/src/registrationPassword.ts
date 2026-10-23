@@ -15,11 +15,6 @@ export const REGISTRATION_PASSWORD_MAX = 128;
 
 /** The length of `value` in characters (code points). */
 export function registrationPasswordLength(value: string): number {
-  let length = 0;
-  let at = 0;
-  while (at < value.length) {
-    length += 1;
-    at += (value.codePointAt(at) ?? 0) > 0xffff ? 2 : 1;
-  }
-  return length;
+  // The iterator of a string yields code points, and a lone surrogate as one.
+  return Array.from(value).length;
 }

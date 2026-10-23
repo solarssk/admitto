@@ -13,7 +13,7 @@ describe("the length of the event password", () => {
     expect(registrationPasswordLength("abc")).toBe(3);
     expect(registrationPasswordLength(`a${EMOJI}b`)).toBe(3);
     expect(registrationPasswordLength(EMOJI.repeat(128))).toBe(128);
-    expect(EMOJI.repeat(128).length).toBe(256);
+    expect(EMOJI.repeat(128)).toHaveLength(256);
   });
 
   it("counts a space like any other character, at either end too", () => {

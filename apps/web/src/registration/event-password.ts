@@ -22,8 +22,10 @@ import { writeAdminAuditLog, type StaffActor } from "@admitto/tickets";
  * no hash: only a try that could be the password is verified. The hash in `verifyPasswordOrDummy` takes the same time
  * whoever asks; how long the guest waits for the answer is decided by the caller (the floor of ./submit-route.ts).
  */
-export async function isEventPassword(candidate: unknown, passwordHash: string): Promise<boolean> {
-  if (typeof candidate !== "string" || registrationPasswordLength(candidate) > REGISTRATION_PASSWORD_MAX) return false;
+export function isEventPassword(candidate: unknown, passwordHash: string): Promise<boolean> {
+  if (typeof candidate !== "string" || registrationPasswordLength(candidate) > REGISTRATION_PASSWORD_MAX) {
+    return Promise.resolve(false);
+  }
   return verifyPasswordOrDummy(candidate, passwordHash);
 }
 
@@ -111,7 +113,7 @@ export async function setEventPassword(
  * Switches the password of an event off: guests are turned away at the 404 until a new one is set. An event that has none
  * is left as it is and nothing is recorded, since nothing changed.
  */
-export async function clearEventPassword(
+export function clearEventPassword(
   db: PrismaClient,
   { eventId, actor }: { eventId: string; actor: StaffActor },
 ): Promise<"ok" | "not_found"> {

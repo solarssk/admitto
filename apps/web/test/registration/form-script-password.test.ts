@@ -143,8 +143,8 @@ describe("where the password goes", () => {
 
     expect(page.win.location.href).toBe(PAGE_URL);
     expect(page.win.document.cookie).toBe("");
-    expect(page.win.localStorage.length).toBe(0);
-    expect(page.win.sessionStorage.length).toBe(0);
+    expect(page.win.localStorage).toHaveLength(0);
+    expect(page.win.sessionStorage).toHaveLength(0);
     expect(page.doc.documentElement.outerHTML).not.toContain(PASSWORD);
     const attributes = [...page.doc.querySelectorAll("*")].flatMap((el: Dom) => [...el.attributes].map((attribute: Dom) => attribute.value as string));
     expect(attributes.some((value) => value.includes(PASSWORD))).toBe(false);
