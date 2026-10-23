@@ -16,11 +16,19 @@ import {
   type RegistrationAttendeeSource,
 } from "./registration-attendee.js";
 import { lockRegistrationsForUpdate, tryLockRegistrationQueue } from "./registration-lock.js";
-import { enqueueMailsForMoment, type RegistrationMailMoment } from "./registration-mail-queue.js";
+import { enqueueMailsForMoment, requeueMailForMoment, type RegistrationMailMoment } from "./registration-mail-queue.js";
 import { countWaitlisted, decidePlacement, readFreeSeats, seatsNeeded, type PlacedStatus } from "./registration-seats.js";
 
 /** How long the link that confirms an address is valid (D-C5): `confirm_expires_at` is `created_at` plus this. */
 export const REGISTRATION_CONFIRM_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The least time between two mails that carry one confirmation link: a guest who sends the form again for an address
+ * that still waits for it gets the link again only when the last mail was queued longer ago than this (D-C5). The row
+ * of the mail holds the time (`queued_at`), so no column counts the re-sends. How many mails one address may get in a day
+ * is the address's budget (`SubmissionMailLimits.addressAllowed`).
+ */
+export const CONFIRMATION_RESEND_COOLDOWN_MS = 10 * 60 * 1000;
 
 /**
  * A guest's form, after the input boundary (registrant-input.ts): names, company and department as the schemas
@@ -185,19 +193,23 @@ type SubmissionContext = {
   mail: SubmissionMailLimits | undefined;
 };
 
-/** Queues the mail of a moment for a new registration, unless a limit withholds it. The address's budget is asked
- * last, so that it is spent only by a mail that is queued. */
-async function queueMailFor(context: SubmissionContext, registrationId: string, moment: RegistrationMailMoment): Promise<void> {
-  const { mail } = context;
-  if (!context.eventBudgetLeft) {
+/** Whether the budgets let one more mail be queued, for a new registration or for the link of one that exists. The
+ * address's budget is asked last, so that it is spent only by a mail that is queued. */
+async function mailBudgetAllows({ eventBudgetLeft, mail }: SubmissionContext): Promise<boolean> {
+  if (!eventBudgetLeft) {
     mail?.onWithheld?.("event");
-    return;
+    return false;
   }
   if (mail?.addressAllowed && !(await mail.addressAllowed())) {
     mail.onWithheld?.("address");
-    return;
+    return false;
   }
-  await enqueueMailsForMoment(context.tx, context.eventId, [registrationId], moment);
+  return true;
+}
+
+/** Queues the mail of a moment for a new registration, unless a limit withholds it. */
+async function queueMailFor(context: SubmissionContext, registrationId: string, moment: RegistrationMailMoment): Promise<void> {
+  if (await mailBudgetAllows(context)) await enqueueMailsForMoment(context.tx, context.eventId, [registrationId], moment);
 }
 
 function registrationColumns({ eventId, now, registrant }: SubmissionContext) {
@@ -260,8 +272,15 @@ async function insertAwaitingEmail(context: SubmissionContext): Promise<void> {
   await queueMailFor(context, row.id, { to: "awaiting_email" });
 }
 
+/** The columns of a registration that a submission for its address reads. */
+type KnownRegistration = { id: string; status: string; confirm_expires_at: Date | null };
+
+type AddressState = { taken: false } | { taken: true; registration: KnownRegistration | null };
+
 /**
- * Whether the address already has a place: an attendee of the event holds it (any status), or a registration does.
+ * What a submission finds for its address: nothing (a new registration is stored), or a place already. A place is held by
+ * an attendee of the event (any status) or by a registration, and `registration` is that registration when no attendee
+ * holds the address (the one that could be mailed its link again, see sendConfirmationAgain).
  * A registration that waits for its address and has expired is deleted on the way (with its queued mail), so that
  * the guest starts again with a new link instead of being turned away by a row that is about to be cleaned up.
  * Both are read for every address, so the work does not tell a known address from a new one.
@@ -273,8 +292,9 @@ async function insertAwaitingEmail(context: SubmissionContext): Promise<void> {
  * address side by side (the two tables share no key, and a guest's submission must not wait for staff, so it does
  * not take the attendee rows). That is allowed. Admission settles it: `admitRegistrations` answers
  * `already_attendee` and deletes the registration (D-B13), and a mail that is still queued for it is cancelled.
+ * The same holds for the confirmation, which `confirmRegistrationAddress` answers `already_registered`.
  */
-async function addressHasAPlace(context: SubmissionContext): Promise<boolean> {
+async function lookUpAddress(context: SubmissionContext): Promise<AddressState> {
   const { tx, eventId, now, registrant } = context;
   const heldByAttendee = (await findAttendeeAddresses(tx, eventId, [registrant.email])).size > 0;
   const existing = await tx.registration.findUnique({
@@ -284,7 +304,28 @@ async function addressHasAPlace(context: SubmissionContext): Promise<boolean> {
   const expired =
     existing?.status === "awaiting_email" && existing.confirm_expires_at !== null && existing.confirm_expires_at <= now;
   if (existing && expired && !heldByAttendee) await tx.registration.delete({ where: { id: existing.id } });
-  return heldByAttendee || (existing !== null && !expired);
+  if (heldByAttendee) return { taken: true, registration: null };
+  if (existing === null || expired) return { taken: false };
+  return { taken: true, registration: existing };
+}
+
+/**
+ * The guest sent the form again for an address that has a registration (D-C5). When it still waits for its address, the
+ * mail with the link is queued once more, and the link is the same one, because it is made of the registration's id (the
+ * row of the mail is put back in the queue, not added: `requeueMailForMoment`, which asks `registrationMailMisfit` whether
+ * the mail still fits, so a registration in any other state, or one whose link ran out, is mailed nothing). Nothing of
+ * the registration changes. The mail is withheld, and the guest is told the same either way, when the last one was queued
+ * less than `CONFIRMATION_RESEND_COOLDOWN_MS` ago (a guest who sends twice in a row, or someone who sends again and again,
+ * mails no one twice at once), or when the event's or the address's budget is spent (the same budgets as a new
+ * registration's mail, the address's asked last and spent only by a mail that is queued). The link expires when it did:
+ * a re-send does not make it last longer.
+ */
+async function sendConfirmationAgain(context: SubmissionContext, registration: KnownRegistration): Promise<void> {
+  const { tx, eventId, now } = context;
+  await requeueMailForMoment(tx, { eventId, registration, moment: { to: "awaiting_email" } }, now, async (last) => {
+    if (last && now.getTime() - last.queued_at.getTime() < CONFIRMATION_RESEND_COOLDOWN_MS) return false;
+    return mailBudgetAllows(context);
+  });
 }
 
 const needsAddressConfirmation = (settings: OpenSettings, method: RegistrationAccessMethod): boolean =>
@@ -337,7 +378,10 @@ async function submitInTransaction(
     eventBudgetLeft: await eventBudgetLeft(tx, eventId, event.capacity, now, mail?.event),
     mail,
   };
-  if (await addressHasAPlace(context)) {
+  const address = await lookUpAddress(context);
+  if (address.taken) {
+    // Single sign-on has no link to send: the provider vouches for the address.
+    if (address.registration && input.method !== "sso") await sendConfirmationAgain(context, address.registration);
     return input.method === "sso" ? { outcome: "already_registered" } : { outcome: "received" };
   }
   if (needsAddressConfirmation(event.settings, input.method)) await insertAwaitingEmail(context);
@@ -370,8 +414,9 @@ function checkedRegistrant(registrant: RegistrantSubmission): RegistrantSubmissi
  *
  * The answer does not tell a new address from a known one (PlaceRegistrationResult). The mail of a new registration can
  * be withheld by limits the caller passes (`options.mail`, SubmissionMailLimits): the registration is stored all the
- * same. Not done here, for the callers: the checks of the terms and the consents, the request limits, the challenge,
- * and the re-send of the confirmation link to an address whose registration still waits for it.
+ * same. An address whose registration still waits for it gets the same confirmation link again (sendConfirmationAgain),
+ * under the same limits and a cooldown, and the answer is the same. Not done here, for the callers: the checks of the
+ * terms and the consents, the request limits, and the challenge.
  *
  * @throws RegistrantInputError when the address is refused by the input boundary.
  */
@@ -453,9 +498,13 @@ async function placeConfirmed(
 async function confirmInTransaction(
   tx: Prisma.TransactionClient,
   { eventId, registrationId }: ConfirmRegistrationInput,
-  now: Date,
+  fixedNow: Date | undefined,
 ): Promise<Exclude<ConfirmRegistrationResult, { outcome: "busy" }>> {
   await lockQueueWithoutWaiting(tx, eventId);
+  // The clock is read here, with both locks held, and on every try: the call may have waited for a permit and, between
+  // tries, for a lock, and a link that ran out meanwhile, or an event that ended, must not be judged by the moment the
+  // request came in (`fixedNow` is for tests).
+  const now = fixedNow ?? new Date();
   const event = await readOpenEvent(tx, eventId, now);
   if (!event) return { outcome: "closed" };
   const [row] = await lockRegistrationsForUpdate(tx, eventId, [registrationId]);
@@ -488,14 +537,13 @@ export async function confirmRegistrationAddress(
   input: ConfirmRegistrationInput,
   options: PlacementOptions = {},
 ): Promise<ConfirmRegistrationResult> {
-  const now = options.now ?? new Date();
   const written = await runPublicWrite(
     () =>
       runEventCapacityTransaction(
         db,
         input.eventId,
         noPrepare,
-        (tx) => confirmInTransaction(tx, input, now),
+        (tx) => confirmInTransaction(tx, input, options.now),
         PUBLIC_TRANSACTION_POLICY,
         { tryLock: true },
       ),
