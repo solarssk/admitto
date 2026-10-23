@@ -20,6 +20,7 @@ import {
   type DeleteRegistrationsTarget,
 } from "../src/registration-deletion.js";
 import { registrationListWhere, type RegistrationListFilter } from "../src/registration-list.js";
+import { registrationSelectionDigest } from "../src/registration-selection.js";
 import { confirmRegistrationAddress, placeRegistration } from "../src/registration-placement.js";
 import {
   createMigratedDb,
@@ -60,13 +61,26 @@ const removeIn = (
 ) => client.$transaction((tx) => deleteRegistrations(tx, { eventId, target, actor, ...extra }), { timeout: 30_000 });
 const remove = (eventId: string, ids: string[], extra: Partial<DeleteRegistrationsParams> = {}) =>
   removeIn(db, eventId, { kind: "ids", ids }, extra);
-const removeByFilter = (
+/** The name a list read just before would give the registrations the filter selects: what a deletion has to send back. */
+const digestOf = async (eventId: string, filter: RegistrationListFilter, now: Date = new Date()) =>
+  registrationSelectionDigest(
+    (await db.registration.findMany({ where: registrationListWhere(eventId, filter, now), select: { id: true } })).map((row) => row.id),
+  );
+/** By default the digest is the one of what the filter selects at the time of the call; a test passes another to say the list is stale. */
+const removeByFilter = async (
   eventId: string,
   filter: RegistrationListFilter,
   expected: number,
   extra: Partial<DeleteRegistrationsParams> = {},
   now?: Date,
-) => removeIn(db, eventId, { kind: "filter", filter, expected, ...(now ? { now } : {}) }, extra);
+  digest?: string,
+) =>
+  removeIn(
+    db,
+    eventId,
+    { kind: "filter", filter, expected, digest: digest ?? (await digestOf(eventId, filter, now)), ...(now ? { now } : {}) },
+    extra,
+  );
 
 const done = (result: DeleteRegistrationsResult): Done => {
   expect(result.status).toBe("done");
@@ -391,6 +405,38 @@ describe("deleteRegistrations: a filter takes exactly what the staff member was 
 
     expect(await make.counts(eventId)).toEqual(before);
     expect(await registrationExists(rows.oldRejected.id)).toBe(true);
+  });
+
+  it("deletes nothing when the filter selects the number it did but not the same registrations, and says how many it matched", async () => {
+    const { eventId, rows } = await mixedEvent();
+    const shown = await digestOf(eventId, { status: "rejected" }, NOW);
+    // One left the filter (deleted by someone else) and another joined it (rejected since): three of them, as before.
+    await db.registration.delete({ where: { id: rows.freshRejected.id } });
+    await db.registration.update({ where: { id: rows.oldPending.id }, data: { status: "rejected" } });
+    const before = await make.counts(eventId);
+
+    expect(await removeByFilter(eventId, { status: "rejected" }, 3, {}, NOW, shown)).toEqual({ status: "selection_changed", matched: 3 });
+
+    expect(await make.counts(eventId)).toEqual(before);
+    expect(await registrationExists(rows.oldPending.id)).toBe(true);
+    expect(await auditOf(eventId)).toEqual([]);
+  });
+
+  it("deletes nothing for a digest that names no set the filter selects", async () => {
+    const { eventId } = await mixedEvent();
+    const before = await make.counts(eventId);
+
+    expect(await removeByFilter(eventId, { status: "rejected" }, 3, {}, NOW, "0".repeat(64))).toEqual({ status: "selection_changed", matched: 3 });
+    expect(await removeByFilter(eventId, { status: "rejected" }, 3, {}, NOW, "")).toEqual({ status: "selection_changed", matched: 3 });
+
+    expect(await make.counts(eventId)).toEqual(before);
+  });
+
+  it("looks at the number before the registrations: a stale list that also changed in size says so by the count", async () => {
+    const { eventId } = await mixedEvent();
+    const stale = await digestOf(eventId, { status: "rejected" }, NOW);
+
+    expect(await removeByFilter(eventId, { status: "rejected" }, 2, {}, NOW, stale)).toEqual({ status: "count_changed", expected: 2, matched: 3 });
   });
 
   it("notices a registration that joined the filter by growing old since the list was read", async () => {

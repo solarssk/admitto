@@ -172,7 +172,7 @@ Use it for a guest who registered through the event form and asks to delete thei
 **How.** Use an authenticated staff session and a CSRF token (the same session model as other admin mutations).
 
 - One or several registrations: `POST /api/admin/events/:eventId/registrations/delete` with `{ "ids": [...] }`. You can delete up to 500 at a time. An id that is not a registration of this event answers `gone`.
-- Everything a filter selects: `POST /api/admin/events/:eventId/registrations/delete-by-filter` with `{ "status": "rejected", "older_than": "90d", "expected": <total> }`. Use the same parameters as the list (`status`, `older_than`, `q`, and at least one of them), and the `total` the list gave for them. Admitto counts again before it deletes. If the number is not the one you were given, or is over 500, it deletes nothing and says so.
+- Everything a filter selects: `POST /api/admin/events/:eventId/registrations/delete-by-filter` with `{ "status": "rejected", "older_than": "90d", "expected": <total>, "selection_digest": <selection_digest> }`. Use the same parameters as the list (`status`, `older_than`, `q`, and at least one of them), and the `total` and `selection_digest` the list gave for them. Admitto reads the filter again before it deletes. If the number is not the one you were given, if the registrations are not the ones the list showed, or if there are more than 500, it deletes nothing and says so.
 
 **How long to keep registrations.** Admitto deletes only the registrations that were never confirmed, 24 hours after the submission. Waiting, rejected and accepted registrations stay until you delete them. Your organisation decides how long to keep them.
 

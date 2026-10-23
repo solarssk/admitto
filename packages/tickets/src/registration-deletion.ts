@@ -5,16 +5,18 @@ import { writeBulkActionLog } from "./ops-audit.js";
 import type { StaffActor } from "./registration-decisions.js";
 import { MAX_REGISTRATION_BULK_IDS, registrationListWhere, type RegistrationListFilter } from "./registration-list.js";
 import { lockRegistrationQueue, lockRegistrationsForUpdate, type LockedRegistration } from "./registration-lock.js";
+import { isEmptyRegistrationFilter, registrationSelectionDigest } from "./registration-selection.js";
 import { lockOpenAttendeeJobs } from "./stop-open-jobs.js";
 
 /**
  * What staff chose to delete: registrations by id (one is a list of one), or every registration that a filter selects.
- * A filter comes with the number of registrations the staff member was shown for it (`expected`), and is deleted only
- * if exactly that many still match.
+ * A filter comes with what the staff member was shown for it: how many registrations (`expected`) and which ones
+ * (`digest`, registrationSelectionDigest of their ids). It is deleted only if exactly those still match: the same
+ * number is not enough, as one that left the filter and one that joined it leave the count as it was.
  */
 export type DeleteRegistrationsTarget =
   | { kind: "ids"; ids: readonly string[] }
-  | { kind: "filter"; filter: RegistrationListFilter; expected: number; now?: Date };
+  | { kind: "filter"; filter: RegistrationListFilter; expected: number; digest: string; now?: Date };
 
 export type DeleteRegistrationsParams = {
   eventId: string;
@@ -40,6 +42,8 @@ export type DeletedRegistration = { id: string; attendeeId: string | null };
  *   are deleted after the commit); null when none was accepted.
  * - `count_changed`: the filter now selects another number of registrations than the staff member was shown. Nothing was
  *   deleted: they look at the list again.
+ * - `selection_changed`: the filter selects the number it did, but not the same registrations (one left, another joined).
+ *   Nothing was deleted, and they look at the list again.
  * - `too_many_registrations`, `too_many_accepted`: the selection is over a cap (the registrations a filter selects, the
  *   accepted ones among the registrations selected), which keeps one request to a size that finishes in time. Nothing
  *   was deleted.
@@ -48,25 +52,23 @@ export type DeletedRegistration = { id: string; attendeeId: string | null };
 export type DeleteRegistrationsResult =
   | { status: "done"; deleted: DeletedRegistration[]; goneIds: string[]; erased: EraseAttendeesResult | null }
   | { status: "count_changed"; expected: number; matched: number }
+  | { status: "selection_changed"; matched: number }
   | { status: "too_many_registrations"; matched: number; limit: number }
   | { status: "too_many_accepted"; accepted: number; limit: number }
   | { status: "filter_required" };
 
 type FilterTarget = Extract<DeleteRegistrationsTarget, { kind: "filter" }>;
-type Refusal = Extract<DeleteRegistrationsResult, { status: "count_changed" | "too_many_registrations" }>;
+type Refusal = Extract<DeleteRegistrationsResult, { status: "count_changed" | "selection_changed" | "too_many_registrations" }>;
 /** The registrations a request names, locked, and the ids it asked for (none for a filter). */
 type Selection = { rows: LockedRegistration[]; asked: string[] };
-
-const noFilter = (filter: RegistrationListFilter): boolean =>
-  !filter.status && !filter.olderThan && (filter.words?.length ?? 0) === 0;
 
 const attendeeIdsOf = (rows: readonly DeletedRegistration[]): string[] =>
   rows.flatMap((row) => (row.attendeeId === null ? [] : [row.attendeeId]));
 
 /**
- * The ids of the registrations a filter selects, by the rule of the list (registrationListWhere), counted again here
- * under the registration queue. The count must be the one the staff member saw and must fit the cap: nothing is
- * deleted that they did not see, and not more than a request is meant to carry.
+ * The ids of the registrations a filter selects, by the rule of the list (registrationListWhere), read again here under
+ * the registration queue. They must be the registrations the staff member saw (the count, and then the digest of the
+ * ids) and must fit the cap: nothing is deleted that they did not see, and not more than a request is meant to carry.
  */
 async function idsOfFilter(
   tx: Prisma.TransactionClient,
@@ -84,7 +86,10 @@ async function idsOfFilter(
     orderBy: [{ created_at: "asc" }, { id: "asc" }],
     take: limit,
   });
-  return rows.map((row) => row.id);
+  const ids = rows.map((row) => row.id);
+  // The queue freezes the set as it is now; it cannot say that this is the set that was shown. Same number, other members.
+  if (registrationSelectionDigest(ids) !== target.digest) return { status: "selection_changed", matched };
+  return ids;
 }
 
 /** What the audit entries say about the filter: the closed values, and whether a search was used, never its words (a name or an address). */
@@ -162,15 +167,15 @@ async function lockSelection(tx: Prisma.TransactionClient, params: DeleteRegistr
  * admission, a rejection) or an erasure that came first is seen: an admission that made an attendee has made this an
  * accepted registration, a deletion that came first is `gone`.
  *
- * A filter is counted again under the queue: it must select exactly `expected` registrations, and no more than
- * `maxRegistrations`, or nothing is deleted. A filter that selects everything is refused.
+ * A filter is read again under the queue: it must select exactly `expected` registrations, the ones whose ids have the
+ * `digest`, and no more than `maxRegistrations`, or nothing is deleted. A filter that selects everything is refused.
  */
 export async function deleteRegistrations(
   tx: Prisma.TransactionClient,
   params: DeleteRegistrationsParams,
 ): Promise<DeleteRegistrationsResult> {
   const { eventId, target, actor } = params;
-  if (target.kind === "filter" && noFilter(target.filter)) return { status: "filter_required" };
+  if (target.kind === "filter" && isEmptyRegistrationFilter(target.filter)) return { status: "filter_required" };
 
   await lockOpenAttendeeJobs(tx, eventId);
   await lockRegistrationQueue(tx, eventId);

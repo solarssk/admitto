@@ -6,9 +6,10 @@
  * - `POST /api/admin/events/:eventId/registrations/delete` takes `ids` (one registration is a list of one, at most
  *   MAX_REGISTRATION_BULK_IDS).
  * - `POST /api/admin/events/:eventId/registrations/delete-by-filter` takes the filter of the list (`status`,
- *   `older_than`, `q`, at least one of them) and `expected`, the number the staff member was shown for it (`total` of the
- *   list). It deletes only when exactly that many registrations match under the registration queue, and not more than
- *   MAX_REGISTRATION_BULK_IDS: a deletion cannot be undone, so it never takes what the staff member did not see.
+ *   `older_than`, `q`, at least one of them), `expected`, the number the staff member was shown for it (`total` of the
+ *   list), and `selection_digest`, the name the list gave the registrations it showed. It deletes only when exactly those
+ *   match under the registration queue (that many, with those ids), and not more than MAX_REGISTRATION_BULK_IDS: a
+ *   deletion cannot be undone, so it never takes what the staff member did not see.
  *
  * Both are for the administrator of the event's organisation and a superadmin (an operator gets 403, and so does an
  * administrator of another organisation), and both work on an archived event, as erasing does: a request to delete
@@ -48,6 +49,7 @@ const filterBodySchema = z
     older_than: z.string().max(64).optional(),
     q: z.string().max(1024).optional(),
     expected: z.number().int().min(0),
+    selection_digest: z.string().regex(/^[0-9a-f]{64}$/),
   })
   .strict();
 
@@ -115,6 +117,8 @@ function refusalResponse(c: Context, result: Exclude<DeleteRegistrationsResult, 
   switch (result.status) {
     case "count_changed":
       return c.json({ error: "registration_count_changed", expected: result.expected, matched: result.matched }, 409);
+    case "selection_changed":
+      return c.json({ error: "registration_selection_changed", matched: result.matched }, 409);
     case "too_many_registrations":
       return c.json({ error: "too_many_registrations", matched: result.matched, limit: result.limit }, 422);
     case "too_many_accepted":
@@ -199,12 +203,13 @@ export async function handleDeleteEventRegistrations(c: Context, db: PrismaClien
 
 /**
  * POST /api/admin/events/:eventId/registrations/delete-by-filter
- * Body: `{ status?, older_than?, q?, expected }`: the parameters of the list, and its `total`. A value outside the
- * lists of the filter answers 400 `validation_failed` with the names of the parameters, and so does a filter that
- * selects everything (none of the three). Under the registration queue the filter is counted again: another number than
- * `expected` answers 409 `registration_count_changed` (`expected`, `matched`), more than a request may carry 422
- * `too_many_registrations` (`matched`, `limit`), and more accepted registrations than the wallet provider can follow in one
- * request 422 `too_many_accepted` (`accepted`, `limit`). Nothing is deleted in any of those cases.
+ * Body: `{ status?, older_than?, q?, expected, selection_digest }`: the parameters of the list, its `total`, and its
+ * `selection_digest`. A value outside the lists of the filter answers 400 `validation_failed` with the names of the
+ * parameters, and so does a filter that selects everything (none of the three). Under the registration queue the filter
+ * is read again: another number than `expected` answers 409 `registration_count_changed` (`expected`, `matched`), the
+ * same number of other registrations 409 `registration_selection_changed` (`matched`), more than a request may carry
+ * 422 `too_many_registrations` (`matched`, `limit`), and more accepted registrations than the wallet provider can follow
+ * in one request 422 `too_many_accepted` (`accepted`, `limit`). Nothing is deleted in any of those cases.
  */
 export async function handleDeleteEventRegistrationsByFilter(c: Context, db: PrismaClient): Promise<Response> {
   const request = await readRequest(c, db, filterBodySchema);
@@ -212,5 +217,10 @@ export async function handleDeleteEventRegistrationsByFilter(c: Context, db: Pri
   const { body } = request;
   const filter = parseRegistrationFilter({ status: body.status, olderThan: body.older_than, q: body.q });
   if (!filter.ok) return c.json({ error: "validation_failed", fields: filter.invalid }, 400);
-  return runDeletion(c, db, request, { kind: "filter", filter: filter.filter, expected: body.expected });
+  return runDeletion(c, db, request, {
+    kind: "filter",
+    filter: filter.filter,
+    expected: body.expected,
+    digest: body.selection_digest,
+  });
 }

@@ -128,6 +128,8 @@ export const CODE_MESSAGES: Record<string, string> = {
   password_too_common: "This password is too common or predictable. Choose a different one.",
   registration_count_changed:
     "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
+  registration_selection_changed:
+    "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
   required_custom_data_field_missing: "A required custom field is missing.",
   required_field_not_on_form:
     "A required field must also be on the registration form, or guests cannot answer it. Turn it on for the form, or make the field optional.",

@@ -163,6 +163,7 @@ export type {
   RegistrationFilterResult,
   RegistrationListFilter,
 } from "./registration-list.js";
+export { isEmptyRegistrationFilter, registrationSelectionDigest } from "./registration-selection.js";
 export { deleteRegistrations } from "./registration-deletion.js";
 export type {
   DeleteRegistrationsParams,

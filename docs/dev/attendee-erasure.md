@@ -331,7 +331,7 @@ Where an Administrator or Superadmin reaches the removal (`apps/admin`).
 ### The API
 
 - `POST /api/admin/events/:eventId/registrations/delete` with `{ "ids": [...] }`. One registration is a list of one. At most 500 ids.
-- `POST /api/admin/events/:eventId/registrations/delete-by-filter` with `{ "status", "older_than", "q", "expected" }`. The filter is the one of the list, and `expected` is the `total` the list showed for it.
+- `POST /api/admin/events/:eventId/registrations/delete-by-filter` with `{ "status", "older_than", "q", "expected", "selection_digest" }`. The filter is the one of the list, `expected` is the `total` the list showed for it, and `selection_digest` is the name the list gave the registrations it showed (the list answers it for a filter that selects at most 500).
 
 Both are open to the Administrator and Superadmin of the event, and both are allowed on an archived event, like Erase: a request to delete data does not expire with the event. They spend the attendee bulk-mutation budget (20 a minute), and the wallet bulk budget as well when the event has wallet credentials.
 
@@ -357,7 +357,8 @@ Nothing else erases an attendee in this path. A bare `registration.delete` of an
 
 A deletion cannot be undone, so a filter never takes what the staff member did not see:
 
-- The filter is counted again under the registration queue with the rule of the list (`registrationListWhere`). When the count is not `expected`, nothing is deleted: `409 registration_count_changed` with `expected` and `matched`. A registration that grew old enough to join an "older than" filter since the list was read changes the count too.
+- The filter is read again under the registration queue with the rule of the list (`registrationListWhere`). When the count is not `expected`, nothing is deleted: `409 registration_count_changed` with `expected` and `matched`. A registration that grew old enough to join an "older than" filter since the list was read changes the count too.
+- The same count is not the same registrations: one that left the filter and one that joined it since the list was read leave the number where it was. So the ids that the filter selects now are named (`registrationSelectionDigest`, the SHA-256 of the ids in order) and must have the `selection_digest` the list gave. Otherwise nothing is deleted: `409 registration_selection_changed` with `matched`. The name is no secret and guards against a stale list, not against anyone.
 - A filter selects at most 500 registrations (`MAX_REGISTRATION_BULK_IDS`), or `422 too_many_registrations` with `matched` and `limit`. The staff member narrows it.
 - When the event has wallet credentials, at most 100 of them may be accepted, because each erased attendee is a call to the provider after the commit (`WALLET_BULK_SEND_LIMIT`). Over that, `422 too_many_accepted` with `accepted` and `limit`.
 - A filter must have a status, an age or a search. One that selects everything is refused with `400 validation_failed`, and so is a value outside the lists.

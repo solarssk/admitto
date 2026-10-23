@@ -24,9 +24,12 @@ import {
   type RegistrationStatus,
 } from "@admitto/db";
 import {
+  MAX_REGISTRATION_BULK_IDS,
   canRetryRegistrationMail,
+  isEmptyRegistrationFilter,
   parseRegistrationFilter,
   registrationListWhere,
+  registrationSelectionDigest,
   type RegistrationListFilter,
 } from "@admitto/tickets";
 import {
@@ -71,6 +74,12 @@ export type RegistrationListDto = {
   total: number;
   page: number;
   pageSize: number;
+  /**
+   * The name of the registrations the filter selects, over all pages (registrationSelectionDigest of their ids), which
+   * `delete-by-filter` sends back with `total` as proof of what the staff member was shown. Null without a filter, and
+   * for a filter that selects more than a deletion may take (MAX_REGISTRATION_BULK_IDS).
+   */
+  selection_digest: string | null;
 };
 
 /** What the Registration tab and the Overview row show. */
@@ -332,12 +341,27 @@ async function lastMailByRegistration(
   return last;
 }
 
+/** The name `delete-by-filter` needs, for a filter that selects no more registrations than one deletion may take. */
+async function selectionDigestOf(
+  db: PrismaClient,
+  where: Prisma.RegistrationWhereInput,
+  filter: RegistrationListFilter,
+  total: number,
+): Promise<string | null> {
+  if (isEmptyRegistrationFilter(filter) || total > MAX_REGISTRATION_BULK_IDS) return null;
+  // One more than the cap: the set may have grown since it was counted.
+  const rows = await db.registration.findMany({ where, select: { id: true }, take: MAX_REGISTRATION_BULK_IDS + 1 });
+  return rows.length > MAX_REGISTRATION_BULK_IDS ? null : registrationSelectionDigest(rows.map((row) => row.id));
+}
+
 /**
  * GET /api/admin/events/:eventId/registrations
  * Query: `status` (one of the five states), `older_than` (REGISTRATION_AGE_FILTERS), `q` (words of a name
  * or an address), `page`, `pageSize` (at most 100). The oldest registration comes first, and one that
  * shares its time with another comes by id, so a page is the same each time it is read. A filter value
- * that is not valid answers 400 `validation_failed` with the names of the parameters, not their values.
+ * that is not valid answers 400 `validation_failed` with the names of the parameters, not their values. The answer
+ * carries `total` and, for a filter that selects up to MAX_REGISTRATION_BULK_IDS registrations, `selection_digest`:
+ * what a deletion by filter has to send back.
  */
 export async function handleListEventRegistrations(c: Context, db: PrismaClient): Promise<Response> {
   const event = await resolveEvent(c, db);
@@ -370,6 +394,7 @@ export async function handleListEventRegistrations(c: Context, db: PrismaClient)
     total,
     page,
     pageSize,
+    selection_digest: await selectionDigestOf(db, where, filter, total),
   };
   return c.json(body);
 }

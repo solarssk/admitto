@@ -5,9 +5,18 @@ import { encryptToString } from "@admitto/crypto";
 import { PrismaClient, type RegistrationStatus } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
-import { MAX_REGISTRATION_BULK_IDS, admitRegistrations, deleteRegistrations, issueTicket } from "@admitto/tickets";
+import {
+  MAX_REGISTRATION_BULK_IDS,
+  admitRegistrations,
+  deleteRegistrations,
+  issueTicket,
+  parseRegistrationFilter,
+  registrationListWhere,
+  registrationSelectionDigest,
+} from "@admitto/tickets";
 import { subscribe } from "../../src/admin/sse-channel.js";
 import type { DeleteRegistrationsDto } from "../../src/admin/registration-delete-routes.js";
+import type { RegistrationListDto } from "../../src/admin/registrations-api-routes.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
@@ -223,8 +232,22 @@ async function post(
 }
 
 const deleteIds = (ids: string[], eventId = EVENT_A, cookie?: string) => post(url(eventId, "delete"), { ids }, cookie);
-const deleteFiltered = (body: Record<string, unknown>, eventId = EVENT_A, cookie?: string) =>
-  post(url(eventId, "delete-by-filter"), body, cookie);
+
+/** The name a list read just before would give the registrations the body's filter selects: what a deletion by filter has to send back. */
+async function digestFor(eventId: string, body: Record<string, unknown>): Promise<string> {
+  const parsed = parseRegistrationFilter({
+    status: typeof body.status === "string" ? body.status : undefined,
+    olderThan: typeof body.older_than === "string" ? body.older_than : undefined,
+    q: typeof body.q === "string" ? body.q : undefined,
+  });
+  // A filter the route refuses gets a digest of the right shape, so that the refusal under test is the filter's.
+  if (!parsed.ok) return "0".repeat(64);
+  const rows = await prisma.registration.findMany({ where: registrationListWhere(eventId, parsed.filter, new Date()), select: { id: true } });
+  return registrationSelectionDigest(rows.map((row) => row.id));
+}
+/** The digest is the one of what the filter selects at the time of the call, unless the body brings its own. */
+const deleteFiltered = async (body: Record<string, unknown>, eventId = EVENT_A, cookie?: string) =>
+  post(url(eventId, "delete-by-filter"), { selection_digest: await digestFor(eventId, body), ...body }, cookie);
 
 const countRegistrations = (eventId = EVENT_A) => prisma.registration.count({ where: { event_id: eventId } });
 const exists = async (id: string) => (await prisma.registration.count({ where: { id } })) === 1;
@@ -232,7 +255,7 @@ const exists = async (id: string) => (await prisma.registration.count({ where: {
 describe("who may delete registrations", () => {
   const ROUTES = ["delete", "delete-by-filter"] as const;
   const bodyFor = (route: (typeof ROUTES)[number], id: string) =>
-    route === "delete" ? { ids: [id] } : { status: "pending", expected: 1 };
+    route === "delete" ? { ids: [id] } : { status: "pending", expected: 1, selection_digest: registrationSelectionDigest([id]) };
 
   it.each(ROUTES)("%s: lets the administrator of the event's organisation delete, and no other", async (route) => {
     const mine = await addRegistration();
@@ -277,11 +300,15 @@ describe("who may delete registrations", () => {
   it.each(ROUTES)("%s: lets a superadmin delete in any organisation, and answers 404 for an event that is not there", async (route) => {
     const other = await addRegistration({ eventId: EVENT_B });
 
-    const res = await post(url(EVENT_B, route), route === "delete" ? { ids: [other.id] } : { status: "pending", expected: 1 }, cookies.superadmin);
+    const res = await post(url(EVENT_B, route), bodyFor(route, other.id), cookies.superadmin);
     expect(res.status).toBe(200);
     expect(await exists(other.id)).toBe(false);
 
-    const missing = await post(url("evt-regdel-missing", route), route === "delete" ? { ids: ["x"] } : { status: "pending", expected: 0 }, cookies.superadmin);
+    const missing = await post(
+      url("evt-regdel-missing", route),
+      route === "delete" ? { ids: ["x"] } : { status: "pending", expected: 0, selection_digest: "0".repeat(64) },
+      cookies.superadmin,
+    );
     expect(missing.status).toBe(404);
     expect(await missing.json()).toEqual({ error: "not_found" });
   });
@@ -362,6 +389,10 @@ describe("what a request must look like", () => {
     ["an expected number that is not a whole number", { status: "pending", expected: 1.5 }],
     ["an expected number that is a text", { status: "pending", expected: "1" }],
     ["a key it does not know", { status: "pending", expected: 1, ids: ["x"] }],
+    ["no selection digest", { status: "pending", expected: 1, selection_digest: undefined }],
+    ["a selection digest that is not 64 hex digits", { status: "pending", expected: 1, selection_digest: "abc" }],
+    ["a selection digest in capitals", { status: "pending", expected: 1, selection_digest: "A".repeat(64) }],
+    ["a selection digest that is a number", { status: "pending", expected: 1, selection_digest: 1 }],
   ])("delete-by-filter: refuses %s with 400 validation_failed", async (_label, body) => {
     const mine = await addRegistration();
 
@@ -765,6 +796,39 @@ describe("deleting by filter", () => {
     expect(await countRegistrations()).toBe(5);
     expect(await exists(rows.oldRejected.id)).toBe(true);
     expect(await prisma.attendeeActionLog.count({ where: { event_id: EVENT_A, action_type: "registrations_deleted" } })).toBe(0);
+  });
+
+  it("deletes nothing, with 409, when the filter selects the same number but not the registrations that were shown", async () => {
+    const rows = await mixed();
+    const shown = await digestFor(EVENT_A, { status: "rejected" });
+    // One left the filter (deleted by someone else) and another joined it (rejected since): three of them, as before.
+    await prisma.registration.delete({ where: { id: rows.freshRejected.id } });
+    await prisma.registration.update({ where: { id: rows.oldPending.id }, data: { status: "rejected" } });
+
+    const res = await deleteFiltered({ status: "rejected", expected: 3, selection_digest: shown });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "registration_selection_changed", matched: 3 });
+    expect(await countRegistrations()).toBe(4);
+    expect(await exists(rows.oldPending.id)).toBe(true);
+    expect(await prisma.attendeeActionLog.count({ where: { event_id: EVENT_A, action_type: "registrations_deleted" } })).toBe(0);
+  });
+
+  it("deletes what the list showed, with the digest and the total the list gave", async () => {
+    const rows = await mixed();
+    const listed = await app.request(`/api/admin/events/${EVENT_A}/registrations?status=rejected&q=olwen`, {
+      headers: { Cookie: cookies.adminA },
+    });
+    const shown = (await listed.json()) as RegistrationListDto;
+    expect(shown.total).toBe(2);
+
+    const res = await deleteFiltered({ status: "rejected", q: "olwen", expected: shown.total, selection_digest: shown.selection_digest });
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as DeleteRegistrationsDto).deleted).toBe(2);
+    expect(await exists(rows.oldRejected.id)).toBe(false);
+    expect(await exists(rows.freshRejected.id)).toBe(false);
+    expect(await exists(rows.oldRejected2.id)).toBe(true);
   });
 
   it("deletes nothing, with 422, when the filter selects more than a request may carry", async () => {
