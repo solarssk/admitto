@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CustomDataFieldDef } from "../../src/attendees/customData.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
+import { answerField } from "./answerTypeFixtures.js";
 
 const mockFetchEventCustomFields = vi.fn();
 vi.mock("../../src/api/client.js", () => ({
@@ -15,6 +16,7 @@ const {
   initialCustomFieldValues,
   isLongAnswer,
   readCustomDataField,
+  shownCustomFields,
   validateCustomFieldsForm,
 } = await import("../../src/attendees/customData.js");
 
@@ -400,5 +402,112 @@ describe("isLongAnswer", () => {
     expect(isLongAnswer("x".repeat(61))).toBe(true);
     expect(isLongAnswer("one\ntwo")).toBe(true);
     expect(isLongAnswer("")).toBe(false);
+  });
+});
+
+describe("shownCustomFields: the questions a form draws, for the answers it holds", () => {
+  const parking = answerField("parking", "Parking", "boolean");
+  const plate = answerField("plate", "Plate", "text", { rules: { show_when: { field: "parking", value: true } } });
+  const meal = answerField("meal", "Meal", "select", { options: ["Standard", "Vegan"] });
+  const veganNote = answerField("vegan_note", "Vegan note", "text", { rules: { show_when: { field: "meal", value: "Vegan" } } });
+  const notes = answerField("notes", "Notes", "long_text");
+  const keys = (fields: readonly CustomDataFieldDef[]) => fields.map((field) => field.source_field);
+
+  it("draws every question that has no condition, in the order of the event, whatever the answers are", () => {
+    expect(keys(shownCustomFields([parking, meal, notes], {}))).toEqual(["parking", "meal", "notes"]);
+    expect(keys(shownCustomFields([parking, meal, notes], { parking: "false", meal: "Vegan" }))).toEqual(["parking", "meal", "notes"]);
+    expect(shownCustomFields([], {})).toEqual([]);
+  });
+
+  it("draws a question with a condition only when the answer to the question it depends on is the one that shows it", () => {
+    expect(keys(shownCustomFields([parking, plate], {}))).toEqual(["parking"]);
+    expect(keys(shownCustomFields([parking, plate], { parking: "" }))).toEqual(["parking"]);
+    expect(keys(shownCustomFields([parking, plate], { parking: "false" }))).toEqual(["parking"]);
+    expect(keys(shownCustomFields([parking, plate], { parking: "true" }))).toEqual(["parking", "plate"]);
+    expect(keys(shownCustomFields([meal, veganNote], { meal: "Standard" }))).toEqual(["meal"]);
+    expect(keys(shownCustomFields([meal, veganNote], { meal: "Vegan" }))).toEqual(["meal", "vegan_note"]);
+  });
+
+  it("takes only the answer exactly as the server stores it, as the server does: 'yes', 'True' and an option in another case do not show it", () => {
+    for (const answer of ["yes", "True", "TRUE", "1", " true", "true "]) {
+      expect(keys(shownCustomFields([parking, plate], { parking: answer })), answer).toEqual(["parking"]);
+    }
+    expect(keys(shownCustomFields([meal, veganNote], { meal: "vegan" }))).toEqual(["meal"]);
+  });
+
+  it("draws a question that depends on another right after it, so that the answer that shows it never moves", () => {
+    // The plate comes first in the event's order, and the question it depends on after other questions.
+    expect(keys(shownCustomFields([plate, notes, parking, meal], { parking: "true" }))).toEqual(["notes", "parking", "plate", "meal"]);
+    expect(keys(shownCustomFields([plate, notes, parking, meal], { parking: "false" }))).toEqual(["notes", "parking", "meal"]);
+    expect(keys(shownCustomFields([veganNote, parking, meal, plate], { meal: "Vegan", parking: "true" }))).toEqual([
+      "parking",
+      "plate",
+      "meal",
+      "vegan_note",
+    ]);
+  });
+
+  it("keeps the order of several questions that depend on one, and draws each after its own", () => {
+    const second = answerField("second", "Second", "text", { rules: { show_when: { field: "parking", value: true } } });
+    expect(keys(shownCustomFields([parking, notes, plate, meal, second], { parking: "true" }))).toEqual(["parking", "plate", "second", "notes", "meal"]);
+  });
+
+  it("never draws a question that depends on a question the form does not have: no answer is held for that question, so its condition is never met", () => {
+    expect(keys(shownCustomFields([plate, notes], {}))).toEqual(["notes"]);
+    expect(keys(shownCustomFields([plate, notes], { notes: "x" }))).toEqual(["notes"]);
+  });
+
+  it("draws a question once and ends for conditions that go round, a field that depends on itself, and a chain", () => {
+    const a = answerField("a", "A", "boolean", { rules: { show_when: { field: "b", value: true } } });
+    const b = answerField("b", "B", "boolean", { rules: { show_when: { field: "a", value: true } } });
+    expect(shownCustomFields([a, b], { a: "true", b: "true" })).toEqual([]);
+    const self = answerField("self", "Self", "boolean", { rules: { show_when: { field: "self", value: true } } });
+    expect(shownCustomFields([self, notes], { self: "true" })).toEqual([notes]);
+    const chained = answerField("chained", "Chained", "text", { rules: { show_when: { field: "plate", value: "x" } } });
+    expect(keys(shownCustomFields([parking, plate, chained], { parking: "true", plate: "x" }))).toEqual(["parking", "plate", "chained"]);
+  });
+
+  it("changes nothing it is given, and hands back the fields themselves", () => {
+    const fields = Object.freeze([parking, plate]);
+    const answers = Object.freeze({ parking: "true" });
+    const shown = shownCustomFields(fields, answers);
+    expect(shown[0]).toBe(parking);
+    expect(shown[1]).toBe(plate);
+  });
+});
+
+describe("validateCustomFieldsForm: a question that is not asked", () => {
+  const parking = answerField("parking", "Parking", "boolean");
+  const plate = answerField("plate", "Plate", "text", { required: true, rules: { show_when: { field: "parking", value: true }, max_length: 5 } });
+  const meal = answerField("meal", "Meal", "select", { options: ["Standard", "Vegan"] });
+  const veganNote = answerField("vegan_note", "Vegan note", "text", { required: true, rules: { show_when: { field: "meal", value: "Vegan" } } });
+
+  it("is not required, whatever the field says", () => {
+    expect(validateCustomFieldsForm([parking, plate], { parking: "false", plate: "" })).toBeNull();
+    expect(validateCustomFieldsForm([parking, plate], { parking: "", plate: "" })).toBeNull();
+    expect(validateCustomFieldsForm([meal, veganNote], { meal: "Standard", vegan_note: "" })).toBeNull();
+  });
+
+  it("is not judged, whatever was typed for it while it was asked", () => {
+    expect(validateCustomFieldsForm([parking, plate], { parking: "false", plate: "far too long for it" })).toBeNull();
+    expect(validateCustomFieldsForm([meal, veganNote], { meal: "Standard", vegan_note: "x" })).toBeNull();
+  });
+
+  it("is required and judged once the answer shows it", () => {
+    expect(validateCustomFieldsForm([parking, plate], { parking: "true", plate: "" })).toBe("Plate is required.");
+    expect(validateCustomFieldsForm([parking, plate], { parking: "true", plate: "far too long for it" })).toBe("Plate must be at most 5 characters.");
+    expect(validateCustomFieldsForm([parking, plate], { parking: "true", plate: "AB 12" })).toBeNull();
+    expect(validateCustomFieldsForm([meal, veganNote], { meal: "Vegan", vegan_note: "" })).toBe("Vegan note is required.");
+    expect(validateCustomFieldsForm([meal, veganNote], { meal: "Vegan", vegan_note: "no eggs" })).toBeNull();
+  });
+
+  it("still holds the question the condition depends on to its own rules", () => {
+    const requiredParking = answerField("parking", "Parking", "boolean", { required: true });
+    expect(validateCustomFieldsForm([requiredParking, plate], { parking: "", plate: "" })).toBe("Parking is required.");
+    expect(validateCustomFieldsForm([meal, veganNote], { meal: "Lunch", vegan_note: "" })).toBe("Meal must be one of: Standard, Vegan.");
+  });
+
+  it("is not asked either when the question it depends on is not on the form at all", () => {
+    expect(validateCustomFieldsForm([plate], { plate: "" })).toBeNull();
   });
 });

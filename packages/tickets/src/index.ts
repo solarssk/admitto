@@ -122,8 +122,9 @@ export {
   hasNoRules,
   readStoredFieldRules,
 } from "./custom-field-rules.js";
-export { controlsOtherFields, findShowWhenProblem } from "./custom-field-conditions.js";
-export type { ConditionField, ShowWhenProblem } from "./custom-field-conditions.js";
+// The checks of conditions between fields live in @admitto/shared, so that the admin app's field editor asks the very same ones.
+export { controlsOtherFields, findShowWhenProblem } from "@admitto/shared";
+export type { ConditionField, ShowWhenProblem } from "@admitto/shared";
 export {
   MAX_CUSTOM_FIELDS_PER_EVENT,
   REGISTRANT_EMAIL_MAX,

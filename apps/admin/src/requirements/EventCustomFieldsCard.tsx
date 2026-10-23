@@ -8,6 +8,8 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { customFieldTypeIcon, customFieldTypeLabel } from "./customFieldType.js";
 import { disambiguatedLabel, findDuplicateLabels } from "./duplicateLabels.js";
 import { EventCustomFieldModal } from "./EventCustomFieldModal.js";
+import { conditionLine, deleteBlockedMessage } from "./fieldDependencies.js";
+import { guestFormIconGlyph, guestFormIconLabel } from "./guestFormIcons.js";
 import { moveKey, useFieldFormControls, type FieldsChange, type MoveDirection } from "./useFieldFormControls.js";
 import "../attendees/attendees.css";
 import "./requirements.css";
@@ -124,6 +126,7 @@ function MoveButton({
 
 function CustomFieldRow({
   field,
+  fields,
   event,
   duplicateLabels,
   formControls,
@@ -131,6 +134,8 @@ function CustomFieldRow({
   onDelete,
 }: {
   readonly field: EventCustomFieldDto;
+  /** All the fields of the event, to name the question this one depends on. */
+  readonly fields: readonly EventCustomFieldDto[];
   readonly event: EventDto;
   readonly duplicateLabels: ReadonlySet<string>;
   /** Only on the Registration page. */
@@ -141,6 +146,8 @@ function CustomFieldRow({
   const description = field.description?.trim() ?? "";
   const typeLabel = customFieldTypeLabel(field.type);
   const name = disambiguatedLabel(field.label, field.source_field, duplicateLabels);
+  const iconGlyph = guestFormIconGlyph(field.rules?.icon);
+  const condition = conditionLine(field, fields);
   return (
     <tr>
       <td>
@@ -151,7 +158,15 @@ function CustomFieldRow({
             </span>
           </Tooltip>
           <div className="requirements-item-info">
-            <div className="requirements-item-name">{name}</div>
+            <div className="requirements-item-name">
+              {iconGlyph ? (
+                <span className="requirements-item-form-icon" role="img" aria-label={`Icon on the form: ${guestFormIconLabel(field.rules?.icon)}`}>
+                  <i className={`ti ti-${iconGlyph}`} aria-hidden="true" />
+                </span>
+              ) : null}
+              {name}
+            </div>
+            {condition ? <div className="requirements-item-condition">{condition}</div> : null}
           </div>
         </div>
       </td>
@@ -223,6 +238,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
 
   const onRegistrationPage = placement === "registration";
   const text = CARD_TEXT[placement];
+  const deleteBlocked = deleteTarget ? deleteBlockedMessage(deleteTarget, fields) : "";
   const showTable = fields.length > 0;
 
   function closeModal() {
@@ -277,6 +293,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
               <CustomFieldRow
                 key={field.id}
                 field={field}
+                fields={fields}
                 event={event}
                 duplicateLabels={duplicateLabels}
                 formControls={
@@ -331,6 +348,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
         <EventCustomFieldModal
           eventId={eventId}
           field={editField}
+          fields={fields}
           showOnForm={onRegistrationPage}
           onClose={closeModal}
           onSaved={() => {
@@ -343,9 +361,12 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Delete custom field"
-        message={`Delete "${deleteTarget?.label}"? This cannot be undone.`}
+        message={deleteBlocked || `Delete "${deleteTarget?.label}"? This cannot be undone.`}
         confirmLabel="Delete"
+        cancelLabel={deleteBlocked ? "Close" : "Cancel"}
         confirmVariant="danger"
+        // A field that other fields are shown for is not deleted: the dialog says which, and the server would refuse it as well.
+        disableConfirm={deleteBlocked !== ""}
         loading={deleting}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => void handleDelete()}

@@ -1,4 +1,4 @@
-import { GUEST_FORM_ICONS } from "@admitto/shared";
+import { GUEST_FORM_ICONS, guestFormDrawsIcon } from "@admitto/shared";
 import { REGISTRANT_TEXT_MAX, registrantRawLimit } from "@admitto/tickets";
 import { describe, expect, it } from "vitest";
 import { renderQuestions } from "../../src/registration/form-fields.js";
@@ -52,6 +52,19 @@ describe("an icon on a question", () => {
       const field = withIcons.querySelector(`[data-custom="${key}"]`);
       expect(field.querySelector(".at-inputgroup__icon"), key).toBeNull();
       expect(hrefs(field), key).toEqual(drawn[key]);
+    }
+  });
+
+  it("is drawn for exactly the questions that the rule in @admitto/shared names, which is what the field editor tells the organiser", () => {
+    const types = ["text", "long_text", "date", "datetime", "phone", "select", "boolean"] as const;
+    for (const type of types) {
+      for (const required of [false, true]) {
+        const page = documentOf(
+          render(formModel({ questions: [question({ key: "q", label: "Q", type, required, icon: "pin", options: type === "select" ? ["One"] : [] })] })),
+        );
+        const drawn = hrefs(page.querySelector('[data-custom="q"]')).includes("#i-pin");
+        expect(drawn, `${type}${required ? ", required" : ""}`).toBe(guestFormDrawsIcon({ type, required }));
+      }
     }
   });
 
