@@ -12,7 +12,13 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { disallowedPlaceholdersForTemplate } from "@admitto/mail-templates/systemTemplates";
+import {
+  disallowedPlaceholdersForTemplate,
+  isSystemTemplateName,
+  requiredPlaceholdersForTemplate,
+  systemTemplateLabel,
+  type SystemTemplateName,
+} from "@admitto/mail-templates/systemTemplates";
 import { useBlocker, useOutletContext, useParams, useSearchParams } from "react-router";
 import type { EditorView, ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import {
@@ -33,14 +39,18 @@ import {
   deleteEventTemplate,
   fetchEventMailSettings,
   fetchEventOverview,
+  fetchEventSystemTemplate,
   fetchEventTemplate,
   fetchEventTemplateById,
   fetchEventTemplates,
+  previewEventSystemTemplate,
   previewEventTemplate,
   previewEventTemplateById,
+  saveEventSystemTemplate,
   saveEventTemplate,
   saveEventTemplateById,
   TemplateValidationError,
+  testSendEventSystemTemplate,
   testSendEventTemplate,
   testSendEventTemplateById,
   updateEventTemplateMetadata,
@@ -49,8 +59,12 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type {
   EventDto,
   EventTemplateDto,
+  EventTemplateSourceDto,
   MailTemplateDetail,
   MailTemplateListItem,
+  PreviewTemplateResponse,
+  SaveTemplateBody,
+  TemplateTestSendResponse,
 } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { browserClockTime, formatEventDate } from "../utils/event-dates.js";
@@ -70,6 +84,14 @@ import { WalletsTab } from "../communication/WalletsTab.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { EditTemplateModal } from "../communication/EditTemplateModal.js";
 import { DEFAULT_TEMPLATE_ICON } from "../communication/templateIcons.js";
+import {
+  VIRTUAL_TICKET_KEY,
+  activeSystemName,
+  isVirtualKey,
+  systemPickerOptions,
+  virtualSystemKey,
+  virtualSystemName,
+} from "../communication/systemTemplates.js";
 import { DeliveryLogTab } from "../communication/DeliveryLogTable.js";
 import { useDeliveryLog } from "../communication/useDeliveryLog.js";
 import "../communication/communication.css";
@@ -133,6 +155,10 @@ export function placeholderDescription(name: string, isImage: boolean): string {
     apple_wallet_url: "Link to add the ticket to Apple Wallet.",
     google_wallet_url: "Link to add the ticket to Google Wallet.",
     logo_url: "Your organisation's logo image.",
+    confirm_url: "The link the guest opens to confirm their email address.",
+    contact_name: "Who guests can write to: the event's first contact with an email, else your organisation's support contact.",
+    contact_email: "That contact's email address.",
+    contact_line: "A ready sentence naming that contact, or nothing when the event has none.",
   };
   return known[name] ?? (isImage ? "Custom image asset for this event." : `{{${name}}}`);
 }
@@ -495,25 +521,58 @@ export async function recoverLegacyAfterDelete({
     legacyTemplateRef.current = await fetchEventTemplate(scopeEventId);
     if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
     applyLegacyTemplate(legacyTemplateRef.current);
-    setActiveKey("virtual-ticket");
+    setActiveKey(VIRTUAL_TICKET_KEY);
   } catch {
     if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
     if (legacyTemplateRef.current) {
       applyLegacyTemplate(legacyTemplateRef.current);
-      setActiveKey("virtual-ticket");
+      setActiveKey(VIRTUAL_TICKET_KEY);
       addToast(
         "Template deleted. Inherited ticket could not be refreshed. Showing last known copy.",
         "warning",
       );
     } else {
-      setActiveKey("virtual-ticket");
+      setActiveKey(VIRTUAL_TICKET_KEY);
       addToast("Template deleted. Could not load default ticket. Reload the page.", "warning");
     }
   }
 }
 
+/** How far the revert of a registration mail got: the row is gone and the page has what the event runs on now
+ * (`reverted`); the row is gone but the page could not read that (`refresh_failed`); or nothing was deleted (`failed`). */
+type RevertResult =
+  | { kind: "reverted"; items: MailTemplateListItem[]; defaults: EventTemplateSourceDto }
+  | { kind: "refresh_failed" | "failed"; err: unknown };
+
+/** Deletes the saved row of a registration mail, then reads the list and the default the event resolves in its place:
+ * the organization's text, else the built-in one. Never throws, so that the caller can tell the two failures apart. */
+async function revertSystemTemplateRow(
+  eventId: string,
+  templateId: string,
+  name: SystemTemplateName,
+): Promise<RevertResult> {
+  try {
+    await deleteEventTemplate(eventId, templateId);
+  } catch (err) {
+    return { kind: "failed", err };
+  }
+  try {
+    const [items, defaults] = await Promise.all([fetchEventTemplates(eventId), fetchEventSystemTemplate(eventId, name)]);
+    return { kind: "reverted", items, defaults };
+  } catch (err) {
+    return { kind: "refresh_failed", err };
+  }
+}
+
+/** What the revert confirmation says when the delete failed: the operator's wording of the code, never the server's text. */
+function revertErrorMessage(err: unknown): string {
+  return err instanceof ApiError ? operatorApiErrorMessage(err, "Revert failed.") : "Revert failed.";
+}
+
+/** `legacy` is a template that has no row of its own and runs on the default: the ticket template, or a registration
+ * mail (`name`), with the source the editor opens. */
 type TemplateSelectionLoad =
-  | { kind: "legacy"; data: EventTemplateDto }
+  | { kind: "legacy"; name: string; data: EventTemplateSourceDto }
   | {
       kind: "detail";
       data: {
@@ -529,12 +588,39 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(value);
 }
 
+/** The preview call of the open template: the ticket's own route while it has no row, a registration mail's route by name
+ * while it has none, else the route by id. */
+function previewOpenTemplate(
+  eventId: string,
+  key: string,
+  payload: SaveTemplateBody,
+): Promise<PreviewTemplateResponse> {
+  if (key === VIRTUAL_TICKET_KEY) return previewEventTemplate(eventId, payload);
+  const systemName = virtualSystemName(key);
+  if (systemName) return previewEventSystemTemplate(eventId, systemName, payload);
+  return previewEventTemplateById(eventId, key, payload);
+}
+
+/** The test-send call of the open template, routed like {@link previewOpenTemplate}. */
+function testSendOpenTemplate(
+  eventId: string,
+  key: string,
+  body: { to: string },
+): Promise<TemplateTestSendResponse> {
+  if (key === VIRTUAL_TICKET_KEY) return testSendEventTemplate(eventId, body);
+  const systemName = virtualSystemName(key);
+  if (systemName) return testSendEventSystemTemplate(eventId, systemName, body);
+  return testSendEventTemplateById(eventId, key, body);
+}
+
 /** Label shown in the test-send result card for whichever template was just sent. */
 export function resolveTestSendTemplateLabel(
   activeKey: string,
   templates: ReadonlyArray<{ id: string; label: string }>,
 ): string {
-  if (activeKey === "virtual-ticket") return "Ticket email";
+  if (activeKey === VIRTUAL_TICKET_KEY) return "Ticket email";
+  const systemName = virtualSystemName(activeKey);
+  if (systemName) return systemTemplateLabel(systemName);
   return templates.find((t) => t.id === activeKey)?.label ?? "Template";
 }
 
@@ -557,27 +643,33 @@ function resolveSendTemplateId(
   templates: MailTemplateListItem[],
 ): string | undefined {
   if (editorSnapshotMissing) return undefined;
-  if (activeKey === "virtual-ticket") return templates.find((t) => t.name === "ticket")?.id;
+  if (activeKey === VIRTUAL_TICKET_KEY) return templates.find((t) => t.name === "ticket")?.id;
   return activeKey;
 }
 
 /** Options for the template picker `SearchableSelect` — shared by the Send tab's Message card
- * and the Templates tab's picker bar so both always list the exact same templates the exact
- * same way, icon included. The virtual "Ticket email" entry only appears when there's no
- * explicit "ticket" override yet (same condition TemplatePickerBar's own count/badge logic
- * uses) - it keeps the ticket icon (it IS the built-in ticket template); every real saved
- * template uses its own chosen icon (set via the edit modal), falling back to the same default
- * shown there when unset, so the two read as visually distinct kinds of thing by default without
- * needing a text label to say so. */
+ * and the Templates tab's picker bar so both list the templates the same way, icon included.
+ * The virtual "Ticket email" entry only appears when there's no explicit "ticket" override yet
+ * (same condition TemplatePickerBar's own count/badge logic uses) - it keeps the ticket icon (it
+ * IS the built-in ticket template); every real saved template uses its own chosen icon (set via
+ * the edit modal), falling back to the same default shown there when unset, so the two read as
+ * visually distinct kinds of thing by default without needing a text label to say so.
+ *
+ * The four registration mails come last, each as its saved row or, while it has none, as an entry
+ * for its built-in default (`systemPickerOptions`). The Send tab never offers them: a guest's
+ * mail answers one registration and is not a mass mailing (the server refuses it, 422). */
 function templatePickerOptions(
   templates: MailTemplateListItem[],
   forSend = false,
 ): Array<{ id: string; label: string; icon: string }> {
   return [
     ...(!templates.some((t) => t.name === "ticket")
-      ? [{ id: "virtual-ticket", label: "Ticket email", icon: "ticket" }]
+      ? [{ id: VIRTUAL_TICKET_KEY, label: "Ticket email", icon: "ticket" }]
       : []),
-    ...templates.filter((t) => !(forSend && t.is_system)).map((t) => ({ id: t.id, label: t.label, icon: t.icon ?? DEFAULT_TEMPLATE_ICON })),
+    ...templates
+      .filter((t) => !isSystemTemplateName(t.name))
+      .map((t) => ({ id: t.id, label: t.label, icon: t.icon ?? DEFAULT_TEMPLATE_ICON })),
+    ...(forSend ? [] : systemPickerOptions(templates)),
   ];
 }
 
@@ -593,7 +685,7 @@ const VIRTUAL_TICKET_DESCRIPTION =
  * never given one) renders nothing here - unlike the virtual entry, there's no sensible default
  * text to invent for someone else's saved template. */
 function activeTemplateDescription(activeKey: string, templates: MailTemplateListItem[]): string | null {
-  if (activeKey === "virtual-ticket") return VIRTUAL_TICKET_DESCRIPTION;
+  if (activeKey === VIRTUAL_TICKET_KEY) return VIRTUAL_TICKET_DESCRIPTION;
   return templates.find((t) => t.id === activeKey)?.description ?? null;
 }
 
@@ -622,7 +714,7 @@ function DefaultTemplateBanner({
   activeKey: string;
   source: EventTemplateDto["source"];
 }>) {
-  if (activeKey !== "virtual-ticket" || source === "event") return null;
+  if (activeKey !== VIRTUAL_TICKET_KEY || source === "event") return null;
   return (
     <Notice variant="info">
       This event has no template of its own yet, so it's sending the shared default shown below.
@@ -676,19 +768,21 @@ function SendTab({
   senderAddress: string | null;
   onPreview: () => Promise<void>;
 }>) {
+  // The selection is shared with the Templates tab: a registration template opened there is not
+  // one this tab can send (the server answers 422), so say so instead of offering a doomed send,
+  // and show no preview of it under a picker that does not list it.
+  const activeIsSystem = activeSystemName(activeKey, templates) !== null;
+
   // Preview the *saved* template when this tab is shown (or when that saved snapshot changes).
   // Skip while inactive so a Templates-tab draft preview is not overwritten in the background.
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || activeIsSystem) return;
     void onPreview();
     // onPreview is a fresh function every render; only these primitives should re-trigger it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey, eventId, isActive, savedSubject, savedBody, savedFormat]);
+  }, [activeKey, eventId, isActive, activeIsSystem, savedSubject, savedBody, savedFormat]);
 
   const templateDescription = activeTemplateDescription(activeKey, templates);
-  // The selection is shared with the Templates tab: a registration template opened there is not
-  // one this tab can send (the server answers 422), so say so instead of offering a doomed send.
-  const activeIsSystem = templates.find((t) => t.id === activeKey)?.is_system === true;
 
   return (
     <div className="communication-send-tab">
@@ -721,20 +815,22 @@ function SendTab({
               />
             </div>
             <DefaultTemplateBanner activeKey={activeKey} source={source} />
-            <PreviewBody
-              previewHtml={previewHtml}
-              previewSubject={previewSubject}
-              eventTitle={event.title}
-              senderName={senderName}
-              senderAddress={senderAddress}
-              loading={previewLoading}
-              toolbarLabel={
-                <>
-                  <i className="ti ti-eye" aria-hidden="true" /> Preview
-                  {previewLoading && <span className="muted"> · Updating…</span>}
-                </>
-              }
-            />
+            {!activeIsSystem && (
+              <PreviewBody
+                previewHtml={previewHtml}
+                previewSubject={previewSubject}
+                eventTitle={event.title}
+                senderName={senderName}
+                senderAddress={senderAddress}
+                loading={previewLoading}
+                toolbarLabel={
+                  <>
+                    <i className="ti ti-eye" aria-hidden="true" /> Preview
+                    {previewLoading && <span className="muted"> · Updating…</span>}
+                  </>
+                }
+              />
+            )}
           </div>
         </Card>
       )}
@@ -762,6 +858,17 @@ function SendTab({
   );
 }
 
+/** The Templates tab's picker trigger: the revert of a registration mail removes the button that held the focus, and the
+ * picker is where the operator goes on. */
+const TEMPLATES_PICKER_ID = "communication-templates-picker";
+
+/** Why the pencil of the picker bar is off for the open template. */
+function lockedEditTooltip(isSystem: boolean): string {
+  return isSystem
+    ? "A system email keeps its name, icon and description."
+    : "Save this template once to edit its details.";
+}
+
 /** Top toolbar for the Templates tab: which template is open, when it was last saved (or a
  * "Default template" badge for the virtual entry, which has no save history of its own), and
  * "New template". The template list used to live in a side rail; moving the picker up here
@@ -773,7 +880,6 @@ function TemplatePickerBar({
   templates,
   activeKey,
   source,
-  canEdit,
   onEdit,
   requestDirtyProtectedAction,
 }: Readonly<{
@@ -784,12 +890,15 @@ function TemplatePickerBar({
   templates: MailTemplateListItem[];
   activeKey: string;
   source: EventTemplateDto["source"];
-  canEdit: boolean;
   onEdit: () => void;
   requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
 }>) {
   const activeMeta = templates.find((t) => t.id === activeKey);
-  const isDefault = activeKey === "virtual-ticket" && source !== "event";
+  const isDefault = isVirtualKey(activeKey) && source !== "event";
+  // A template that is not saved yet has no details to edit; a registration mail never has: its name, icon and
+  // description are the product's (the server refuses to change them).
+  const isSystem = activeSystemName(activeKey, templates) !== null;
+  const canEdit = !isVirtualKey(activeKey) && !isSystem;
   const identityBusy = templateActionBusy || contentSaving;
   // Archive and unavailable-state reasons take precedence over the informational timestamp;
   // nesting both tooltips makes two portal bubbles appear for one disabled pencil control.
@@ -801,7 +910,7 @@ function TemplatePickerBar({
       <div className="communication-template-picker">
         <div className="communication-half-field communication-template-picker__select">
           <SearchableSelect
-            id="communication-templates-picker"
+            id={TEMPLATES_PICKER_ID}
             label="Template"
             showLabel={false}
             placeholder="Choose a template…"
@@ -831,7 +940,7 @@ function TemplatePickerBar({
               event={event}
               reasonId="edit-template-reason"
               disabled={!canEdit || identityBusy}
-              tooltip={!canEdit ? "Save this template once to edit its details." : undefined}
+              tooltip={canEdit ? undefined : lockedEditTooltip(isSystem)}
             >
               {(guard) => (
                 <button
@@ -1240,7 +1349,7 @@ function CommunicationPageBody({
   const [accessDenied, setAccessDenied] = useState(false);
 
   const [templates, setTemplates] = useState<MailTemplateListItem[]>([]);
-  const [activeKey, setActiveKey] = useState<string>("virtual-ticket");
+  const [activeKey, setActiveKey] = useState<string>(VIRTUAL_TICKET_KEY);
   const [activeTemplateName, setActiveTemplateName] = useState("ticket");
   const [templateActionBusy, setTemplateActionBusy] = useState(false);
   const [editorSnapshotMissing, setEditorSnapshotMissing] = useState(false);
@@ -1303,6 +1412,17 @@ function CommunicationPageBody({
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [pendingFormat, setPendingFormat] = useState<TemplateFormat | null>(null);
+  const [revertConfirmOpen, setRevertConfirmOpen] = useState(false);
+  /** Why a revert failed, shown in its confirmation (the dialog has the focus, so the error belongs in it). */
+  const [revertError, setRevertError] = useState<string | null>(null);
+  const revertButtonRef = useRef<HTMLButtonElement>(null);
+  /** Counts the reverts that have ended. The Revert button is gone with the row and the focus with it, and the picker, where
+   * the operator goes on, is still off (the page is busy) until the page has drawn the end of the revert: so it takes the
+   * focus from an effect, once that is on screen, not from the revert itself (a timer there beat the render in Chrome). */
+  const [pickerFocusRequests, setPickerFocusRequests] = useState(0);
+  useEffect(() => {
+    if (pickerFocusRequests > 0) document.getElementById(TEMPLATES_PICKER_ID)?.focus();
+  }, [pickerFocusRequests]);
 
   const isDirty = isTemplateDirty(
     { subject, body, format },
@@ -1313,6 +1433,7 @@ function CommunicationPageBody({
     editModalOpen ||
     createDialogOpen ||
     overrideConfirmOpen ||
+    revertConfirmOpen ||
     pendingFormat !== null;
 
   /** Switching MJML<->HTML never converts the body, so it's blind data loss on a non-empty
@@ -1354,7 +1475,7 @@ function CommunicationPageBody({
     [savedSubject, savedBody, savedFormat],
   );
 
-  const applyLegacyTemplate = useCallback((data: EventTemplateDto) => {
+  const applyLegacyTemplate = useCallback((data: EventTemplateSourceDto, name = "ticket") => {
     setEditorSnapshotMissing(false);
     setSource(data.source);
     setSubject(data.subject_template);
@@ -1363,7 +1484,7 @@ function CommunicationPageBody({
     setSavedSubject(data.subject_template);
     setSavedBody(data.body_template);
     setSavedFormat(data.template_format);
-    setActiveTemplateName("ticket");
+    setActiveTemplateName(name);
   }, []);
 
   const applyDetailTemplate = useCallback((detail: {
@@ -1385,9 +1506,13 @@ function CommunicationPageBody({
 
   const loadTemplateSelection = useCallback(
     async (key: string): Promise<TemplateSelectionLoad> => {
-      if (key === "virtual-ticket") {
+      if (key === VIRTUAL_TICKET_KEY) {
         legacyTemplateRef.current = await fetchEventTemplate(eventId);
-        return { kind: "legacy", data: legacyTemplateRef.current };
+        return { kind: "legacy", name: "ticket", data: legacyTemplateRef.current };
+      }
+      const systemName = virtualSystemName(key);
+      if (systemName) {
+        return { kind: "legacy", name: systemName, data: await fetchEventSystemTemplate(eventId, systemName) };
       }
       const detail = await fetchEventTemplateById(eventId, key);
       return { kind: "detail", data: detail };
@@ -1397,7 +1522,7 @@ function CommunicationPageBody({
 
   const applyLoadedTemplateSelection = useCallback(
     (key: string, result: TemplateSelectionLoad) => {
-      if (result.kind === "legacy") applyLegacyTemplate(result.data);
+      if (result.kind === "legacy") applyLegacyTemplate(result.data, result.name);
       else applyDetailTemplate(result.data);
       setActiveKey(key);
     },
@@ -1535,6 +1660,39 @@ function CommunicationPageBody({
     }
   }, [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, reportApiError, addToast]);
 
+  /** Reverts the open registration mail to its default: deletes its row (the server records it), then opens the default the
+   * event resolves now in the place of the row. */
+  const executeRevertSystemTemplate = useCallback(async () => {
+    const scopeEventId = eventId;
+    const row = templates.find((t) => t.id === activeKey);
+    if (!row || !isSystemTemplateName(row.name)) return;
+    const name = row.name;
+    const seq = ++deleteTemplateSeqRef.current;
+    setTemplateActionBusy(true);
+    setRevertError(null);
+    const result = await revertSystemTemplateRow(scopeEventId, row.id, name);
+    if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
+    if (result.kind === "reverted") {
+      setTemplates(result.items);
+      applyLegacyTemplate(result.defaults, name);
+      setActiveKey(virtualSystemKey(name));
+      setValidationErrors([]);
+      setRevertConfirmOpen(false);
+      addToast("Reverted to the default text.", "success");
+      setPickerFocusRequests((count) => count + 1);
+    } else {
+      if (result.err instanceof ApiError) reportApiError(result.err.status);
+      if (result.kind === "refresh_failed") {
+        // The mail is on its default already; only this page is behind.
+        setRevertConfirmOpen(false);
+        addToast("The default text is back, but this page could not be refreshed. Reload it.", "warning");
+      } else {
+        setRevertError(revertErrorMessage(result.err));
+      }
+    }
+    setTemplateActionBusy(false);
+  }, [activeKey, applyLegacyTemplate, eventId, reportApiError, addToast, templates]);
+
   const runDirtyProtectedAction = useCallback(
     (action: DirtyProtectedAction) => {
       if (action.kind === "select") {
@@ -1643,7 +1801,7 @@ function CommunicationPageBody({
         setActiveKey(ticket.id);
         applyDetailTemplate(detail);
       } else {
-        setActiveKey("virtual-ticket");
+        setActiveKey(VIRTUAL_TICKET_KEY);
         applyLegacyTemplate(data);
       }
       setValidationErrors([]);
@@ -1809,10 +1967,7 @@ function CommunicationPageBody({
     setPreviewLoading(true);
     setValidationErrors([]);
     try {
-      const data =
-        activeKey === "virtual-ticket"
-          ? await previewEventTemplate(scopeEventId, payload)
-          : await previewEventTemplateById(scopeEventId, activeKey, payload);
+      const data = await previewOpenTemplate(scopeEventId, activeKey, payload);
       if (isDeleteStale(seq, scopeEventId, previewSeqRef.current, currentEventIdRef.current)) return;
       setPreviewSubject(data.subject);
       setPreviewHtml(data.html);
@@ -1884,8 +2039,9 @@ function CommunicationPageBody({
     const seq = ++saveSeqRef.current;
     setValidationErrors([]);
     setSaving(true);
+    const systemName = virtualSystemName(activeKey);
     try {
-      if (activeKey === "virtual-ticket") {
+      if (activeKey === VIRTUAL_TICKET_KEY) {
         await saveEventTemplate(eventId, templatePayload());
         legacyTemplateRef.current = await fetchEventTemplate(eventId);
         const items = await fetchEventTemplates(eventId);
@@ -1898,6 +2054,15 @@ function CommunicationPageBody({
         } else {
           applyLegacyTemplate(legacyTemplateRef.current);
         }
+      } else if (systemName) {
+        // The first save of a registration mail that ran on the default: it becomes a row, and the entry for the default
+        // is replaced by it in the picker.
+        const saved = await saveEventSystemTemplate(eventId, systemName, templatePayload());
+        applyDetailTemplate(saved);
+        setTemplates((prev) =>
+          sortTemplates([...prev.filter((t) => t.id !== saved.id), templateListItemFromDetail(saved)]),
+        );
+        setActiveKey(saved.id);
       } else {
         const saved = await saveEventTemplateById(eventId, activeKey, templatePayload());
         applyDetailTemplate(saved);
@@ -1922,7 +2087,7 @@ function CommunicationPageBody({
 
   const handleSave = () => {
     if (!eventId || editorSnapshotMissing) return;
-    if (activeKey === "virtual-ticket" && source !== "event") {
+    if (isVirtualKey(activeKey) && source !== "event") {
       setOverrideConfirmOpen(true);
       return;
     }
@@ -1945,10 +2110,7 @@ function CommunicationPageBody({
     setTestStatus(null);
     setTestSending(true);
     try {
-      const result =
-        activeKey === "virtual-ticket"
-          ? await testSendEventTemplate(eventId, { to: submittedEmail })
-          : await testSendEventTemplateById(eventId, activeKey, { to: submittedEmail });
+      const result = await testSendOpenTemplate(eventId, activeKey, { to: submittedEmail });
       if (result.status === "sent") {
         setTestStatus({
           kind: "ok",
@@ -2003,13 +2165,17 @@ function CommunicationPageBody({
     );
   }
 
-  // Matches templatePickerOptions' own list exactly: every saved template, plus the virtual
-  // "Ticket email" entry when there's no explicit "ticket" override yet - that virtual entry is
-  // a real, selectable, sendable template from the operator's point of view even though it has
-  // no MailTemplateListItem row of its own.
-  const templateTabCount = templates.length + (templates.some((t) => t.name === "ticket") ? 0 : 1);
+  // The operator's own templates: every saved one, plus the virtual "Ticket email" entry when
+  // there's no explicit "ticket" override yet - that virtual entry is a real, selectable,
+  // sendable template from the operator's point of view even though it has no
+  // MailTemplateListItem row of its own. The four registration mails are the product's, always
+  // there whether they have a row or not, so they are not counted: the number would otherwise
+  // change the moment one of them is saved.
+  const ownTemplates = templates.filter((t) => !isSystemTemplateName(t.name));
+  const templateTabCount = ownTemplates.length + (templates.some((t) => t.name === "ticket") ? 0 : 1);
 
   const activeTemplateMeta = templates.find((t) => t.id === activeKey) ?? null;
+  const activeSystem = activeSystemName(activeKey, templates);
 
   return (
     <div ref={pageRef} className="screen">
@@ -2071,7 +2237,6 @@ function CommunicationPageBody({
             templates={templates}
             activeKey={activeKey}
             source={source}
-            canEdit={activeKey !== "virtual-ticket"}
             onEdit={() => setEditModalOpen(true)}
             requestDirtyProtectedAction={requestDirtyProtectedAction}
           />
@@ -2087,9 +2252,18 @@ function CommunicationPageBody({
                 )}
                 imagePlaceholders={imagePlaceholders}
                 // Backend only enforces ticket_url/qr_image_url for the "ticket" template
-                // (see requireTicketPlaceholders, communication-api-routes.ts) - the "required"
-                // chip outline should follow that, not apply to every other template's editor too.
-                requiredPlaceholders={activeTemplateName === "ticket" ? requiredPlaceholders : []}
+                // (see requireTicketPlaceholders, communication-api-routes.ts), and the link in the
+                // confirmation mail for that mail - the "required" chip outline should follow that,
+                // not apply to every other template's editor too.
+                requiredPlaceholders={
+                  activeTemplateName === "ticket"
+                    ? requiredPlaceholders
+                    : [...requiredPlaceholdersForTemplate(activeTemplateName)]
+                }
+                systemTemplateName={activeSystem}
+                canRevert={activeSystem !== null && !isVirtualKey(activeKey)}
+                onRevert={() => setRevertConfirmOpen(true)}
+                revertButtonRef={revertButtonRef}
                 onInsertPlaceholder={insertPlaceholder}
                 brandingLogoUrl={brandingLogoUrl}
                 subjectRef={subjectRef}
@@ -2136,7 +2310,8 @@ function CommunicationPageBody({
         <DeliveryLogTab
           eventId={eventId}
           log={deliveryLog}
-          templates={templates}
+          // A registration mail is never in the Delivery log, so it is not a template to filter it by.
+          templates={ownTemplates}
           resolvedBounceRowIds={resolvedBounceRowIds}
           onBounceRowResolved={(rowId) => setResolvedBounceRowIds((prev) => new Set(prev).add(rowId))}
           pendingBounceRowIds={pendingBounceRowIds}
@@ -2204,6 +2379,20 @@ function CommunicationPageBody({
         loading={saving}
         onCancel={() => setOverrideConfirmOpen(false)}
         onConfirm={() => void performSave()}
+      />
+      <ConfirmDialog
+        open={revertConfirmOpen}
+        title="Revert to the default text?"
+        message="The text you saved for this email is discarded, unsaved changes included, and this event uses the default text again. This can't be undone."
+        confirmLabel="Revert to default"
+        loading={templateActionBusy}
+        errorMessage={revertError}
+        onCancel={() => {
+          setRevertConfirmOpen(false);
+          setRevertError(null);
+          revertButtonRef.current?.focus();
+        }}
+        onConfirm={() => void executeRevertSystemTemplate()}
       />
       <ConfirmDialog
         open={pendingFormat !== null}

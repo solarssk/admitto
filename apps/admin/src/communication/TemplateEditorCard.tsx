@@ -17,10 +17,12 @@ import { placeholderHighlightViewPlugin } from "./placeholderHighlightViewPlugin
 import { createUnknownPlaceholderLinter } from "./placeholderUnknownLint.js";
 import { createPlaceholderAutocomplete, placeholderBracesConfig } from "./placeholderAutocomplete.js";
 import { Button, Card, Input, Notice, Tooltip } from "@admitto/ui";
+import type { SystemTemplateName } from "@admitto/mail-templates/systemTemplates";
 import type { EventDto } from "../api/types.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import "./communication.css";
+import { SYSTEM_TEMPLATE_COMMON_NOTE, systemTemplateDescription } from "./systemTemplates.js";
 import {
   HIDDEN_PLACEHOLDERS,
   WALLET_PLACEHOLDERS,
@@ -34,6 +36,8 @@ import {
  * a custom asset token (name not listed in any group) falls back to its own trailing "Images"
  * group, added dynamically below. */
 const PLACEHOLDER_GROUPS: ReadonlyArray<{ label: string; names: readonly string[] }> = [
+  // Only the confirmation email may use it, so it is the first thing that email's editor offers.
+  { label: "Confirmation", names: ["confirm_url"] },
   { label: "Attendee", names: ["first_name", "last_name", "full_name", "email"] },
   {
     label: "Event",
@@ -50,6 +54,8 @@ const PLACEHOLDER_GROUPS: ReadonlyArray<{ label: string; names: readonly string[
       "accessibility_text",
     ],
   },
+  // The registration emails only (the ticket email and the operator's own templates may not use them).
+  { label: "Contact", names: ["contact_name", "contact_email", "contact_line"] },
   {
     label: "Ticket & QR",
     names: ["ticket_type", "ticket_url", "qr_image_url", "download_page_url"],
@@ -287,6 +293,10 @@ export function TemplateEditorCard({
   templateActionBusy,
   isDirty,
   onSave,
+  systemTemplateName,
+  canRevert,
+  onRevert,
+  revertButtonRef,
 }: Readonly<{
   event: EventDto;
   activeKey: string;
@@ -311,6 +321,12 @@ export function TemplateEditorCard({
   templateActionBusy: boolean;
   isDirty: boolean;
   onSave: () => void;
+  /** The registration mail this editor has open (saved or still on its default), else null. */
+  systemTemplateName: SystemTemplateName | null;
+  /** The open template is the saved row of a registration mail, so it can go back to the default. */
+  canRevert: boolean;
+  onRevert: () => void;
+  revertButtonRef: RefObject<HTMLButtonElement | null>;
 }>) {
   // The lint's "known" set is a superset of the chip list's own allowedPlaceholders: chips hide
   // header_image_url (HIDDEN_PLACEHOLDERS - no way to fill it in through this UI), but a template
@@ -414,6 +430,12 @@ export function TemplateEditorCard({
         </Tooltip>
       }
     >
+      {systemTemplateName && (
+        <Notice variant="info" className="communication-system-notice">
+          {systemTemplateDescription(systemTemplateName)} {SYSTEM_TEMPLATE_COMMON_NOTE}
+        </Notice>
+      )}
+
       {!archived && (
         <p className="communication-format-hint muted">
           Changing format does not convert the template body. Switching a non-empty template asks
@@ -533,6 +555,21 @@ export function TemplateEditorCard({
       )}
 
       <div className="communication-actions">
+        {canRevert && (
+          <ArchivedGuard event={event} reasonId="revert-template-reason" disabled={templateActionBusy}>
+            {(guard) => (
+              <Button
+                ref={revertButtonRef}
+                variant="secondary"
+                icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
+                onClick={onRevert}
+                {...guard}
+              >
+                Revert to default
+              </Button>
+            )}
+          </ArchivedGuard>
+        )}
         <ArchivedGuard
           event={event}
           reasonId="save-template-reason"
