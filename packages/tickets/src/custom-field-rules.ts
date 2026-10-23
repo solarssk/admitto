@@ -7,6 +7,8 @@ import {
   EVENT_CUSTOM_FIELD_SUGGESTIONS_MAX,
   GUEST_FORM_ICONS,
   eventCustomFieldRulesMaxLength,
+  hasForbiddenSuggestionCharacter,
+  suggestionKey,
   type EventCustomFieldRules,
 } from "@admitto/shared";
 import { codePointLength } from "./custom-field-formats.js";
@@ -15,13 +17,6 @@ import { codePointLength } from "./custom-field-formats.js";
  * character (zero-width, bidi marks) or a lone surrogate. The example is shown next to the field,
  * so it stays one plain line. */
 const FORBIDDEN_IN_EXAMPLE = /[\p{Cc}\p{Cf}\p{Cs}]/u;
-
-/** What a suggestion may not hold. A suggestion is offered to the guest and, when picked, sent back as the answer,
- * so it is held to the rule that answers are held to (normalizeRegistrantText in registrant-input.ts): no control
- * character, no format character (zero-width and bidi marks, the soft hyphen, the byte order mark), no lone
- * surrogate, nothing Unicode marks default-ignorable (variation selectors among them), no line or paragraph
- * separator and no noncharacter. A test keeps the two in step. */
-const FORBIDDEN_IN_SUGGESTION = /[\p{Cc}\p{Cf}\p{Cs}\p{Default_Ignorable_Code_Point}\u2028\u2029\uFFFE\uFFFF]/u;
 
 /** The longest `field` and `value` of a condition: the longest `source_field` and the longest select option. */
 const SHOW_WHEN_NAME_MAX = 60;
@@ -45,13 +40,7 @@ const suggestionSchema = z
   // A code point takes at most two UTF-16 units, so a longer string is over the limit without counting.
   .max(EVENT_CUSTOM_FIELD_SUGGESTION_MAX * 2)
   .refine((value) => codePointLength(value) <= EVENT_CUSTOM_FIELD_SUGGESTION_MAX, { message: "suggestion is too long" })
-  .refine((value) => !FORBIDDEN_IN_SUGGESTION.test(value), { message: "invalid suggestion" });
-
-/** The key two suggestions are compared by: the same letters in another case, or written as a base letter and a
- * combining mark instead of one character, are the same suggestion. */
-function suggestionKey(suggestion: string): string {
-  return suggestion.normalize("NFC").toLowerCase();
-}
+  .refine((value) => !hasForbiddenSuggestionCharacter(value), { message: "invalid suggestion" });
 
 /** The shape of `EventCustomField.rules`, as the admin API takes it. Strict: a key that is not a
  * rule is refused, so a typo is never stored as a rule that does nothing. A later rule is one more

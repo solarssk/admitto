@@ -7,8 +7,11 @@ import {
   EVENT_CUSTOM_FIELD_TYPES,
   GUEST_FORM_ICONS,
   eventCustomFieldRulesMaxLength,
+  guestFormDrawsIcon,
+  hasForbiddenSuggestionCharacter,
   isFreeInputCustomFieldType,
   isQuestionShown,
+  suggestionKey,
   type EventCustomFieldRules,
   type ShowWhen,
 } from "../src/customFieldTypes.js";
@@ -58,10 +61,74 @@ describe("GUEST_FORM_ICONS", () => {
   });
 });
 
+describe("guestFormDrawsIcon", () => {
+  it("is true for the one-line answers: text, date, date and time and phone, required or not", () => {
+    for (const type of ["text", "date", "datetime", "phone"]) {
+      expect(guestFormDrawsIcon({ type, required: false }), type).toBe(true);
+      expect(guestFormDrawsIcon({ type, required: true }), `${type}, required`).toBe(true);
+    }
+  });
+
+  it("is true for an optional yes/no question, the row with a tick, and false for a required one, which is two buttons", () => {
+    expect(guestFormDrawsIcon({ type: "boolean", required: false })).toBe(true);
+    expect(guestFormDrawsIcon({ type: "boolean", required: true })).toBe(false);
+  });
+
+  it("is false for a single choice and for a long text, whether required or not", () => {
+    for (const type of ["select", "long_text"]) {
+      expect(guestFormDrawsIcon({ type, required: false }), type).toBe(false);
+      expect(guestFormDrawsIcon({ type, required: true }), `${type}, required`).toBe(false);
+    }
+  });
+
+  it("is false for a type this version does not know: nothing is promised for it", () => {
+    for (const type of ["mystery", "", "Text", "constructor"]) expect(guestFormDrawsIcon({ type, required: false }), type).toBe(false);
+  });
+
+  it("says something for every type of answer, so a new type has to be decided here", () => {
+    const drawn = EVENT_CUSTOM_FIELD_TYPES.filter((type) => guestFormDrawsIcon({ type, required: false }));
+    expect([...drawn].sort()).toEqual(["boolean", "date", "datetime", "phone", "text"]);
+  });
+});
+
 describe("the limits of a text field's suggestions", () => {
   it("are 30 suggestions of 100 characters", () => {
     expect(EVENT_CUSTOM_FIELD_SUGGESTIONS_MAX).toBe(30);
     expect(EVENT_CUSTOM_FIELD_SUGGESTION_MAX).toBe(100);
+  });
+});
+
+describe("hasForbiddenSuggestionCharacter", () => {
+  const cp = (code: number) => String.fromCodePoint(code);
+
+  it("accepts plain text in any script, with spaces, punctuation and an emoji", () => {
+    for (const text of ["Vegan", "Zażółć gęślą jaźń", "No pork (halal)", "Gluten-free", `${cp(0x1f331)} Plant based`, "日本語のメニュー", "a b  c"]) {
+      expect(hasForbiddenSuggestionCharacter(text), text).toBe(false);
+    }
+  });
+
+  it("refuses a control, a line break, a format character, a lone surrogate and what Unicode leaves out of sight", () => {
+    const forbidden = [
+      0x00, 0x09, 0x0a, 0x0d, 0x1f, 0x7f, 0x85, 0xad, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x202a, 0x202e, 0x2028, 0x2029, 0x2066, 0x2069,
+      0x2060, 0xfe0f, 0xfeff, 0x061c, 0x180e, 0x3164, 0xfffe, 0xffff, 0xd800, 0xdc00, 0xe0001,
+    ];
+    for (const code of forbidden) {
+      expect(hasForbiddenSuggestionCharacter(`Ve${cp(code)}gan`), code.toString(16)).toBe(true);
+    }
+  });
+});
+
+describe("suggestionKey", () => {
+  it("is the same for the same text in another case, and for a composed and a decomposed letter", () => {
+    expect(suggestionKey("Vegan")).toBe(suggestionKey("vegan"));
+    expect(suggestionKey("Zażółć")).toBe(suggestionKey("ZAŻÓŁĆ"));
+    expect(suggestionKey(`caf${String.fromCodePoint(0xe9)}`)).toBe(suggestionKey(`cafe${String.fromCodePoint(0x301)}`));
+  });
+
+  it("is different for different text, and keeps a character that only looks alike apart", () => {
+    expect(suggestionKey("Vegan")).not.toBe(suggestionKey("Vegetarian"));
+    expect(suggestionKey("a_b")).not.toBe(suggestionKey("axb"));
+    expect(suggestionKey("Vegan")).not.toBe(suggestionKey("Vegan "));
   });
 });
 

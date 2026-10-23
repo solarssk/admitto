@@ -178,7 +178,7 @@ Every row gets its own pass or fail reason in the preview before you commit. Not
 | Type | Text, long text, date, date and time, phone, select (shown as Single choice), or yes/no. The field editor offers all seven |
 | Select options | At least one for a select field. Up to 20 options, each up to 60 characters |
 | Format rules | Optional, for text, long text and phone fields only. Set in the field editor. See "Format rules" below |
-| Icon, suggestions, condition | Optional, for the registration form. An icon fits every type, suggestions fit text fields only, and a condition fits every type. See "Icons and suggestions" and "Questions that depend on another answer" below |
+| Icon, suggestions, condition | Optional, for the registration form. Set in the field editor, under **Registration form**. An icon fits every type, suggestions fit text fields only, and a condition fits every type. See "Icons and suggestions" and "Questions that depend on another answer" below |
 
 **Limits and protections**
 
@@ -225,19 +225,39 @@ Text, long text and phone fields can carry rules about what an answer looks like
 
 **Icons and suggestions**
 
-These two rules shape the registration form. They are set through the admin API. The field editor does not show them, and it sends them again when it saves a field, so a save in the editor never removes them.
+These two rules shape the registration form. They are set in the field editor, under **Registration form**.
 
 | Rule | What it asks |
 |---|---|
-| Icon | One name from a fixed list: `parking`, `car`, `food`, `accessible`, `bed`, `user-plus`, `users`, `building`, `calendar`, `clock`, `phone`, `mail`, `pin`, `plane`, `train` or `shirt`. A field of any type can have one. Any other name is refused |
+| Icon | One name from a fixed list of 16 (see the table below). A field of any type can have one. Any other name is refused |
 | Suggestions | Text fields only. A list of 1 to 30 texts, each 1 to 100 characters on one plain line, with no control, invisible or formatting characters. The same text twice is refused, in any letter case. They only suggest: a guest can still type any text, and Admitto never checks an answer against the list |
 
+| In the field editor | Name in the API |
+|---|---|
+| Parking | `parking` |
+| Car | `car` |
+| Food | `food` |
+| Accessibility | `accessible` |
+| Accommodation | `bed` |
+| Extra guest | `user-plus` |
+| Group | `users` |
+| Company | `building` |
+| Calendar | `calendar` |
+| Clock | `clock` |
+| Telephone | `phone` |
+| Email | `mail` |
+| Location | `pin` |
+| Flight | `plane` |
+| Train | `train` |
+| T-shirt | `shirt` |
+
+- The registration form draws an icon only next to an optional yes/no question and next to a text, date, date and time or phone answer. For a select, a long text or a required yes/no question the icon is saved and is not drawn. On the form, the list of suggestions shows the ones that contain what the guest has typed.
 - Saving suggestions on a field that is not a text field is refused. So is changing a text field that has suggestions to another type, unless the same save leaves the suggestions out.
 - A save with rules replaces all the rules of the field. Send every rule you want to keep, the format rules too.
 
 **Questions that depend on another answer**
 
-A question can be shown only when another question has a certain answer. For example, the question "Car registration number" can be shown only when the yes/no question "Do you need parking?" is answered Yes. This is the rule `show_when` of the field. It is set through the admin API. The field editor does not show it, and it sends it again when it saves a field, so a save in the editor never removes it.
+A question can be shown only when another question has a certain answer. For example, the question "Car registration number" can be shown only when the yes/no question "Do you need parking?" is answered Yes. This is the rule `show_when` of the field. It is set in the field editor, under **Registration form**: choose the other question in **Show only when**, then the answer.
 
 | Rule | What you'll see when you break it |
 |---|---|
@@ -248,6 +268,26 @@ A question can be shown only when another question has a certain answer. For exa
 | A field that other fields depend on can't be deleted, changed to another type, or lose or rename the option a condition names | "Other fields are shown only for an answer to this one. Change or remove their condition first." |
 
 These checks run when you save the field, in one step with every other change to the event's fields, so two people saving at the same time can't break them. An event that does not accept registrations is held to the same rules.
+
+**What the field editor says before you save**
+
+The field editor makes the same checks first, so you see what is wrong where the controls are. **Save** stays off until it is fixed, and no request is sent.
+
+| What you did | What you'll see |
+|---|---|
+| Changed the type of a field that other fields are shown for, or removed or renamed an option that one of them is shown for | "“Registration number of your car” (for Yes) is shown only for an answer to this field, so this change can't be saved. Remove its condition first, or undo the change." With two or more fields: "…are shown only for an answer to this field… Remove their conditions first…" |
+| Opened the condition of a field that other fields are shown for | "“Registration number of your car” is shown only for an answer to this field, so it can't have a condition itself." The control is off |
+| Chose a question that is not on the registration form for a field that is | "“Parking” is not on the registration form. A question with a condition can be on the form only when the question it depends on is too. Put “Parking” on the form first, or choose another question." |
+| Chose an icon for a Single choice, a Long text or a Required Yes / No question | "A Single choice question shows no icon on the registration form. The icon stays saved." It names the kind of question ("A Long text question", "A required Yes / No question"), and **Save** stays on |
+| Chose a Single choice question and no answer | "Choose the answer that shows this question." |
+| The event has no Yes / No or Single choice question without a condition | "This event has no yes/no or single choice question without a condition yet. Add one first." The control is off |
+| Deleted a field that other fields are shown for | "“Parking” can't be deleted yet: “Registration number of your car” (for Yes) is shown only for an answer to it. Remove its condition first." **Delete** is off |
+| Typed a suggestion with a line break or an invisible character | "A suggestion has an invisible or control character. Use plain text on one line." With several: "2 suggestions have…" |
+| Typed a suggestion of more than 100 characters | "A suggestion is longer than 100 characters." With several: "2 suggestions are…" |
+| Listed the same suggestion twice, whatever its capital letters | "“Vegan” is there more than once. Capital letters do not make a suggestion different." |
+| Added more than 30 suggestions | **+ Add suggestion** is off at 30. A longer list is refused with "Use at most 30 suggestions." |
+
+The rows that are wrong are marked in the list of suggestions. A row left empty is no suggestion, and spaces around a text are dropped.
 
 **What happens to an answer to a question that is not shown**
 
@@ -261,7 +301,7 @@ These checks run when you save the field, in one step with every other change to
 
 - An answer saved while its question was shown stays when the question stops being shown, for example when staff change "Do you need parking?" from Yes to No. Admitto never deletes it by itself. Staff can clear it on the attendee.
 - A question is shown only when the answer it depends on is saved as Yes (yes/no field) or as the option (select field). No answer at all does not show it.
-- The staff screens for adding and editing an attendee list every field and ask for every required one, whether or not its question is shown. Only the server applies the condition, so a required question that is not shown is not required when the same attendee is saved through the admin API.
+- The Add attendee dialog and an attendee's edit form apply the same condition. They hide a question that is not shown, do not ask for it, even when it is Required, and do not send it. A text typed for it stays in the form while you work, so it is back when the answer shows the question again, but it is never saved while the question is hidden. A question that is shown for an answer is drawn right after the question it depends on.
 
 ### Event items (Requirements page)
 

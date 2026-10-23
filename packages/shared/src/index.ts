@@ -23,14 +23,25 @@ export {
   EVENT_CUSTOM_FIELD_TEXT_MAX,
   EVENT_CUSTOM_FIELD_TYPES,
   GUEST_FORM_ICONS,
+  guestFormDrawsIcon,
+  hasForbiddenSuggestionCharacter,
   isFreeInputCustomFieldType,
   isQuestionShown,
   eventCustomFieldRulesMaxLength,
+  suggestionKey,
   type EventCustomFieldRules,
   type EventCustomFieldType,
   type GuestFormIcon,
   type ShowWhen,
 } from "./customFieldTypes.js";
+export {
+  acceptsCondition,
+  controlsOtherFields,
+  dependentsOf,
+  findShowWhenProblem,
+  type ConditionField,
+  type ShowWhenProblem,
+} from "./customFieldConditions.js";
 export { parseUserAgent, parseUserAgentSafe, parseUserAgentWithVersion } from "./parseUserAgent.js";
 export { NO_COMPRESSION_HEADERS } from "./noCompressionHeaders.js";
 export type { DeliveryDetailDto, DeliveryDto } from "./deliveryDto.js";

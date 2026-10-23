@@ -8,6 +8,7 @@ import {
   customDataApiErrorMessage,
   fetchAttendeeCustomFields,
   initialCustomFieldValues,
+  shownCustomFields,
   validateCustomFieldsForm,
   type CustomDataFieldDef,
 } from "./customData.js";
@@ -220,7 +221,8 @@ export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCrea
     setError(null);
     try {
       const custom_data: Record<string, string> = {};
-      for (const field of attributeFields) {
+      // Only the questions that are asked: what is typed for one that a condition hides is not sent.
+      for (const field of shownCustomFields(attributeFields, customFields)) {
         const value = customFields[field.source_field]?.trim();
         if (value) custom_data[field.source_field] = value;
       }
@@ -429,7 +431,7 @@ export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCrea
             />
           </div>
           {attributeFields.length > 0 && <SectionLabel className="attendee-fields-grid__full">Custom fields</SectionLabel>}
-          {attributeFields.map((field) => (
+          {shownCustomFields(attributeFields, customFields).map((field) => (
             <CustomDataFieldInput
               key={field.source_field}
               field={field}
