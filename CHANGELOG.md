@@ -56,6 +56,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a strict nonce-based security policy and a uniform not-found page for the coming public registration form ([#1752](https://github.com/solarssk/admitto/pull/1752))
 - Clear an attendee's earlier addresses, recorded when staff edited them, from other attendees' mail and saved import results when the attendee is erased or removed ([#1768](https://github.com/solarssk/admitto/pull/1768))
 - Redact the guest confirmation link in the access log, and keep a short hash that tells links apart ([#1795](https://github.com/solarssk/admitto/pull/1795))
+- Bump `zod` to 4.6.6 (high: memory exhaustion on oversized collections, GHSA-mrhx-c7xc-m3w5), and `hono` and `ip-address` past moderate advisories ([#1797](https://github.com/solarssk/admitto/pull/1797))
 
 ## [0.7.7] - 2026-10-18
 
