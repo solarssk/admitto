@@ -122,29 +122,15 @@ describe("RegistrationPage", () => {
     expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
   });
 
-  it("shows the requests in the Requests tab, and nothing of the placeholders", () => {
-    renderAt("?tab=requests");
+  it.each([
+    ["requests", "Requests", "The requests of the event"],
+    ["fields", "Fields", "The attendee fields card"],
+    ["legal", "Legal", "The legal texts of the event"],
+  ])("shows the content of the %s tab, labelled %s, and nothing of the placeholders", (id, label, content) => {
+    renderAt(`?tab=${id}`);
 
-    const panel = screen.getByRole("tabpanel", { name: "Requests" });
-    expect(within(panel).getByText("The requests of the event")).toBeTruthy();
-    expect(within(panel).queryByRole("status")).toBeNull();
-    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
-  });
-
-  it("shows the attendee fields in the Fields tab, and nothing of the placeholders", () => {
-    renderAt("?tab=fields");
-
-    const panel = screen.getByRole("tabpanel", { name: "Fields" });
-    expect(within(panel).getByText("The attendee fields card")).toBeTruthy();
-    expect(within(panel).queryByRole("status")).toBeNull();
-    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
-  });
-
-  it("shows the legal texts in the Legal tab, and nothing of the placeholders", () => {
-    renderAt("?tab=legal");
-
-    const panel = screen.getByRole("tabpanel", { name: "Legal" });
-    expect(within(panel).getByText("The legal texts of the event")).toBeTruthy();
+    const panel = screen.getByRole("tabpanel", { name: label });
+    expect(within(panel).getByText(content)).toBeTruthy();
     expect(within(panel).queryByRole("status")).toBeNull();
     expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
   });

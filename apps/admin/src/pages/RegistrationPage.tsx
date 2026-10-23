@@ -40,7 +40,7 @@ function RegistrationPageBody({ eventId }: Readonly<{ eventId: string | undefine
     <div className="screen">
       <PageHeader title="Registration" subtitle="How people get into this event, and what you ask them." />
       <Tabs
-        tabs={registrationTabItems(waiting ? waiting : undefined)}
+        tabs={registrationTabItems(waiting || undefined)}
         value={tab.id}
         onChange={(id) => setSearchParams({ tab: id }, { replace: true })}
       />

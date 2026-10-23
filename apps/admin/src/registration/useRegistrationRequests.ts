@@ -37,7 +37,7 @@ export function useRegistrationRequests(
 ) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(REQUEST_PAGE_SIZE_DEFAULT);
-  const [age, setAgeState] = useState<RequestAgeFilter>("any");
+  const [ageFilter, setAgeFilter] = useState<RequestAgeFilter>("any");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
@@ -79,7 +79,7 @@ export function useRegistrationRequests(
               page,
               pageSize,
               ...(status === "all" ? {} : { status }),
-              ...(age === "any" ? {} : { olderThan: age }),
+              ...(ageFilter === "any" ? {} : { olderThan: ageFilter }),
               ...(search === "" ? {} : { q: search }),
             },
             signal,
@@ -88,7 +88,7 @@ export function useRegistrationRequests(
             items: data.items,
             total: data.total,
             page,
-            filtersActive: status !== "all" || age !== "any" || search !== "",
+            filtersActive: status !== "all" || ageFilter !== "any" || search !== "",
             pastTheEnd: isPastTheEnd(data.items.length, data.total, page),
           };
         } catch (err) {
@@ -96,7 +96,7 @@ export function useRegistrationRequests(
           throw err;
         }
       }),
-    [eventId, page, pageSize, status, age, search, reportApiError],
+    [eventId, page, pageSize, status, ageFilter, search, reportApiError],
   );
   const list = useListLoad({ fetcher: fetchPage, fallback: "Could not load the requests." });
 
@@ -111,11 +111,11 @@ export function useRegistrationRequests(
   }, [answer, page, pageSize]);
 
   const setAge = useCallback((next: RequestAgeFilter) => {
-    setAgeState(next);
+    setAgeFilter(next);
     setPage(1);
   }, []);
   const clearFilters = useCallback(() => {
-    setAgeState("any");
+    setAgeFilter("any");
     setSearchInput("");
     setSearch("");
     setPage(1);
@@ -128,7 +128,7 @@ export function useRegistrationRequests(
     setPage,
     pageSize,
     setPageSize,
-    age,
+    age: ageFilter,
     setAge,
     searchInput,
     setSearchInput,
