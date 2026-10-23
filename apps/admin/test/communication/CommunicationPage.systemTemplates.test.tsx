@@ -482,6 +482,25 @@ describe("a registration mail the event has customised", () => {
     expect(document.activeElement).toBe(revert);
   });
 
+  it("keeps the revert off while the text is being saved, so a late answer of the save cannot bring the row back", async () => {
+    await openSaved();
+    const pending = deferred<typeof confirmDetail>();
+    saveEventTemplateById.mockReturnValue(pending.promise);
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Second wording" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    const revert = screen.getByRole("button", { name: "Revert to default" });
+    await waitFor(() => expect(isOff(revert)).toBe(true));
+    fireEvent.click(revert);
+    expect(screen.queryByRole("dialog", { name: "Revert to the default text?" })).toBeNull();
+
+    await act(async () => {
+      pending.resolve({ ...confirmDetail, subject_template: "Second wording" });
+    });
+    await screen.findByText("Template saved.");
+    expect(isOff(screen.getByRole("button", { name: "Revert to default" }))).toBe(false);
+    expect(deleteEventTemplate).not.toHaveBeenCalled();
+  });
+
   it("deletes the row, opens the default in its place, says so, and puts the focus on the picker, once it is on again", async () => {
     await openSaved();
     deleteEventTemplate.mockResolvedValue(undefined);

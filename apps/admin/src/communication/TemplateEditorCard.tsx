@@ -556,7 +556,7 @@ export function TemplateEditorCard({
 
       <div className="communication-actions">
         {canRevert && (
-          <ArchivedGuard event={event} reasonId="revert-template-reason" disabled={templateActionBusy}>
+          <ArchivedGuard event={event} reasonId="revert-template-reason" disabled={templateActionBusy || saving}>
             {(guard) => (
               <Button
                 ref={revertButtonRef}
