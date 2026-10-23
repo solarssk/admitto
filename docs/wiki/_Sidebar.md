@@ -23,6 +23,7 @@
 - [Custom Attendee Fields](Custom-Attendee-Fields)
 - [Legal Texts and Consents](Legal-Texts-and-Consents)
 - [Registration Form Fields](Registration-Form-Fields)
+- [Registration Requests](Registration-Requests)
 
 **Requirements and Fulfilment**
 

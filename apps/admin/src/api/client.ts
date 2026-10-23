@@ -95,6 +95,9 @@ import type {
   LegalDocumentsListResponse,
   LegalDocumentWithContentDto,
   SaveLegalDocumentBody,
+  RegistrationCountsDto,
+  RegistrationListDto,
+  RegistrationListParams,
   NotificationSettingsResponse,
   SaveNotificationSettingsBody,
   NotificationSettingsTestResponse,
@@ -2556,6 +2559,33 @@ export async function unpublishLegalDocument(eventId: string, ref: string): Prom
 export async function deleteLegalDocument(eventId: string, ref: string): Promise<void> {
   const res = await fetch(legalDocumentsUrl(eventId, ref), jsonDeleteInit());
   await parseJson<{ ok: boolean }>(res);
+}
+
+function registrationsUrl(eventId: string, suffix = ""): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/registrations${suffix}`;
+}
+
+/**
+ * One page of the guest requests of an event, oldest first, with how many match in all. A left-out filter selects every
+ * request. 400 `validation_failed` for a search text the server cannot search for, 403 for someone who does not manage the event.
+ */
+export async function fetchRegistrations(
+  eventId: string,
+  params: RegistrationListParams,
+  signal?: AbortSignal,
+): Promise<RegistrationListDto> {
+  const query = new URLSearchParams({ page: String(params.page), pageSize: String(params.pageSize) });
+  if (params.status) query.set("status", params.status);
+  if (params.olderThan) query.set("older_than", params.olderThan);
+  if (params.q) query.set("q", params.q);
+  const res = await fetch(`${registrationsUrl(eventId)}?${query.toString()}`, { credentials: "same-origin", signal });
+  return parseJson<RegistrationListDto>(res);
+}
+
+/** How many requests an event has in each state, and the registration mode (null while registration is off). */
+export async function fetchRegistrationCounts(eventId: string, signal?: AbortSignal): Promise<RegistrationCountsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/counts"), { credentials: "same-origin", signal });
+  return parseJson<RegistrationCountsDto>(res);
 }
 
 /** Probe weather provider from a draft (no persist). */

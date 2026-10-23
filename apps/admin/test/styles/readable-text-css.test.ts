@@ -65,6 +65,7 @@ const staff = parse(read("apps/admin/src/staff.css"));
 const users = parse(read("apps/admin/src/pages/users-page.css"));
 const reports = parse(read("apps/admin/src/pages/reports-page.css"));
 const attendees = parse(read("apps/admin/src/attendees/attendees.css"));
+const requests = parse(read("apps/admin/src/registration/registration-requests.css"));
 const notifications = parse(read("apps/admin/src/settings/notifications-panel.css"));
 
 describe("the baseline: running text runs to the edge of its column, short standalone texts are balanced", () => {
@@ -287,5 +288,44 @@ describe("the pieces of the second review round (Reports chart, Danger zone, tab
 
   it("keeps the text under the wallet preview clear of the stacked layers that peek out under the card", () => {
     expect(sets(bodyOf(preview, ".wallet-message-preview"), "gap", "var\\(--space-4\\)")).toBe(true);
+  });
+});
+
+describe("the Requests tab of the Registration page", () => {
+  it("lets a name, an address, a company and a department wrap, and breaks inside a word only when it does not fit: none is cut to an ellipsis", () => {
+    for (const selector of [
+      ".registration-requests__name",
+      ".registration-requests__email",
+      ".registration-requests__company",
+      ".registration-requests__department, .registration-requests__affiliation",
+    ]) {
+      const body = bodyOf(requests, selector);
+      expect(sets(body, "overflow-wrap", "anywhere"), selector).toBe(true);
+      expect(declares(body, "white-space"), selector).toBe(false);
+      expect(declares(body, "text-overflow"), selector).toBe(false);
+    }
+  });
+
+  it("gives the guest the widest column of the table and the last email the room of its longest name, so a row stays two lines tall", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__table thead th:first-child"), "width", "32%")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__table thead th:nth-child(4)"), "min-width", "9.5rem")).toBe(true);
+  });
+
+  it("keeps the table at a width it can be read in, and lets only it scroll sideways, never the page", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__table"), "min-width", "640px")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__table-wrap"), "overflow-x", "auto")).toBe(true);
+  });
+
+  it("puts the badge and the name of the last email on one line in a card, and in a column in the table", () => {
+    const card = bodyOf(requests, ".registration-requests__card-mail .registration-requests__mail");
+    expect(sets(card, "flex-direction", "row")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__mail"), "flex-direction", "column")).toBe(true);
+  });
+
+  it("is a column of cards, a card a column of lines, with no fixed height", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__cards"), "flex-direction", "column")).toBe(true);
+    const card = bodyOf(requests, ".registration-requests__card");
+    expect(sets(card, "flex-direction", "column")).toBe(true);
+    expect(declares(card, "height")).toBe(false);
   });
 });

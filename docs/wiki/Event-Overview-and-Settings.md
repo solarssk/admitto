@@ -31,6 +31,7 @@ Open the correct organisation and event. If another manager may be editing the s
    - Its bar and the **N of M done** count show progress.
    - The bar turns amber or red when a check needs attention.
    - Problems are listed first, and each row opens the page where you fix it.
+   - When registration is on for the event, the checklist also has a **Registrations** row. It counts the requests that wait for a decision and the guests on the waiting list, and says when the event holds more seats than its limit. It opens the requests that wait for a decision. See [Registration Requests](Registration-Requests).
 3. Review the KPI tiles (including attendees and **Failed delivery**), the **Check-in progress** card, and **Recent activity**. Recent activity covers check-ins, attendees added, item issue, return and revoke, mail failures, and imports.
 4. Use **Pinned note**, **Key contacts** and **Important links & files** when your event keeps that operational context on Overview.
 5. Follow a readiness prompt when it points to unfinished setup.
