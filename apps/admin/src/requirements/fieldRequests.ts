@@ -1,6 +1,6 @@
 import type { EventCustomFieldRules, EventCustomFieldType } from "@admitto/shared";
 import type { CreateEventCustomFieldBody, EventCustomFieldDto, UpdateEventCustomFieldPatch } from "../api/types.js";
-import { rulesAfterSave, sameAllRules } from "./fieldRules.js";
+import { sameAllRules } from "./fieldRules.js";
 
 /** What the field editor saves: the values of the form as the server takes them. */
 export interface FieldSave {
@@ -11,9 +11,33 @@ export interface FieldSave {
   required: boolean;
   /** The options of a single choice field, trimmed, with no empty one. */
   options: string[];
-  /** The format rules the form leaves on the field: null for none, and always null for a type that takes none. The icon, the condition and the
-   * suggestions of the field are not in it: `updateFieldPatch` sends the stored ones again. */
+  /** All the rules the field has once it is saved, the ones of the form and the ones it has no control for (`rulesToSave`): null for
+   * none. A save with rules replaces all the rules of the field, so a rule that is left out here is lost. */
   rules: EventCustomFieldRules | null;
+}
+
+/** The save that leaves `field` as it is: what the editor holds for a field it has just opened. */
+export function fieldSaveOf(field: EventCustomFieldDto): FieldSave {
+  return {
+    type: field.type,
+    label: field.label,
+    description: field.description ?? "",
+    required: field.required,
+    options: field.type === "select" ? (field.options ?? []) : [],
+    rules: field.rules,
+  };
+}
+
+/** True when two saves leave a field the same, the rules of every kind included. */
+export function sameFieldSave(a: FieldSave, b: FieldSave): boolean {
+  return (
+    a.type === b.type &&
+    a.label === b.label &&
+    a.description === b.description &&
+    a.required === b.required &&
+    JSON.stringify(a.options) === JSON.stringify(b.options) &&
+    sameAllRules(a.rules, b.rules)
+  );
 }
 
 /** The body that creates a field. Only what is set is sent: a rule that is not set is no key, and `show_on_form` is left out
@@ -36,11 +60,11 @@ export function createFieldBody(sourceField: string, save: FieldSave, showOnForm
  *   choice field that leaves its options alone must not name the type.
  * - `options` only when they changed (or the type moved away from a single choice, which clears them with null): sending
  *   the same list again could rewrite the stored options with a round-trip artifact.
- * - `rules` only when they changed: an object replaces them, null clears them (also when the type no longer takes format rules,
- *   which the server refuses while the field still has them). A save with rules replaces all of them, so the icon, the condition and
- *   the suggestions the editor has no boxes for go with it again, the suggestions only while the field is a text field. */
+ * - `rules` only when they changed: an object replaces them, null clears them. `save.rules` is what the field keeps (the icon and
+ *   the condition of any type, the format rules of a type that takes them, the suggestions of a text field), so a type that no
+ *   longer takes format rules or suggestions loses those and nothing else, and the server is never sent rules that do not fit
+ *   the type. */
 export function updateFieldPatch(field: EventCustomFieldDto, save: FieldSave): UpdateEventCustomFieldPatch {
-  const rules = rulesAfterSave(save.rules, field.rules, save.type);
   const optionsChanged =
     save.type === "select" ? JSON.stringify(save.options) !== JSON.stringify(field.options ?? []) : field.type === "select";
   return {
@@ -50,6 +74,6 @@ export function updateFieldPatch(field: EventCustomFieldDto, save: FieldSave): U
     ...(save.type === field.type ? {} : { type: save.type }),
     required: save.required,
     ...(optionsChanged ? { options: save.type === "select" ? save.options : null } : {}),
-    ...(sameAllRules(rules, field.rules) ? {} : { rules }),
+    ...(sameAllRules(save.rules, field.rules) ? {} : { rules: save.rules }),
   };
 }

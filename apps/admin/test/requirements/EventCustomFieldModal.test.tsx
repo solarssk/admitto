@@ -51,9 +51,12 @@ afterEach(() => {
   vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValue({});
 });
 
+/** The fields of the event as the card hands them over: the one being edited is among them. */
+const fieldsOf = (field: EventCustomFieldDto | null): EventCustomFieldDto[] => (field ? [field] : []);
+
 function renderModal(field: EventCustomFieldDto | null) {
   renderWithToast(
-    <EventCustomFieldModal eventId="evt-1" field={field} onClose={vi.fn()} onSaved={vi.fn()} />,
+    <EventCustomFieldModal eventId="evt-1" field={field} fields={fieldsOf(field)} onClose={vi.fn()} onSaved={vi.fn()} />,
   );
 }
 
@@ -123,7 +126,7 @@ describe("EventCustomFieldModal — create", () => {
 
   it("creates the field on the registration form when it is opened from the Registration page", async () => {
     vi.mocked(createEventCustomField).mockResolvedValueOnce(dietaryField);
-    renderWithToast(<EventCustomFieldModal eventId="evt-1" field={null} showOnForm onClose={vi.fn()} onSaved={vi.fn()} />);
+    renderWithToast(<EventCustomFieldModal eventId="evt-1" field={null} fields={fieldsOf(null)} showOnForm onClose={vi.fn()} onSaved={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Display label"), {
       target: { value: "Dietary requirements" },
     });
@@ -248,7 +251,7 @@ describe("EventCustomFieldModal — edit", () => {
 
   it("leaves the registration form alone when a field is edited, also from the Registration page", async () => {
     vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...dietaryField, required: true });
-    renderWithToast(<EventCustomFieldModal eventId="evt-1" field={dietaryField} showOnForm onClose={vi.fn()} onSaved={vi.fn()} />);
+    renderWithToast(<EventCustomFieldModal eventId="evt-1" field={dietaryField} fields={fieldsOf(dietaryField)} showOnForm onClose={vi.fn()} onSaved={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Required" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(updateEventCustomField).toHaveBeenCalled());
@@ -540,7 +543,7 @@ describe("EventCustomFieldModal — edit", () => {
     vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
     const onClose = vi.fn();
     renderWithToast(
-      <EventCustomFieldModal eventId="evt-1" field={shirtField} onClose={onClose} onSaved={vi.fn()} />,
+      <EventCustomFieldModal eventId="evt-1" field={shirtField} fields={fieldsOf(shirtField)} onClose={onClose} onSaved={vi.fn()} />,
     );
     await waitForUsageLoaded();
     const mInput = screen.getAllByLabelText("Option text")[1]!;
@@ -647,7 +650,7 @@ describe("EventCustomFieldModal — edit", () => {
       }),
     );
     const { container } = renderWithToast(
-      <EventCustomFieldModal eventId="evt-1" field={shirtField} onClose={vi.fn()} onSaved={vi.fn()} />,
+      <EventCustomFieldModal eventId="evt-1" field={shirtField} fields={fieldsOf(shirtField)} onClose={vi.fn()} onSaved={vi.fn()} />,
     );
     const form = container.querySelector("#custom-field-form")!;
     fireEvent.submit(form);
@@ -834,7 +837,7 @@ describe("EventCustomFieldModal: the option usage lookup", () => {
 
   it("reads the counts of the field being edited, with a signal that stops the request when the modal closes", async () => {
     vi.mocked(fetchEventCustomFieldOptionUsage).mockImplementationOnce(hangUntilAborted as never);
-    const { unmount } = renderWithToast(<EventCustomFieldModal eventId="evt-1" field={selectField} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const { unmount } = renderWithToast(<EventCustomFieldModal eventId="evt-1" field={selectField} fields={fieldsOf(selectField)} onClose={vi.fn()} onSaved={vi.fn()} />);
     await waitFor(() => expect(fetchEventCustomFieldOptionUsage).toHaveBeenCalledTimes(1));
 
     const [eventId, fieldId, signal] = vi.mocked(fetchEventCustomFieldOptionUsage).mock.calls[0] as unknown as [string, string, AbortSignal];
@@ -845,7 +848,7 @@ describe("EventCustomFieldModal: the option usage lookup", () => {
   });
 
   it("reads nothing for a field that is being created, or whose type is not a choice", async () => {
-    const { unmount } = renderWithToast(<EventCustomFieldModal eventId="evt-1" field={null} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const { unmount } = renderWithToast(<EventCustomFieldModal eventId="evt-1" field={null} fields={fieldsOf(null)} onClose={vi.fn()} onSaved={vi.fn()} />);
     await act(async () => {});
     expect(fetchEventCustomFieldOptionUsage).not.toHaveBeenCalled();
     unmount();

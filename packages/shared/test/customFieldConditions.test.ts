@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { EVENT_CUSTOM_FIELD_TYPES, type EventCustomFieldRules } from "@admitto/shared";
-import { controlsOtherFields, findShowWhenProblem, type ConditionField } from "../src/custom-field-conditions.js";
+import { EVENT_CUSTOM_FIELD_TYPES, type EventCustomFieldRules } from "../src/customFieldTypes.js";
+import {
+  acceptsCondition,
+  controlsOtherFields,
+  dependentsOf,
+  findShowWhenProblem,
+  type ConditionField,
+} from "../src/customFieldConditions.js";
 
 function field(source_field: string, type: string, extra: Partial<ConditionField> = {}): ConditionField {
   return { source_field, type, show_on_form: false, options: null, rules: null, ...extra };
@@ -225,5 +231,44 @@ describe("controlsOtherFields", () => {
     expect(controlsOtherFields("parkin", [dependent])).toBe(false);
     expect(controlsOtherFields("constructor", [dependent])).toBe(false);
     expect(controlsOtherFields("__proto__", [dependent])).toBe(false);
+  });
+});
+
+describe("dependentsOf", () => {
+  const plate = field("plate", "text", { rules: whenParking });
+  const badge = field("badge", "text", { rules: whenBoth });
+
+  it("lists the fields that are shown for an answer to this one, in the order they come", () => {
+    const second = field("second", "text", { rules: whenParking });
+    expect(dependentsOf("parking", [plate, badge, second, day])).toEqual([plate, second]);
+    expect(dependentsOf("day", [plate, badge])).toEqual([badge]);
+  });
+
+  it("is empty when nothing depends on the field, and agrees with controlsOtherFields", () => {
+    expect(dependentsOf("parking", [])).toEqual([]);
+    expect(dependentsOf("lunch", [plate, badge, day])).toEqual([]);
+    for (const key of ["parking", "day", "lunch"]) {
+      expect(controlsOtherFields(key, [plate, badge]), key).toBe(dependentsOf(key, [plate, badge]).length > 0);
+    }
+  });
+
+  it("leaves the field that depends on itself out, and hands back the objects it was given", () => {
+    const self = field("loop", "boolean", { rules: { show_when: { field: "loop", value: true } } });
+    expect(dependentsOf("loop", [self])).toEqual([]);
+    const withLabel = { ...plate, label: "Plate number" };
+    expect(dependentsOf("parking", [withLabel])[0]).toBe(withLabel);
+  });
+});
+
+describe("acceptsCondition", () => {
+  it("takes true for a yes/no field and an option for a select field, and nothing for any other type", () => {
+    expect(acceptsCondition(parking, { field: "parking", value: true })).toBe(true);
+    expect(acceptsCondition(parking, { field: "parking", value: "true" })).toBe(false);
+    expect(acceptsCondition(day, { field: "day", value: "Both" })).toBe(true);
+    expect(acceptsCondition(day, { field: "day", value: "Day 3" })).toBe(false);
+    expect(acceptsCondition(day, { field: "day", value: true })).toBe(false);
+    for (const type of ["text", "long_text", "date", "datetime", "phone", "weird"]) {
+      expect(acceptsCondition(field("x", type), { field: "x", value: true }), type).toBe(false);
+    }
   });
 });

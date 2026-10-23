@@ -610,3 +610,112 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     });
   });
 });
+
+describe("EventCustomFieldsCard: the icon and the condition of a question", { timeout: 30_000 }, () => {
+  const parking = { ...parkingField, show_on_form: true, rules: { icon: "parking" } } as EventCustomFieldDto;
+  const plate: EventCustomFieldDto = {
+    ...dietaryField,
+    id: "field-plate",
+    source_field: "plate",
+    label: "Plate number",
+    description: null,
+    rules: { icon: "car", show_when: { field: "parking", value: true } },
+  };
+  const meal: EventCustomFieldDto = { ...shirtField, id: "field-meal", source_field: "meal", label: "Meal", options: ["Standard", "Vegan"], show_on_form: true };
+  const veganNote: EventCustomFieldDto = {
+    ...dietaryField,
+    id: "field-vegan",
+    source_field: "vegan_note",
+    label: "Vegan note",
+    description: null,
+    rules: { show_when: { field: "meal", value: "Vegan" } },
+  };
+  const food: EventCustomFieldDto = { ...dietaryField, rules: { icon: "food" } };
+  const rowOf = (name: string) => screen.getByText(name, { selector: ".requirements-item-name" }).closest("tr") as HTMLTableRowElement;
+
+  for (const placement of ["requirements", "registration"] as const) {
+    describe(`on the ${placement} card`, () => {
+      it("draws the icon of the question before its name, with a name of its own, and the glyph Tabler has for it", () => {
+        renderCard([food, parking], placement);
+        const icon = within(rowOf("Dietary requirements")).getByRole("img", { name: "Icon on the form: Food" });
+        expect(icon.querySelector("i")?.className).toBe("ti ti-tools-kitchen-2");
+        const name = rowOf("Dietary requirements").querySelector(".requirements-item-name") as HTMLElement;
+        expect(name.contains(icon)).toBe(true);
+        expect(name.firstElementChild).toBe(icon);
+        expect(within(rowOf("Needs parking")).getByRole("img", { name: "Icon on the form: Parking" })).toBeTruthy();
+      });
+
+      it("draws no icon for a question that has none, or whose icon this version does not know", () => {
+        const unknown = { ...shirtField, rules: { icon: "rocket" } } as unknown as EventCustomFieldDto;
+        renderCard([dietaryField, unknown], placement);
+        expect(within(rowOf("Dietary requirements")).queryByRole("img", { name: /Icon on the form/ })).toBeNull();
+        expect(within(rowOf("Shirt size")).queryByRole("img", { name: /Icon on the form/ })).toBeNull();
+        // The type of the answer keeps its own icon, named by the type.
+        expect(within(rowOf("Dietary requirements")).getByRole("img", { name: "Text" })).toBeTruthy();
+      });
+
+      it("says under the name of a question that has a condition which question it is shown for, and the answer", () => {
+        renderCard([parking, plate, meal, veganNote], placement);
+        expect(within(rowOf("Plate number")).getByText("Shown only when “Needs parking” is Yes")).toBeTruthy();
+        expect(within(rowOf("Vegan note")).getByText("Shown only when “Meal” is “Vegan”")).toBeTruthy();
+        const line = within(rowOf("Plate number")).getByText("Shown only when “Needs parking” is Yes");
+        expect(line.classList.contains("requirements-item-condition")).toBe(true);
+        expect(line.previousElementSibling?.classList.contains("requirements-item-name")).toBe(true);
+      });
+
+      it("says nothing under a question that is always asked, and the question it depends on is not marked", () => {
+        renderCard([parking, plate, meal, veganNote], placement);
+        expect(rowOf("Needs parking").querySelector(".requirements-item-condition")).toBeNull();
+        expect(rowOf("Meal").querySelector(".requirements-item-condition")).toBeNull();
+      });
+
+      it("tells two questions with the same label apart in that line, by the key", () => {
+        const twin = { ...parking, id: "field-parking-2", source_field: "parking_2" };
+        renderCard([parking, twin, plate], placement);
+        expect(within(rowOf("Plate number")).getByText("Shown only when “Needs parking (parking)” is Yes")).toBeTruthy();
+      });
+
+      it("opens the editor of a question with its condition in place, and offers the questions of the event", async () => {
+        renderCard([parking, plate, meal, veganNote], placement);
+        fireEvent.click(within(rowOf("Plate number")).getByRole("button", { name: "Edit field" }));
+        expect(await screen.findByRole("button", { name: "Question, Needs parking" })).toBeTruthy();
+        expect(screen.getByRole("button", { name: "Answer, Yes" })).toBeTruthy();
+      });
+
+      it("holds back deleting a question that others are shown for: the dialog says which, in text, and Delete is off", () => {
+        renderCard([parking, plate, meal, veganNote], placement);
+        fireEvent.click(within(rowOf("Needs parking")).getByRole("button", { name: "Delete field" }));
+        const dialog = screen.getByRole("dialog", { name: "Delete custom field" });
+        expect(within(dialog).getByText("“Needs parking” can't be deleted yet: “Plate number” (for Yes) is shown only for an answer to it. Remove its condition first.")).toBeTruthy();
+        expect(within(dialog).queryByText(/This cannot be undone/)).toBeNull();
+        expect(within(dialog).getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(true);
+        fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+        expect(deleteEventCustomField).not.toHaveBeenCalled();
+        expect(within(dialog).queryByRole("button", { name: "Cancel" })).toBeNull();
+        fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+        expect(screen.queryByRole("dialog", { name: "Delete custom field" })).toBeNull();
+      });
+
+      it("deletes a question that nothing depends on as before, and one that depends on others, with the usual dialog", async () => {
+        vi.mocked(deleteEventCustomField).mockResolvedValueOnce(undefined as never);
+        const { onChanged } = renderCard([parking, plate], placement);
+        fireEvent.click(within(rowOf("Plate number")).getByRole("button", { name: "Delete field" }));
+        const dialog = screen.getByRole("dialog", { name: "Delete custom field" });
+        expect(within(dialog).getByText(/Delete "Plate number"\? This cannot be undone\./)).toBeTruthy();
+        expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeTruthy();
+        fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+        await waitFor(() => expect(deleteEventCustomField).toHaveBeenCalledWith("evt-1", "field-plate"));
+        await waitFor(() => expect(onChanged).toHaveBeenCalled());
+      });
+
+      it("names every field that is shown for a question that is to be deleted", () => {
+        const second = { ...plate, id: "field-second", source_field: "second", label: "Second" };
+        renderCard([parking, plate, second], placement);
+        fireEvent.click(within(rowOf("Needs parking")).getByRole("button", { name: "Delete field" }));
+        expect(
+          screen.getByText("“Needs parking” can't be deleted yet: “Plate number” (for Yes) and “Second” (for Yes) are shown only for an answer to it. Remove their conditions first."),
+        ).toBeTruthy();
+      });
+    });
+  }
+});
