@@ -281,6 +281,11 @@ import {
   handleRejectEventRegistrations,
   handleRetryEventRegistrationMails,
 } from "./admin/registration-decisions-routes.js";
+import {
+  MAX_REGISTRATION_PASSWORD_BODY_BYTES,
+  handleDeleteRegistrationPassword,
+  handlePutRegistrationPassword,
+} from "./admin/registration-password-routes.js";
 import { MAX_LEGAL_BODY_BYTES } from "./legal/legal-documents.js";
 import { loadPublishedLegalPage, respondLegalPage } from "./legal/legal-page.js";
 import { respondRegistrationNotFound } from "./registration-page-security.js";
@@ -896,6 +901,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const legalDocumentBodyLimit = bodyLimit({
     maxSize: MAX_LEGAL_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const registrationPasswordBodyLimit = bodyLimit({
+    maxSize: MAX_REGISTRATION_PASSWORD_BODY_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const templateTestSendBodyLimit = bodyLimit({
@@ -2136,6 +2145,21 @@ export function createApp(options: CreateAppOptions = {}) {
     adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleRetryEventRegistrationMails(c, db)),
   );
+  // The shared password of an event whose way in is the password (111): set or changed with a PUT, switched off with a
+  // DELETE. Write only: no route reads it back. The chain of the other settings of an event, and a small body cap.
+  app.put(
+    "/api/admin/events/:eventId/registration/password",
+    jsonPostCsrf,
+    staffAdminGate,
+    registrationPasswordBodyLimit,
+    guardArchivedEvent((c) => handlePutRegistrationPassword(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/registration/password",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteRegistrationPassword(c, db)),
+  );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
   );
@@ -3258,11 +3282,10 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.body(new Uint8Array(result.png), 200);
   });
 
-  // The guest registration form of an event (D-C2: the public link, with the Turnstile challenge).
-  // Silent until an event turns registration on: an unknown slug, registration off, an archived
-  // event, a method other than the link (the password and the company sign-in answer the same
-  // 404 until 111 and 118) and an event that is not ready all answer one 404, byte for byte. Its
-  // own budget per visitor (`registration:page`), shared with /legal. POST /r/:slug is 95c.
+  // The guest registration form of an event (D-C2: the public link, or the password of the event, both with the
+  // Turnstile challenge). Silent until an event turns registration on: an unknown slug, registration off, an archived
+  // event, the company sign-in (118), a password that is not set and an event that is not ready all answer one 404, byte
+  // for byte. Its own budget per visitor (`registration:page`), shared with /legal. POST /r/:slug is 95c.
   app.get("/r/:slug", rateLimit(rateLimitStore, "registration:page"), (c) =>
     handleGetRegistrationForm(c, {
       db,
