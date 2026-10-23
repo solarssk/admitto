@@ -38,6 +38,14 @@ export type CapacityRequest = {
   restoring?: boolean;
 };
 
+/** The refusal of a restore that does not fit, in places: the attendee and each companion are a place, and `free` are left. */
+function restoreRefusalMessage(incomingCount: number, free: number): string {
+  const companions = incomingCount - 1;
+  const companionWord = companions === 1 ? "companion" : "companions";
+  const verb = free === 1 ? "is" : "are";
+  return `Not enough free places: restoring this attendee needs ${incomingCount} (the attendee and ${companions} ${companionWord}), and ${free} ${verb} free.`;
+}
+
 /**
  * Returns a 409 Response when capacity would be exceeded, null when OK,
  * or override metadata when superadmin uses ?force=1. `incomingCount` is a number of seats (an attendee is
@@ -86,7 +94,7 @@ export async function assertEventCapacityForIncoming(
     {
       code: "event_full",
       error: request.restoring
-        ? `Not enough free places: restoring this attendee needs ${incomingCount} (the attendee and ${incomingCount - 1} companion${incomingCount === 2 ? "" : "s"}), and ${free} ${free === 1 ? "is" : "are"} free.`
+        ? restoreRefusalMessage(incomingCount, free)
         : `Import would exceed capacity. ${current} existing + ${incomingCount} new = ${projected} > ${event.capacity}.`,
       capacity: event.capacity,
       current,
