@@ -24,6 +24,8 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
   - [SSO and two-factor authentication](#sso-and-two-factor-authentication)
 - [Authorization (RBAC)](#authorization-rbac)
 - [Legal texts of an event](#legal-texts-of-an-event)
+- [Guest registration submit](#guest-registration-submit)
+- [Address confirmation](#address-confirmation)
 - [Optional hardening (customer choice)](#optional-hardening-customer-choice)
 - [Rate limiting](#rate-limiting)
   - [Public and authentication](#public-and-authentication)
@@ -305,9 +307,34 @@ A legal text holds no guest data and has no per-guest copy: a registration recor
 | Terms and consents | The terms must be accepted (422 under the terms otherwise). The time of the acceptance and of each extra consent that was ticked is stored. Only consents of this event's published texts are accepted; any other key is a 400. |
 | Lock held | An import holds the event's capacity lock while it runs. The route only tries for the lock. After about two seconds it answers `503 {"error":"try_again"}` with `Retry-After: 5` and nothing written, the same for every address. At most three submissions per process try at once, so the connection pool stays free for staff. |
 | Mail budgets | The mail of a new registration is withheld, and the registration is stored, when its address has had 3 mails in 24 h across the instance or when the event has used its budget (see [Public and authentication](#public-and-authentication)). The answer does not change. A spent event budget writes one `registration_mail_withheld` warning an hour per event to the system log, with the event id and nothing else. |
+| Send again | A form sent again for an address whose registration still waits for its confirmation queues the same link once more: the row of the confirmation mail is put back in the queue, so the link is the same and it expires when it did. It happens at most once in 10 minutes for a registration, and under the same two budgets as a new registration's mail. What the second submission typed is not stored. The answer, the headers and the time are those of every other address. |
 | Logs | Nothing that identifies a guest is logged. An unexpected failure logs the class of the error, its database error code and the route name, and the guest gets `500 {"error":"internal_error"}`. |
 
 The answers that do not depend on the address may differ: the form is closed (404) or full (409 `full`), the challenge or a field is refused (400, 422), a limit is spent (429), a lock is held (503). One residual is accepted until the release review measures it: under heavy load the work of a new address can outlast the floor.
+
+---
+
+## Address confirmation
+
+A guest who registers by the public link gets a mail with a link, and the registration waits for the click (24 hours). `GET` and `POST /r/:slug/confirm/:token` are the two routes behind that link. They are anonymous, and the link is the only proof they have, so everything rests on the signature in it.
+
+| Control | What it does |
+|---------|--------------|
+| The link | `/r/<event slug>/confirm/<registration id>.<signature>`. The signature is an HMAC of the registration id, made with the instance key under a prefix of its own, and nothing is stored. It is compared in constant time. The link for a registration is always the same, so a mail that is sent again carries it unchanged. |
+| A bad token | A token that is not shaped like one, or whose signature does not match, answers the one 404 of the registration routes, byte for byte, before anything is read from the database. The same 404 answers an unknown event, registration off and an archived event. A stranger who guesses links learns nothing. |
+| Opening does not confirm | `GET` (and `HEAD`) shows a page with a button and changes nothing. Mail scanners, link previews and prefetching browsers open the links of a message, so opening cannot be what confirms. The page says nothing about the registration, and is the same page for a registration that exists and for one that does not. |
+| The button | `POST` confirms. It is a plain form that posts to the page's own address, with no script on the page. It has the cross-site check, the per-IP limit (`registration:confirm`, shared with the page) and a 1 KB cap on a body that is never read. |
+| What the answer says | The link is the proof of the address, so the answer says where the registration stands: registered, waiting for the organisers, on the waiting list, already confirmed, expired, already registered as an attendee, event full, or try again. It holds no name, address or answer of the guest. A registration that the organisers turned down is told as "already confirmed", as a rejection is not told when the organisers chose not to send the mail. |
+| Expiry | The link works until `confirm_expires_at`, 24 hours after the registration. The service judges it by the clock read after both locks are held, on every try, so a link that runs out while the request waits is expired. A link that ran out and a registration that was deleted answer alike: which it is depends on when the clean-up last ran. |
+| What closes it | Registration off, an archived event or an unknown event: the 404. An event that is over: the closed page. The way in, the bot check keys, the texts and the questions of the form do not close it: a guest who holds a link is not turned away because they changed meanwhile. |
+| Locks | The same as a submission: the capacity lock and the registration queue, taken by trying. A held lock (an import, an erasure) ends the transaction with nothing written and, after about two seconds, answers `503` with `Retry-After: 5` and a page with a button to try again. The link stays valid. |
+| Twice | A second click, or several at once, finds the registration placed and says so: one attendee, one ticket mail, no error. |
+| Erased | An erasure deletes the registration, so its link finds nothing. An erasure that is still running holds the queue, and the confirmation does not go ahead. |
+| Logs | The access log holds `/r/<event slug>/confirm/[redacted]` and a short hash that tells two requests for one link apart from other links. A failure logs the class of the error only. |
+
+Two things are different from the submit route, on purpose. There is no floor of time on the answers: only the holder of a valid link reaches the database, and what they are told is about their own registration. And the form's own conditions do not apply, as the row "What closes it" says.
+
+**What stays outside Admitto.** A reverse proxy or a CDN in front of the app logs the full path, and so holds the link for as long as it keeps its access log. The link is worth 24 hours at most, and only until it is used. Redact the path of `/r/*/confirm/*` in those logs, or keep them short. The mail provider's Sent Items holds the mail with the link, as it holds any other mail.
 
 ---
 
@@ -391,7 +418,7 @@ Notes on the rows above:
 - **Per-email sign-in limit.** It runs inside the handler. Every attempt is counted before the password is checked, so a correct password is refused too once the budget is spent.
 - **MFA verification.** TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min. At sign-in the account also has one counter per user, across all sessions and addresses.
 - **Account routes.** The notification unread-count poll has its own per-user bucket, 20 / 60 s.
-- **Registration limits.** The `registration:page`, `registration:submit`, `registration:confirm` and `registration:password` policies, and the inline `registration:event`, `registration:mail-recipient` and `registration:mail-event` limits, exist before the routes that use them. `registration:page` is in use on the form's page (`GET /r/:slug`) and on the legal text pages. `POST /r/:slug` uses `registration:submit`, `registration:event`, `registration:mail-recipient` and `registration:mail-event` (see [Guest registration submit](#guest-registration-submit)). `registration:confirm` and `registration:password` wait for the routes that come next.
+- **Registration limits.** The `registration:page`, `registration:submit`, `registration:confirm` and `registration:password` policies, and the inline `registration:event`, `registration:mail-recipient` and `registration:mail-event` limits, exist before the routes that use them. `registration:page` is in use on the form's page (`GET /r/:slug`) and on the legal text pages. `POST /r/:slug` uses `registration:submit`, `registration:event`, `registration:mail-recipient` and `registration:mail-event` (see [Guest registration submit](#guest-registration-submit)). `registration:confirm` is used by the two routes of the [address confirmation](#address-confirmation); `registration:password` waits for the route that comes next.
   - **Per IP, generous on purpose.** The audience is staff of one company, often behind one NAT, so the per-IP numbers are high (compare `/t`, 500 / 60 s) and an IPv6 client is keyed by its /64 network. The bot challenge and the per-address mail limit are the real brakes. Raise or lower them with `RATE_LIMIT_OVERRIDES`, for example `{"registration:submit":{"max":30}}`.
   - **No slug in any key.** The slug is a caller-chosen path segment, so a bucket per slug would let anyone starve an event and create unbounded keys. The per-event ceiling (`registration:event`) is keyed by event id and is counted only after the bot challenge has passed and the event is found.
   - **Quiet when exceeded.** Page, submit and confirm do not write an `auth.rate_limit.exceeded` entry, because anyone can trigger them and would flush the 1000-entry system-log buffer. Only the password limit does (scope `registration`), as an attempt to guess the shared event password is worth a trace.
@@ -491,6 +518,7 @@ These are separate from rate limits.
 - **Bulk-attendee-id requests** (the mutation and wallet routes above): at most 0.5 MB, with each attendee id itself capped at 128 characters. See `apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and `apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
 - **Pre-authentication routes** (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`): at most 16 KB. The three wallet webhook routes: at most 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`). Where a route has an IP rate limit, it runs before the cap, so oversized requests are counted too.
 - **`POST /r/:slug` (registration submit):** at most 64 KB (`MAX_REGISTRATION_BODY_BYTES`), `413 request too large`. Order: cross-site check, IP limiter, body cap, then the content type (`application/json`, else 415) and parsing, so a chunked body without `Content-Length` is capped too and oversized requests are still counted. The cross-site check only stops browsers posting from another site; the bot challenge and the limits are the defence against scripts.
+- **`POST /r/:slug/confirm/:token` (address confirmation):** at most 1 KB (`MAX_CONFIRM_BODY_BYTES`), `413 request too large`. The body is never read: the form of the page has no field. Order as for the submit: cross-site check, IP limiter, body cap.
 - **`PUT …/legal-documents/:ref` (legal text):** at most 512 KB (`MAX_LEGAL_BODY_BYTES`), `400 request too large`, after the cross-site check and the sign-in. The text itself is limited to 100 000 characters.
 - **Check-in POST routes:** the six routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit).
 - **`POST /api/ops/system-logs`:** at most 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check).

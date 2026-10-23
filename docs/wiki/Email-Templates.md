@@ -56,6 +56,14 @@ Guests cannot register through the form yet, so no one gets these emails yet. Yo
 | Registration: waiting list | The event is full and the registration goes on the waiting list |
 | Registration: declined | You decline a registration and choose to let the guest know |
 
+**What the guest does with the confirmation link**
+
+- Opening the link shows a page with a button, **Confirm my address**. Nothing is confirmed until the guest selects it. Mail security scanners open the links in a message too, and this keeps them from confirming for the guest.
+- After the button, the guest sees where the registration stands: registered, waiting for your decision, or on the waiting list. A second click shows "Your address is already confirmed" and sends no second email.
+- The link works for 24 hours after the guest sent the form. After that, the guest sees "This link has expired" and a button to register again.
+- A guest who sends the form again with the same address while the link still works gets the same link in a new email. This happens at most once in 10 minutes. An address also gets at most 3 emails of this kind in 24 hours, across all events.
+- The link keeps working while registration is on for the event. It stops when you turn registration off, archive the event, or the event is over.
+
 **Change one**
 
 1. Open **Communication**, then the **Templates** tab, and pick the email. The badge reads **Default template** while it runs on the built-in text.
