@@ -11,7 +11,7 @@ import { ERASED_COMPANION_NAME, eraseAttendees } from "../src/erase-attendees.js
 import { countSeatsInUse } from "../src/event-seats.js";
 import { RegistrantInputError } from "../src/registrant-input.js";
 import { removeAttendees } from "../src/remove-attendees.js";
-import { createMigratedDb, fixtures, holdTransaction, lockWaiters, type EventOptions, type MigratedDb } from "./registration-fixtures.js";
+import { createMigratedDb, fixtures, holdTransaction, lockWaiters, wrapTransactions, type EventOptions, type MigratedDb } from "./registration-fixtures.js";
 
 let migrated: MigratedDb;
 let db: PrismaClient;
@@ -202,31 +202,23 @@ describe("writeAttendeeCompanion", () => {
     const eventId = await eventWithQuestions();
     const guest = await guestWithCompanion(eventId);
     const statements: string[] = [];
-    const recording = new Proxy(db, {
-      get(target, key, receiver) {
-        if (key !== "$transaction") return Reflect.get(target, key, receiver) as unknown;
-        return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, options?: { timeout?: number }) =>
-          target.$transaction(
-            (tx) =>
-              operation(
-                new Proxy(tx, {
-                  get(actual, property, actualReceiver) {
-                    const value = Reflect.get(actual, property, actualReceiver) as unknown;
-                    if (property === "$queryRaw") {
-                      return (strings: TemplateStringsArray, ...values: unknown[]) => {
-                        statements.push(strings.join("?"));
-                        return Reflect.apply(value as () => unknown, actual, [strings, ...values]) as unknown;
-                      };
-                    }
-                    if (typeof property === "string" && !property.startsWith("$")) statements.push(property);
-                    return value;
-                  },
-                }),
-              ),
-            options,
-          );
-      },
-    });
+    const recording = wrapTransactions(
+      db,
+      (tx) =>
+        new Proxy(tx, {
+          get(actual, property, receiver) {
+            const value = Reflect.get(actual, property, receiver) as unknown;
+            if (property === "$queryRaw") {
+              return (strings: TemplateStringsArray, ...values: unknown[]) => {
+                statements.push(strings.join("?"));
+                return Reflect.apply(value as () => unknown, actual, [strings, ...values]) as unknown;
+              };
+            }
+            if (typeof property === "string" && !property.startsWith("$")) statements.push(property);
+            return value;
+          },
+        }),
+    );
 
     await write(eventId, guest.id, {}, recording);
 

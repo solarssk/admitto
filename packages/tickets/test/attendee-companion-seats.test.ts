@@ -12,7 +12,7 @@ import { activeAttendeeWhere, countActiveAttendees, countSeatsInUse, countSeatsO
 import { admitRegistrations } from "../src/registration-decisions.js";
 import { confirmRegistrationAddress } from "../src/registration-placement.js";
 import { readFreeSeats, seatsNeeded } from "../src/registration-seats.js";
-import { createMigratedDb, fixtures, type EventOptions, type MigratedDb } from "./registration-fixtures.js";
+import { createMigratedDb, fixtures, replacing, wrapTransactions, type EventOptions, type MigratedDb } from "./registration-fixtures.js";
 
 let migrated: MigratedDb;
 let db: PrismaClient;
@@ -35,31 +35,21 @@ const seats = (eventId: string) => countSeatsInUse(db, eventId);
 /** A client whose transactions count the reads of the custom-field registry (one per `loadEventCustomDataFields`). */
 function fieldReads() {
   let count = 0;
-  const transaction = db.$transaction.bind(db);
-  const client = new Proxy(db, {
-    get(target, key, receiver) {
-      if (key !== "$transaction") return Reflect.get(target, key, receiver) as unknown;
-      return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, options?: { timeout?: number; maxWait?: number }) =>
-        transaction(async (tx) => {
-          const fields = new Proxy(tx.eventCustomField, {
-            get(delegate, method, delegateReceiver) {
-              if (method !== "findMany") return Reflect.get(delegate, method, delegateReceiver) as unknown;
-              return (args: Prisma.EventCustomFieldFindManyArgs) => {
-                count += 1;
-                return delegate.findMany(args);
-              };
-            },
-          });
-          return operation(
-            new Proxy(tx, {
-              get(actual, property, actualReceiver) {
-                return property === "eventCustomField" ? fields : (Reflect.get(actual, property, actualReceiver) as unknown);
-              },
-            }),
-          );
-        }, options);
-    },
-  });
+  const client = wrapTransactions(db, (tx) =>
+    replacing(
+      tx,
+      "eventCustomField",
+      new Proxy(tx.eventCustomField, {
+        get(delegate, method, delegateReceiver) {
+          if (method !== "findMany") return Reflect.get(delegate, method, delegateReceiver) as unknown;
+          return (args: Prisma.EventCustomFieldFindManyArgs) => {
+            count += 1;
+            return delegate.findMany(args);
+          };
+        },
+      }),
+    ),
+  );
   return { client, reads: () => count };
 }
 
