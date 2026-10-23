@@ -3,6 +3,7 @@ import { writeBulkActionLog } from "./ops-audit.js";
 import type { StaffActor } from "./registration-decisions.js";
 import { canRetryRegistrationMail } from "./registration-list.js";
 import { lockRegistrationQueue } from "./registration-lock.js";
+import { queuedAgain } from "./registration-mail-queue.js";
 
 /** A request of staff may wait for the registration queue as long as the statement timeout lets it (as a decision does). */
 const RETRY_TRANSACTION_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
@@ -69,19 +70,10 @@ async function retryInTransaction(
   // rows before this update: every writer of a mail row takes the queue, except the worker's write of a send result,
   // and that matches only a row the worker claimed, never one that failed for good. The reset is what
   // docs/dev/attendee-erasure.md and the mail-delivery README describe: a new revision (`queued_at`) that a send in
-  // progress cannot write over, and the attempts counted from zero.
+  // progress cannot write over, and the attempts counted from zero (`queuedAgain`, which a guest's re-send uses too).
   const reset = await tx.registrationMail.updateManyAndReturn({
     where: { id: { in: mailIds }, event_id: eventId },
-    data: {
-      status: "queued",
-      attempts: 0,
-      retryable: null,
-      queued_at: now,
-      attempted_at: null,
-      sent_at: null,
-      error_code: null,
-      error: null,
-    },
+    data: queuedAgain(now),
     select: { registration_id: true },
   });
   const retried = new Set(reset.map((mail) => mail.registration_id));

@@ -1,4 +1,5 @@
 import { JSDOM } from "jsdom";
+import type { ConfirmScreen } from "../../src/registration/confirm-page.js";
 import type { ClosedFormModel, FormQuestion, RegistrationFormModel } from "../../src/registration/form-model.js";
 
 /** A form with every optional part switched on: both profile fields, one question of each kind (the four newer kinds are optional, so a form that is filled in "validly" needs no answer to them), an extra consent. */
@@ -84,6 +85,19 @@ export function requiredNewKinds(): FormQuestion[] {
 export function closedModel(overrides: Partial<ClosedFormModel> = {}): ClosedFormModel {
   return { event: formModel().event, contact: formModel().contact, ...overrides };
 }
+
+/** One of each screen the pages of a confirmation link come to (and the three states a registration is placed in). */
+export const CONFIRM_SCREENS: readonly ConfirmScreen[] = [
+  { kind: "ask" },
+  { kind: "placed", status: "accepted" },
+  { kind: "placed", status: "pending" },
+  { kind: "placed", status: "waitlist" },
+  { kind: "already" },
+  { kind: "expired" },
+  { kind: "registered" },
+  { kind: "full" },
+  { kind: "busy" },
+];
 
 /** A node of a jsdom document. The web package builds without the DOM library, so the tests treat a node as loosely typed. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

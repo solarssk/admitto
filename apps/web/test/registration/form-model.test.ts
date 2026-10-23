@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import { loadRegistrantFormFields, type RegistrantFormField } from "@admitto/tickets";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loadRegistrationPage } from "../../src/registration/form-model.js";
+import { loadRegistrationPage, resolveConfirmation, resolveRegistration } from "../../src/registration/form-model.js";
 import { resolveAccessMethodAvailability } from "../../src/registration/access-methods.js";
 import { resolveTurnstileKeys } from "../../src/registration/turnstile-settings.js";
 
@@ -315,5 +315,67 @@ describe("loadRegistrationPage, and the questions it draws", () => {
     it("does not draw an optional question it cannot draw, under a condition or not", async () => {
       expect(await keysOf([parking, field({ source_field: "later", type: unknownType, rules: { show_when: when } })])).toEqual(["parking"]);
     });
+  });
+});
+
+describe("resolveConfirmation: the event of a confirmation link", () => {
+  const withRow = (changes: Record<string, unknown>) =>
+    ({ event: { findUnique: vi.fn(async () => ({ ...row, ...changes })) } }) as unknown as PrismaClient;
+  const settings = (changes: Record<string, unknown>) => ({ ...row.registration_settings, ...changes });
+
+  it("opens for an event with registration on, with its id, its page and its contact", async () => {
+    const state = await resolveConfirmation(db, "northwind-summit", NOW);
+
+    expect(state).toMatchObject({ kind: "open", eventId: "evt-1", event: { slug: "northwind-summit", title: "Northwind" }, contact: null });
+  });
+
+  it("does not ask what the form needs: the way in, the keys of the bot check, the texts and the questions", async () => {
+    vi.mocked(resolveAccessMethodAvailability).mockClear();
+    vi.mocked(resolveTurnstileKeys).mockClear();
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(false));
+    vi.mocked(resolveTurnstileKeys).mockResolvedValue({ state: "incomplete" });
+    vi.mocked(loadRegistrantFormFields).mockClear();
+
+    expect((await resolveConfirmation(db, "northwind-summit", NOW)).kind).toBe("open");
+    expect((await resolveConfirmation(withRow({ registration_settings: settings({ access_methods: ["password"] }) }), "northwind-summit", NOW)).kind).toBe("open");
+
+    expect(resolveAccessMethodAvailability).not.toHaveBeenCalled();
+    expect(resolveTurnstileKeys).not.toHaveBeenCalled();
+    expect(loadRegistrantFormFields).not.toHaveBeenCalled();
+    // The form itself is closed meanwhile, as the same two answers say.
+    expect(await resolveRegistration(db, "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+  });
+
+  it("is not found for an event with registration off, without settings, or archived, and for a slug that cannot be an event's", async () => {
+    expect(await resolveConfirmation(withRow({ registration_settings: settings({ mode: null }) }), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+    expect(await resolveConfirmation(withRow({ registration_settings: null }), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+    expect(await resolveConfirmation(withRow({ archived_at: new Date("2026-10-01T00:00:00Z") }), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+    const untouched = withRow({});
+    expect(await resolveConfirmation(untouched, "Bad Slug", NOW)).toEqual({ kind: "not_found" });
+    expect(untouched.event.findUnique).not.toHaveBeenCalled();
+    expect(await resolveConfirmation({ event: { findUnique: vi.fn(async () => null) } } as unknown as PrismaClient, "no-such-event", NOW)).toEqual({ kind: "not_found" });
+  });
+
+  it("is closed, with the event, once the event is over", async () => {
+    const state = await resolveConfirmation(db, "northwind-summit", new Date("2099-05-15T12:00:00Z"));
+
+    expect(state).toMatchObject({ kind: "closed", page: { event: { title: "Northwind" } } });
+  });
+
+  it("lets the same events through, shut out and close as the form does, which has the same rule", async () => {
+    const rows: Array<Record<string, unknown>> = [
+      {},
+      { registration_settings: settings({ mode: null }) },
+      { registration_settings: null },
+      { archived_at: new Date("2026-10-01T00:00:00Z") },
+    ];
+    for (const now of [NOW, new Date("2099-05-15T12:00:00Z")]) {
+      for (const changes of rows) {
+        const fake = withRow(changes);
+        expect((await resolveConfirmation(fake, "northwind-summit", now)).kind, JSON.stringify(changes)).toBe(
+          (await resolveRegistration(fake, "northwind-summit", now)).kind,
+        );
+      }
+    }
   });
 });

@@ -1,6 +1,8 @@
 /**
  * The registration page as HTML: the form, the "Check your inbox" screen that replaces it after a
- * send, and the "Registration is closed" page of an event that is over.
+ * send, and the "Registration is closed" page of an event that is over. The pages of the link that
+ * confirms an address (./confirm-page.ts) are built from the same shell: the document, the header and
+ * the footer.
  *
  * Pure: it takes the model of ./form-model.ts and returns a string, so the same text is built for
  * the same event every time. The page is the ticket page's card (`.ticket*`, its brand header and
@@ -32,7 +34,7 @@ const TURNSTILE_SCRIPT_URL = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
 /** Both pages tell iOS not to turn what looks like a phone number into a call link: an organiser's example of a phone
  * answer ("For example: +1 555 0100") would become one, and so would any other run of digits in a note. */
-function renderDocument(title: string, content: string, scripts: string, theme?: BrandingTheme | null): string {
+export function renderDocument(title: string, content: string, scripts: string, theme?: BrandingTheme | null): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -54,7 +56,7 @@ function renderDocument(title: string, content: string, scripts: string, theme?:
 }
 
 /** The ticket page's header: the event's logo, else the Admitto mark. */
-function renderHeader(event: FormEvent): string {
+export function renderHeader(event: FormEvent): string {
   const brand = event.logoUrl
     ? `<img class="ticket__brand-logo" src="${esc(event.logoUrl)}" alt="${esc(event.title)}">`
     : `<img class="ticket__brand-mark" src="/assets/admitto-mark.svg" width="30" height="30" alt=""><span>Admitto</span>`;
@@ -97,7 +99,7 @@ function renderInbox(model: RegistrationFormModel): string {
 }
 
 /** The footer of the card: who to write to, when the event has a contact, and the product line. */
-function renderFoot(contact: FormContact | null): string {
+export function renderFoot(contact: FormContact | null): string {
   let line = "";
   if (contact) {
     const who = contact.name ? `<b>${esc(contact.name)}</b> at ` : "";

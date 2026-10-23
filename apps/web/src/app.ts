@@ -285,6 +285,12 @@ import { MAX_LEGAL_BODY_BYTES } from "./legal/legal-documents.js";
 import { loadPublishedLegalPage, respondLegalPage } from "./legal/legal-page.js";
 import { respondRegistrationNotFound } from "./registration-page-security.js";
 import { handleGetRegistrationForm } from "./registration/form-routes.js";
+import {
+  handleGetConfirmation,
+  handlePostConfirmation,
+  registrationConfirmGuards,
+  type RegistrationConfirmDeps,
+} from "./registration/confirm-route.js";
 import { registrationSubmitGuards } from "./registration/submit-guards.js";
 import { handlePostRegistration, type RegistrationSubmitDeps } from "./registration/submit-route.js";
 import {
@@ -517,6 +523,8 @@ export interface CreateAppOptions {
   /** Test-only injection points of `POST /r/:slug`: the transport of the bot challenge, the wait for a lock and the
    * floor of time of an answer. */
   registrationSubmit?: Pick<RegistrationSubmitDeps, "challenge" | "placement" | "pace">;
+  /** Test-only injection point of `POST /r/:slug/confirm/:token`: the wait for a lock and the places among the writes. */
+  registrationConfirm?: Pick<RegistrationConfirmDeps, "placement">;
 }
 
 /**
@@ -3276,6 +3284,23 @@ export function createApp(options: CreateAppOptions = {}) {
         injectedBaseUrl: mailInjectedBaseUrl,
         ...options.registrationSubmit,
       }),
+  );
+
+  // The link in the confirmation mail of a registration (110, D-C5). The token is the credential: one whose signature does
+  // not match is the one 404 before anything is read. GET shows a page with a button and changes nothing (mail scanners
+  // follow links); POST, the button, confirms. Its own budget per visitor (`registration:confirm`). The order and the
+  // answers are in registration/confirm-route.ts.
+  const registrationConfirm: RegistrationConfirmDeps = {
+    db,
+    loadTheme: loadOptionalBrandingTheme,
+    serverError: (ctx) => renderPublicHtmlError(ctx, 500),
+    ...options.registrationConfirm,
+  };
+  app.get("/r/:slug/confirm/:token", rateLimit(rateLimitStore, "registration:confirm"), (c) =>
+    handleGetConfirmation(c, registrationConfirm),
+  );
+  app.post("/r/:slug/confirm/:token", ...registrationConfirmGuards(rateLimitStore), (c) =>
+    handlePostConfirmation(c, registrationConfirm),
   );
 
   // A published legal text. Anything else (no such event, no such text, a draft, a ref that is not
