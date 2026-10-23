@@ -106,6 +106,26 @@ For a long text, a date, a date and time and a phone number, the form uses its o
 
 What the guest typed stays in the form, so the guest can correct it.
 
+## When a guest sends the form
+
+The guest sees `Check your inbox` with the address they typed. The page says the same whether the address is new or already registered, so nobody can use the form to find out who is on the list. A second form for an address that is registered changes nothing: the answers already saved are not replaced.
+
+What Admitto does, in this order:
+
+1. It checks the security check on the page. If it fails, the guest sees a message under the check and can try again.
+2. It checks every answer and shows what is wrong under each box. The guest has to accept the event terms.
+3. It saves the registration, with the time the terms were accepted and the extra consents that were ticked.
+4. It queues the mail for the registration. The mail is sent a little later, not while the guest waits.
+
+A guest who sends the form twice at the same moment is registered once. An address that is an attendee already, or was rejected, gets the same page and nothing changes.
+
+| What the guest sees | Why |
+|---|---|
+| `Check your inbox` | The form was accepted, or the address was registered already |
+| A message under a box | The answer was not accepted. See above for the sentences |
+| `Try again in a moment.` | Many guests are sending at once, the security check could not be made, or an import is running for the event |
+| `Something went wrong. Check your details and try again.` | The event is full and has no waiting list, or the form closed while the guest was typing. Open the form yourself to see whether it opens |
+
 ## Common problems
 
 | Problem | What it means and what to do |
@@ -117,6 +137,7 @@ What the guest typed stays in the form, so the guest can correct it.
 | A question never appears under the tick box or the list it waits for | The question it waits for must be on the form, and must be a Yes / No or a Single choice field. For a list, the condition must name an option that exists, written exactly |
 | A field has suggestions, but the guest sees no list | Suggestions fit Text fields only. Check that the field is a Text field, and that its own condition is met |
 | A field has an icon, but the guest sees none | A Single choice, a Long text and a required Yes / No have no place for an icon |
+| A guest registered but got no mail | Admitto sends at most 3 registration mails a day to one address, and a daily number of mails for one event (1000, or 3 per seat if that is more). Over the limit the registration is saved without its mail. Ask the administrator of the system to raise the limit |
 
 ## Related pages
 

@@ -290,6 +290,27 @@ A legal text holds no guest data and has no per-guest copy: a registration recor
 
 ---
 
+## Guest registration submit
+
+`POST /r/:slug` is the one anonymous route that writes a guest's personal data, so everything on it is built to give a stranger nothing and to cost the system little. It is the page's own endpoint, not an API for other programs: the body is the contract in [`form-contract.ts`](../../apps/web/src/registration/form-contract.ts), which can change.
+
+| Control | What it does |
+|---------|--------------|
+| Order of checks | Each step is cheaper than the one after it: the cross-site check, the per-IP limit and the 64 KB cap (before the handler); the content type (415) and the shape of the body (400); the event; the bot challenge; the per-event ceiling; the event once more (the challenge is a call over the network, and the form may have been closed or changed meanwhile: a form that is not open now is the same 404, an event that ended meanwhile included, as the clock is read again there and once more at the write under the locks, and the fields are judged by what it asks now); the fields (422); and only then the database is written. |
+| One 404 | An unknown slug, registration off, an archived event, an event that is over, and a form that is not ready (a legal text not published, no Turnstile keys, another way in) all answer the one 404 of the registration routes, byte for byte, as the form's page does. The route looks the event up with the page's own code, so a request tells a stranger no more than the page does. |
+| Bot challenge | The Turnstile token is checked with Cloudflare on every request, bound to the event and to the instance's host. It works once. A refused token is a 400 with one sentence for every reason; a check that cannot be made is a 503. Nothing is written before it passes. |
+| One answer | A new address, an address with a registration in any state, an attendee's address in any status, and a registration whose mail was withheld all get `200 {"ok":true}` with the same headers and the same bytes. A new submission never changes a registration that exists. |
+| Time floor | Each of those answers waits until 250 ms have passed since the challenge was checked, so the extra work of storing a new registration does not show in the time. So does the answer to two requests for one address that race each other and meet the database's refusal of a second row. The wait holds no database connection. The figure is a first value, to be measured under load in the review of the release. |
+| Fixed sentences | A refused field gets a sentence from a fixed set, chosen by the field and the kind of answer. Nothing a guest typed and no text of an exception is sent back. |
+| Terms and consents | The terms must be accepted (422 under the terms otherwise). The time of the acceptance and of each extra consent that was ticked is stored. Only consents of this event's published texts are accepted; any other key is a 400. |
+| Lock held | An import holds the event's capacity lock while it runs. The route only tries for the lock. After about two seconds it answers `503 {"error":"try_again"}` with `Retry-After: 5` and nothing written, the same for every address. At most three submissions per process try at once, so the connection pool stays free for staff. |
+| Mail budgets | The mail of a new registration is withheld, and the registration is stored, when its address has had 3 mails in 24 h across the instance or when the event has used its budget (see [Public and authentication](#public-and-authentication)). The answer does not change. A spent event budget writes one `registration_mail_withheld` warning an hour per event to the system log, with the event id and nothing else. |
+| Logs | Nothing that identifies a guest is logged. An unexpected failure logs the class of the error, its database error code and the route name, and the guest gets `500 {"error":"internal_error"}`. |
+
+The answers that do not depend on the address may differ: the form is closed (404) or full (409 `full`), the challenge or a field is refused (400, 422), a limit is spent (429), a lock is held (503). One residual is accepted until the release review measures it: under heavy load the work of a new address can outlast the floor.
+
+---
+
 ## Optional hardening (customer choice)
 
 Organizations with stricter policies often add controls **outside** the application:
@@ -363,17 +384,19 @@ Application throttles use a fixed window (default **60 seconds** unless noted).
 | `GET`/`POST /r/:slug/confirm/:token` (address confirmation) | client IP | 120 / 60 s | no |
 | registration password check | client IP | 10 / 15 min | no |
 | registration mail to one address | address (keyed hash), whole instance | 3 / 24 h | no |
+| registration mail of one event | event, counted in the database | 1000 / 24 h, or 3 per seat if that is more | no |
 
 Notes on the rows above:
 
 - **Per-email sign-in limit.** It runs inside the handler. Every attempt is counted before the password is checked, so a correct password is refused too once the budget is spent.
 - **MFA verification.** TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min. At sign-in the account also has one counter per user, across all sessions and addresses.
 - **Account routes.** The notification unread-count poll has its own per-user bucket, 20 / 60 s.
-- **Registration limits.** The `registration:page`, `registration:submit`, `registration:confirm` and `registration:password` policies, and the inline `registration:event` and `registration:mail-recipient` limits, exist before the routes that use them; the routes arrive with the registration form. Only `registration:page` is in use so far: on the form's page (`GET /r/:slug`) and on the legal text pages.
+- **Registration limits.** The `registration:page`, `registration:submit`, `registration:confirm` and `registration:password` policies, and the inline `registration:event`, `registration:mail-recipient` and `registration:mail-event` limits, exist before the routes that use them. `registration:page` is in use on the form's page (`GET /r/:slug`) and on the legal text pages. `POST /r/:slug` uses `registration:submit`, `registration:event`, `registration:mail-recipient` and `registration:mail-event` (see [Guest registration submit](#guest-registration-submit)). `registration:confirm` and `registration:password` wait for the routes that come next.
   - **Per IP, generous on purpose.** The audience is staff of one company, often behind one NAT, so the per-IP numbers are high (compare `/t`, 500 / 60 s) and an IPv6 client is keyed by its /64 network. The bot challenge and the per-address mail limit are the real brakes. Raise or lower them with `RATE_LIMIT_OVERRIDES`, for example `{"registration:submit":{"max":30}}`.
   - **No slug in any key.** The slug is a caller-chosen path segment, so a bucket per slug would let anyone starve an event and create unbounded keys. The per-event ceiling (`registration:event`) is keyed by event id and is counted only after the bot challenge has passed and the event is found.
   - **Quiet when exceeded.** Page, submit and confirm do not write an `auth.rate_limit.exceeded` entry, because anyone can trigger them and would flush the 1000-entry system-log buffer. Only the password limit does (scope `registration`), as an attempt to guess the shared event password is worth a trace.
-  - **Mail per address.** Counts only the queueing of a registration mail; the registrant gets the same answer either way. The address enters the store only as a keyed hash, with a prefix of its own, so it never matches the test-send tag of the same address.
+  - **Mail per address.** Counts only the queueing of a registration mail; the registrant gets the same answer either way. The budget is spent by a mail that is queued, not by a request: an address that has a place already, a full event, a refused form and a request told to try again spend nothing. The address enters the store only as a keyed hash, with a prefix of its own, so it never matches the test-send tag of the same address.
+  - **Mail per event.** `registration:mail-event` is the base of a count of the event's mail rows in the last `windowMs` (24 h), made in PostgreSQL under the registration queue, so a restart does not reset it and guests who submit at once cannot get past it. The cap is the larger of the base and three per seat of the event. Retune the base with `RATE_LIMIT_OVERRIDES`, for example `{"registration:mail-event":{"max":3000}}`.
   - **Redis unreachable.** The limits keep applying per process and a warning is logged (see **Store: Redis**). They neither fail open nor fail closed. With several app replicas the effective limit is multiplied by their number until Redis is back.
 
 ### Check-in live updates (SSE stream)
@@ -467,7 +490,7 @@ These are separate from rate limits.
 - **Templates:** template JSON is sized for a body field of at most 200k characters.
 - **Bulk-attendee-id requests** (the mutation and wallet routes above): at most 0.5 MB, with each attendee id itself capped at 128 characters. See `apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and `apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
 - **Pre-authentication routes** (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`): at most 16 KB. The three wallet webhook routes: at most 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`). Where a route has an IP rate limit, it runs before the cap, so oversized requests are counted too.
-- **`POST /r/:slug` (registration submit):** at most 64 KB (`MAX_REGISTRATION_BODY_BYTES`), `413 request too large`. Order: cross-site check, IP limiter, body cap, then parsing, so a chunked body without `Content-Length` is capped too and oversized requests are still counted. The cross-site check only stops browsers posting from another site; the bot challenge and the limits are the defence against scripts.
+- **`POST /r/:slug` (registration submit):** at most 64 KB (`MAX_REGISTRATION_BODY_BYTES`), `413 request too large`. Order: cross-site check, IP limiter, body cap, then the content type (`application/json`, else 415) and parsing, so a chunked body without `Content-Length` is capped too and oversized requests are still counted. The cross-site check only stops browsers posting from another site; the bot challenge and the limits are the defence against scripts.
 - **`PUT …/legal-documents/:ref` (legal text):** at most 512 KB (`MAX_LEGAL_BODY_BYTES`), `400 request too large`, after the cross-site check and the sign-in. The text itself is limited to 100 000 characters.
 - **Check-in POST routes:** the six routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit).
 - **`POST /api/ops/system-logs`:** at most 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check).

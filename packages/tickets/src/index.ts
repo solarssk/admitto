@@ -343,7 +343,13 @@ export { seatsNeeded } from "./registration-seats.js";
 export type { PlacedStatus } from "./registration-seats.js";
 export { createAttendeeFromRegistration } from "./registration-attendee.js";
 export type { RegistrationAttendeeSource } from "./registration-attendee.js";
-export { REGISTRATION_CONFIRM_WINDOW_MS, confirmRegistrationAddress, placeRegistration } from "./registration-placement.js";
+export {
+  EVENT_MAIL_CAP_PER_SEAT,
+  REGISTRATION_CONFIRM_WINDOW_MS,
+  confirmRegistrationAddress,
+  eventMailCap,
+  placeRegistration,
+} from "./registration-placement.js";
 export type {
   ConfirmRegistrationInput,
   ConfirmRegistrationResult,
@@ -351,6 +357,7 @@ export type {
   PlaceRegistrationResult,
   PlacementOptions,
   RegistrantSubmission,
+  SubmissionMailLimits,
 } from "./registration-placement.js";
 export { admitRegistrations, rejectRegistrations } from "./registration-decisions.js";
 export type {

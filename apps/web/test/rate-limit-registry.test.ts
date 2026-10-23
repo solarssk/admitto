@@ -77,6 +77,7 @@ const EXPECTED_INLINE_LIMITS: Record<keyof typeof INLINE_RATE_LIMITS, { windowMs
     "wallet:webhook-event": { windowMs: 60_000, max: 120 },
     "registration:event": { windowMs: 60_000, max: 600 },
     "registration:mail-recipient": { windowMs: 86_400_000, max: 3 },
+    "registration:mail-event": { windowMs: 86_400_000, max: 1000 },
   };
 
 describe("RATE_POLICIES registry", () => {

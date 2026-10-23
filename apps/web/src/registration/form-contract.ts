@@ -19,6 +19,10 @@
  *   page says a sentence of its own for it (the field carries it as `data-invalid`) and ignores the
  *   message, so nothing the server sends for those fields reaches the page.
  * - `429` or `503`: the page says "Try again in a moment." Any other status gets a general message.
+ *
+ * The route (./submit-route.ts) also answers with statuses that get the general message: the one 404 of a form that is
+ * not open (or that closed while the guest typed), `409 { error: "full" }` for an event that is full and has no waiting
+ * list, and `400` or `415` for a body that is not a form this page sends. The page has no sentence of its own for them.
  */
 
 /** The body of the submit request. Optional keys are left out when the guest gave no value. */

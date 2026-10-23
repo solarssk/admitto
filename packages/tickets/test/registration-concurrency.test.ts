@@ -280,6 +280,26 @@ describe("runEventCapacityTransaction with tryLock, and the try of the lock", ()
     expect(result).toBe(true);
   });
 
+  it("judges whether the event is over by the clock at the time it holds the locks, not at the time the call began", async () => {
+    // Without hours, the event ends at midnight (UTC) after its day: open when the call begins, over when the lock is let go.
+    const eventId = await make.event({ date: new Date("2027-03-10T12:00:00Z") });
+    const holder = holdTransaction(migrated.connection(), (tx) => acquireEventCapacityLock(tx, eventId));
+    await holder.started;
+    // Only the date is faked: the pauses and the waits of the call run on the real timers.
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2027-03-10T10:00:00Z") });
+    try {
+      const placing = placeRegistration(db, { eventId, method: "link", registrant: make.registrant() });
+      await delay(300);
+      vi.setSystemTime(new Date("2027-03-11T10:00:00Z"));
+      await holder.commit();
+
+      expect(await placing).toEqual({ outcome: "closed" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await make.counts(eventId)).toMatchObject({ registrations: 0, mails: 0 });
+  });
+
   it("throws EventLockBusyError at once when the lock is held, runs no work and keeps nothing: the connection is free again", async () => {
     const eventId = await make.event();
     const holder = holdTransaction(migrated.connection(), (tx) => acquireEventCapacityLock(tx, eventId));

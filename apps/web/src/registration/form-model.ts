@@ -117,7 +117,15 @@ export type RegistrationPageState =
   | { kind: "closed"; page: ClosedFormModel }
   | { kind: "open"; form: RegistrationFormModel };
 
-const NOT_FOUND: RegistrationPageState = { kind: "not_found" };
+/** {@link RegistrationPageState} with what the submit route (`POST /r/:slug`) needs besides the form: the id of the
+ * event and the questions as they are stored. The submit route and the page decide from the same read, so a form that
+ * is not shown cannot be submitted. */
+export type ResolvedRegistration =
+  | { kind: "not_found" }
+  | { kind: "closed"; page: ClosedFormModel }
+  | { kind: "open"; form: RegistrationFormModel; eventId: string; fields: readonly RegistrantFormField[] };
+
+const NOT_FOUND: ResolvedRegistration = { kind: "not_found" };
 
 const EVENT_SELECT = {
   id: true,
@@ -253,7 +261,7 @@ async function loadOpenForm(
   settings: SettingsRow,
   mode: RegistrationFormModel["mode"],
   event: FormEvent,
-): Promise<RegistrationPageState> {
+): Promise<ResolvedRegistration> {
   const [availability, keys, legal, fields, contact] = await Promise.all([
     resolveAccessMethodAvailability(db),
     resolveTurnstileKeys(db),
@@ -267,6 +275,8 @@ async function loadOpenForm(
   if (!link?.available || keys.state !== "ready" || !paths || !questions) return NOT_FOUND;
   return {
     kind: "open",
+    eventId: row.id,
+    fields,
     form: {
       event,
       mode,
@@ -297,7 +307,7 @@ function registrationMode(settings: SettingsRow | null | undefined): Registratio
  *   administrator allowed it), every text the event's registration needs is published and every
  *   required question can be drawn; else `not_found`, as if registration were off.
  */
-export async function loadRegistrationPage(db: PrismaClient, slug: string, now: Date): Promise<RegistrationPageState> {
+export async function resolveRegistration(db: PrismaClient, slug: string, now: Date): Promise<ResolvedRegistration> {
   if (!EVENT_SLUG.test(slug)) return NOT_FOUND;
   const row = await findEvent(db, slug);
   const settings = row?.registration_settings;
@@ -317,4 +327,10 @@ export async function loadRegistrationPage(db: PrismaClient, slug: string, now: 
     return { kind: "closed", page: { event, contact: await loadContact(db, row.id) } };
   }
   return loadOpenForm(db, row, settings, mode, event);
+}
+
+/** {@link resolveRegistration}, as far as the page needs it. */
+export async function loadRegistrationPage(db: PrismaClient, slug: string, now: Date): Promise<RegistrationPageState> {
+  const state = await resolveRegistration(db, slug, now);
+  return state.kind === "open" ? { kind: "open", form: state.form } : state;
 }
