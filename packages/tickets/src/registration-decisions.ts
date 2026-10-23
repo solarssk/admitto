@@ -112,7 +112,7 @@ function sortRequested(ids: readonly string[], rows: Map<string, LockedRegistrat
   return sorted;
 }
 
-/** Deletes registrations whose address an attendee holds (with their mail), and records it (ids and a count). */
+/** Deletes registrations whose address an attendee holds (with their mail), and records it (ids and a count) in the event's log and in the central one. */
 async function deleteHeldRegistrations(
   tx: Prisma.TransactionClient,
   eventId: string,
@@ -121,12 +121,9 @@ async function deleteHeldRegistrations(
 ): Promise<void> {
   if (ids.length === 0) return;
   await tx.registration.deleteMany({ where: { event_id: eventId, id: { in: [...ids] } } });
-  await writeBulkActionLog(tx, {
-    event_id: eventId,
-    action_type: "registrations_deleted",
-    audit: actor,
-    metadata: { count: ids.length, registration_ids: [...ids], reason: "already_attendee" },
-  });
+  const metadata = { count: ids.length, registration_ids: [...ids], reason: "already_attendee" };
+  await writeBulkActionLog(tx, { event_id: eventId, action_type: "registrations_deleted", audit: actor, metadata });
+  await writeStaffRegistrationAudit(tx, { eventId, actor, actionType: "registrations_deleted", metadata });
 }
 
 /** Creates the attendees of the candidates and links their registrations; the ones whose address was taken meanwhile are `held`. */

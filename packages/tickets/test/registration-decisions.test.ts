@@ -309,6 +309,12 @@ describe("admitRegistrations: an address that is an attendee already, or was era
       expect(logs).toHaveLength(1);
       expect(logs[0]).toMatchObject({ action_type: "registrations_deleted", actor_user_id: actor.operator });
       expect(logs[0]?.metadata).toEqual({ count: 1, registration_ids: [registration.id], reason: "already_attendee" });
+      // The central log has the deletion too, and no acceptance: nobody was accepted.
+      const deleted = await centralOf(eventId, "registrations_deleted");
+      expect(deleted).toHaveLength(1);
+      expect(deleted[0]).toMatchObject({ actor_user_id: actor.operator });
+      expect(deleted[0]?.metadata).toMatchObject({ event_id: eventId, count: 1, registration_ids: [registration.id], reason: "already_attendee" });
+      expect(await centralOf(eventId, "registration_accepted")).toEqual([]);
     },
   );
 
@@ -326,6 +332,13 @@ describe("admitRegistrations: an address that is an attendee already, or was era
     expect(await db.registration.findUnique({ where: { id: duplicate.id } })).toBeNull();
     expect(await db.registrationMail.count({ where: { registration_id: duplicate.id } })).toBe(0);
     expect(await statusOf(fine.id)).toBe("accepted");
+    // Each in the central log: the acceptance of one, and the deletion of the other.
+    const accepted = await centralOf(eventId, "registration_accepted");
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]?.metadata).toMatchObject({ count: 1, registration_ids: [fine.id] });
+    const deleted = await centralOf(eventId, "registrations_deleted");
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]?.metadata).toMatchObject({ count: 1, registration_ids: [duplicate.id], reason: "already_attendee" });
   });
 
   it("treats an address that an uncommitted edit of an attendee takes meanwhile as held: the registration is deleted and no seat is used", async () => {
