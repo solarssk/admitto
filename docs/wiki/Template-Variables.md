@@ -51,7 +51,7 @@ Emails sent to a guest who registered through the event form (confirm your email
 
 | Variable | Shows |
 |----------|-------|
-| `confirm_url` | The link the guest opens to confirm their email address. It has a value only in the confirm-your-email message, and that message must contain it: saving it without `{{confirm_url}}` in the body fails with "Missing required placeholder: confirm_url" |
+| `confirm_url` | The link the guest opens to confirm their email address. It opens a page with a button, and the guest confirms by selecting it. It has a value only in the confirm-your-email message, and that message must contain it: saving it without `{{confirm_url}}` in the body fails with "Missing required placeholder: confirm_url" |
 | `contact_name`, `contact_email` | The person the guest can write to. It is the first event contact that has an email, or else the organisation's support contact. Both are empty when neither exists |
 | `contact_line` | A full sentence with that contact, for example "Questions? Contact Ann at ann@example.com.". It is empty when there is no contact |
 

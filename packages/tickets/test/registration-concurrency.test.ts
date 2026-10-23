@@ -14,9 +14,15 @@ import { acquireEventCapacityLock, EventLockBusyError, runEventCapacityTransacti
 import { countSeatsInUse } from "../src/event-seats.js";
 import { eraseAttendees } from "../src/erase-attendees.js";
 import { type PublicWriteOptions } from "../src/public-write-gate.js";
-import { admitRegistrations } from "../src/registration-decisions.js";
+import { admitRegistrations, rejectRegistrations } from "../src/registration-decisions.js";
 import { lockRegistrationQueue } from "../src/registration-lock.js";
-import { confirmRegistrationAddress, placeRegistration, type RegistrantSubmission } from "../src/registration-placement.js";
+import {
+  CONFIRMATION_RESEND_COOLDOWN_MS,
+  confirmRegistrationAddress,
+  placeRegistration,
+  type PlacementOptions,
+  type RegistrantSubmission,
+} from "../src/registration-placement.js";
 import {
   createMigratedDb,
   fixtures,
@@ -49,7 +55,7 @@ const actor = { operator: "staff-user-1" };
 const admit = (eventId: string, ids: string[], client = db) => admitRegistrations(client, { eventId, ids, actor });
 /** A guest's write that may wait as long as a test needs, unless the test is about how long it waits. */
 const patient: PublicWriteOptions = { retryMs: 20_000, permitWaitMs: 20_000 };
-const place = (eventId: string, registrant: RegistrantSubmission, options: PublicWriteOptions = patient, client = db) =>
+const place = (eventId: string, registrant: RegistrantSubmission, options: PlacementOptions = patient, client = db) =>
   placeRegistration(client, { eventId, method: "link", registrant }, options);
 const noPrepare = () => Promise.resolve();
 
@@ -300,6 +306,46 @@ describe("runEventCapacityTransaction with tryLock, and the try of the lock", ()
     expect(await make.counts(eventId)).toMatchObject({ registrations: 0, mails: 0 });
   });
 
+  it("judges the link of an address by the clock at the time the confirmation holds the locks: a link that runs out while it waits is expired", async () => {
+    const eventId = await make.event({ date: new Date("2027-06-01T12:00:00Z"), verify: true });
+    // The link runs out one minute after the call began.
+    const waiting = await make.registration(eventId, { status: "awaiting_email", expiresAt: new Date("2027-03-10T10:01:00Z") });
+    const holder = holdTransaction(migrated.connection(), (tx) => acquireEventCapacityLock(tx, eventId));
+    await holder.started;
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2027-03-10T10:00:00Z") });
+    try {
+      const confirming = confirmRegistrationAddress(db, { eventId, registrationId: waiting.id });
+      await delay(300);
+      vi.setSystemTime(new Date("2027-03-10T10:02:00Z"));
+      await holder.commit();
+
+      expect(await confirming).toEqual({ outcome: "expired" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await make.counts(eventId)).toMatchObject({ attendees: 0, mails: 0 });
+    expect((await db.registration.findUnique({ where: { id: waiting.id } }))?.status).toBe("awaiting_email");
+  });
+
+  it("judges whether the event is over for a confirmation by the clock at the time it holds the locks", async () => {
+    const eventId = await make.event({ date: new Date("2027-03-10T12:00:00Z"), verify: true });
+    const waiting = await make.registration(eventId, { status: "awaiting_email", expiresAt: new Date("2027-03-20T10:00:00Z") });
+    const holder = holdTransaction(migrated.connection(), (tx) => acquireEventCapacityLock(tx, eventId));
+    await holder.started;
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2027-03-10T10:00:00Z") });
+    try {
+      const confirming = confirmRegistrationAddress(db, { eventId, registrationId: waiting.id });
+      await delay(300);
+      vi.setSystemTime(new Date("2027-03-11T10:00:00Z"));
+      await holder.commit();
+
+      expect(await confirming).toEqual({ outcome: "closed" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await make.counts(eventId)).toMatchObject({ attendees: 0, mails: 0 });
+  });
+
   it("throws EventLockBusyError at once when the lock is held, runs no work and keeps nothing: the connection is free again", async () => {
     const eventId = await make.event();
     const holder = holdTransaction(migrated.connection(), (tx) => acquireEventCapacityLock(tx, eventId));
@@ -527,5 +573,161 @@ describe("guests who bring a companion race for the last seats", () => {
     expect(results.map((result) => (result.outcome === "placed" ? result.status : result.outcome)).sort()).toEqual(["accepted", "waitlist"]);
     expect(await countSeatsInUse(db, eventId)).toBe(2);
     expect(await db.attendeeCompanion.count({ where: { attendee: { event_id: eventId } } })).toBe(1);
+  });
+});
+
+describe("the confirmation of an address and the re-send of its link, racing (D-C5)", () => {
+  /** A registration that waits for its address, made the way a submission makes it. */
+  async function awaiting(options: Parameters<typeof make.event>[0] = {}) {
+    const eventId = await make.event(options);
+    const registrant = make.registrant();
+    await place(eventId, registrant);
+    const row = (await make.registrationByEmail(eventId, registrant.email))!;
+    return { eventId, registrant, row };
+  }
+  const confirm = (eventId: string, registrationId: string, options: PlacementOptions = patient, client = db) =>
+    confirmRegistrationAddress(client, { eventId, registrationId }, options);
+  /** The mail was sent long ago: a second submission may mail the link again. */
+  const sentLongAgo = (registrationId: string) =>
+    db.registrationMail.updateMany({
+      where: { registration_id: registrationId },
+      data: { status: "sent", attempts: 1, queued_at: new Date(Date.now() - 2 * CONFIRMATION_RESEND_COOLDOWN_MS) },
+    });
+  const queuedAt = async (registrationId: string) =>
+    (await db.registrationMail.findFirstOrThrow({ where: { registration_id: registrationId, template_name: "registration-confirm" } })).queued_at.getTime();
+
+  it("places the guest once when the link is followed several times at the same time (the double click)", async () => {
+    const { eventId, row } = await awaiting({ capacity: 5 });
+
+    const answers = await Promise.all(Array.from({ length: 5 }, () => confirm(eventId, row.id)));
+
+    expect(answers.filter((answer) => answer.outcome === "placed")).toEqual([{ outcome: "placed", status: "accepted" }]);
+    expect(answers.filter((answer) => answer.outcome === "already_placed")).toEqual(
+      Array.from({ length: 4 }, () => ({ outcome: "already_placed", status: "accepted" })),
+    );
+    expect(await db.attendee.count({ where: { event_id: eventId } })).toBe(1);
+    expect(await make.templatesOf(row.id)).toEqual(["registration-confirm", "ticket"]);
+    expect(await db.attendeeActionLog.count({ where: { event_id: eventId, action_type: "registration_accepted" } })).toBe(1);
+  });
+
+  it("answers busy while an import holds the capacity lock, writes nothing and keeps the link valid", async () => {
+    const { eventId, row } = await awaiting();
+    const importing = holdTransaction(migrated.connection(), (tx) => acquireEventCapacityLock(tx, eventId));
+    await importing.started;
+    const before = { row: await db.registration.findUnique({ where: { id: row.id } }), counts: await make.counts(eventId) };
+
+    expect(await confirm(eventId, row.id, { retryMs: 250, pauseMs: [20, 40] })).toEqual({ outcome: "busy" });
+
+    expect(await lockWaiters(db)).toBe(0);
+    expect(await db.registration.findUnique({ where: { id: row.id } })).toEqual(before.row);
+    expect(await make.counts(eventId)).toEqual(before.counts);
+    await importing.commit();
+    expect(await confirm(eventId, row.id)).toEqual({ outcome: "placed", status: "accepted" });
+  });
+
+  it("puts the guest on the waiting list when the import that held the lock took the last seat meanwhile", async () => {
+    const { eventId, row } = await awaiting({ capacity: 1 });
+    const importing = holdTransaction(migrated.connection(), async (tx) => {
+      await acquireEventCapacityLock(tx, eventId);
+      return takeASeat(tx, eventId, 1);
+    });
+    expect(await importing.started).toBe("created");
+
+    const confirming = confirm(eventId, row.id);
+    await delay(150);
+    await importing.commit();
+
+    expect(await confirming).toEqual({ outcome: "placed", status: "waitlist" });
+    expect(await db.attendee.count({ where: { event_id: eventId } })).toBe(1);
+  });
+
+  it("finds the registration of a person gone when their erasure committed first, and creates nobody", async () => {
+    const eventId = await make.event({ verify: true });
+    const person = await make.attendee(eventId, { email: make.address("person") });
+    const waiting = await make.registration(eventId, { status: "awaiting_email", email: person.email });
+    const erasing = holdTransaction(migrated.connection(), (tx) => eraseAttendees(tx, { eventId, attendeeIds: [person.id] }));
+    await erasing.started;
+
+    const confirming = confirm(eventId, waiting.id);
+    await delay(150);
+    await erasing.commit();
+
+    expect(await confirming).toEqual({ outcome: "gone" });
+    expect(await db.registration.count({ where: { event_id: eventId } })).toBe(0);
+    expect(await db.attendee.count({ where: { event_id: eventId, erased_at: null } })).toBe(0);
+    expect(await db.registrationMail.count({ where: { event_id: eventId } })).toBe(0);
+  });
+
+  it("mails the link again once when the same address is submitted several times at the same time, after the cooldown", async () => {
+    const { eventId, registrant, row } = await awaiting();
+    await sentLongAgo(row.id);
+    const before = await queuedAt(row.id);
+    const asked = vi.fn(async () => true);
+
+    const answers = await Promise.all(
+      Array.from({ length: 4 }, () => place(eventId, registrant, { ...patient, mail: { addressAllowed: asked } })),
+    );
+
+    expect(answers).toEqual(Array.from({ length: 4 }, () => RECEIVED));
+    expect(asked).toHaveBeenCalledTimes(1);
+    expect(await queuedAt(row.id)).toBeGreaterThan(before);
+    expect(await db.registrationMail.count({ where: { registration_id: row.id } })).toBe(1);
+    expect(await db.registration.count({ where: { event_id: eventId } })).toBe(1);
+  });
+
+  it("puts the link back in the queue before a confirmation that waits for it, which then places the guest", async () => {
+    const { eventId, registrant, row } = await awaiting({ mode: "approval" });
+    await sentLongAgo(row.id);
+    const before = await queuedAt(row.id);
+    const paused = pauseAfterSeatCount(migrated.connection(), eventId);
+    const resending = place(eventId, registrant, patient, paused.client);
+    await paused.reached;
+
+    const confirming = confirm(eventId, row.id);
+    // A guest's write tries for the locks and pauses between tries, so no transaction waits for the lock to be seen.
+    await delay(150);
+    paused.release();
+
+    expect(await resending).toEqual(RECEIVED);
+    expect(await confirming).toEqual({ outcome: "placed", status: "pending" });
+    // The mail of the re-send is still in the queue, and the worker cancels it: the registration no longer waits.
+    expect(await queuedAt(row.id)).toBeGreaterThan(before);
+    expect(await make.templatesOf(row.id)).toEqual(["registration-confirm"]);
+  });
+
+  it("sends no mail again to a guest who confirmed first: the registration no longer waits", async () => {
+    const { eventId, registrant, row } = await awaiting({ mode: "approval" });
+    await sentLongAgo(row.id);
+    const before = await queuedAt(row.id);
+    const paused = pauseAfterSeatCount(migrated.connection(), eventId);
+    const confirming = confirm(eventId, row.id, patient, paused.client);
+    await paused.reached;
+
+    const resending = place(eventId, registrant, patient);
+    await delay(150);
+    paused.release();
+
+    expect(await confirming).toEqual({ outcome: "placed", status: "pending" });
+    expect(await resending).toEqual(RECEIVED);
+    expect(await queuedAt(row.id)).toBe(before);
+  });
+
+  it("lets a rejection that waits for a confirmation see the guest it placed, and a rejection that came first change nothing", async () => {
+    const { eventId, row } = await awaiting({ mode: "approval" });
+    // A decision on a registration that waits for its address changes nothing.
+    expect(await rejectRegistrations(db, { eventId, ids: [row.id], actor })).toEqual({ outcomes: [{ id: row.id, outcome: "awaiting_email" }] });
+    expect(await confirm(eventId, row.id)).toEqual({ outcome: "placed", status: "pending" });
+
+    const second = await awaiting({ mode: "approval" });
+    const paused = pauseAfterSeatCount(migrated.connection(), second.eventId);
+    const confirming = confirm(second.eventId, second.row.id, patient, paused.client);
+    await paused.reached;
+    const rejecting = rejectRegistrations(db, { eventId: second.eventId, ids: [second.row.id], actor });
+    await waitUntilWaitingForRegistrationQueue(db, second.eventId);
+    paused.release();
+
+    expect(await confirming).toEqual({ outcome: "placed", status: "pending" });
+    expect(await rejecting).toEqual({ outcomes: [{ id: second.row.id, outcome: "rejected" }] });
+    expect((await db.registration.findUniqueOrThrow({ where: { id: second.row.id } })).status).toBe("rejected");
   });
 });

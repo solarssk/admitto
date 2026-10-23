@@ -115,3 +115,58 @@ export async function enqueueMailsForMoment(
     registrationIds.map((registrationId) => ({ registrationId, eventId, template })),
   );
 }
+
+/**
+ * The columns that put a mail row back in the queue as a new revision: `queued_at` is the revision that a send in
+ * progress checks before it writes its result (`writeMailResult` in `@admitto/mail-delivery`), so the result of an
+ * earlier send cannot overwrite this, and the attempts count from zero. A member of staff sending a failed mail again
+ * (`retryRegistrationMails`) and a guest sending the form again (`requeueMailForMoment`) reset a row this way, and only
+ * this way. `provider_message_id` stays, as it names the earlier send.
+ */
+export function queuedAgain(now: Date): Prisma.RegistrationMailUpdateManyMutationInput {
+  return {
+    status: "queued",
+    attempts: 0,
+    retryable: null,
+    queued_at: now,
+    attempted_at: null,
+    sent_at: null,
+    error_code: null,
+    error: null,
+  };
+}
+
+/**
+ * Mails a registration the mail of a moment once more (a guest sends the form again, D-C5), but only a mail that still
+ * fits the registration as it is now (`registrationMailMisfit`, the rule the worker's last check and the staff's retry
+ * ask too): a confirmation for a registration that waits for its address and whose link has not run out. A mail that
+ * the worker would cancel is not queued. The row that exists is put back in the queue (`queuedAgain`) instead of a
+ * second one being added, which the unique key forbids, so the mail is the same one and a link in it is the same link.
+ * When there is no row yet (the first mail was withheld by a budget), one is queued. `allow` decides, with the row as
+ * it is now (null when there is none), whether to mail at all: the caller's cooldown and budgets. The caller holds the
+ * registration queue, so nothing changes the row between the decision and the write. Says whether the mail was queued.
+ */
+export async function requeueMailForMoment(
+  tx: Prisma.TransactionClient,
+  entry: {
+    eventId: string;
+    registration: { id: string; status: string; confirm_expires_at: Date | null };
+    moment: RegistrationMailMoment;
+  },
+  now: Date,
+  allow: (last: { queued_at: Date } | null) => boolean | Promise<boolean>,
+): Promise<boolean> {
+  const template = registrationMailFor(entry.moment);
+  if (template === null || registrationMailMisfit(template, entry.registration, now.getTime()) !== null) return false;
+  const last = await tx.registrationMail.findUnique({
+    where: { registration_id_template_name: { registration_id: entry.registration.id, template_name: template } },
+    select: { id: true, queued_at: true },
+  });
+  if (!(await allow(last))) return false;
+  if (last) {
+    await tx.registrationMail.update({ where: { id: last.id }, data: queuedAgain(now) });
+  } else {
+    await enqueueRegistrationMail(tx, { registrationId: entry.registration.id, eventId: entry.eventId, template });
+  }
+  return true;
+}

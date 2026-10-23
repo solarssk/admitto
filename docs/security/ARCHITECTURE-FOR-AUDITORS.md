@@ -119,9 +119,10 @@ The table below lists every event that causes Admitto to do something. It is for
 | Wallet status sync interval | Automatic - the worker | Read registration status from the wallet provider | Admitto's wallet status and "added to wallet" figures stay current |
 | Export attendees / reports | Staff | Query the database, render CSV/XLSX/PDF | File download; no data leaves the customer's own instance |
 | A guest sends the registration form (`POST /r/<event>`, only for an event with registration on) | Guest, anonymous | Check the bot challenge, judge the fields, then store the registration and queue its mail in one transaction; the request itself sends no mail | A registration (waiting for its address, for a decision, on the waiting list, accepted or rejected) and one queued mail. The worker sends the mail, and a guest who is accepted gets an attendee row. The guest is told the same whether the address was new or known |
+| A guest follows the link in the confirmation mail, then selects its button (`GET` and `POST /r/<event>/confirm/<token>`) | Guest, anonymous | Check the signature of the link. The page changes nothing. The button moves the registration out of "waiting for its address", creates an attendee for an automatic event with a seat, and queues the mail that goes with it in the same transaction | The registration is accepted, waits for the organisers or goes on the waiting list. A second click changes nothing |
 
 - There is currently **no date-triggered automation of attendee-facing messages**. Examples are an automatic reminder email sent N days before an event, or an automatic waitlist promotion.
-- Every attendee-facing action above is a direct staff action, an immediate side effect of one, or the direct result of a guest sending the registration form.
+- Every attendee-facing action above is a direct staff action, an immediate side effect of one, or the direct result of a guest sending the registration form or following the link in its confirmation mail.
 - The one date-driven job is wallet pass expiry. When an event's **Pass expiration** is set to expire when the event ends, the worker marks its passes Expired once the event is over, without contacting the wallet provider.
 
 ---
@@ -136,6 +137,7 @@ The table below lists every event that causes Admitto to do something. It is for
 | Superadmin OIDC config | Authenticated superadmin only | Outbound fetch SSRF guards + rate limits on discover/test |
 | Wallet provider webhook | Internet (provider servers) | Signature verified against the provider's public key before any write; per-event and per-IP throttling; failures return no detail |
 | Guest registration form (`/r/<event>`) | Internet, and only for an event that has registration on; every other address gets the one 404 | Cloudflare Turnstile token on every submit, single use; per-IP, per-event and per-address limits; one answer for every address, so the form does not say who is registered; the mail is queued and sent by the worker, never from the request; see [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md#guest-registration-submit) |
+| Address confirmation link (`/r/<event>/confirm/<token>`) | Internet. A link that is not signed for its registration gets the one 404 | A signature the server makes, compared in constant time and checked before anything is read; opening the page changes nothing and only its button posts; cross-site check and per-IP limit on the post; the link is worth 24 hours; see [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md#address-confirmation) |
 | Database | Internal network | Not published to internet |
 | Container image | Pulled by customer | Multi-arch image with attestations and signed release SBOMs (details under the table) |
 | Ops probes | Often internal/monitoring | `/healthz` rate-limited liveness; `/readyz` token-gated readiness |

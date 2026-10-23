@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { renderConfirmPage } from "../../src/registration/confirm-page.js";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
 import { REGISTRATION_FORM_SCRIPT } from "../../src/registration/form-script.js";
 import {
@@ -21,7 +22,7 @@ import {
   renderGeneratedModule,
   writeGuestPageCss,
 } from "../../src/scripts/guest-page-css.js";
-import { closedModel, documentOf, formModel, panelModel, type Dom } from "../helpers/registration-form-fixtures.js";
+import { CONFIRM_SCREENS, closedModel, documentOf, formModel, panelModel, type Dom } from "../helpers/registration-form-fixtures.js";
 
 const readFromProduct = (relativePath: string) => readProductStyle(productStylesRoot(), relativePath);
 
@@ -87,6 +88,8 @@ describe("every class of the product the pages use has its rules in the styleshe
     // The form with panels, icons and a list of suggestions: the classes of the product's searchable select too.
     renderRegistrationFormPage(panelModel(), { nonce: "bm9uY2U=" }),
     renderRegistrationClosedPage(closedModel()),
+    // The pages of the link that confirms an address: their badges and their button.
+    ...CONFIRM_SCREENS.map((screen) => renderConfirmPage(screen, { event: formModel().event, contact: formModel().contact })),
   ];
   const used = new Set<string>();
   for (const html of pages) {

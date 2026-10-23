@@ -38,6 +38,7 @@ import { placeRegistration, type PlaceRegistrationResult, type PublicWriteOption
 import {
   INLINE_RATE_LIMITS,
   checkRegistrationEventRateLimit,
+  checkRegistrationEventResendRateLimit,
   checkRegistrationMailRecipientRateLimit,
 } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
@@ -59,8 +60,8 @@ import {
  * floor and none for its own work. A first value, to be measured under load in the review of the whole release. */
 export const ANSWER_FLOOR_MS = 250;
 
-/** How long a guest is asked to wait after a 503, in seconds. */
-const RETRY_AFTER_SECONDS = "5";
+/** How long a guest is asked to wait after a 503, in seconds (the confirmation route asks the same). */
+export const RETRY_AFTER_SECONDS = "5";
 
 /** A line in the system log when an event's mail budget is spent, at most one an hour for an event, in this process:
  * the guests keep registering and nobody sees an error, so this is the one place an operator is told to raise
@@ -193,6 +194,7 @@ function placeSubmission(
       ...deps.placement,
       mail: {
         addressAllowed: () => checkRegistrationMailRecipientRateLimit(deps.store, registrant.email),
+        resendAllowed: (cap) => checkRegistrationEventResendRateLimit(deps.store, eventId, cap),
         event: { base: budget.max, windowMs: budget.windowMs },
         onWithheld: (reason) => {
           if (reason === "event") noteEventBudgetSpent(eventId);
@@ -276,7 +278,7 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
   return answerPlacement(c, placed, () => holdAnswer(pace, startedAt));
 }
 
-function prismaCode(error: unknown): string | undefined {
+export function prismaCode(error: unknown): string | undefined {
   return error instanceof Prisma.PrismaClientKnownRequestError ? error.code : undefined;
 }
 
