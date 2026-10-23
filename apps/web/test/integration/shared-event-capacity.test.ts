@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { commitImport, executeImportCommit, ImportCapacityExceededError } from "@admitto/import";
-import { admitRegistrations, eraseAttendees } from "@admitto/tickets";
+import { admitRegistrations, deleteRegistrations, eraseAttendees } from "@admitto/tickets";
 import { handleCreateEventAttendee, handlePatchEventAttendee } from "../../src/admin/attendees-api-routes.js";
 
 let db: PrismaClient;
@@ -277,6 +277,16 @@ describe("shared final event capacity (real migrated PostgreSQL)", () => {
     await db.$transaction((tx) => eraseAttendees(tx, { eventId, attendeeIds: [attendee.id] }));
     expect((await db.attendee.findUniqueOrThrow({ where: { id: attendee.id } })).status).toBe("cancelled");
     expect(await write("import")).toBe("created");
+  });
+  it("frees the place of an accepted registration that staff delete, for the next writer", async () => {
+    await write("registration");
+    const accepted = await db.registration.findFirstOrThrow({ where: { event_id: eventId, status: "accepted" } });
+    await db.$transaction((tx) =>
+      deleteRegistrations(tx, { eventId, target: { kind: "ids", ids: [accepted.id] }, actor: { operator: userId } }),
+    );
+    expect((await db.attendee.findFirstOrThrow({ where: { event_id: eventId } })).status).toBe("cancelled");
+    expect(await write("import")).toBe("created");
+    expect(await write("manual")).toBe("event_full");
   });
   it("allows an overwrite that consumes no additional place", async () => {
     await write("manual");
