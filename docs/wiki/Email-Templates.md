@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Prepare, preview, save, and test the message sent to attendees.
+Prepare, preview, save, and test the message sent to attendees, and the four emails a guest gets when they register through the event's form.
 
 ## Before you start
 
@@ -41,12 +41,49 @@ The saved template previews without errors. The test message shows your layout a
 
 Saving changes the source used for later previews, tests, initial sends, and resends for this event. Messages already sent are unchanged.
 
+Saving or reverting a registration email changes every one of its emails that is not sent yet. Emails already sent are unchanged.
+
+## Registration emails
+
+A guest who registers through the event's form gets up to four emails of their own, besides the ticket. They are at the end of the template picker, under your own templates. Each one runs on the built-in English text until you save your own.
+
+Guests cannot register through the form yet, so no one gets these emails yet. You can already read and change them here.
+
+| Email | Sent when |
+|-------|-----------|
+| Registration: confirm email | The guest has to confirm their email address first. The link in it works for 24 hours |
+| Registration: received | The registration waits for your decision, and the guest did not have to confirm the address first |
+| Registration: waiting list | The event is full and the registration goes on the waiting list |
+| Registration: declined | You decline a registration and choose to let the guest know |
+
+**Change one**
+
+1. Open **Communication**, then the **Templates** tab, and pick the email. The badge reads **Default template** while it runs on the built-in text.
+2. Edit the subject and the body as for any other template. The chips for the confirmation link and for the contact are in their own groups, **Confirmation** and **Contact**.
+3. Select **Save**, then **Continue**. The email now has a text of its own for this event, and the badge reads **Last edited**.
+4. In **Send test**, enter an approved address such as `docs.test@example.com` and select **Send test**. The button in a test email goes nowhere.
+
+**Go back to the built-in text**
+
+1. Pick the email and select **Revert to default**.
+2. Confirm. Your saved text is discarded, unsaved changes included, and the event uses the default text again.
+
+What is different from your other templates:
+
+- You cannot send them to attendees. They are not offered on the **Email** tab, and a bulk send of one is refused.
+- They are not listed in the **Delivery log**.
+- Their name, icon and description are fixed, so the pencil next to the picker is off.
+- The confirmation email must keep `{{confirm_url}}`. No registration email can use the ticket, QR, Wallet or ticket type variables. The editor flags them. See [Template Variables](Template-Variables).
+- A guest's name stays empty until the guest has confirmed the address or you have decided about the registration, so it is always empty in the confirmation email. Write a greeting that reads well without a name, as the built-in emails do ("Hello,").
+- Preview and **Send test** show your event's own contact in `{{contact_line}}`, or nothing when the event has no contact.
+
 ## Common problems
 
 | Problem | What it means and what to do |
 |---------|------------------------------|
 | **MJML or HTML validation failed** | Read the listed errors and use [Advanced Email Templates](Advanced-Email-Templates) |
-| **A variable is rejected** | Use an exact variable offered by the editor |
+| **A variable is rejected** | Use an exact variable offered by the editor. A registration email cannot use the ticket, QR, Wallet or ticket type variables, and only the confirmation email can use `{{confirm_url}}` |
+| **A registration email is not on the Email tab** | That is by design. A registration email answers one guest's registration and is never sent in bulk. Edit it on the **Templates** tab |
 | **The QR does not render** | Insert `qr_image_url` with the image chip and preview again |
 | **The Wallet badge does not open a pass when tested** | That is expected. Preview and Send test always show a placeholder link, by design, no matter how this event's Wallet is configured. Only a real message sent to an attendee uses the actual link. See [Template Variables](Template-Variables) |
 | **Test send fails** | Check template validation first, then ask a Superadmin to review the effective mail transport |
