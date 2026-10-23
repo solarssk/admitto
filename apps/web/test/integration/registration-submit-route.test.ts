@@ -382,6 +382,39 @@ describe("a form that is not open answers the one 404 of the registration routes
     }
   });
 
+  it("is also the answer when the form is closed while the challenge is being checked, and nothing is stored", async () => {
+    const slug = nextSlug("closing");
+    const eventId = await seeder.addEvent(slug);
+    const h = harness({ prisma, whileChallenged: () => seeder.setSystemKeys(false) });
+    const unknown = await signature(await h.post("reg95c-closing-no-such-event", h.body("reg95c-closing-no-such-event")));
+    try {
+      expect(await signature(await h.post(slug, h.body(slug)))).toEqual(unknown);
+    } finally {
+      await seeder.setSystemKeys(true);
+    }
+    expect(h.cf.mock).toHaveBeenCalledTimes(1);
+    expect(await prisma.registration.count({ where: { event_id: eventId } })).toBe(0);
+    expect(await prisma.registrationMail.count({ where: { event_id: eventId } })).toBe(0);
+  });
+
+  it("judges the fields by what the form asks after the challenge, not by what it asked before it", async () => {
+    const slug = nextSlug("asks-more");
+    const eventId = await seeder.addEvent(slug);
+    const h = harness({
+      prisma,
+      whileChallenged: async () => {
+        await prisma.eventCustomField.create({
+          data: { event_id: eventId, source_field: "late_question", label: "Late question", type: "text", required: true, show_on_form: true },
+        });
+      },
+    });
+
+    const res = await h.post(slug, h.body(slug));
+
+    expect(res.status).toBe(422);
+    expect(await prisma.registration.count({ where: { event_id: eventId } })).toBe(0);
+  });
+
   it("answers an event that is still open after the keys are back", async () => {
     const slug = nextSlug("keys-back");
     await seeder.addEvent(slug, { settings: { verify_email: false } });

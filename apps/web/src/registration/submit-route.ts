@@ -14,8 +14,12 @@
  *    and a request tells a stranger no more about an event than the page does.
  * 4. The Cloudflare Turnstile token is checked (it is single use: the page asks for a new one after every answer).
  * 5. The per-event ceiling, keyed by event id: only now, so a stranger without a token cannot spend it.
- * 6. The fields are judged (422 with a fixed sentence for each) and the terms must be accepted.
- * 7. Only now the database is written, in `placeRegistration`, and the mail is queued in the same transaction. The mail
+ * 6. The event is looked up once more. The challenge is a call over the network, and an administrator may have closed the
+ *    form meanwhile (a text unpublished, the keys removed, the way in switched off) or changed its questions: a form that
+ *    is not open now is the same 404, and the fields are judged by what the form asks now. What `placeRegistration`
+ *    rechecks itself, under its locks, is the mode, the archive and the end of the event.
+ * 7. The fields are judged (422 with a fixed sentence for each) and the terms must be accepted.
+ * 8. Only now the database is written, in `placeRegistration`, and the mail is queued in the same transaction. The mail
  *    of a new registration is withheld, not the registration, when the address or the event has spent its budget.
  *
  * What the guest is told does not depend on the address (D-B14). A new address, an address that has a registration in any
@@ -238,7 +242,8 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
   const envelope = await readBody(c);
   if (envelope instanceof Response) return envelope;
 
-  const target = await resolveRegistration(deps.db, c.req.param("slug") ?? "", now);
+  const slug = c.req.param("slug") ?? "";
+  const target = await resolveRegistration(deps.db, slug, now);
   if (target.kind !== "open") return respondRegistrationNotFound(c);
 
   const refusal = await refuseChallenge(c, deps, target.form.event.slug, envelope.challenge);
@@ -249,14 +254,27 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
     return json(c, { error: "too many requests" }, 429);
   }
 
+  // The second look (step 6 of the head of this file): the same lookup as the first, so that the form the guest is judged
+  // against, and written for, is the one that is open now and not the one that was open before the challenge.
+  const open = await resolveRegistration(deps.db, slug, now);
+  if (open.kind !== "open") return respondRegistrationNotFound(c);
+
   // PR 111: the shared password of an event whose way in is the password is checked here, after the challenge and
   // before any work that depends on the address, and a wrong one is one answer whoever the address is.
 
-  const checked = checkSubmission(envelope, rulesOf(target, now));
+  const checked = checkSubmission(envelope, rulesOf(open, now));
   if (checked.kind === "malformed") return malformed(c);
   if (checked.kind === "invalid") return invalid(c, checked.errors);
 
-  const placed = await placeSubmission(deps, target.eventId, checked.registrant, now);
+  let placed: PlaceRegistrationResult;
+  try {
+    placed = await placeSubmission(deps, open.eventId, checked.registrant, now);
+  } catch (error) {
+    if (prismaCode(error) !== "P2002") throw error;
+    // The address got a registration while this request ran: the guest is told what a known address is told, and after
+    // the same wait, as the work of a new address is the one thing the wait is there to hide.
+    placed = { outcome: "received" };
+  }
   return answerPlacement(c, placed, () => holdAnswer(pace, startedAt));
 }
 
@@ -270,8 +288,6 @@ function answerFailure(c: Context, error: unknown): Response {
   const code = prismaCode(error);
   // The event was deleted while the request ran (SEC-08, ERA-14): as if it had never been there.
   if (code === "P2003") return respondRegistrationNotFound(c);
-  // The address got a registration while this request ran: the guest is told what a known address is told.
-  if (code === "P2002") return received(c);
   console.error("registration submit failed:", { reason: error instanceof Error ? error.name : "unknown", code });
   recordSystemLog({ level: "error", source: "api", message: "registration_submit_failed", fields: { route: "/r/:slug" } });
   return json(c, { error: "internal_error" }, 500);

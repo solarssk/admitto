@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
-import { eventSeeder, harness, signature } from "../helpers/registration-submit-harness.js";
+import { eventSeeder, harness, recordingPace, signature } from "../helpers/registration-submit-harness.js";
 
 const ORG = "org-reg95c-failures";
 
@@ -139,6 +139,18 @@ describe("an event that goes while the request runs, and an address that is take
 
     expect(await signature(res)).toEqual(unknown);
     expectNothingIdentifying(written());
+  });
+
+  it("holds that answer for the same floor as every other 'received', for the work of a new address is what the wait hides (P2002)", async () => {
+    const slug = nextSlug("taken-floor");
+    await seeder.addEvent(slug, { settings: { verify_email: true } });
+    const { pace, sleep } = recordingPace(250);
+    const h = harness({ prisma: failing(prisma, { transaction: known("P2002") }), pace });
+
+    const res = await h.post(slug, h.body(slug, { email: ADDRESS, first_name: NAME, last_name: SURNAME }));
+
+    expect(res.status).toBe(200);
+    expect(sleep.mock.calls).toEqual([[250]]);
   });
 
   it("answers what a known address is told when the database says the address is taken (P2002)", async () => {

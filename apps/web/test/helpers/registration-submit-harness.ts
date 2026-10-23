@@ -124,8 +124,10 @@ export function eventSeeder(prisma: PrismaClient, orgId: string) {
  * Cloudflare's siteverify as the route sees it. A token is `<kind>:<slug>:<n>`: `ok` passes once, as a real token does
  * (a second use is `timeout-or-duplicate`), `host` was solved on another host, `bound` was made for another event,
  * `refused` is a token Cloudflare turns down, `down` is a network failure, `broken` is an answer that is no JSON.
+ * `whileChecking` runs while an `ok` token is being checked, before the answer: what an administrator can do during
+ * the call over the network.
  */
-export function cloudflare() {
+export function cloudflare(whileChecking: () => Promise<void> = async () => {}) {
   const used = new Set<string>();
   let counter = 0;
   const fetchStub = vi.fn(async (_input: string | URL, init?: RequestInit): Promise<Response> => {
@@ -140,6 +142,7 @@ export function cloudflare() {
     used.add(token);
     if (kind === "host") return answer({ success: true, hostname: "evil.example", cdata: `reg-${slug}` });
     if (kind === "bound") return answer({ success: true, hostname: HOST, cdata: "reg-another-event" });
+    await whileChecking();
     return answer({ success: true, hostname: HOST, cdata: `reg-${slug}` });
   });
   return {
@@ -182,11 +185,13 @@ export type HarnessOptions = {
    * route's own, real one. */
   pace?: AnswerPace | "real";
   placement?: PublicWriteOptions;
+  /** Runs while the challenge of a request is being checked, before Cloudflare answers. */
+  whileChallenged?: () => Promise<void>;
 };
 
 /** The app with the route's test injection points filled, and a way to post to it as the page does. */
 export function harness(options: HarnessOptions) {
-  const cf = cloudflare();
+  const cf = cloudflare(options.whileChallenged);
   const store = options.store ?? new SelectiveStore();
   const app = createApp({
     prisma: options.prisma,
