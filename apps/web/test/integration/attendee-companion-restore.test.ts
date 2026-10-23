@@ -12,6 +12,8 @@ import { sessionCookieFor } from "../helpers/session-cookie.js";
  * Restoring an attendee to an active status (PATCH status "registered") takes a seat for the attendee and one for each
  * companion (D-B3, D-E5), checked under the capacity lock, and refused in places, not in heads, when they do not all fit.
  * An attendee without a companion is checked exactly as before. A superadmin may force the restore over the limit.
+ * The event answers with the seats in use, companions included, and erasing an attendee through the API frees or keeps
+ * their seats by the rule of the erasure and writes no name of the companion to the audit logs.
  */
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -202,5 +204,70 @@ describe("restoring an attendee who has no companion", () => {
     const guest = await attendee({ status: "revoked" });
     expect((await restore(guest.id)).status).toBe(200);
     expect(await seats()).toBe(3);
+  });
+});
+
+describe("the seats of an event with companions, through the API", () => {
+  const MARKER = "Zzyzx Companion Name";
+
+  async function eventSeats(): Promise<{ seats_in_use: number; active_attendee_count: number }> {
+    const res = await app.request(`/api/admin/events/${EVENT_ID}`, { headers: { Cookie: cookies.admin } });
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { event: { seats_in_use: number; active_attendee_count: number } }).event;
+  }
+
+  const erase = async (attendeeId: string): Promise<Response> =>
+    await app.request(`/api/admin/events/${EVENT_ID}/attendees/${attendeeId}/erase`, {
+      method: "POST",
+      headers: { Cookie: cookies.admin, ...sameOrigin, "Content-Type": "application/json" },
+    });
+
+  /** An attendee whose companion has a name worth searching the audit logs for. */
+  async function guestWithNamedCompanion(options: { admitted?: boolean } = {}) {
+    const guest = await attendee();
+    await prisma.attendeeCompanion.create({ data: { attendee_id: guest.id, slot: 1, name: MARKER, custom_data: { diet: MARKER } } });
+    if (options.admitted) await prisma.attendee.update({ where: { id: guest.id }, data: { admitted_at: new Date() } });
+    return guest;
+  }
+
+  it("counts a companion in the seats in use and not in the heads", async () => {
+    await attendee({ companion: true });
+    await attendee();
+
+    expect(await eventSeats()).toMatchObject({ seats_in_use: 3, active_attendee_count: 2 });
+  });
+
+  it("frees both seats when an erasure cancels the attendee, empties the companion, and names the companion in no audit log", async () => {
+    const guest = await guestWithNamedCompanion();
+    await attendee();
+    expect((await eventSeats()).seats_in_use).toBe(3);
+
+    const res = await erase(guest.id);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ erased: 1 });
+    expect(await statusOf(guest.id)).toBe("cancelled");
+    expect((await eventSeats()).seats_in_use).toBe(1);
+    expect(await prisma.attendeeCompanion.findFirstOrThrow({ where: { attendee_id: guest.id } })).toMatchObject({
+      name: "Erased companion",
+      custom_data: null,
+    });
+    const logs = [
+      ...(await prisma.attendeeActionLog.findMany({ where: { event_id: EVENT_ID } })),
+      ...(await prisma.adminAuditLog.findMany({ where: { organization_id: ORG_ID } })),
+    ];
+    expect(logs.length).toBeGreaterThan(0);
+    expect(JSON.stringify(logs)).not.toContain(MARKER);
+  });
+
+  it("keeps both seats when the attendee was admitted, and still empties the companion", async () => {
+    const guest = await guestWithNamedCompanion({ admitted: true });
+    expect((await eventSeats()).seats_in_use).toBe(2);
+
+    expect((await erase(guest.id)).status).toBe(200);
+
+    expect(await statusOf(guest.id)).toBe("registered");
+    expect((await eventSeats()).seats_in_use).toBe(2);
+    expect(await prisma.attendeeCompanion.findFirstOrThrow({ where: { attendee_id: guest.id } })).toMatchObject({ name: "Erased companion" });
   });
 });
