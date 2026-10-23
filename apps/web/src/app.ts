@@ -272,6 +272,11 @@ import {
   handleGetEventRegistration,
   handleListEventRegistrations,
 } from "./admin/registrations-api-routes.js";
+import {
+  handleAcceptEventRegistrations,
+  handleRejectEventRegistrations,
+  handleRetryEventRegistrationMails,
+} from "./admin/registration-decisions-routes.js";
 import { MAX_LEGAL_BODY_BYTES } from "./legal/legal-documents.js";
 import { loadPublishedLegalPage, respondLegalPage } from "./legal/legal-page.js";
 import { respondRegistrationNotFound } from "./registration-page-security.js";
@@ -2082,6 +2087,33 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/registrations/:id", staffAdminGate, (c) =>
     handleGetEventRegistration(c, db),
+  );
+  // Decisions on guest registrations: accept, reject, send a failed mail again. One registration is a list of one.
+  // The chain of the bulk attendee routes: CSRF, staff gate, body cap, the shared bulk-mutation budget, and the
+  // archived-event guard (an archived event is read-only: nothing is decided in it).
+  app.post(
+    "/api/admin/events/:eventId/registrations/accept",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    guardArchivedEvent((c) => handleAcceptEventRegistrations(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/registrations/reject",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    guardArchivedEvent((c) => handleRejectEventRegistrations(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/registrations/retry-mail",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    guardArchivedEvent((c) => handleRetryEventRegistrationMails(c, db)),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
