@@ -198,11 +198,11 @@ const ADMIN_SURFACES: {
     blocking: true,
   },
   {
-    // Not in the menu yet, so it is reached by its address. Its tabs are placeholders that read
-    // nothing from the API (the event itself is read by the page frame, as for every page).
+    // Not in the menu yet, so it is reached by its address. It opens on the Requests tab: the page of requests, and the numbers
+    // that the tab strip and the state filter show (the event itself is read by the page frame, as for every page).
     name: "admin-registration",
     path: (i) => `/admin/events/${i.event}/registration`,
-    data: () => [],
+    data: (i) => [`/api/admin/events/${i.event}/registrations`, `/api/admin/events/${i.event}/registrations/counts`],
     blocking: true,
   },
   {

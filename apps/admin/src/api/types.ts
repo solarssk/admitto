@@ -258,7 +258,14 @@ export interface CheckInStatsResponse {
 
 export type RsvpStatus = "none" | "confirmed" | "declined" | "tentative" | "cancelled";
 
-import type { AttendeeStatus, LegalDocumentKind } from "@admitto/db/status";
+import type {
+  AttendeeStatus,
+  EmailDeliveryStatus,
+  LegalDocumentKind,
+  RegistrationMailTemplateName,
+  RegistrationMode,
+  RegistrationStatus,
+} from "@admitto/db/status";
 import type { WalletPassApiFields } from "@admitto/db/wallet-pass-fields";
 
 /** See WalletPassApiFields - shared with apps/web's own mirror of this same wire shape
@@ -1470,6 +1477,63 @@ export interface SaveLegalDocumentBody {
   content_html: string;
 }
 
+/** The mail a request was last queued, as a row of the request list shows it (`last_mail`). */
+export interface RegistrationMailBriefDto {
+  template_name: RegistrationMailTemplateName;
+  status: EmailDeliveryStatus;
+  /** True while the worker still tries a failed mail again by itself. */
+  retryable: boolean | null;
+  /** True when staff may send it again. */
+  can_retry: boolean;
+}
+
+/** One guest's request to join an event (`GET /api/admin/events/:eventId/registrations`). Without the answers and the companions. */
+export interface RegistrationListItemDto {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  company: string | null;
+  department: string | null;
+  status: RegistrationStatus;
+  created_at: string;
+  /** The people the guest brings; each takes a seat. */
+  companions_count: number;
+  /** The mail queued last for this request; null when none was queued. */
+  last_mail: RegistrationMailBriefDto | null;
+}
+
+/** GET /api/admin/events/:eventId/registrations: one page of the requests, oldest first, and how many match in all. */
+export interface RegistrationListDto {
+  items: RegistrationListItemDto[];
+  /** The requests that match the filter, over all pages. */
+  total: number;
+  page: number;
+  pageSize: number;
+  /** The name of the requests a filter selects over all pages, which deleting by filter sends back; null without a filter, and for a filter that selects more than one deletion may take. */
+  selection_digest: string | null;
+}
+
+/** GET /api/admin/events/:eventId/registrations/counts: what the tab, its filter and the Overview show. */
+export interface RegistrationCountsDto {
+  /** The event's registration mode; null while registration is off. */
+  mode: RegistrationMode | null;
+  by_status: Record<RegistrationStatus, number>;
+  /** Requests that wait for a decision. The waiting list is counted apart. */
+  needs_decision: number;
+}
+
+/** What the request list is asked for; a left-out filter selects every request. */
+export interface RegistrationListParams {
+  status?: RegistrationStatus;
+  /** One of REGISTRATION_AGE_OPTIONS: only requests made more than this long ago. */
+  olderThan?: string;
+  /** Words of a name or an address. */
+  q?: string;
+  page: number;
+  pageSize: number;
+}
+
 export interface SaveMapsSettingsBody {
   enabled?: boolean;
   tileUrl?: string | null;
@@ -2136,6 +2200,8 @@ export interface EventOverviewDto {
     pinned_note: string | null;
   };
   attendee_count: number;
+  /** Seats the event holds, which is what its limit is compared with; `attendee_count` is the number of heads. */
+  seats_in_use: number;
   admitted_count: number;
   email_sent: number;
   email_failed: number;

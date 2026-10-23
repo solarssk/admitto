@@ -889,6 +889,8 @@ describe("GET /api/admin/events/:eventId/overview", () => {
         }),
       );
       expect(body.admitted_count).toBeLessThanOrEqual(body.attendee_count);
+      // A revoked attendee holds no seat either, and the overview says so with the same count the limit is checked with.
+      expect(body.seats_in_use).toBe(await countSeatsInUse(prisma, EVENT_MAIN));
     } finally {
       await prisma.attendee.update({
         where: { id: ATT_MAIN[0] },
@@ -968,6 +970,16 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     const body = (await res.json()) as EventOverviewResponse;
     expect(body.event.capacity).toBe(200);
     expect(body.attendee_count).toBe(150);
+  });
+
+  it("returns the seats the event holds beside the heads, counted as countSeatsInUse counts them", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CAP}/overview`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventOverviewResponse;
+    expect(body.seats_in_use).toBe(await countSeatsInUse(prisma, EVENT_CAP));
+    expect(body.seats_in_use).toBe(150);
   });
 
   it("returns archived_at for archived event", async () => {

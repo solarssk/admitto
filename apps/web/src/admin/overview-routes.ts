@@ -4,7 +4,12 @@ import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { enabledWalletPlatforms } from "@admitto/shared";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 import { activeAttendeeWhere } from "@admitto/tickets";
-import { countActiveAdmittedAttendees, countActiveAttendees, CAPACITY_EXCLUDED_STATUSES } from "./event-capacity.js";
+import {
+  countActiveAdmittedAttendees,
+  countActiveAttendees,
+  countSeatsInUse,
+  CAPACITY_EXCLUDED_STATUSES,
+} from "./event-capacity.js";
 import { loadRecentImportBatches } from "./import-api-routes.js";
 import { buildEverInstalledWalletFilter } from "./wallet-lifecycle-filter.js";
 
@@ -41,6 +46,8 @@ export interface EventOverviewResponse {
     pinned_note: string | null;
   };
   attendee_count: number;
+  /** Seats the event holds, which is what its limit is compared with; `attendee_count` stays the number of heads. */
+  seats_in_use: number;
   admitted_count: number;
   email_sent: number;
   email_failed: number;
@@ -411,6 +418,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
 
   const [
     activeAttendeeCount,
+    seatsInUse,
     activeAdmittedCount,
     deliveryStats,
     bouncedAttendeeCount,
@@ -424,6 +432,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     recentActivity,
   ] = await Promise.all([
     countActiveAttendees(db, eventId),
+    countSeatsInUse(db, eventId),
     countActiveAdmittedAttendees(db, eventId),
     db.emailDelivery.groupBy({
       by: ["status"],
@@ -512,6 +521,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       pinned_note: event.pinned_note,
     },
     attendee_count: activeAttendeeCount,
+    seats_in_use: seatsInUse,
     admitted_count: activeAdmittedCount,
     email_sent: emailSent,
     email_failed: emailFailed,

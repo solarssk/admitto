@@ -29,6 +29,7 @@ import type {
   EventContactDto,
   EventRecentActivityEntry,
   EventResourceDto,
+  RegistrationCountsDto,
   TicketTypeDto,
 } from "../api/types.js";
 import {
@@ -70,6 +71,8 @@ import { assertPresent } from "../utils/assert-present.js";
 import { OverviewKpiTile } from "../overview/OverviewKpiTile.js";
 import { OverviewSkeleton } from "../overview/OverviewSkeleton.js";
 import { PanelLoadError } from "../settings/PanelLoadError.js";
+import { registrationReadiness } from "../registration/registrationReadiness.js";
+import { useRegistrationCounts } from "../registration/useRegistrationCounts.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 /** The region the page, its placeholder and its error sit in: where the focus goes when a Retry that held it works. */
@@ -191,7 +194,11 @@ function ticketsSentReadiness(overview: EventOverviewDto): Pick<ReadinessItem, "
 
 // Extracted out of SetupChecklistCard (SonarCloud S3776: keeps the branching/pluralization logic
 // out of the component's own cognitive-complexity count, which the JSX below also contributes to).
-function buildReadinessItems(overview: EventOverviewDto, eventId: string): ReadinessItem[] {
+function buildReadinessItems(
+  overview: EventOverviewDto,
+  eventId: string,
+  registration: ReadinessItem | null,
+): ReadinessItem[] {
   const eventPath = `/admin/events/${eventId}`;
   const failed = overview.email_failed + overview.email_bounced;
   const ticketsSent = ticketsSentReadiness(overview);
@@ -213,6 +220,8 @@ function buildReadinessItems(overview: EventOverviewDto, eventId: string): Readi
     overview.requirements_count > 0 ? `${overview.requirements_count} configured.` : "None configured.";
 
   return [
+    // Only for an event that takes registrations: requests come before the attendees they become.
+    ...(registration ? [registration] : []),
     {
       label: "Attendees imported",
       status: overview.attendee_count > 0 ? "ok" : "warn",
@@ -272,11 +281,19 @@ function checklistTone(items: ReadinessItem[]): "ok" | "warn" | "error" {
 function SetupChecklistCard({
   overview,
   eventId,
+  registration,
 }: Readonly<{
   overview: EventOverviewDto;
   eventId: string;
+  /** The numbers of the event's guest requests; the "Registrations" row is there only while registration is on. */
+  registration: RegistrationCountsDto | null;
 }>) {
-  const items = buildReadinessItems(overview, eventId);
+  // The seats come with the overview, so a refresh of the page refreshes them: the layout's copy of the event is read once.
+  const registrationRow = registrationReadiness(registration, `/admin/events/${eventId}`, {
+    used: overview.seats_in_use,
+    capacity: overview.event.capacity,
+  });
+  const items = buildReadinessItems(overview, eventId, registrationRow);
   const okCount = items.filter((i) => i.status === "ok").length;
   const total = items.filter((i) => i.status !== "neutral").length;
   const tone = checklistTone(items);
@@ -1523,6 +1540,12 @@ function EventOverviewPageBody() {
   const overview = list.data;
   const pollOverview = list.poll;
 
+  // The numbers of the guest requests are an extra with a read of their own, as on the Registration page: one that is slow,
+  // stalls or fails leaves the "Registrations" row out (or as the last answer had it) and never holds the overview back.
+  const requestCounts = useRegistrationCounts(event.id);
+  const registration = requestCounts.data;
+  const pollRequestCounts = requestCounts.poll;
+
   // Bounded, not a plain reset-on-every-call debounce: a pending timer is left alone rather than
   // restarted, so a steady stream of signals (busy handout desk issuing items back-to-back) still
   // reconciles within ~3s of the *first* one instead of only after a quiet gap - important since
@@ -1644,6 +1667,11 @@ function EventOverviewPageBody() {
     };
   }, [pollOverview]);
 
+  useEffect(() => {
+    const intervalId = setInterval(() => void pollRequestCounts(), OVERVIEW_REFRESH_MS);
+    return () => clearInterval(intervalId);
+  }, [pollRequestCounts]);
+
   const eventTimezone = overview?.event.timezone ?? event.timezone;
   const eventDateIso = overview?.event.date ?? event.date;
   const countdownLabel = useCountdown(eventDateIso, eventTimezone);
@@ -1748,7 +1776,7 @@ function EventOverviewPageBody() {
             />
           </div>
           <div className="overview-row overview-row--stretch">
-            <SetupChecklistCard overview={overview} eventId={event.id} />
+            <SetupChecklistCard overview={overview} eventId={event.id} registration={registration} />
             <NotesAndContactsCard
               pinnedNote={pinnedNote}
               archived={!!event.archived_at}
