@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient, type Prisma, type RegistrationMailTemplateName, type RegistrationStatus } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { MAX_REGISTRATION_BULK_IDS } from "@admitto/tickets";
+import { MAX_REGISTRATION_BULK_IDS, registrationSelectionDigest } from "@admitto/tickets";
 import type {
   RegistrationCountsDto,
   RegistrationDetailDto,
@@ -286,13 +286,52 @@ describe("who may read", () => {
   });
 });
 
+/**
+ * The client, with a writer that acts on the real one once the first page of a list has been read inside its
+ * transaction: what another request does between the queries of this one. Only `$transaction` and the `findMany` of
+ * `registration` are touched; everything else is passed through.
+ */
+function clientWithWriterAfterPage(between: () => Promise<void>): PrismaClient {
+  return new Proxy(prisma, {
+    get(target, key, receiver) {
+      if (key !== "$transaction") return Reflect.get(target, key, receiver);
+      return (run: unknown, options?: unknown) => {
+        if (typeof run !== "function") return Reflect.apply(target.$transaction, target, [run, options]);
+        return target.$transaction(
+          async (tx) => {
+            let done = false;
+            const registration = new Proxy(tx.registration, {
+              get(model, name, modelReceiver) {
+                const value: unknown = Reflect.get(model, name, modelReceiver);
+                if (name !== "findMany" || typeof value !== "function") return value;
+                return async (...args: unknown[]) => {
+                  const result: unknown = await Reflect.apply(value, model, args);
+                  if (!done) {
+                    done = true;
+                    await between();
+                  }
+                  return result;
+                };
+              },
+            });
+            return (run as (client: unknown) => unknown)(
+              new Proxy(tx, { get: (inner, name, innerReceiver) => (name === "registration" ? registration : Reflect.get(inner, name, innerReceiver)) }),
+            );
+          },
+          options as never,
+        );
+      };
+    },
+  });
+}
+
 describe("the list", () => {
   beforeAll(() => {
     app = freshApp();
   });
 
   it("is empty for an event without registrations", async () => {
-    expect(await list()).toEqual({ items: [], total: 0, page: 1, pageSize: 25 });
+    expect(await list()).toEqual({ items: [], total: 0, page: 1, pageSize: 25, selection_digest: null });
   });
 
   it("answers with no more than the screen needs", async () => {
@@ -429,11 +468,11 @@ describe("the list", () => {
 
     it("fills a page exactly, and the next one is empty", async () => {
       expect(ids(await list("pageSize=7"))).toEqual(ORDER);
-      expect(await list("pageSize=7&page=2")).toEqual({ items: [], total: 7, page: 2, pageSize: 7 });
+      expect(await list("pageSize=7&page=2")).toEqual({ items: [], total: 7, page: 2, pageSize: 7, selection_digest: null });
     });
 
     it("answers an empty page, with the total, past the last one", async () => {
-      expect(await list("pageSize=3&page=4")).toEqual({ items: [], total: 7, page: 4, pageSize: 3 });
+      expect(await list("pageSize=3&page=4")).toEqual({ items: [], total: 7, page: 4, pageSize: 3, selection_digest: null });
       expect((await list("page=999999999999")).items).toEqual([]);
       expect(await list(`page=${Number.MAX_SAFE_INTEGER}&pageSize=100`)).toMatchObject({ items: [], total: 7 });
     });
@@ -766,6 +805,75 @@ describe("the list", () => {
       const other = await addRegistration({ email: "other@example.com", eventId: EVENT_A2 });
       await addMail(other, "ticket", { status: "failed" }, EVENT_A2);
       expect(await lastMailOf(mine)).toBeNull();
+    });
+  });
+
+  describe("the selection digest", () => {
+    it("is null without a filter: nothing could be deleted by it", async () => {
+      await addRegistration({ email: "no-filter@example.com" });
+      expect((await list()).selection_digest).toBeNull();
+    });
+
+    it("names the registrations the filter selects, over all pages, as a deletion by filter asks for them", async () => {
+      const first = await addRegistration({ email: "named-1@example.com", status: "rejected", createdAt: new Date("2026-10-01T10:00:00Z") });
+      const second = await addRegistration({ email: "named-2@example.com", status: "rejected", createdAt: new Date("2026-10-02T10:00:00Z") });
+      await addRegistration({ email: "named-other@example.com", status: "pending" });
+
+      const firstPage = await list("status=rejected&pageSize=1");
+
+      expect(firstPage.items).toHaveLength(1);
+      expect(firstPage.total).toBe(2);
+      expect(firstPage.selection_digest).toBe(registrationSelectionDigest([first, second]));
+      expect((await list("status=rejected&pageSize=1&page=2")).selection_digest).toBe(firstPage.selection_digest);
+    });
+
+    it("changes when another registration joins the filter, and names the empty set for a filter that selects nothing", async () => {
+      const first = await addRegistration({ email: "joins-1@example.com", status: "rejected" });
+      expect((await list("status=rejected")).selection_digest).toBe(registrationSelectionDigest([first]));
+      const second = await addRegistration({ email: "joins-2@example.com", status: "rejected" });
+      expect((await list("status=rejected")).selection_digest).toBe(registrationSelectionDigest([first, second]));
+      expect((await list("status=waitlist")).selection_digest).toBe(registrationSelectionDigest([]));
+    });
+
+    it("is read in the snapshot of the page and the total: a registration that replaces one of the page meanwhile is not in it", async () => {
+      const first = await addRegistration({ email: "snap-1@example.com", status: "rejected", createdAt: new Date("2026-10-01T10:00:00Z") });
+      const second = await addRegistration({ email: "snap-2@example.com", status: "rejected", createdAt: new Date("2026-10-02T10:00:00Z") });
+      const replacement = await addRegistration({ email: "snap-3@example.com", status: "pending", createdAt: new Date("2026-10-03T10:00:00Z") });
+      const racing = buildTestApp({
+        prisma: clientWithWriterAfterPage(async () => {
+          // After the page was read, the second leaves the filter and the third joins it: the number is still two.
+          await prisma.registration.update({ where: { id: second }, data: { status: "pending" } });
+          await prisma.registration.update({ where: { id: replacement }, data: { status: "rejected" } });
+        }),
+        checkinToken: "regs-checkin-token-32-characters!!",
+        adminDistRoot,
+      });
+
+      const res = await racing.request(`${regsUrl(EVENT_A)}?status=rejected`, { headers: { Cookie: cookies.adminA } });
+      const body = (await res.json()) as RegistrationListDto;
+
+      expect(ids(body)).toEqual([first, second]);
+      expect(body.total).toBe(2);
+      expect(body.selection_digest).toBe(registrationSelectionDigest([first, second]));
+      // The change did happen: read now, the filter selects the first and the third.
+      expect((await list("status=rejected")).selection_digest).toBe(registrationSelectionDigest([first, replacement]));
+    });
+
+    it("is null for a filter that selects more than a deletion may take, and given at the cap", async () => {
+      await prisma.registration.createMany({
+        data: Array.from({ length: MAX_REGISTRATION_BULK_IDS + 1 }, (_, i) => ({
+          event_id: EVENT_A,
+          email: `bulk-${i}@example.com`,
+          first_name: "Bulk",
+          last_name: `Guest${i}`,
+          name: `Bulk Guest${i}`,
+          status: "rejected",
+        })),
+      });
+
+      expect((await list("status=rejected&pageSize=1")).selection_digest).toBeNull();
+      await prisma.registration.deleteMany({ where: { event_id: EVENT_A, email: "bulk-0@example.com" } });
+      expect((await list("status=rejected&pageSize=1")).selection_digest).toMatch(/^[0-9a-f]{64}$/);
     });
   });
 

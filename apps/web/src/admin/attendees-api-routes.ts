@@ -3550,7 +3550,7 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
  * event has wallet configured (see assertWalletBulkSelectionWithinLimit below) - same profile as
  * these 3 routes once that's true, so they're held to the same cap conditionally rather than
  * unconditionally, to avoid capping the common non-wallet case down from 500 for no reason. */
-const WALLET_BULK_SEND_LIMIT = 100;
+export const WALLET_BULK_SEND_LIMIT = 100;
 
 const bulkWalletAttendeesBodySchema = z
   .object({
