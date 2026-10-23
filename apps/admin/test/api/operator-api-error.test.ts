@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { REGISTRATION_PASSWORD_MAX, REGISTRATION_PASSWORD_MIN } from "@admitto/shared";
 import { ApiError } from "../../src/api/client.js";
 import {
   apiErrorCode,
@@ -50,6 +51,19 @@ describe("operatorApiErrorMessage", () => {
       fieldErrors: { note: ["x".repeat(201)] },
     });
     expect(operatorApiErrorMessage(err, "Failed.")).toBe("Check the form and try again.");
+  });
+
+  it("says what an event password has to be when the server refuses its length, with the numbers of the rule itself", () => {
+    const err = new ApiError(400, "registration_password_length", "registration_password_length");
+    expect(operatorApiErrorMessage(err, "Failed to save the password.")).toBe(
+      `The event password needs ${REGISTRATION_PASSWORD_MIN} to ${REGISTRATION_PASSWORD_MAX} characters.`,
+    );
+    expect(operatorApiErrorMessage(err, "Failed to save the password.")).toBe("The event password needs 8 to 128 characters.");
+  });
+
+  it("does not leave the answer of the guest route to a wrong event password as a bare code", () => {
+    const err = new ApiError(403, "access_denied", "access_denied");
+    expect(operatorApiErrorMessage(err, "Failed.")).toBe("The event password did not work.");
   });
 
   it("explains a Required field that the registration form does not ask, and what to do", () => {

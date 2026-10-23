@@ -57,6 +57,7 @@ describe("readEnvelope", () => {
       terms: true,
       consents: ["photos"],
       challenge: "token",
+      password: "test-password",
     };
 
     expect(readEnvelope(body)).toEqual(body);
@@ -70,7 +71,14 @@ describe("readEnvelope", () => {
       terms: undefined,
       consents: undefined,
       challenge: undefined,
+      password: undefined,
     });
+  });
+
+  it("reads the password as it came, a text or not, with its spaces, and does not judge it: that is for the route of an event that has one", () => {
+    expect(readEnvelope({ password: "  test password  " })?.password).toBe("  test password  ");
+    for (const raw of [12, null, true, ["a"], { a: 1 }, "x".repeat(70_000)]) expect(readEnvelope({ password: raw })?.password).toEqual(raw);
+    expect(Object.hasOwn(readEnvelope({}) ?? {}, "password")).toBe(true);
   });
 
   it.each([
@@ -135,6 +143,25 @@ describe("checkSubmission: a form that is fine", () => {
     expect(checked.kind).toBe("valid");
     expect(checked.kind === "valid" && "company" in checked.registrant).toBe(false);
     expect(checked.kind === "valid" && "department" in checked.registrant).toBe(false);
+  });
+});
+
+describe("checkSubmission: the password of the event is not its business", () => {
+  it("gives the same answer to a body with a password, of any kind, as to one without: the registrant holds none of it, and no field is refused for it", () => {
+    const without = checkSubmission(envelopeOf(), rules());
+
+    for (const password of ["test-password", "", "x".repeat(70_000), 12, null, ["test-password"], { value: "test-password" }]) {
+      const checked = checkSubmission(envelopeOf({ password }), rules());
+      expect(checked).toEqual(without);
+      expect(JSON.stringify(checked)).not.toContain("test-password");
+    }
+  });
+
+  it("refuses the same fields when a password comes with them, and never names the password among them", () => {
+    const plain = refusals(envelopeOf({ email: "not an address", terms: false }));
+
+    expect(refusals(envelopeOf({ email: "not an address", terms: false, password: "test-password" }))).toEqual(plain);
+    expect(Object.keys(plain)).not.toContain("password");
   });
 });
 

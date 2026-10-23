@@ -379,3 +379,89 @@ describe("resolveConfirmation: the event of a confirmation link", () => {
     }
   });
 });
+
+describe("the password as the way in (D-C3)", () => {
+  const HASH = "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2g";
+  const withSettings = (changes: Record<string, unknown>) =>
+    ({
+      event: { findUnique: vi.fn(async () => ({ ...row, registration_settings: { ...row.registration_settings, access_methods: ["password"], password_hash: HASH, ...changes } })) },
+    }) as unknown as PrismaClient;
+  const passwordAvailability = (available: boolean) => [
+    { method: "link" as const, enabled: false, available: false, blockedBy: null },
+    { method: "password" as const, enabled: true, available, blockedBy: null },
+    { method: "sso" as const, enabled: false, available: false, blockedBy: null },
+  ];
+  const OVER = new Date("2099-05-15T12:00:00Z");
+
+  beforeEach(() => {
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(passwordAvailability(true));
+  });
+
+  it("opens an event whose way in is the password and which has one, and asks for the password on its page", async () => {
+    const state = await resolveRegistration(withSettings({}), "northwind-summit", NOW);
+
+    expect(state.kind).toBe("open");
+    if (state.kind === "open") {
+      expect(state.form.needsPassword).toBe(true);
+      expect(state.access).toEqual({ method: "password", passwordHash: HASH });
+    }
+  });
+
+  it("gives the hash to the route that checks the password, and never to the page: the model of the page holds no word of it", async () => {
+    const fake = withSettings({});
+    const resolved = await resolveRegistration(fake, "northwind-summit", NOW);
+    const page = await loadRegistrationPage(fake, "northwind-summit", NOW);
+
+    expect(JSON.stringify(page)).not.toContain(HASH);
+    expect(JSON.stringify(page)).not.toContain("argon2");
+    expect(page).toEqual({ kind: "open", form: resolved.kind === "open" ? resolved.form : null });
+    expect(page.kind === "open" ? Object.keys(page.form) : []).not.toContain("passwordHash");
+  });
+
+  it("is not found while the event has no password, over or not: as good as off", async () => {
+    for (const passwordHash of [null, undefined, ""]) {
+      const fake = withSettings({ password_hash: passwordHash });
+      expect(await resolveRegistration(fake, "northwind-summit", NOW), String(passwordHash)).toEqual({ kind: "not_found" });
+      expect(await resolveRegistration(fake, "northwind-summit", OVER), String(passwordHash)).toEqual({ kind: "not_found" });
+      expect(await loadRegistrationPage(fake, "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+    }
+  });
+
+  it("is closed, like any event, once it is over, when it has a password", async () => {
+    expect((await resolveRegistration(withSettings({}), "northwind-summit", OVER)).kind).toBe("closed");
+  });
+
+  it("is not found while the password is not available: the system administrator has not allowed it, or the keys of the bot check are not ready", async () => {
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(passwordAvailability(false));
+    expect(await resolveRegistration(withSettings({}), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(passwordAvailability(true));
+    vi.mocked(resolveTurnstileKeys).mockResolvedValue({ state: "incomplete" });
+    expect(await resolveRegistration(withSettings({}), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+  });
+
+  it("asks the availability of the way the event has, not of the link: an event of the link is not opened by a password that is available", async () => {
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(passwordAvailability(true));
+
+    expect(await resolveRegistration(withSettings({ access_methods: ["link"], password_hash: null }), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+  });
+
+  it("opens an event of the link as the link, whether or not a hash was left in its settings, and asks for no password", async () => {
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(true));
+    for (const hash of [null, HASH]) {
+      const state = await resolveRegistration(withSettings({ access_methods: ["link"], password_hash: hash }), "northwind-summit", NOW);
+
+      expect(state.kind).toBe("open");
+      if (state.kind === "open") {
+        expect(state.access).toEqual({ method: "link" });
+        expect(state.form.needsPassword).toBe(false);
+      }
+    }
+  });
+
+  it("is not found for a way in that is not built (the company sign-in), for none, and for more than one", async () => {
+    for (const access_methods of [["sso"], [], ["password", "link"], ["link", "password"], ["unknown"]]) {
+      expect(await resolveRegistration(withSettings({ access_methods }), "northwind-summit", NOW), access_methods.join()).toEqual({ kind: "not_found" });
+    }
+  });
+});

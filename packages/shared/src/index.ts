@@ -9,6 +9,11 @@ export { toDatabaseJson, toDatabaseText } from "./databaseText.js";
 export { CONTACT_EMAIL_MAX_LENGTH } from "./contactEmail.js";
 export { isDateAnswer, isDateTimeAnswer } from "./calendarDay.js";
 export {
+  REGISTRATION_PASSWORD_MAX,
+  REGISTRATION_PASSWORD_MIN,
+  registrationPasswordLength,
+} from "./registrationPassword.js";
+export {
   CONTACT_PHONE_MAX_DIGITS,
   CONTACT_PHONE_MAX_LENGTH,
   CONTACT_PHONE_MIN_DIGITS,
