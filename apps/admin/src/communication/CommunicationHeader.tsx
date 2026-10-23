@@ -26,7 +26,7 @@ export function CommunicationHeader({
       <PageHeader
         className="communication-pageheader"
         title="Communication"
-        subtitle="Ticket email templates and delivery log"
+        subtitle="Email templates and delivery log"
         actions={
           <a
             href="https://github.com/solarssk/admitto/wiki/Email-Templates"

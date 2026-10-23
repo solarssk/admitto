@@ -74,6 +74,7 @@ export {
   SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS,
   isSystemTemplateName,
   isReservedTemplateName,
+  systemTemplateLabel,
   disallowedPlaceholdersForTemplate,
   requiredPlaceholdersForTemplate,
 } from "./systemTemplates.js";

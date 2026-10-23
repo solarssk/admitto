@@ -24,9 +24,10 @@ Orchestrates ticket email delivery. The steps:
 
 ### Operator preflight
 
-- `sendTestEmail({ eventId, toAddress, templateId? }, prisma, env?, deps?, options?)` sends one test mail with **sample** template data.
-  - It uses the default ticket template via `previewTemplate`, or the template passed as `templateId`.
-  - The sample ticket, QR and wallet links are replaced by inert placeholders.
+- `sendTestEmail({ eventId, toAddress, templateId?, templateName? }, prisma, env?, deps?, options?)` sends one test mail with **sample** template data.
+  - It uses the default ticket template via `previewTemplate`, the template passed as `templateId`, or the template passed as `templateName` the way the event resolves it (its own row, the organization's, else the built-in default): that is how a registration mail without a row is tested.
+  - The event's own contact (`resolveEventContactVars`) fills `contact_*` in a template named or identified, not the sample contact.
+  - The sample ticket, QR, wallet and confirmation links are replaced by inert placeholders.
   - It does **not** create `EmailDelivery` rows.
 - `getMailConfigDescription(eventId, prisma, env?)` - masked read-only config (passthrough to `describeMailConfig`)
 - `listDeliveries({ eventId, filters?, skip?, take? }, prisma)` returns `{ items, total }`. It is a safe delivery log projection: no `rendered_html` body. It does include `rendered_subject`, which is the row's title in the log.

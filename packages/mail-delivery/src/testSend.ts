@@ -4,8 +4,10 @@ import {
   previewTemplate,
   renderTemplate,
   resolveBrandingFromEvent,
+  resolveEventContactVars,
   resolveEventImageAssetVars,
   resolveTemplateById,
+  resolveTemplateForEvent,
   sanitizeSampleLinksForTestSend,
 } from "@admitto/mail-templates";
 import { closeMailer, createMailer, type SendResult } from "@admitto/mailer";
@@ -19,6 +21,9 @@ export interface SendTestEmailParams {
   toAddress: string;
   /** When set, renders this template instead of the event default ticket template. */
   templateId?: string;
+  /** When set (and `templateId` is not), renders the template of this name the way the event resolves it: its own
+   * row, else the organization's, else the built-in default. For a system mail that has no row of its own yet. */
+  templateName?: string;
 }
 
 export interface SendTestEmailOptions {
@@ -43,17 +48,23 @@ export async function sendTestEmail(
 
   try {
     let rendered;
-    if (params.templateId) {
+    if (params.templateId || params.templateName) {
       const event = await prisma.event.findUniqueOrThrow({
         where: { id: params.eventId },
         include: { organization: true, location_details: true },
       });
-      const resolved = await resolveTemplateById(params.templateId, params.eventId, prisma);
+      const resolved = params.templateId
+        ? await resolveTemplateById(params.templateId, params.eventId, prisma)
+        : await resolveTemplateForEvent(event, prisma, params.templateName);
       const branding = resolveBrandingFromEvent(event);
       const customAssets = await resolveEventImageAssetVars(params.eventId, prisma);
+      // The contact is the event's own (a registration mail carries it), not the sample one: a test that invented a
+      // contact would show a line the real mail may not have.
+      const contact = await resolveEventContactVars(params.eventId, prisma);
       const vars = {
         ...buildBaseTemplateVars(event, branding, baseUrl, env),
         ...customAssets.vars,
+        ...contact,
       };
       rendered = renderTemplate(
         {

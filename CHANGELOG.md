@@ -30,11 +30,13 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add an admin API to delete guest registrations one by one, by selection or by filter; an accepted one erases its attendee ([#1792](https://github.com/solarssk/admitto/pull/1792))
 - Add sending the guest registration form, with a bot check and one answer for every address; off until an event turns registration on ([#1790](https://github.com/solarssk/admitto/pull/1790))
 - Add `registration:mail-event`, a daily cap on the registration mail one event queues (1000, or 3 per seat), tunable with `RATE_LIMIT_OVERRIDES` ([#1790](https://github.com/solarssk/admitto/pull/1790))
+- Add the four guest registration emails to Communication > Templates, where you can read them, edit them and revert them to the built-in text ([#1791](https://github.com/solarssk/admitto/pull/1791))
 
 ### Changed
 
 - Use the width of the screen in the Add attendee and Edit attendee forms, two fields to a row, with the custom fields under their own heading ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Hide a question that is shown only for another answer in the Add attendee and Edit attendee forms, and do not require or save it ([#1787](https://github.com/solarssk/admitto/pull/1787))
+- Give the Communication template picker a row of its own on a phone, so the open template's name is not cut off ([#1791](https://github.com/solarssk/admitto/pull/1791))
 
 ### Fixed
 

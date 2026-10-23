@@ -853,6 +853,13 @@ export interface EventTemplateDto {
   header_image_url: string;
 }
 
+/** What the editor opens a registration mail with (GET .../system-templates/:name): its source, and which text it is -
+ * the event's own, the organization's, or the built-in default. */
+export type EventTemplateSourceDto = Pick<
+  EventTemplateDto,
+  "subject_template" | "body_template" | "template_format" | "source"
+>;
+
 export interface SaveTemplateBody {
   subject_template: string;
   body_template: string;

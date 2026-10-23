@@ -1,6 +1,6 @@
 import type { ResolvedTemplate, TemplateFormat } from "./types.js";
 import { compileTemplate } from "./compile.js";
-import { DEFAULT_TEMPLATE_NAME, type SystemTemplateName } from "./systemTemplates.js";
+import { DEFAULT_TEMPLATE_NAME, systemTemplateLabel, type SystemTemplateName } from "./systemTemplates.js";
 
 /** Built-in default ticket email — MJML source (text-only header, no logo section). */
 export const DEFAULT_SUBJECT_TEMPLATE = "Your ticket for {{event_name}}";
@@ -115,7 +115,7 @@ const BUILTIN_SOURCES: ReadonlyMap<string, BuiltinTemplateSource> = new Map<
   [
     "registration-confirm" satisfies SystemTemplateName,
     {
-      label: "Registration: confirm email",
+      label: systemTemplateLabel("registration-confirm"),
       subject: "Confirm your email for {{event_name}}",
       body: registrationMjml({
         paragraphs: [
@@ -130,7 +130,7 @@ const BUILTIN_SOURCES: ReadonlyMap<string, BuiltinTemplateSource> = new Map<
   [
     "registration-received" satisfies SystemTemplateName,
     {
-      label: "Registration: received",
+      label: systemTemplateLabel("registration-received"),
       subject: "We received your registration for {{event_name}}",
       body: registrationMjml({
         paragraphs: [
@@ -144,7 +144,7 @@ const BUILTIN_SOURCES: ReadonlyMap<string, BuiltinTemplateSource> = new Map<
   [
     "registration-waitlist" satisfies SystemTemplateName,
     {
-      label: "Registration: waiting list",
+      label: systemTemplateLabel("registration-waitlist"),
       subject: "You are on the waiting list for {{event_name}}",
       body: registrationMjml({
         paragraphs: [
@@ -159,7 +159,7 @@ const BUILTIN_SOURCES: ReadonlyMap<string, BuiltinTemplateSource> = new Map<
   [
     "registration-rejected" satisfies SystemTemplateName,
     {
-      label: "Registration: declined",
+      label: systemTemplateLabel("registration-rejected"),
       subject: "Your registration for {{event_name}}",
       body: registrationMjml({
         paragraphs: [

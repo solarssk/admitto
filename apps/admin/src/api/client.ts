@@ -1,3 +1,4 @@
+import type { SystemTemplateName } from "@admitto/mail-templates/systemTemplates";
 import type {
   AttendeeCardDto,
   AttendeeDetailDto,
@@ -44,6 +45,7 @@ import type {
   OpsConfigDto,
   UpdateOpsConfigPatch,
   EventTemplateDto,
+  EventTemplateSourceDto,
   SaveTemplateBody,
   UpdateTemplateMetadataBody,
   PreviewTemplateResponse,
@@ -1833,6 +1835,58 @@ export async function testSendEventTemplateById(
 ): Promise<TemplateTestSendResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}/test-send`,
+    jsonPostInit(body),
+  );
+  return parseJson<TemplateTestSendResponse>(res);
+}
+
+/** What the editor opens a registration mail with: the event's own text, else the organization's, else the built-in default. */
+export async function fetchEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  signal?: AbortSignal,
+): Promise<EventTemplateSourceDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventTemplateSourceDto>(res);
+}
+
+/** Save the event's own text of a registration mail. The first save of a mail that runs on the default creates its row. */
+export async function saveEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  body: SaveTemplateBody,
+): Promise<MailTemplateDetail> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}`,
+    jsonPutInit(body),
+  );
+  return parseTemplateActionJson<MailTemplateDetail>(res);
+}
+
+/** Render a draft of a registration mail with sample data (no DB write). */
+export async function previewEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  body: SaveTemplateBody,
+): Promise<PreviewTemplateResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}/preview`,
+    jsonPostInit(body),
+  );
+  return parseTemplateActionJson<PreviewTemplateResponse>(res);
+}
+
+/** Send a test mail of a registration mail as the event has it now (its own text, else the default). */
+export async function testSendEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  body: TestSendBody,
+): Promise<TemplateTestSendResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}/test-send`,
     jsonPostInit(body),
   );
   return parseJson<TemplateTestSendResponse>(res);

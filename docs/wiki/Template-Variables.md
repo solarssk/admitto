@@ -2,7 +2,7 @@
 
 **Audience:** Event Managers and Technical Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.4
 
-Use the variable chips shown in **Communication → Templates**. The editor is the source of truth for the variables available to the selected template. The chips are grouped the same way in the editor: Attendee, Event, Ticket & QR, Wallet and Branding. A sixth group, Images, comes after them when the event has extra named images.
+Use the variable chips shown in **Communication → Templates**. The editor is the source of truth for the variables available to the selected template. The chips are grouped the same way in the editor: Attendee, Event, Ticket & QR, Wallet and Branding. A sixth group, Images, comes after them when the event has extra named images. The editor of a registration email also has the groups Confirmation (the confirmation email only) and Contact, and has no Ticket & QR or Wallet group.
 
 ## Attendee
 

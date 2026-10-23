@@ -439,8 +439,8 @@ Notes on the rows above:
 |---------|--------|----------------|------|
 | `POST …/import/preview` | user + event | 10 / 60 s | event admin |
 | `POST …/import/commit` | user + event | 5 / 60 s | event admin |
-| `POST …/template/preview` | user + event | 20 / 60 s | event admin |
-| `POST …/template/test-send` | user + event | 5 / 60 s burst, 20 / h sustained | event admin |
+| `POST …/template/preview`, `…/templates/:id/preview`, `…/system-templates/:name/preview` | user + event | 20 / 60 s | event admin |
+| `POST …/template/test-send`, `…/templates/:id/test-send`, `…/system-templates/:name/test-send` | user + event | 5 / 60 s burst, 20 / h sustained | event admin |
 | `POST /api/admin/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
 | `POST …/events/:eventId/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | admin (operators search through the check-in lookup) |
@@ -468,9 +468,9 @@ Notes on the rows above:
 - **Bulk wallet actions.** Bulk-erase, bulk-remove and bulk-revoke-pass share this bucket whenever the event has wallet configured. All of them are capped at max 100 attendees per request in that case.
 - **Event-wide wallet jobs.** One background job runs per event at a time, and there is no 100-attendee cap.
 
-**Test mail to one address.** All three test-mail routes above (`template/test-send` and both `mail-settings/test` routes) also share one additional budget on top of their own per-user/event bucket:
+**Test mail to one address.** Every test-mail route above (the three template test sends and both `mail-settings/test` routes) also shares one additional budget on top of its own per-user/event bucket:
 
-- It is **5 / hour per recipient address, instance-wide**. It is not scoped to the calling user, event, or which of the three routes sent it.
+- It is **5 / hour per recipient address, instance-wide**. It is not scoped to the calling user, event, or which of the routes sent it.
 - It bounds how much test mail any single external address can receive, even if a compromised admin session rotates between routes, events, or accounts to work around the per-user/event limits above.
 
 Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not just gated at the HTTP-route layer: see [Outbound HTTP](#outbound-http-ssrf-mitigation) below.

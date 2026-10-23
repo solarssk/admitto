@@ -43,6 +43,8 @@ URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in 
 `SYSTEM_TEMPLATE_NAMES` lists the mails a guest gets before an attendee exists: `registration-confirm`, `registration-received`, `registration-waitlist`, `registration-rejected`. Each has an English built-in default; an organizer's override is an ordinary `MailTemplate` row under the same name. `ticket` is not one of them: it stays the one template ticket delivery sends.
 
 - Ask `isSystemTemplateName(name)`, not a literal. A system row is flagged `is_system` in the template list, is not counted toward the ten-template cap, is refused by bulk send (422) and does not block permanent event deletion. `isReservedTemplateName` also covers `ticket`, for a free template's name.
+- `systemTemplateLabel(name)` is the name of each mail in the template picker: the label of its built-in default and of a row saved for the first time. It is in this subpath because the admin SPA, which may not import the built-in sources, shows the same name before and after the mail has a row.
+- Staff edit these mails in Communication > Templates. A mail that runs on its default is opened, previewed, saved and test-sent by name (`/api/admin/events/:eventId/system-templates/:name`). From its first save it is an ordinary row that the by-id routes serve, and deleting that row reverts the mail to the default: the organization's text if there is one, else the built-in one.
 - The body of `registration-confirm` must hold `{{confirm_url}}` (`requiredPlaceholdersForTemplate`, checked by the admin routes with `findMissingRequiredPlaceholders`): a confirmation mail without its link is of no use to the guest. A stored template that lost it fails its queue row for good when the worker renders it.
 - A system template cannot use `ticket_url`, `qr_image_url`, `apple_wallet_url`, `google_wallet_url`, `download_page_url` or `ticket_type` (`SYSTEM_TEMPLATE_FORBIDDEN_PLACEHOLDERS`). `setMailTemplate` and `createMailTemplate` apply it through `disallowedPlaceholdersForTemplate(name)`; the admin routes pass the same set to template validation.
 
@@ -127,7 +129,7 @@ import {
 } from "@admitto/mail-templates";
 ```
 
-- Browser code (`apps/admin`) must import the subpaths `@admitto/mail-templates/placeholders` and `@admitto/mail-templates/branding`, never the package root, which pulls in `mjml` and node-only modules.
+- Browser code (`apps/admin`) must import the subpaths `@admitto/mail-templates/placeholders`, `@admitto/mail-templates/systemTemplates` and `@admitto/mail-templates/branding`, never the package root, which pulls in `mjml` and node-only modules.
 - Also exported: `resolveTemplateForEvent`, `resolveTemplateById`, `createMailTemplate`, `updateMailTemplateMetadata`, `renderTemplateTrustedForStorage` and `materializeStoredDeliveryMessage`.
 
 ## Security
