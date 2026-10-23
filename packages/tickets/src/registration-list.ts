@@ -155,6 +155,11 @@ export function registrationListWhere(
  * itself, and its registration still fits it (registrationMailMisfit), as the worker would cancel it otherwise. One
  * that is still being tried (`retryable`), waits, went out, or was cancelled because the registration changed is not
  * offered.
+ *
+ * Nor is a `ticket` row. It is no mail of its own, only the hand-over of the attendee's ticket to the usual ticket send,
+ * and that send knows what a reset of the row cannot: an attendee who was revoked or cancelled gets no ticket, and one
+ * whose ticket is out already (sent by hand, say) gets none again, so the worker would end the row without a mail. A
+ * ticket that failed is sent again from the attendee, whose delivery is the ticket's own.
  */
 export function canRetryRegistrationMail(
   mail: { template_name: string; status: string; retryable: boolean | null },
@@ -164,6 +169,7 @@ export function canRetryRegistrationMail(
   return (
     mail.status === "failed" &&
     mail.retryable !== true &&
+    mail.template_name !== "ticket" &&
     registrationMailMisfit(mail.template_name, registration, nowMs) === null
   );
 }

@@ -253,6 +253,12 @@ describe("canRetryRegistrationMail", () => {
   describe("for a mail that failed for good", () => {
     const failed = { status: "failed", retryable: false };
 
+    it("is never offered for a ticket row: the ticket is sent again from the attendee", () => {
+      const accepted = { status: "accepted", confirm_expires_at: null };
+      expect(canRetryRegistrationMail({ template_name: "ticket", ...failed }, accepted, NOW)).toBe(false);
+      expect(canRetryRegistrationMail({ template_name: "ticket", status: "failed", retryable: null }, accepted, NOW)).toBe(false);
+    });
+
     it("is not offered once the registration has moved on without a newer mail: the worker would cancel it", () => {
       // A rejection with no notice leaves the failed "received" mail behind.
       const rejected = { status: "rejected", confirm_expires_at: null };

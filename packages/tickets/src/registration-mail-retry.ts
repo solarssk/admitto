@@ -20,7 +20,8 @@ export type RetryRegistrationMailsParams = {
  * What became of one registration of a retry:
  * - `retried`: its last mail is queued again, and the worker sends it on its next tick (the reset wakes it);
  * - `not_retryable`: its last mail is not one that staff may send again (canRetryRegistrationMail: it did not fail for good,
- *   or the registration no longer fits it, so the worker would cancel it), or it has none;
+ *   it is the ticket, which is sent again from the attendee, or the registration no longer fits it, so the worker would
+ *   cancel it), or it has none;
  * - `gone`: no such registration in the event (deleted, erased, or never there);
  * - `closed`: the event is archived or gone, and nothing is changed in it.
  */

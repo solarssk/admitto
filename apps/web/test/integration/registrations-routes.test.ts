@@ -737,6 +737,12 @@ describe("the list", () => {
       }
     });
 
+    it("does not offer the retry of a failed ticket row: the ticket is sent again from the attendee", async () => {
+      const id = await addRegistration({ email: "ticket-failed@example.com", status: "accepted" });
+      await addMail(id, "ticket", { status: "failed", retryable: false });
+      expect(await lastMailOf(id)).toMatchObject({ template_name: "ticket", status: "failed", can_retry: false });
+    });
+
     it("does not offer the retry of a mail its registration no longer fits: the worker would cancel it", async () => {
       // Turned down with no notice, the failed "received" mail stays the last; and a confirmation link can run out.
       const rejected = await addRegistration({ email: "moved-on@example.com", status: "rejected" });
@@ -924,7 +930,8 @@ describe("one registration", () => {
           template_name: "ticket",
           status: "failed",
           retryable: false,
-          can_retry: true,
+          // A ticket row is sent again from the attendee, not from here.
+          can_retry: false,
           attempts: 3,
           queued_at: "2026-10-02T08:00:10.000Z",
           attempted_at: "2026-10-02T08:10:00.000Z",

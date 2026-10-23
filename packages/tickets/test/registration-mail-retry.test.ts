@@ -148,6 +148,21 @@ describe("retryRegistrationMails", () => {
     expect((await mailRow(validMail.id)).status).toBe("queued");
   });
 
+  it("leaves a failed ticket row alone: the ticket is sent again from the attendee, which knows what the row does not", async () => {
+    // Revoked or cancelled since, or sent by hand already: the ticket send would give nothing, and the row would end as it was.
+    const eventId = await make.event({ mode: "approval" });
+    const attendee = await make.attendee(eventId);
+    const registration = await make.registration(eventId, { status: "accepted", attendeeId: attendee.id });
+    const mail = await addMail(registration.id, eventId, "ticket");
+    const before = await mailRow(mail.id);
+
+    const result = await retry(eventId, [registration.id]);
+
+    expect(result.outcomes).toEqual([{ id: registration.id, outcome: "not_retryable" }]);
+    expect(await mailRow(mail.id)).toEqual(before);
+    expect(await db.attendeeActionLog.count({ where: { event_id: eventId } })).toBe(0);
+  });
+
   it.each([
     ["queued", { status: "queued", attempts: 0, retryable: null, error_code: null, error: null, attempted_at: null }],
     ["sent", { status: "sent", retryable: null, error_code: null, error: null, sent_at: LONG_AGO }],
