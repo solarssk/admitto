@@ -240,6 +240,26 @@ describe("placeRegistration: the budget of an event", () => {
     expect(await make.templatesOf((await make.registrationByEmail(eventId, next.email))!.id)).toEqual(["registration-confirm"]);
   });
 
+  it("does not count the mail that staff queued today for registrations older than the window", async () => {
+    const eventId = await make.event({ verify: true, capacity: null });
+    const older = new Date(Date.now() - 2 * DAY_MS);
+    const first = await make.registration(eventId, { status: "pending", createdAt: older });
+    const second = await make.registration(eventId, { status: "waitlist", createdAt: older });
+    // One mail for each, queued just now: what a decision of staff on an older registration does.
+    await db.registrationMail.createMany({
+      data: [
+        { registration_id: first.id, event_id: eventId, template_name: "registration-rejected" },
+        { registration_id: second.id, event_id: eventId, template_name: "registration-received" },
+      ],
+    });
+    const next = make.registrant();
+
+    expect(await place(eventId, next, budget(2))).toEqual(RECEIVED);
+
+    expect(await make.templatesOf((await make.registrationByEmail(eventId, next.email))!.id)).toEqual(["registration-confirm"]);
+    expect(await mailsOf(eventId)).toBe(3);
+  });
+
   it("stamps the rows it queues with the real time, so that the window means what it says", async () => {
     const eventId = await make.event({ verify: true, capacity: null });
     const guest = make.registrant();
