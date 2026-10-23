@@ -55,13 +55,17 @@ export function SuggestedQuestionsDialog({ eventId, fields, onClose, onAdded }: 
     if (adding || cannotConfirm) return;
     setAdding(true);
     setError(null);
+    let outcome: AddSuggestedFieldsResponse;
     try {
-      onAdded(await addSuggestedEventCustomFields(eventId));
+      outcome = await addSuggestedEventCustomFields(eventId);
     } catch (err) {
       setError(operatorApiErrorMessage(err, "Could not add the suggested questions."));
+      return;
     } finally {
       setAdding(false);
     }
+    // Outside the try: a host that fails here is not a request that failed.
+    onAdded(outcome);
   }
 
   return (
