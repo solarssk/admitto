@@ -1,5 +1,5 @@
 import { EMAIL_DELIVERY_SUCCESS_STATUSES, type Prisma, type PrismaClient } from "@admitto/db";
-import { lockRegistrationQueue } from "@admitto/tickets";
+import { lockRegistrationQueue, registrationMailMisfit } from "@admitto/tickets";
 import { MAIL_CANCELLATION, type RegistrationMailReason } from "./registration-mail-reasons.js";
 import {
   cancelledResult,
@@ -10,15 +10,6 @@ import {
 
 /** The last check can wait for an erasure's own transaction, which Prisma's default 5 s would cut off. */
 const CHECK_TX_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
-
-/** The registration status each mail is for (D-D2): a mail goes out only while its registration is in that state. */
-const STATUS_FOR_TEMPLATE: ReadonlyMap<string, string> = new Map([
-  ["registration-confirm", "awaiting_email"],
-  ["registration-received", "pending"],
-  ["registration-waitlist", "waitlist"],
-  ["registration-rejected", "rejected"],
-  ["ticket", "accepted"],
-]);
 
 /** What a mail is built from, read from the registration row at the moment of the check. */
 export interface RegistrationForMail {
@@ -67,11 +58,10 @@ type FreshRegistration = Prisma.RegistrationMailGetPayload<{ select: typeof FRES
 
 /** Why a mail must not go out for this registration now, or null when it can. */
 function whyNotSendable(template: string, registration: FreshRegistration, nowMs: number): RegistrationMailReason | null {
-  if (registration.status !== STATUS_FOR_TEMPLATE.get(template)) return MAIL_CANCELLATION.registrationChanged;
-  // confirm_expires_at is set exactly while the status is awaiting_email (CHECK Registration_awaiting_email_iff_expiry).
-  if (template === "registration-confirm" && registration.confirm_expires_at!.getTime() <= nowMs) {
-    return MAIL_CANCELLATION.confirmationExpired;
-  }
+  // The staff's retry asks the same rule, so a mail that this would cancel is not offered to be sent again.
+  const misfit = registrationMailMisfit(template, registration, nowMs);
+  if (misfit === "registration_changed") return MAIL_CANCELLATION.registrationChanged;
+  if (misfit === "confirmation_expired") return MAIL_CANCELLATION.confirmationExpired;
   // An erasure deletes the registration under the same lock, so an erased attendee is not seen here in practice.
   if (template === "ticket" && registration.attendee?.erased_at !== null) return MAIL_CANCELLATION.ticketNotIssuable;
   return null;

@@ -332,8 +332,13 @@ export {
 export type { EventCapacityTransactionOptions } from "./event-capacity.js";
 export { runPublicWrite } from "./public-write-gate.js";
 export type { PublicWriteOptions, PublicWriteResult } from "./public-write-gate.js";
-export { enqueueRegistrationMail, enqueueRegistrationMails, registrationMailFor } from "./registration-mail-queue.js";
-export type { RegistrationMailEntry, RegistrationMailMoment } from "./registration-mail-queue.js";
+export {
+  enqueueRegistrationMail,
+  enqueueRegistrationMails,
+  registrationMailFor,
+  registrationMailMisfit,
+} from "./registration-mail-queue.js";
+export type { RegistrationMailEntry, RegistrationMailMisfit, RegistrationMailMoment } from "./registration-mail-queue.js";
 export { seatsNeeded } from "./registration-seats.js";
 export type { PlacedStatus } from "./registration-seats.js";
 export { createAttendeeFromRegistration } from "./registration-attendee.js";
@@ -357,4 +362,10 @@ export type {
   RejectRegistrationsResult,
   StaffActor,
 } from "./registration-decisions.js";
+export { retryRegistrationMails } from "./registration-mail-retry.js";
+export type {
+  RetryMailOutcome,
+  RetryRegistrationMailsParams,
+  RetryRegistrationMailsResult,
+} from "./registration-mail-retry.js";
 export { activeAttendeeWhere, countActiveAdmittedAttendees, countActiveAttendees, countSeatsInUse } from "./event-seats.js";
