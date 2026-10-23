@@ -394,9 +394,10 @@ model Attendee {
 // The seat goes with the attendee: a companion counts only while the attendee is active (status outside revoked and
 // cancelled), so erasing an attendee who was not admitted frees both seats, and one who was admitted frees none (the
 // row stays, with a placeholder name and no answers). Deleting the attendee deletes the rows (cascade).
-// Written only by createAttendeeFromRegistration, writeAttendeeCompanion and removeAttendeeCompanion, the last two behind
-// lockAttendeeRow. Constraints in migration SQL (not expressible here): AttendeeCompanion_slot_check (slot >= 1) and
-// AttendeeCompanion_custom_data_is_object (SQL NULL or a JSON object; write Prisma.DbNull, never JsonNull).
+// Rows are made by createAttendeeFromRegistration (the admission of a registration that brings one), emptied by
+// eraseAttendees, and changed by staff only through writeAttendeeCompanion and removeAttendeeCompanion, which take
+// lockAttendeeRow first. Constraints in migration SQL (not expressible here): AttendeeCompanion_slot_check (slot >= 1)
+// and AttendeeCompanion_custom_data_is_object (SQL NULL or a JSON object; write Prisma.DbNull, never JsonNull).
 model AttendeeCompanion {
   id          String   @id @default(cuid())
   attendee_id String

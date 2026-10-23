@@ -34,16 +34,21 @@ export function countActiveAdmittedAttendees(db: SeatsDb, eventId: string): Prom
  * from CAPACITY_EXCLUDED_STATUSES) and is out of the count with them. An attendee who was erased before they were
  * admitted is cancelled, which frees both seats; one who was admitted keeps both.
  *
- * One statement, so the heads and the companions are counted from one snapshot. The rule of "active" is written
- * twice, as the where-clause of Prisma and as this SQL, from the same list of statuses; the test of the seat count
- * pins the two to each other for every status, so neither can change alone.
+ * One statement, so the heads and the companions are counted from one snapshot, and the rule of "active" is written
+ * once in it. It is written twice in the code, as the where-clause of Prisma and as this SQL, from the same list of
+ * statuses; the test of the seat count pins the two to each other for every status, so neither can change alone.
+ * (Counting the heads and the companions in one join, with DISTINCT, costs ten times as much on a big event.)
  */
 export async function countSeatsInUse(db: SeatsDb, eventId: string): Promise<number> {
   const [row] = await db.$queryRaw<{ seats: number }[]>`
-    SELECT (COUNT(DISTINCT a."id") + COUNT(c."id"))::int AS "seats"
-    FROM "Attendee" a
-    LEFT JOIN "AttendeeCompanion" c ON c."attendee_id" = a."id"
-    WHERE a."event_id" = ${eventId} AND a."status" NOT IN (${Prisma.join([...CAPACITY_EXCLUDED_STATUSES])})
+    WITH "active" AS (
+      SELECT a."id" FROM "Attendee" a
+      WHERE a."event_id" = ${eventId} AND a."status" NOT IN (${Prisma.join([...CAPACITY_EXCLUDED_STATUSES])})
+    )
+    SELECT (
+      (SELECT COUNT(*) FROM "active")
+      + (SELECT COUNT(*) FROM "AttendeeCompanion" c WHERE c."attendee_id" IN (SELECT "id" FROM "active"))
+    )::int AS "seats"
   `;
   return row?.seats ?? 0;
 }
