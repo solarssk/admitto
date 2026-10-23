@@ -13,6 +13,7 @@ import {
 import {
   ApiError,
   fetchEventOverview,
+  fetchRegistrationCounts,
   fetchTicketTypes,
   patchEventNote,
   createEventContact,
@@ -29,6 +30,7 @@ import type {
   EventContactDto,
   EventRecentActivityEntry,
   EventResourceDto,
+  RegistrationCountsDto,
   TicketTypeDto,
 } from "../api/types.js";
 import {
@@ -70,6 +72,7 @@ import { assertPresent } from "../utils/assert-present.js";
 import { OverviewKpiTile } from "../overview/OverviewKpiTile.js";
 import { OverviewSkeleton } from "../overview/OverviewSkeleton.js";
 import { PanelLoadError } from "../settings/PanelLoadError.js";
+import { registrationReadiness } from "../registration/registrationReadiness.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 /** The region the page, its placeholder and its error sit in: where the focus goes when a Retry that held it works. */
@@ -191,7 +194,11 @@ function ticketsSentReadiness(overview: EventOverviewDto): Pick<ReadinessItem, "
 
 // Extracted out of SetupChecklistCard (SonarCloud S3776: keeps the branching/pluralization logic
 // out of the component's own cognitive-complexity count, which the JSX below also contributes to).
-function buildReadinessItems(overview: EventOverviewDto, eventId: string): ReadinessItem[] {
+function buildReadinessItems(
+  overview: EventOverviewDto,
+  eventId: string,
+  registration: ReadinessItem | null,
+): ReadinessItem[] {
   const eventPath = `/admin/events/${eventId}`;
   const failed = overview.email_failed + overview.email_bounced;
   const ticketsSent = ticketsSentReadiness(overview);
@@ -213,6 +220,8 @@ function buildReadinessItems(overview: EventOverviewDto, eventId: string): Readi
     overview.requirements_count > 0 ? `${overview.requirements_count} configured.` : "None configured.";
 
   return [
+    // Only for an event that takes registrations: requests come before the attendees they become.
+    ...(registration ? [registration] : []),
     {
       label: "Attendees imported",
       status: overview.attendee_count > 0 ? "ok" : "warn",
@@ -272,11 +281,21 @@ function checklistTone(items: ReadinessItem[]): "ok" | "warn" | "error" {
 function SetupChecklistCard({
   overview,
   eventId,
+  registration,
+  seatsInUse,
 }: Readonly<{
   overview: EventOverviewDto;
   eventId: string;
+  /** The numbers of the event's guest requests; the "Registrations" row is there only while registration is on. */
+  registration: RegistrationCountsDto | null;
+  /** Seats the event holds (the event's own count, which a list of events does not carry); the active attendees stand in. */
+  seatsInUse: number | undefined;
 }>) {
-  const items = buildReadinessItems(overview, eventId);
+  const registrationRow = registrationReadiness(registration, `/admin/events/${eventId}`, {
+    used: seatsInUse ?? overview.attendee_count,
+    capacity: overview.event.capacity,
+  });
+  const items = buildReadinessItems(overview, eventId, registrationRow);
   const okCount = items.filter((i) => i.status === "ok").length;
   const total = items.filter((i) => i.status !== "neutral").length;
   const tone = checklistTone(items);
@@ -1444,6 +1463,17 @@ function NotesAndContactsCard(props: Readonly<{
 
 type OverviewOutletContext = { event: EventDto; refreshEvent?: () => Promise<void> };
 
+/** What one read of the page holds: the overview, and the numbers of the guest requests for the checklist's "Registrations" row. */
+interface OverviewAnswer {
+  overview: EventOverviewDto;
+  registration: RegistrationCountsDto | null;
+}
+
+/** The numbers of the requests are an extra: a read that fails leaves the row out, and the page as it was. */
+function readRegistrationCounts(eventId: string, signal: AbortSignal): Promise<RegistrationCountsDto | null> {
+  return fetchRegistrationCounts(eventId, signal).catch(() => null);
+}
+
 /** Event-scoped dashboard — event command center with KPIs, a setup checklist, check-in progress,
  * and a live activity feed.
  *
@@ -1504,13 +1534,21 @@ function EventOverviewPageBody() {
     setPinnedNote(data.event.pinned_note);
   }, []);
 
+  // The numbers of the requests the newest answer holds. They are an extra: when one read of them fails, the last ones stay,
+  // so a missed tick does not take the "Registrations" row off the checklist and put it back.
+  const lastRegistrationRef = useRef<RegistrationCountsDto | null>(null);
+
   // The first read has the 30 second limit and a Retry; a refresh every 30 seconds (and after a live signal) is silent, as
   // a tick of the list is: the numbers stay on screen until the next answer. The connection state hears of every request
   // that failed, whoever waits for it.
   const fetchOverview = useCallback(
-    async (signal: AbortSignal) => {
+    async (signal: AbortSignal): Promise<OverviewAnswer> => {
       try {
-        return await fetchEventOverview(event.id, signal);
+        const [overview, registration] = await Promise.all([
+          fetchEventOverview(event.id, signal),
+          readRegistrationCounts(event.id, signal),
+        ]);
+        return { overview, registration: registration ?? lastRegistrationRef.current };
       } catch (err) {
         if (err instanceof ApiError) reportApiError(err.status);
         throw err;
@@ -1518,9 +1556,17 @@ function EventOverviewPageBody() {
     },
     [event.id, reportApiError],
   );
-  const list = useListLoad({ fetcher: fetchOverview, fallback: "Could not load event stats.", onData: absorbServerOverview });
+  const absorbAnswer = useCallback(
+    (answer: OverviewAnswer) => {
+      lastRegistrationRef.current = answer.registration;
+      absorbServerOverview(answer.overview);
+    },
+    [absorbServerOverview],
+  );
+  const list = useListLoad({ fetcher: fetchOverview, fallback: "Could not load event stats.", onData: absorbAnswer });
   const card = useCardLoad(list);
-  const overview = list.data;
+  const overview = list.data?.overview ?? null;
+  const registration = list.data?.registration ?? null;
   const pollOverview = list.poll;
 
   // Bounded, not a plain reset-on-every-call debounce: a pending timer is left alone rather than
@@ -1748,7 +1794,12 @@ function EventOverviewPageBody() {
             />
           </div>
           <div className="overview-row overview-row--stretch">
-            <SetupChecklistCard overview={overview} eventId={event.id} />
+            <SetupChecklistCard
+              overview={overview}
+              eventId={event.id}
+              registration={registration}
+              seatsInUse={event.seats_in_use}
+            />
             <NotesAndContactsCard
               pinnedNote={pinnedNote}
               archived={!!event.archived_at}

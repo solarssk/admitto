@@ -9,6 +9,7 @@ import type {
   EventOverviewDto,
   EventRecentActivityEntry,
   EventResourceDto,
+  RegistrationCountsDto,
 } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 import {
@@ -26,6 +27,7 @@ import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 const fetchEventOverview = vi.fn();
 const fetchTicketTypes = vi.fn();
+const fetchRegistrationCounts = vi.fn();
 const reportApiError = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
@@ -89,6 +91,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
+  fetchRegistrationCounts: (...args: unknown[]) => fetchRegistrationCounts(...args),
   patchEventNote: vi.fn(),
   createEventContact: vi.fn(),
   updateEventContact: vi.fn(),
@@ -211,6 +214,12 @@ async function notesSection(label: string): Promise<HTMLElement> {
   await loadedPage();
   return screen.getByText(label).closest(".overview-notes-section") as HTMLElement;
 }
+
+beforeEach(() => {
+  // Unless a test gives it numbers, the numbers of the guest requests cannot be read, as for an event that does not use registration.
+  fetchRegistrationCounts.mockReset();
+  fetchRegistrationCounts.mockRejectedValue(new Error("The numbers of the requests are not part of this test."));
+});
 
 afterEach(() => {
   cleanup();
@@ -2343,5 +2352,119 @@ describe("EventOverviewPage busy buttons", () => {
 
     await act(async () => answer.reject(new Error("boom")));
     await waitFor(() => expect(add.getAttribute("aria-busy")).toBeNull());
+  });
+});
+
+describe("EventOverviewPage: the Registrations row of the Setup checklist (D-B11)", () => {
+  const registrationCounts = (pending: number, waitlist = 0, mode: RegistrationCountsDto["mode"] = "approval"): RegistrationCountsDto => ({
+    mode,
+    by_status: { awaiting_email: 2, pending, waitlist, accepted: 30, rejected: 1 },
+    needs_decision: pending,
+  });
+  const registrationRow = () => within(checklistCard()).queryByRole("link", { name: /^Registrations/ });
+
+  beforeEach(() => {
+    fetchEventOverview.mockReset();
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    fetchTicketTypes.mockReset();
+    fetchTicketTypes.mockResolvedValue([]);
+  });
+
+  it("asks for attention and leads to the requests that wait for a decision, first among the rows that do", async () => {
+    fetchRegistrationCounts.mockResolvedValue(registrationCounts(3, 2));
+    renderPage();
+    await loadedPage();
+
+    const row = registrationRow() as HTMLElement;
+    expect(row.getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=requests&status=pending");
+    expect(row.textContent).toContain("3 requests waiting for a decision. 2 on the waiting list.");
+    expect(within(row).getByText("Needs attention")).toBeTruthy();
+    expect(row.querySelector(".ti-clipboard-check")).not.toBeNull();
+    // Problems come first, so what needs doing is never below the fold; this is the one row that does.
+    expect(within(checklistCard()).getAllByRole("link")[0]).toBe(row);
+    // The score counts it: the other four checks are done.
+    expect(within(checklistCard()).getByText("4 of 5 done")).toBeTruthy();
+    expect(fetchRegistrationCounts).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
+  });
+
+  it("is done when no request waits, and leads to the tab", async () => {
+    fetchRegistrationCounts.mockResolvedValue(registrationCounts(0));
+    renderPage();
+    await loadedPage();
+
+    const row = registrationRow() as HTMLElement;
+    expect(row.getAttribute("href")).toBe("/admin/events/evt-1/registration");
+    expect(row.textContent).toContain("No requests waiting for a decision.");
+    expect(within(row).getByText("Done")).toBeTruthy();
+    expect(within(checklistCard()).getByText("5 of 5 done")).toBeTruthy();
+    // Requests come before the attendees they become: first among the rows that are done.
+    expect(within(checklistCard()).getAllByRole("link")[0]).toBe(row);
+  });
+
+  it("is not there while registration is off, whatever is left in the list", async () => {
+    fetchRegistrationCounts.mockResolvedValue(registrationCounts(9, 0, null));
+    renderPage();
+    await loadedPage();
+
+    expect(registrationRow()).toBeNull();
+    expect(within(checklistCard()).getByText("4 of 4 done")).toBeTruthy();
+  });
+
+  it("is not there when the numbers cannot be read, and the page is whole", async () => {
+    renderPage();
+    await loadedPage();
+
+    expect(registrationRow()).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(admittedLegendValue()).toBe("5");
+  });
+
+  it("says that the event holds more seats than its limit (D-B7), by the event's own count of seats", async () => {
+    mockEventOverrides = { seats_in_use: 104 };
+    fetchRegistrationCounts.mockResolvedValue(registrationCounts(0));
+    renderPage();
+    await loadedPage();
+
+    const row = registrationRow() as HTMLElement;
+    expect(row.textContent).toContain("Over the limit: 104 seats taken, limit 100.");
+    expect(within(row).getByText("Needs attention")).toBeTruthy();
+  });
+
+  it("counts the active attendees as seats when the event has no count of its own, and an event within its limit says nothing", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 101 }));
+    fetchRegistrationCounts.mockResolvedValue(registrationCounts(0));
+    renderPage();
+    await loadedPage();
+    expect(registrationRow()?.textContent).toContain("Over the limit: 101 seats taken, limit 100.");
+
+    cleanup();
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 100 }));
+    renderPage();
+    await loadedPage();
+    expect(registrationRow()?.textContent).not.toContain("Over the limit");
+  });
+
+  it("reads the numbers again with every refresh of the page, and keeps the last ones when one read of them fails", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchRegistrationCounts.mockResolvedValue(registrationCounts(3));
+      renderPage();
+      await waitFor(() => expect(registrationRow()?.textContent).toContain("3 requests waiting"));
+
+      fetchRegistrationCounts.mockResolvedValue(registrationCounts(1));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      await waitFor(() => expect(registrationRow()?.textContent).toContain("1 request waiting"));
+
+      fetchRegistrationCounts.mockRejectedValue(new Error("a missed read"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      await waitFor(() => expect(fetchRegistrationCounts).toHaveBeenCalledTimes(3));
+      expect(registrationRow()?.textContent).toContain("1 request waiting");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
