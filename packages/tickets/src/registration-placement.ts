@@ -108,6 +108,15 @@ export type SubmissionMailLimits = {
    */
   event?: { base: number; windowMs: number };
   /**
+   * The event's budget of confirmation links sent again. A resend puts the row of the mail back in the queue and adds no
+   * row, so the count above does not see it, and without a budget of its own an event could send each of its confirmations
+   * as often as the cooldown and the address's budget allow. Asked inside the transaction, once, for a resend that is about
+   * to be queued (after the cooldown and the event's budget above, and before the address's), with the cap of the event
+   * (`eventMailCap`). False withholds the mail and counts as the event's budget spent. Like `addressAllowed` it holds the
+   * locks while it runs: it must be quick, and it must not throw. Default: always true.
+   */
+  resendAllowed?: (cap: number) => Promise<boolean>;
+  /**
    * Told when the mail of a registration that is stored is withheld, and by which budget. For an operator's signal and
    * nothing else: it runs inside the transaction, so it must not wait for anything, and it must not throw.
    */
@@ -190,13 +199,17 @@ type SubmissionContext = {
   verifiedByProvider: boolean;
   /** Whether the event has budget left for one more mail (see SubmissionMailLimits). */
   eventBudgetLeft: boolean;
+  /** The most mail the event may queue in the window (eventMailCap), or null when the caller set no budget for it. */
+  mailCap: number | null;
   mail: SubmissionMailLimits | undefined;
 };
 
-/** Whether the budgets let one more mail be queued, for a new registration or for the link of one that exists. The
- * address's budget is asked last, so that it is spent only by a mail that is queued. */
-async function mailBudgetAllows({ eventBudgetLeft, mail }: SubmissionContext): Promise<boolean> {
-  if (!eventBudgetLeft) {
+/** Whether the budgets let one more mail be queued, for a new registration or (`resend`) for the link of one that exists,
+ * which has the event's budget of resends as well. The address's budget is asked last, so that it is spent only by a mail
+ * that is queued (a resend that the address's budget then withholds has used a share of the event's resends: the
+ * conservative way round). */
+async function mailBudgetAllows({ eventBudgetLeft, mailCap, mail }: SubmissionContext, resend = false): Promise<boolean> {
+  if (!eventBudgetLeft || (resend && mailCap !== null && mail?.resendAllowed && !(await mail.resendAllowed(mailCap)))) {
     mail?.onWithheld?.("event");
     return false;
   }
@@ -324,7 +337,7 @@ async function sendConfirmationAgain(context: SubmissionContext, registration: K
   const { tx, eventId, now } = context;
   await requeueMailForMoment(tx, { eventId, registration, moment: { to: "awaiting_email" } }, now, async (last) => {
     if (last && now.getTime() - last.queued_at.getTime() < CONFIRMATION_RESEND_COOLDOWN_MS) return false;
-    return mailBudgetAllows(context);
+    return mailBudgetAllows(context, true);
   });
 }
 
@@ -376,6 +389,7 @@ async function submitInTransaction(
     registrant,
     verifiedByProvider: input.method === "sso",
     eventBudgetLeft: await eventBudgetLeft(tx, eventId, event.capacity, now, mail?.event),
+    mailCap: mail?.event ? eventMailCap(mail.event.base, event.capacity) : null,
     mail,
   };
   const address = await lookUpAddress(context);

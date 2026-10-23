@@ -1090,6 +1090,20 @@ export async function checkRegistrationEventRateLimit(
   return (await store.hit(`registration:event:${eventId}`, windowMs, max)).allowed;
 }
 
+/** Budget of confirmation links an event sends again within the window (inline, not middleware). A resend puts the row of
+ * its mail back in the queue, so the count of rows behind `registration:mail-event` does not see it; this is the event's
+ * brake on them, with the cap that count has (`cap`, `eventMailCap` in `@admitto/tickets`) and the same window. Counted in
+ * the rate-limit store, so a restart of a replica resets its share. False means "do not queue the mail"; the caller still
+ * answers the registrant exactly as before. Silent, like {@link checkRegistrationEventRateLimit}. */
+export async function checkRegistrationEventResendRateLimit(
+  store: RateLimitStore,
+  eventId: string,
+  cap: number,
+): Promise<boolean> {
+  const { windowMs } = INLINE_RATE_LIMITS["registration:mail-event"];
+  return (await store.hit(`registration:mail-event-resend:${eventId}`, windowMs, cap)).allowed;
+}
+
 /** Instance-wide budget of registration mails to one address (inline, not middleware). The
  * address enters the store only as a keyed hash. False means "do not queue the mail"; the caller
  * still answers the registrant exactly as before. Silent, like {@link checkRegistrationEventRateLimit}. */

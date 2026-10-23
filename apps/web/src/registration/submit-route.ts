@@ -38,6 +38,7 @@ import { placeRegistration, type PlaceRegistrationResult, type PublicWriteOption
 import {
   INLINE_RATE_LIMITS,
   checkRegistrationEventRateLimit,
+  checkRegistrationEventResendRateLimit,
   checkRegistrationMailRecipientRateLimit,
 } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
@@ -193,6 +194,7 @@ function placeSubmission(
       ...deps.placement,
       mail: {
         addressAllowed: () => checkRegistrationMailRecipientRateLimit(deps.store, registrant.email),
+        resendAllowed: (cap) => checkRegistrationEventResendRateLimit(deps.store, eventId, cap),
         event: { base: budget.max, windowMs: budget.windowMs },
         onWithheld: (reason) => {
           if (reason === "event") noteEventBudgetSpent(eventId);

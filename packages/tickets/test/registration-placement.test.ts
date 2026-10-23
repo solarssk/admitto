@@ -421,6 +421,53 @@ describe("placeRegistration: the guest sends the form again while the address wa
     expect(asked).toHaveBeenCalledTimes(1);
   });
 
+  it("asks the event's budget of resends, with the cap of the event, after the cooldown and before the address's budget", async () => {
+    const { eventId, registrant, mail } = await waiting({ capacity: 400 });
+    const queuedAt = (await mailRow(mail.id)).queued_at.getTime();
+    const order: string[] = [];
+    const resendAllowed = vi.fn(async (_cap: number) => {
+      order.push("event");
+      return true;
+    });
+    const addressAllowed = vi.fn(async () => {
+      order.push("address");
+      return true;
+    });
+    const mailLimits = { resendAllowed, addressAllowed, event: { base: 1000, windowMs: 86_400_000 } };
+
+    await again(eventId, registrant, { now: new Date(queuedAt + CONFIRMATION_RESEND_COOLDOWN_MS - 1), mail: mailLimits });
+    expect(order).toEqual([]);
+    await again(eventId, registrant, { now: new Date(queuedAt + CONFIRMATION_RESEND_COOLDOWN_MS), mail: mailLimits });
+
+    expect(order).toEqual(["event", "address"]);
+    // The cap is the larger of the base and three a seat: 3 x 400.
+    expect(resendAllowed).toHaveBeenCalledExactlyOnceWith(1200);
+  });
+
+  it("leaves the mail as it was, answers the same and says the event's budget was spent, when its resends are used up", async () => {
+    const { eventId, registrant, mail } = await waiting();
+    await sentAnHourAgo(mail.id);
+    const before = await mailRow(mail.id);
+    const onWithheld = vi.fn();
+    const addressAllowed = vi.fn(async () => true);
+    const mailLimits = { event: { base: 1000, windowMs: 86_400_000 }, resendAllowed: async () => false, addressAllowed, onWithheld };
+
+    expect(await again(eventId, registrant, { mail: mailLimits })).toEqual(RECEIVED);
+
+    expect(onWithheld).toHaveBeenCalledExactlyOnceWith("event");
+    expect(addressAllowed).not.toHaveBeenCalled();
+    expect(await mailRow(mail.id)).toEqual(before);
+  });
+
+  it("does not ask the budget of resends for a new registration: its mail is a row of the event's budget", async () => {
+    const eventId = await make.event();
+    const resendAllowed = vi.fn(async (_cap: number) => true);
+
+    expect(await place(eventId, make.registrant(), { mail: { event: { base: 5, windowMs: 86_400_000 }, resendAllowed } })).toEqual(RECEIVED);
+
+    expect(resendAllowed).not.toHaveBeenCalled();
+  });
+
   it.each([["address" as const], ["event" as const]])(
     "leaves the mail as it was, answers the same and says which budget was spent, when the %s budget is spent",
     async (spent) => {
