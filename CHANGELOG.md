@@ -32,14 +32,14 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add `registration:mail-event`, a daily cap on the registration mail one event queues (1000, or 3 per seat), tunable with `RATE_LIMIT_OVERRIDES` ([#1790](https://github.com/solarssk/admitto/pull/1790))
 - Add the four guest registration emails to Communication > Templates, where you can read them, edit them and revert them to the built-in text ([#1791](https://github.com/solarssk/admitto/pull/1791))
 - Show who accepted, rejected or deleted guest registrations in Organisation settings > Logs > Audit, and filter by these actions ([#1794](https://github.com/solarssk/admitto/pull/1794))
-- Add the Requests tab to the Registration page, listing the requests guests sent with search, filters and pages, and a Registrations row on the Overview checklist
+- Add the Requests tab to the Registration page, listing the requests guests sent with search, filters and pages, and a Registrations row on the Overview checklist ([#1796](https://github.com/solarssk/admitto/pull/1796))
 
 ### Changed
 
 - Use the width of the screen in the Add attendee and Edit attendee forms, two fields to a row, with the custom fields under their own heading ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Hide a question that is shown only for another answer in the Add attendee and Edit attendee forms, and do not require or save it ([#1787](https://github.com/solarssk/admitto/pull/1787))
 - Give the Communication template picker a row of its own on a phone, so the open template's name is not cut off ([#1791](https://github.com/solarssk/admitto/pull/1791))
-- Show the number on a tab in a darker grey, so it can be read on the grey page background
+- Show the number on a tab in a darker grey, so it can be read on the grey page background ([#1796](https://github.com/solarssk/admitto/pull/1796))
 
 ### Fixed
 
