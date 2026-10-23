@@ -24,12 +24,12 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add long text, date, date and time and phone answer types, with format rules, to the field editor, attendee form and import columns list ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Show an avatar with the attendee's initials before the name on the attendee page ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Show icons, questions that open under another answer, and a list of suggestions on the guest registration form, as in the approved design ([#1786](https://github.com/solarssk/admitto/pull/1786))
-- Add the four guest registration emails to Communication > Templates, where you can read them, edit them and revert them to the built-in text
+- Add the four guest registration emails to Communication > Templates, where you can read them, edit them and revert them to the built-in text ([#1791](https://github.com/solarssk/admitto/pull/1791))
 
 ### Changed
 
 - Use the width of the screen in the Add attendee and Edit attendee forms, two fields to a row, with the custom fields under their own heading ([#1784](https://github.com/solarssk/admitto/pull/1784))
-- Give the template picker on Communication a full row on a phone, so the name of the open template is no longer cut to its first letters
+- Give the Communication template picker a row of its own on a phone, so the open template's name is not cut off ([#1791](https://github.com/solarssk/admitto/pull/1791))
 
 ### Fixed
 
