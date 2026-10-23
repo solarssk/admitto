@@ -26,6 +26,23 @@ export function isSystemTemplateName(name: string): name is SystemTemplateName {
   return SYSTEM_TEMPLATE_NAME_SET.has(name);
 }
 
+/** The name a system mail goes by in the template picker. A row that is saved for the first time starts with it
+ * (the built-in default's label, `defaultTemplateLabel`), and the admin SPA shows it for a mail that has no row
+ * yet, so the picker reads the same before and after the first save. It lives here, in a module with no imports,
+ * because the SPA may not import the built-in sources (they pull in the MJML compiler). */
+export function systemTemplateLabel(name: SystemTemplateName): string {
+  switch (name) {
+    case "registration-confirm":
+      return "Registration: confirm email";
+    case "registration-received":
+      return "Registration: received";
+    case "registration-waitlist":
+      return "Registration: waiting list";
+    case "registration-rejected":
+      return "Registration: declined";
+  }
+}
+
 /** Names a free-form template must never take: `ticket` and every system template. */
 export function isReservedTemplateName(name: string): boolean {
   return name === DEFAULT_TEMPLATE_NAME || isSystemTemplateName(name);

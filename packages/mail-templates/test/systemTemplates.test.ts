@@ -24,6 +24,7 @@ import {
   resolveEventContactVars,
   resolveTemplateForEvent,
   setMailTemplate,
+  systemTemplateLabel,
   validateTemplate,
 } from "../src/index.js";
 
@@ -61,6 +62,19 @@ describe("system template names", () => {
     expect(isSystemTemplateName("reminder")).toBe(false);
     expect(isSystemTemplateName("constructor")).toBe(false);
     expect(isSystemTemplateName("__proto__")).toBe(false);
+  });
+
+  it("have one picker label each, which is also the label of the built-in default and of a new row", () => {
+    expect(SYSTEM_TEMPLATE_NAMES.map((name) => systemTemplateLabel(name))).toEqual([
+      "Registration: confirm email",
+      "Registration: received",
+      "Registration: waiting list",
+      "Registration: declined",
+    ]);
+    for (const name of SYSTEM_TEMPLATE_NAMES) {
+      expect(getBuiltinTemplateSource(name).label, name).toBe(systemTemplateLabel(name));
+      expect(defaultTemplateLabel(name), name).toBe(systemTemplateLabel(name));
+    }
   });
 
   it("reserve ticket and every system name against a free template", () => {

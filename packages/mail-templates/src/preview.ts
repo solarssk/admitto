@@ -47,7 +47,8 @@ const SAMPLE_QR_IMAGE_DATA_URI =
 /** Inert placeholder for `DEFAULT_SAMPLE_VARS.ticket_url` — not a real link. */
 const SAMPLE_TICKET_HREF = "#";
 
-/** Swaps the fixed `tickets.example.com` sample URLs for safe, always-rendering placeholders in
+/** Swaps the fixed `tickets.example.com` sample URLs (the ticket, QR and wallet links, and the link of the
+ * confirmation mail) for safe, always-rendering placeholders in
  * a fully-rendered template (subject/HTML with `{{ticket_url}}`/`{{qr_image_url}}` already
  * resolved to their literal sample values, not deferred tokens) — for test-send only. Same
  * substitution the admin's own in-browser template preview already does client-side
@@ -64,6 +65,8 @@ export function sanitizeSampleLinksForTestSend(rendered: RenderedTemplate): Rend
       .split(SAMPLE_GOOGLE_WALLET_URL)
       .join(SAMPLE_TICKET_HREF)
       .split(SAMPLE_TICKET_URL)
+      .join(SAMPLE_TICKET_HREF)
+      .split(SAMPLE_CONFIRM_URL)
       .join(SAMPLE_TICKET_HREF),
   };
 }
@@ -75,6 +78,8 @@ const SAMPLE_TICKET_URL = "https://tickets.example.com/t/sample-token";
 const SAMPLE_QR_IMAGE_URL = "https://tickets.example.com/q/sample-token.png";
 const SAMPLE_APPLE_WALLET_URL = `${SAMPLE_TICKET_URL}/wallet/apple`;
 const SAMPLE_GOOGLE_WALLET_URL = `${SAMPLE_TICKET_URL}/wallet/google`;
+/** The link of the confirmation mail: as little a real page as the ticket's. */
+const SAMPLE_CONFIRM_URL = "https://tickets.example.com/r/sample-event/confirm/sample-id.sample-mac";
 
 export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   first_name: "Alex",
@@ -99,7 +104,7 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   download_page_url: "",
   ticket_type: "General",
   event_hours: "10:00 - 17:00",
-  confirm_url: "https://tickets.example.com/r/sample-event/confirm/sample-id.sample-mac",
+  confirm_url: SAMPLE_CONFIRM_URL,
   contact_name: "Sample Organizer",
   contact_email: "organizer@example.com",
   contact_line: "Questions? Contact Sample Organizer at organizer@example.com.",

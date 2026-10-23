@@ -290,6 +290,10 @@ import {
   handlePreviewEventTemplate,
   handleTestSendEventTemplate,
   handleTestSendEventTemplateById,
+  handleGetSystemTemplate,
+  handlePutSystemTemplate,
+  handlePreviewSystemTemplate,
+  handleTestSendSystemTemplate,
   handleListEventDeliveries,
   handleGetEventDelivery,
   handleGetRenderedEventDelivery,
@@ -2554,6 +2558,37 @@ export function createApp(options: CreateAppOptions = {}) {
     adminCommunicationRateLimit,
     guardArchivedEvent((c) =>
       handleTestSendEventTemplateById(c, db, rateLimitStore, mailDeliveryDeps, mailInjectedBaseUrl),
+    ),
+  );
+  // The four registration mails, by name: the same four actions as the ticket template's own routes above, for a mail
+  // that has no row of its own yet (the editor opens the built-in default). Once a mail has a row, the by-id routes
+  // above serve it. Same chains, limits and archive rules as their counterparts.
+  app.get("/api/admin/events/:eventId/system-templates/:name", staffAdminGate, (c) =>
+    handleGetSystemTemplate(c, db),
+  );
+  app.put(
+    "/api/admin/events/:eventId/system-templates/:name",
+    jsonPostCsrf,
+    staffAdminGate,
+    templateBodyLimit,
+    guardArchivedEvent((c) => handlePutSystemTemplate(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/system-templates/:name/preview",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminTemplatePreviewRateLimit,
+    templateBodyLimit,
+    (c) => handlePreviewSystemTemplate(c, db, mailInjectedBaseUrl),
+  );
+  app.post(
+    "/api/admin/events/:eventId/system-templates/:name/test-send",
+    jsonPostCsrf,
+    staffAdminGate,
+    templateTestSendBodyLimit,
+    adminCommunicationRateLimit,
+    guardArchivedEvent((c) =>
+      handleTestSendSystemTemplate(c, db, rateLimitStore, mailDeliveryDeps, mailInjectedBaseUrl),
     ),
   );
   app.post(

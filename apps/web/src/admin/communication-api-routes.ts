@@ -6,12 +6,11 @@ import {
   ALLOWED_PLACEHOLDERS,
   REQUIRED_URL_PLACEHOLDERS,
   IMAGE_PLACEHOLDERS,
-  DEFAULT_BODY_MJML,
-  DEFAULT_SUBJECT_TEMPLATE,
   DEFAULT_TEMPLATE_NAME,
   SYSTEM_TEMPLATE_NAMES,
   assertValidTemplate,
   disallowedPlaceholdersForTemplate,
+  getBuiltinTemplateSource,
   isReservedTemplateName,
   isSystemTemplateName,
   requiredPlaceholdersForTemplate,
@@ -21,6 +20,7 @@ import {
   buildBaseTemplateVars,
   renderTemplate,
   resolveBrandingFromEvent,
+  resolveEventContactVars,
   resolveEventImageAssetVars,
   createMailTemplate,
   setMailTemplate,
@@ -33,6 +33,7 @@ import {
   UnquotedAttributePlaceholderError,
   resolveTemplateById,
   TemplateNotFoundError,
+  type SystemTemplateName,
   type TemplateFormat,
   type TemplateSource,
 } from "@admitto/mail-templates";
@@ -130,6 +131,13 @@ export type EventTemplateDto = {
   logo_url: string;
   header_image_url: string;
 };
+
+/** What the editor opens a template with, and where it came from. The ticket's `GET /template` adds the placeholder
+ * lists to it; a system mail's `GET /system-templates/:name` is just this. */
+export type EventTemplateSourceDto = Pick<
+  EventTemplateDto,
+  "subject_template" | "body_template" | "template_format" | "source"
+>;
 
 /** Paginated delivery log response for GET /deliveries. */
 export type EventDeliveriesListDto = {
@@ -273,59 +281,55 @@ function mjmlCompileErrorResponse(c: Context, err: MjmlCompileError): Response {
   return c.json({ error: "template_validation_failed", errors }, 400);
 }
 
-/** Resolve editable template source for an event (event → org → builtin). */
+function editorSource(
+  row: { subject_template: string; body_template: string; template_format: string },
+  source: "event" | "organization",
+): EventTemplateSourceDto {
+  return {
+    subject_template: row.subject_template,
+    body_template: row.body_template,
+    template_format: row.template_format as TemplateFormat,
+    source,
+  };
+}
+
+/** Resolve editable template source for an event (event → org → builtin): the ticket template unless a name is given. */
 async function resolveEventTemplateForEditor(
   db: PrismaClient,
   eventId: string,
-): Promise<{
-  subject_template: string;
-  body_template: string;
-  template_format: TemplateFormat;
-  source: TemplateSource;
-}> {
+  name: string = DEFAULT_TEMPLATE_NAME,
+): Promise<EventTemplateSourceDto> {
   const event = await db.event.findUniqueOrThrow({ where: { id: eventId } });
 
   const eventRow = await db.mailTemplate.findUnique({
     where: {
-      scope_type_scope_id_name: { scope_type: "event", scope_id: eventId, name: "ticket" },
+      scope_type_scope_id_name: { scope_type: "event", scope_id: eventId, name },
     },
   });
-  if (eventRow) {
-    return {
-      subject_template: eventRow.subject_template,
-      body_template: eventRow.body_template,
-      template_format: eventRow.template_format as TemplateFormat,
-      source: "event",
-    };
-  }
+  if (eventRow) return editorSource(eventRow, "event");
 
   const orgRow = await db.mailTemplate.findUnique({
     where: {
       scope_type_scope_id_name: {
         scope_type: "organization",
         scope_id: event.organization_id,
-        name: "ticket",
+        name,
       },
     },
   });
-  if (orgRow) {
-    return {
-      subject_template: orgRow.subject_template,
-      body_template: orgRow.body_template,
-      template_format: orgRow.template_format as TemplateFormat,
-      source: "organization",
-    };
-  }
+  if (orgRow) return editorSource(orgRow, "organization");
 
+  const builtin = getBuiltinTemplateSource(name);
   return {
-    subject_template: DEFAULT_SUBJECT_TEMPLATE,
-    body_template: DEFAULT_BODY_MJML,
-    template_format: "mjml",
+    subject_template: builtin.subject,
+    body_template: builtin.body,
+    template_format: builtin.format,
     source: "builtin",
   };
 }
 
-/** Render a draft template with sample event data (no DB save). */
+/** Render a draft template with sample event data (no DB save). A registration mail (a system `name`) shows the
+ * event's own contact instead of the sample one, as the real mail carries it, or no contact line when the event has none. */
 async function renderDraftPreview(
   db: PrismaClient,
   eventId: string,
@@ -333,6 +337,7 @@ async function renderDraftPreview(
   body: string,
   format: TemplateFormat,
   baseUrl: string,
+  name: string = DEFAULT_TEMPLATE_NAME,
 ) {
   const compiledHtml = await compileTemplate(body, format);
   if (format === "mjml") {
@@ -345,10 +350,12 @@ async function renderDraftPreview(
   });
   const branding = resolveBrandingFromEvent(event);
   const customAssets = await resolveEventImageAssetVars(eventId, db);
+  const contact = isSystemTemplateName(name) ? await resolveEventContactVars(eventId, db) : {};
 
   const vars = {
     ...buildBaseTemplateVars(event, branding, baseUrl),
     ...customAssets.vars,
+    ...contact,
   };
 
   return renderTemplate(
@@ -403,47 +410,63 @@ export async function handleGetEventTemplate(c: Context, db: PrismaClient): Prom
   return c.json(dto);
 }
 
-/** PUT /api/admin/events/:eventId/template */
-export async function handlePutEventTemplate(c: Context, db: PrismaClient): Promise<Response> {
+/** The event of a route that needs manage access to it, or the response to send instead (400 or 403). */
+async function requireManagedEventId(c: Context, db: PrismaClient): Promise<string | Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
+  return (await assertEventManageAccess(c, db, eventId)) ?? eventId;
+}
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
+/** A template source as the save and preview routes receive it. */
+type TemplateDraft = { subject: string; body: string; format: TemplateFormat };
 
-  let body: z.infer<typeof templateBodySchema>;
+/** Reads the posted template source: the same three fields for every save and preview route. */
+async function readTemplateDraft(c: Context): Promise<TemplateDraft | Response> {
   try {
-    body = templateBodySchema.parse(await c.req.json());
+    const body = templateBodySchema.parse(await c.req.json());
+    return { subject: body.subject_template, body: body.body_template, format: body.template_format };
   } catch {
     return c.json({ error: "validation_failed" }, 400);
   }
+}
 
-  const sourceErrors = await collectTemplateSourceErrors(db, eventId, body.subject_template, body.body_template);
+type EventTemplateRow = NonNullable<Awaited<ReturnType<typeof getEventTemplateRow>>>;
+
+/** Checks the posted source and saves it as the event's own row of the template `name` (the first save creates the
+ * row), in the transaction every template write runs in. Returns the row, or the response to send instead. */
+async function saveEventTemplateByName(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  name: string,
+): Promise<EventTemplateRow | Response> {
+  const draft = await readTemplateDraft(c);
+  if (draft instanceof Response) return draft;
+
+  const sourceErrors = await collectTemplateSourceErrors(db, eventId, draft.subject, draft.body, {
+    requireTicketPlaceholders: name === DEFAULT_TEMPLATE_NAME,
+    templateName: name,
+  });
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
 
   try {
-    await db.$transaction(async (tx) => {
+    return await db.$transaction(async (tx) => {
       await lockEventForTemplateWrite(tx, eventId);
       // Serializes against event-image-assets-routes.ts's delete handler, which takes the same
       // lock before its asset_in_use recheck - without it, a delete could commit between that
       // handler's check and this save (Postgres default isolation is READ COMMITTED).
       await acquireEventImageAssetsLock(tx, eventId);
-      await setMailTemplate(
-        { scopeType: "event", scopeId: eventId },
-        {
-          subject: body.subject_template,
-          body: body.body_template,
-          format: body.template_format,
-        },
-        tx,
-      );
+      await setMailTemplate({ scopeType: "event", scopeId: eventId, name }, draft, tx);
       await writeBulkActionLog(tx, {
         event_id: eventId,
         action_type: "mail_template_updated",
         audit: adminAuditFromContext(c),
-        metadata: { format: body.template_format },
+        metadata: name === DEFAULT_TEMPLATE_NAME ? { format: draft.format } : { template_name: name, format: draft.format },
+      });
+      return tx.mailTemplate.findUniqueOrThrow({
+        where: { scope_type_scope_id_name: { scope_type: "event", scope_id: eventId, name } },
       });
     });
   } catch (err) {
@@ -451,8 +474,51 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
     if (response) return response;
     throw err;
   }
+}
 
+/** PUT /api/admin/events/:eventId/template */
+export async function handlePutEventTemplate(c: Context, db: PrismaClient): Promise<Response> {
+  const eventId = await requireManagedEventId(c, db);
+  if (eventId instanceof Response) return eventId;
+
+  const saved = await saveEventTemplateByName(c, db, eventId, DEFAULT_TEMPLATE_NAME);
+  if (saved instanceof Response) return saved;
   return c.json({ ok: true });
+}
+
+/** Checks a draft of the template `name` as a save would, renders it with sample data and answers with the subject and
+ * the HTML. Nothing is saved. The common end of every preview route. */
+async function previewTemplateDraft(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  name: string,
+  draft: TemplateDraft,
+  injectedBaseUrl: string | undefined,
+): Promise<Response> {
+  // checkWalletAvailability: false - preview doesn't persist anything, and must keep resolving a
+  // wallet placeholder normally even for a platform this event has off (Template-Variables.md's
+  // own promise, CodeRabbit).
+  const sourceErrors = await collectTemplateSourceErrors(db, eventId, draft.subject, draft.body, {
+    checkWalletAvailability: false,
+    requireTicketPlaceholders: name === DEFAULT_TEMPLATE_NAME,
+    templateName: name,
+  });
+  if (sourceErrors.length > 0) {
+    return templateValidationResponse(c, sourceErrors);
+  }
+
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+
+  try {
+    const rendered = await renderDraftPreview(db, eventId, draft.subject, draft.body, draft.format, baseUrlOrRes, name);
+    return c.json({ subject: rendered.subject, html: rendered.html });
+  } catch (err) {
+    const response = eventTemplateWriteErrorResponse(c, err);
+    if (response) return response;
+    throw err;
+  }
 }
 
 /** POST /api/admin/events/:eventId/template/preview */
@@ -461,65 +527,63 @@ export async function handlePreviewEventTemplate(
   db: PrismaClient,
   injectedBaseUrl?: string,
 ): Promise<Response> {
-  const eventId = requireEventId(c);
+  const eventId = await requireManagedEventId(c, db);
   if (eventId instanceof Response) return eventId;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
+  const draft = await readTemplateDraft(c);
+  if (draft instanceof Response) return draft;
+  return previewTemplateDraft(c, db, eventId, DEFAULT_TEMPLATE_NAME, draft, injectedBaseUrl);
+}
 
-  let body: z.infer<typeof templateBodySchema>;
-  try {
-    body = templateBodySchema.parse(await c.req.json());
-  } catch {
-    return c.json({ error: "validation_failed" }, 400);
-  }
+/** What the four routes of a system mail share: an event the caller manages, which exists, and a name that is one of
+ * the system mails (anything else, `ticket` included, is a 404: those have their own routes). */
+async function loadSystemTemplateRequest(
+  c: Context,
+  db: PrismaClient,
+): Promise<{ eventId: string; name: SystemTemplateName } | Response> {
+  const eventId = await requireManagedEventId(c, db);
+  if (eventId instanceof Response) return eventId;
 
-  // checkWalletAvailability: false - preview doesn't persist anything, and must keep resolving a
-  // wallet placeholder normally even for a platform this event has off (Template-Variables.md's
-  // own promise, CodeRabbit).
-  const sourceErrors = await collectTemplateSourceErrors(
-    db,
-    eventId,
-    body.subject_template,
-    body.body_template,
-    { checkWalletAvailability: false },
-  );
-  if (sourceErrors.length > 0) {
-    return templateValidationResponse(c, sourceErrors);
-  }
+  const name = c.req.param("name") ?? "";
+  if (!isSystemTemplateName(name)) return c.json({ error: "not_found" }, 404);
 
-  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
-  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
-  const baseUrl = baseUrlOrRes;
+  // A superadmin passes the access check for any id, so an event that does not exist is answered here.
+  const event = await db.event.findUnique({ where: { id: eventId }, select: { id: true } });
+  if (!event) return c.json({ error: "not_found" }, 404);
+  return { eventId, name };
+}
 
-  try {
-    const rendered = await renderDraftPreview(
-      db,
-      eventId,
-      body.subject_template,
-      body.body_template,
-      body.template_format,
-      baseUrl,
-    );
-    return c.json({ subject: rendered.subject, html: rendered.html });
-  } catch (err) {
-    if (err instanceof MjmlCompileError) {
-      return mjmlCompileErrorResponse(c, err);
-    }
-    if (err instanceof PlaceholderInHtmlCommentError) {
-      return templateValidationResponse(
-        c,
-        err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`),
-      );
-    }
-    if (err instanceof UnquotedAttributePlaceholderError) {
-      return templateValidationResponse(
-        c,
-        err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`),
-      );
-    }
-    throw err;
-  }
+/** GET /api/admin/events/:eventId/system-templates/:name - what the editor opens a registration mail with: the event's
+ * own row, else the organization's, else the built-in default (`source` says which). */
+export async function handleGetSystemTemplate(c: Context, db: PrismaClient): Promise<Response> {
+  const target = await loadSystemTemplateRequest(c, db);
+  if (target instanceof Response) return target;
+  return c.json(await resolveEventTemplateForEditor(db, target.eventId, target.name) satisfies EventTemplateSourceDto);
+}
+
+/** PUT /api/admin/events/:eventId/system-templates/:name - saves the event's own text of a registration mail, which is
+ * how a mail that still runs on the built-in default gets a row of its own (the same upsert the ticket has). */
+export async function handlePutSystemTemplate(c: Context, db: PrismaClient): Promise<Response> {
+  const target = await loadSystemTemplateRequest(c, db);
+  if (target instanceof Response) return target;
+
+  const saved = await saveEventTemplateByName(c, db, target.eventId, target.name);
+  if (saved instanceof Response) return saved;
+  return c.json(toEventTemplateDetailDto(saved));
+}
+
+/** POST /api/admin/events/:eventId/system-templates/:name/preview - a draft of a registration mail, before it has a row. */
+export async function handlePreviewSystemTemplate(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const target = await loadSystemTemplateRequest(c, db);
+  if (target instanceof Response) return target;
+
+  const draft = await readTemplateDraft(c);
+  if (draft instanceof Response) return draft;
+  return previewTemplateDraft(c, db, target.eventId, target.name, draft, injectedBaseUrl);
 }
 
 /** Resolves the by-id test-send route's target template name, or the 404 response to return if
@@ -546,31 +610,26 @@ async function resolveTestSendTemplateName(
   return templateMeta?.name ?? "unknown";
 }
 
-/** Shared "check access -> resolve template (by-id variant only) -> parse body -> recipient
- * guard -> resolve baseUrl -> send -> audit log" skeleton for the two test-send routes below -
- * they differed only in whether a specific templateId is targeted, and the extra 404/audit
- * metadata that implies (SonarCloud duplication). `templateId` absent/undefined selects the
- * event's default template, matching handleTestSendEventTemplate's previous standalone body. */
-async function runTestSendEventTemplate(
+/** Which template a test-send route renders, and how it is told apart in the log and the audit entry. The ticket
+ * template (no `render` fields) is what the plain route sends. */
+type TestSendTarget = {
+  render: { templateId?: string; templateName?: string };
+  audit?: { template_id?: string; template_name: string };
+};
+
+/** Shared "parse body -> recipient guard -> resolve baseUrl -> send -> audit log" skeleton for the test-send routes
+ * below, which differ only in how they find the template and so in the extra 404 and audit metadata that implies
+ * (SonarCloud duplication). The caller has checked access and resolved `target`. */
+async function sendTemplateTestEmail(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
   mailDeliveryDeps: MailDeliveryDeps,
   injectedBaseUrl: string | undefined,
-  templateId?: string,
+  eventId: string,
+  target: TestSendTarget,
 ): Promise<Response> {
-  const eventId = requireEventId(c);
-  if (eventId instanceof Response) return eventId;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  let templateName: string | undefined;
-  if (templateId !== undefined) {
-    const resolved = await resolveTestSendTemplateName(c, db, eventId, templateId);
-    if (resolved instanceof Response) return resolved;
-    templateName = resolved;
-  }
+  const templateId = target.render.templateId;
 
   let body: z.infer<typeof testSendBodySchema>;
   try {
@@ -589,7 +648,7 @@ async function runTestSendEventTemplate(
   let result;
   try {
     result = await sendTestEmail(
-      { eventId, toAddress: body.to, ...(templateId !== undefined ? { templateId } : {}) },
+      { eventId, toAddress: body.to, ...target.render },
       db,
       process.env,
       mailDeliveryDeps,
@@ -632,9 +691,7 @@ async function runTestSendEventTemplate(
         event_id: eventId,
         action_type: "mail_test_sent",
         audit: adminAuditFromContext(c),
-        ...(templateId !== undefined
-          ? { metadata: { template_id: templateId, template_name: templateName } }
-          : {}),
+        ...(target.audit ? { metadata: target.audit } : {}),
       });
     });
   } catch (auditErr) {
@@ -652,7 +709,9 @@ export async function handleTestSendEventTemplate(
   mailDeliveryDeps: MailDeliveryDeps = {},
   injectedBaseUrl?: string,
 ): Promise<Response> {
-  return runTestSendEventTemplate(c, db, rateLimitStore, mailDeliveryDeps, injectedBaseUrl);
+  const eventId = await requireManagedEventId(c, db);
+  if (eventId instanceof Response) return eventId;
+  return sendTemplateTestEmail(c, db, rateLimitStore, mailDeliveryDeps, injectedBaseUrl, eventId, { render: {} });
 }
 
 /** POST /api/admin/events/:eventId/templates/:templateId/test-send */
@@ -663,8 +722,32 @@ export async function handleTestSendEventTemplateById(
   mailDeliveryDeps: MailDeliveryDeps = {},
   injectedBaseUrl?: string,
 ): Promise<Response> {
+  const eventId = await requireManagedEventId(c, db);
+  if (eventId instanceof Response) return eventId;
+
   const templateId = c.req.param("templateId") ?? "";
-  return runTestSendEventTemplate(c, db, rateLimitStore, mailDeliveryDeps, injectedBaseUrl, templateId);
+  const templateName = await resolveTestSendTemplateName(c, db, eventId, templateId);
+  if (templateName instanceof Response) return templateName;
+  return sendTemplateTestEmail(c, db, rateLimitStore, mailDeliveryDeps, injectedBaseUrl, eventId, {
+    render: { templateId },
+    audit: { template_id: templateId, template_name: templateName },
+  });
+}
+
+/** POST /api/admin/events/:eventId/system-templates/:name/test-send - a registration mail that has no row yet. */
+export async function handleTestSendSystemTemplate(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  mailDeliveryDeps: MailDeliveryDeps = {},
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const target = await loadSystemTemplateRequest(c, db);
+  if (target instanceof Response) return target;
+  return sendTemplateTestEmail(c, db, rateLimitStore, mailDeliveryDeps, injectedBaseUrl, target.eventId, {
+    render: { templateName: target.name },
+    audit: { template_name: target.name },
+  });
 }
 
 /** GET /api/admin/events/:eventId/deliveries */
@@ -1119,6 +1202,33 @@ export type EventTemplateDetailDto = EventTemplateListItemDto & {
   compiled_html_template: string;
 };
 
+function toEventTemplateDetailDto(row: {
+  id: string;
+  name: string;
+  label: string;
+  icon: string | null;
+  description: string | null;
+  template_format: string;
+  subject_template: string;
+  body_template: string;
+  compiled_html_template: string;
+  updated_at: Date;
+}): EventTemplateDetailDto {
+  return {
+    id: row.id,
+    name: row.name,
+    label: row.label,
+    icon: row.icon,
+    description: row.description,
+    template_format: row.template_format as TemplateFormat,
+    subject_template: row.subject_template,
+    body_template: row.body_template,
+    compiled_html_template: row.compiled_html_template,
+    updated_at: row.updated_at.toISOString(),
+    is_system: isSystemTemplateName(row.name),
+  };
+}
+
 /** GET /api/admin/events/:eventId/templates */
 export async function handleListEventTemplates(c: Context, db: PrismaClient): Promise<Response> {
   const eventId = requireEventId(c);
@@ -1169,21 +1279,7 @@ export async function handleGetEventTemplateById(c: Context, db: PrismaClient): 
   const row = await getEventTemplateRow(db, eventId, templateId);
   if (!row) return c.json({ error: "not_found" }, 404);
 
-  const dto: EventTemplateDetailDto = {
-    id: row.id,
-    name: row.name,
-    label: row.label,
-    icon: row.icon,
-    description: row.description,
-    template_format: row.template_format as TemplateFormat,
-    subject_template: row.subject_template,
-    body_template: row.body_template,
-    compiled_html_template: row.compiled_html_template,
-    updated_at: row.updated_at.toISOString(),
-    is_system: isSystemTemplateName(row.name),
-  };
-
-  return c.json(dto);
+  return c.json(toEventTemplateDetailDto(row));
 }
 
 /** Shared preamble for the two named-template-by-id write endpoints (save, preview): resolve
@@ -1267,8 +1363,9 @@ export async function handlePutEventTemplateById(
           body: templateBody,
           format,
           // Omit label when the PUT body did not send one so a concurrent metadata PATCH
-          // (rename) is not silently overwritten by the stale `existing.label` snapshot.
-          ...(body.label !== undefined ? { label: body.label } : {}),
+          // (rename) is not silently overwritten by the stale `existing.label` snapshot. A registration
+          // mail keeps its label whatever is sent (its PATCH is refused for the same reason).
+          ...(body.label !== undefined && !isSystemTemplateName(current.name) ? { label: body.label } : {}),
         },
         tx,
       );
@@ -1304,6 +1401,8 @@ export async function handlePatchEventTemplateMetadata(
   const templateId = c.req.param("templateId") ?? "";
   const existing = await getEventTemplateRow(db, eventId, templateId);
   if (!existing) return c.json({ error: "not_found" }, 404);
+  // A registration mail keeps the name, icon and description the product gives it.
+  if (isSystemTemplateName(existing.name)) return c.json({ error: "system_template_locked" }, 422);
 
   let body: z.infer<typeof updateTemplateMetadataBodySchema>;
   try {
@@ -1460,22 +1559,7 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
         body.label,
       );
 
-      return c.json(
-        {
-          id: created.id,
-          name: created.name,
-          label: created.label,
-          icon: created.icon,
-          description: created.description,
-          template_format: created.template_format as TemplateFormat,
-          subject_template: created.subject_template,
-          body_template: created.body_template,
-          compiled_html_template: created.compiled_html_template,
-          updated_at: created.updated_at.toISOString(),
-          is_system: isSystemTemplateName(created.name),
-        } satisfies EventTemplateDetailDto,
-        201,
-      );
+      return c.json(toEventTemplateDetailDto(created), 201);
     } catch (err) {
       const mapped = createTemplateErrorResponse(c, err, attempt);
       if (mapped === "retry") continue;
@@ -1487,7 +1571,9 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
   return c.json({ error: "template_name_conflict" }, 409);
 }
 
-/** DELETE /api/admin/events/:eventId/templates/:templateId */
+/** DELETE /api/admin/events/:eventId/templates/:templateId - the row of a free template is gone for good; the row of a
+ * registration mail is its customised text, so deleting it reverts the mail to the built-in default. The ticket
+ * template cannot be deleted. */
 export async function handleDeleteEventTemplate(c: Context, db: PrismaClient): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -1507,6 +1593,16 @@ export async function handleDeleteEventTemplate(c: Context, db: PrismaClient): P
     const current = await getLockedEventTemplateRow(tx, eventId, templateId);
     if (current.name === "ticket") return "template_required" as const;
     await tx.mailTemplate.delete({ where: { id: templateId } });
+    // Deleting a registration mail's row sends the mail back to its built-in default, which changes what guests
+    // receive from now on, so it is recorded. (Deleting a free template never was.)
+    if (isSystemTemplateName(current.name)) {
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "mail_template_reverted",
+        audit: adminAuditFromContext(c),
+        metadata: { template_name: current.name },
+      });
+    }
     return "ok" as const;
   }).catch((err: unknown) => {
     if (err instanceof EventTemplateGoneDuringWriteError) return "not_found" as const;
@@ -1527,39 +1623,5 @@ export async function handlePreviewEventTemplateById(
   if (loaded instanceof Response) return loaded;
   const { eventId, existing, subject, templateBody, format } = loaded;
 
-  // checkWalletAvailability: false - see handlePreviewEventTemplate's own comment.
-  const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody, {
-    checkWalletAvailability: false,
-    requireTicketPlaceholders: existing.name === DEFAULT_TEMPLATE_NAME,
-    templateName: existing.name,
-  });
-  if (sourceErrors.length > 0) {
-    return templateValidationResponse(c, sourceErrors);
-  }
-
-  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
-  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
-  const baseUrl = baseUrlOrRes;
-
-  try {
-    const rendered = await renderDraftPreview(db, eventId, subject, templateBody, format, baseUrl);
-    return c.json({ subject: rendered.subject, html: rendered.html });
-  } catch (err) {
-    if (err instanceof MjmlCompileError) {
-      return mjmlCompileErrorResponse(c, err);
-    }
-    if (err instanceof PlaceholderInHtmlCommentError) {
-      return templateValidationResponse(
-        c,
-        err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`),
-      );
-    }
-    if (err instanceof UnquotedAttributePlaceholderError) {
-      return templateValidationResponse(
-        c,
-        err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`),
-      );
-    }
-    throw err;
-  }
+  return previewTemplateDraft(c, db, eventId, existing.name, { subject, body: templateBody, format }, injectedBaseUrl);
 }
