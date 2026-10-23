@@ -40,7 +40,7 @@ export const SUGGESTED_EVENT_FIELDS: readonly SuggestedEventField[] = [
     label: "Registration number",
     description: "The registration number of your car, used for parking access.",
     type: "text",
-    // Up to 12 characters holds any plate with its spaces and dashes.
+    // Up to 12 characters holds the plates of most countries, with their spaces and dashes.
     rules: { max_length: 12, example: "AB 123 CD", icon: "car", show_when: { field: "parking", value: true } },
   },
   {

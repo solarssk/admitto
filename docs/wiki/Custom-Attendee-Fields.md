@@ -80,7 +80,7 @@ The button is on the **Fields** tab of the event's **Registration** page, next t
 | Do you need a parking space? | Yes / No | |
 | Registration number | Text, up to 12 characters | Asked only when the answer to the parking question is Yes |
 | How will you get here? | Single choice: Car, Train, Plane, Other | |
-| Arrival (date and time) | Date and time | A guess is fine, the description says |
+| Arrival (date and time) | Date and time | The description tells the guest that an estimate is fine |
 | Do you need accommodation? | Yes / No | |
 
 1. Open the **Fields** tab and select **Add suggested questions**.
