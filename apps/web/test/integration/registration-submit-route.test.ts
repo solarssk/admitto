@@ -397,6 +397,22 @@ describe("a form that is not open answers the one 404 of the registration routes
     expect(await prisma.registrationMail.count({ where: { event_id: eventId } })).toBe(0);
   });
 
+  it("is also the answer when the event ends while the challenge is being checked, and nothing is stored", async () => {
+    // In Europe/Warsaw the event ends at midnight after its day, which is 23:00 UTC: open at the start, over when the challenge is done.
+    const slug = nextSlug("ends-meanwhile");
+    const eventId = await seeder.addEvent(slug, { date: new Date("2027-03-10T12:00:00Z") });
+    const h = harness({ prisma, whileChallenged: async () => void vi.setSystemTime(new Date("2027-03-11T10:00:00Z")) });
+    const unknown = await signature(await h.post("reg95c-ends-no-such-event", h.body("reg95c-ends-no-such-event")));
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2027-03-10T10:00:00Z") });
+    try {
+      expect(await signature(await h.post(slug, h.body(slug)))).toEqual(unknown);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(h.cf.mock).toHaveBeenCalledTimes(1);
+    expect(await prisma.registration.count({ where: { event_id: eventId } })).toBe(0);
+  });
+
   it("judges the fields by what the form asks after the challenge, not by what it asked before it", async () => {
     const slug = nextSlug("asks-more");
     const eventId = await seeder.addEvent(slug);

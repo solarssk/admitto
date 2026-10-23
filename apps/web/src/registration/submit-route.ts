@@ -184,7 +184,6 @@ function placeSubmission(
   deps: RegistrationSubmitDeps,
   eventId: string,
   registrant: RegistrantSubmission,
-  now: Date,
 ): Promise<PlaceRegistrationResult> {
   const budget = INLINE_RATE_LIMITS["registration:mail-event"];
   return placeRegistration(
@@ -192,7 +191,6 @@ function placeSubmission(
     { eventId, method: "link", registrant },
     {
       ...deps.placement,
-      now,
       mail: {
         addressAllowed: () => checkRegistrationMailRecipientRateLimit(deps.store, registrant.email),
         event: { base: budget.max, windowMs: budget.windowMs },
@@ -256,7 +254,7 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
 
   // The second look (step 6 of the head of this file): the same lookup as the first, so that the form the guest is judged
   // against, and written for, is the one that is open now and not the one that was open before the challenge.
-  const open = await resolveRegistration(deps.db, slug, now);
+  const open = await resolveRegistration(deps.db, slug, new Date());
   if (open.kind !== "open") return respondRegistrationNotFound(c);
 
   // PR 111: the shared password of an event whose way in is the password is checked here, after the challenge and
@@ -268,7 +266,7 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
 
   let placed: PlaceRegistrationResult;
   try {
-    placed = await placeSubmission(deps, open.eventId, checked.registrant, now);
+    placed = await placeSubmission(deps, open.eventId, checked.registrant);
   } catch (error) {
     if (prismaCode(error) !== "P2002") throw error;
     // The address got a registration while this request ran: the guest is told what a known address is told, and after

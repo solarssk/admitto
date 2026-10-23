@@ -106,7 +106,7 @@ export type SubmissionMailLimits = {
 };
 
 export type PlacementOptions = PublicWriteOptions & {
-  /** The moment of the request; tests set it. */
+  /** The moment of the request; tests set it. `placeRegistration` reads the clock itself once it holds the locks. */
   now?: Date;
   /** Limits on the mail this submission queues. Default: none. */
   mail?: SubmissionMailLimits;
@@ -376,14 +376,15 @@ export async function placeRegistration(
   options: PlacementOptions = {},
 ): Promise<PlaceRegistrationResult> {
   const registrant = checkedRegistrant(input.registrant);
-  const now = options.now ?? new Date();
   const written = await runPublicWrite(
     () =>
       runEventCapacityTransaction(
         db,
         input.eventId,
         noPrepare,
-        (tx) => submitInTransaction(tx, input, registrant, now, options.mail),
+        // The clock is read here, inside the transaction and under the locks, on every try: the call may have waited for
+        // a permit and for a lock, and an event that ended meanwhile is closed.
+        (tx) => submitInTransaction(tx, input, registrant, options.now ?? new Date(), options.mail),
         PUBLIC_TRANSACTION_POLICY,
         { tryLock: true },
       ),
