@@ -2200,6 +2200,8 @@ export interface EventOverviewDto {
     pinned_note: string | null;
   };
   attendee_count: number;
+  /** Seats the event holds, which is what its limit is compared with; `attendee_count` is the number of heads. */
+  seats_in_use: number;
   admitted_count: number;
   email_sent: number;
   email_failed: number;

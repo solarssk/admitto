@@ -133,6 +133,7 @@ const overviewFixture = (
     pinned_note: null,
   },
   attendee_count: 50,
+  seats_in_use: 50,
   admitted_count: admitted,
   email_sent: 40,
   email_failed: 0,
@@ -2419,8 +2420,8 @@ describe("EventOverviewPage: the Registrations row of the Setup checklist (D-B11
     expect(admittedLegendValue()).toBe("5");
   });
 
-  it("says that the event holds more seats than its limit (D-B7), by the event's own count of seats", async () => {
-    mockEventOverrides = { seats_in_use: 104 };
+  it("says that the event holds more seats than its limit (D-B7), by the seats the overview counts and not by the heads", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, seats_in_use: 104 }));
     fetchRegistrationCounts.mockResolvedValue(registrationCounts(0));
     renderPage();
     await loadedPage();
@@ -2430,18 +2431,54 @@ describe("EventOverviewPage: the Registrations row of the Setup checklist (D-B11
     expect(within(row).getByText("Needs attention")).toBeTruthy();
   });
 
-  it("counts the active attendees as seats when the event has no count of its own, and an event within its limit says nothing", async () => {
-    fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 101 }));
+  it("says nothing of the limit while the seats are within it, whatever the heads", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, seats_in_use: 100 }));
     fetchRegistrationCounts.mockResolvedValue(registrationCounts(0));
     renderPage();
     await loadedPage();
-    expect(registrationRow()?.textContent).toContain("Over the limit: 101 seats taken, limit 100.");
 
-    cleanup();
-    fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 100 }));
-    renderPage();
-    await loadedPage();
     expect(registrationRow()?.textContent).not.toContain("Over the limit");
+  });
+
+  it("takes the seats from the newest answer of the overview, never from the copy of the event the layout read once", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // The layout's copy says the event is well within its limit; the overview, read again every 30 seconds, says otherwise.
+      mockEventOverrides = { seats_in_use: 10 };
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { seats_in_use: 104 }));
+      fetchRegistrationCounts.mockResolvedValue(registrationCounts(0));
+      renderPage();
+      await waitFor(() => expect(registrationRow()?.textContent).toContain("Over the limit: 104 seats taken, limit 100."));
+
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { seats_in_use: 90 }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      await waitFor(() => expect(registrationRow()?.textContent).not.toContain("Over the limit"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the page while the numbers of the requests are still on their way, and keeps refreshing it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchRegistrationCounts.mockImplementation(hangUntilAborted);
+      renderPage();
+      await loadedPage();
+      expect(registrationRow()).toBeNull();
+      expect(admittedLegendValue()).toBe("5");
+
+      // A tick of the overview is applied whatever the read of the numbers is doing.
+      fetchEventOverview.mockResolvedValue(overviewFixture(8));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      await waitFor(() => expect(admittedLegendValue()).toBe("8"));
+      expect(registrationRow()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reads the numbers again with every refresh of the page, and keeps the last ones when one read of them fails", async () => {

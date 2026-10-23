@@ -13,7 +13,6 @@ import {
 import {
   ApiError,
   fetchEventOverview,
-  fetchRegistrationCounts,
   fetchTicketTypes,
   patchEventNote,
   createEventContact,
@@ -73,6 +72,7 @@ import { OverviewKpiTile } from "../overview/OverviewKpiTile.js";
 import { OverviewSkeleton } from "../overview/OverviewSkeleton.js";
 import { PanelLoadError } from "../settings/PanelLoadError.js";
 import { registrationReadiness } from "../registration/registrationReadiness.js";
+import { useRegistrationCounts } from "../registration/useRegistrationCounts.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 /** The region the page, its placeholder and its error sit in: where the focus goes when a Retry that held it works. */
@@ -282,17 +282,15 @@ function SetupChecklistCard({
   overview,
   eventId,
   registration,
-  seatsInUse,
 }: Readonly<{
   overview: EventOverviewDto;
   eventId: string;
   /** The numbers of the event's guest requests; the "Registrations" row is there only while registration is on. */
   registration: RegistrationCountsDto | null;
-  /** Seats the event holds (the event's own count, which a list of events does not carry); the active attendees stand in. */
-  seatsInUse: number | undefined;
 }>) {
+  // The seats come with the overview, so a refresh of the page refreshes them: the layout's copy of the event is read once.
   const registrationRow = registrationReadiness(registration, `/admin/events/${eventId}`, {
-    used: seatsInUse ?? overview.attendee_count,
+    used: overview.seats_in_use,
     capacity: overview.event.capacity,
   });
   const items = buildReadinessItems(overview, eventId, registrationRow);
@@ -1463,17 +1461,6 @@ function NotesAndContactsCard(props: Readonly<{
 
 type OverviewOutletContext = { event: EventDto; refreshEvent?: () => Promise<void> };
 
-/** What one read of the page holds: the overview, and the numbers of the guest requests for the checklist's "Registrations" row. */
-interface OverviewAnswer {
-  overview: EventOverviewDto;
-  registration: RegistrationCountsDto | null;
-}
-
-/** The numbers of the requests are an extra: a read that fails leaves the row out, and the page as it was. */
-function readRegistrationCounts(eventId: string, signal: AbortSignal): Promise<RegistrationCountsDto | null> {
-  return fetchRegistrationCounts(eventId, signal).catch(() => null);
-}
-
 /** Event-scoped dashboard — event command center with KPIs, a setup checklist, check-in progress,
  * and a live activity feed.
  *
@@ -1534,21 +1521,13 @@ function EventOverviewPageBody() {
     setPinnedNote(data.event.pinned_note);
   }, []);
 
-  // The numbers of the requests the newest answer holds. They are an extra: when one read of them fails, the last ones stay,
-  // so a missed tick does not take the "Registrations" row off the checklist and put it back.
-  const lastRegistrationRef = useRef<RegistrationCountsDto | null>(null);
-
   // The first read has the 30 second limit and a Retry; a refresh every 30 seconds (and after a live signal) is silent, as
   // a tick of the list is: the numbers stay on screen until the next answer. The connection state hears of every request
   // that failed, whoever waits for it.
   const fetchOverview = useCallback(
-    async (signal: AbortSignal): Promise<OverviewAnswer> => {
+    async (signal: AbortSignal) => {
       try {
-        const [overview, registration] = await Promise.all([
-          fetchEventOverview(event.id, signal),
-          readRegistrationCounts(event.id, signal),
-        ]);
-        return { overview, registration: registration ?? lastRegistrationRef.current };
+        return await fetchEventOverview(event.id, signal);
       } catch (err) {
         if (err instanceof ApiError) reportApiError(err.status);
         throw err;
@@ -1556,18 +1535,16 @@ function EventOverviewPageBody() {
     },
     [event.id, reportApiError],
   );
-  const absorbAnswer = useCallback(
-    (answer: OverviewAnswer) => {
-      lastRegistrationRef.current = answer.registration;
-      absorbServerOverview(answer.overview);
-    },
-    [absorbServerOverview],
-  );
-  const list = useListLoad({ fetcher: fetchOverview, fallback: "Could not load event stats.", onData: absorbAnswer });
+  const list = useListLoad({ fetcher: fetchOverview, fallback: "Could not load event stats.", onData: absorbServerOverview });
   const card = useCardLoad(list);
-  const overview = list.data?.overview ?? null;
-  const registration = list.data?.registration ?? null;
+  const overview = list.data;
   const pollOverview = list.poll;
+
+  // The numbers of the guest requests are an extra with a read of their own, as on the Registration page: one that is slow,
+  // stalls or fails leaves the "Registrations" row out (or as the last answer had it) and never holds the overview back.
+  const requestCounts = useRegistrationCounts(event.id);
+  const registration = requestCounts.data;
+  const pollRequestCounts = requestCounts.poll;
 
   // Bounded, not a plain reset-on-every-call debounce: a pending timer is left alone rather than
   // restarted, so a steady stream of signals (busy handout desk issuing items back-to-back) still
@@ -1690,6 +1667,11 @@ function EventOverviewPageBody() {
     };
   }, [pollOverview]);
 
+  useEffect(() => {
+    const intervalId = setInterval(() => void pollRequestCounts(), OVERVIEW_REFRESH_MS);
+    return () => clearInterval(intervalId);
+  }, [pollRequestCounts]);
+
   const eventTimezone = overview?.event.timezone ?? event.timezone;
   const eventDateIso = overview?.event.date ?? event.date;
   const countdownLabel = useCountdown(eventDateIso, eventTimezone);
@@ -1794,12 +1776,7 @@ function EventOverviewPageBody() {
             />
           </div>
           <div className="overview-row overview-row--stretch">
-            <SetupChecklistCard
-              overview={overview}
-              eventId={event.id}
-              registration={registration}
-              seatsInUse={event.seats_in_use}
-            />
+            <SetupChecklistCard overview={overview} eventId={event.id} registration={registration} />
             <NotesAndContactsCard
               pinnedNote={pinnedNote}
               archived={!!event.archived_at}
