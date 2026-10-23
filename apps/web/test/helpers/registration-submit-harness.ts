@@ -13,7 +13,7 @@ import { patchTurnstileSettings, TURNSTILE_SETTINGS_KEY } from "../../src/regist
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import type { RateLimitStore } from "../../src/rate-limit/types.js";
 import type { AnswerPace } from "../../src/registration/submit-route.js";
-import type { PublicWriteOptions } from "@admitto/tickets";
+import { acquireEventCapacityLock, type PublicWriteOptions } from "@admitto/tickets";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 
@@ -184,9 +184,12 @@ export type HarnessOptions = {
   /** The floor of an answer. Default: a clock that never moves and a floor of 0, so no test waits. `"real"`: the
    * route's own, real one. */
   pace?: AnswerPace | "real";
+  /** How long a write waits for a lock: for the submit route and for the confirmation route alike. */
   placement?: PublicWriteOptions;
   /** Runs while the challenge of a request is being checked, before Cloudflare answers. */
   whileChallenged?: () => Promise<void>;
+  /** The access log of the app (one line a request on `console.info`). Default: off, as in the tests of the other routes. */
+  logHttpRequests?: boolean;
 };
 
 /** The app with the route's test injection points filled, and a way to post to it as the page does. */
@@ -206,6 +209,8 @@ export function harness(options: HarnessOptions) {
       ...(options.pace === "real" ? {} : { pace: options.pace ?? recordingPace(0).pace }),
       ...(options.placement ? { placement: options.placement } : {}),
     },
+    ...(options.placement ? { registrationConfirm: { placement: options.placement } } : {}),
+    ...(options.logHttpRequests === undefined ? {} : { logHttpRequests: options.logHttpRequests }),
   });
 
   /** A body the page would send for an event, with a fresh token and address; `overrides` replace any key. */
@@ -238,6 +243,36 @@ export async function signature(res: Response) {
     if (name !== "date") headers[name] = value;
   }
   return { status: res.status, headers, body: await res.text() };
+}
+
+/**
+ * What an import does to an event: a transaction of `holder` takes its capacity lock and keeps it until `release` is
+ * called. `holder` is another pool than the app's, so it is another process as far as connections go.
+ */
+export function holdCapacityLock(holder: PrismaClient, eventId: string) {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started!: () => void;
+  const hasStarted = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const transaction = holder.$transaction(
+    async (tx) => {
+      await acquireEventCapacityLock(tx, eventId);
+      started();
+      await released;
+    },
+    { timeout: 60_000 },
+  );
+  return {
+    started: hasStarted,
+    release: async () => {
+      release();
+      await transaction;
+    },
+  };
 }
 
 /**
