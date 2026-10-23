@@ -279,6 +279,24 @@ describe("retryRegistrationMails at the same time as others", () => {
     expect(await db.attendeeActionLog.count({ where: { event_id: eventId, action_type: "registration_mail_retried" } })).toBe(1);
   });
 
+  it("judges the link by the time it has the queue, not by the time the retry began: one that ran out while it waited is not retried", async () => {
+    const eventId = await make.event();
+    // The link runs out half a second from now, and the queue is held for longer than that.
+    const registration = await make.registration(eventId, { status: "awaiting_email", expiresAt: new Date(Date.now() + 500) });
+    const mail = await addMail(registration.id, eventId, "registration-confirm");
+    const before = await mailRow(mail.id);
+    const holder = holdTransaction(migrated.connection(), (tx) => lockRegistrationQueue(tx, eventId));
+    await holder.started;
+
+    const retrying = retry(eventId, [registration.id]);
+    await waitUntilWaitingForRegistrationQueue(db, eventId);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await holder.commit();
+
+    expect(await retrying).toEqual({ outcomes: [{ id: registration.id, outcome: "not_retryable" }] });
+    expect(await mailRow(mail.id)).toEqual(before);
+  });
+
   it("waits for the registration queue, and finds the registration gone when a deletion came first", async () => {
     const { eventId, registration, mail } = await pendingWithFailedMail();
     // What an erasure or a deletion by staff does: it holds the queue and deletes the registration with its mail.

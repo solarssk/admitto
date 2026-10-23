@@ -12,7 +12,7 @@ export type RetryRegistrationMailsParams = {
   /** The registrations whose last mail is sent again, at most as many as one request may carry (the route limits it). */
   ids: readonly string[];
   actor: StaffActor;
-  /** The moment of the retry; tests set it. */
+  /** The moment of the retry; tests set it. Otherwise it is read once the registration queue is held. */
   now?: Date;
 };
 
@@ -36,9 +36,12 @@ function outcomeOf(retried: boolean, exists: boolean): RetryMailOutcome["outcome
 
 async function retryInTransaction(
   tx: Prisma.TransactionClient,
-  { eventId, ids, actor, now }: { eventId: string; ids: readonly string[]; actor: StaffActor; now: Date },
+  { eventId, ids, actor, now: fixed }: { eventId: string; ids: readonly string[]; actor: StaffActor; now: Date | undefined },
 ): Promise<RetryRegistrationMailsResult> {
   await lockRegistrationQueue(tx, eventId);
+  // Read after the lock, which a decision, a deletion or an erasure may hold for a long while: a confirmation link that
+  // ran out while this waited is one the worker cancels, and the retry has to see that.
+  const now = fixed ?? new Date();
   const event = await tx.event.findUnique({ where: { id: eventId }, select: { archived_at: true } });
   if (event?.archived_at !== null) return { outcomes: ids.map((id) => ({ id, outcome: "closed" })) };
 
@@ -110,9 +113,8 @@ export async function retryRegistrationMails(
 ): Promise<RetryRegistrationMailsResult> {
   const ids = [...new Set(params.ids)];
   if (ids.length === 0) return { outcomes: [] };
-  const now = params.now ?? new Date();
   return await db.$transaction(
-    (tx) => retryInTransaction(tx, { eventId: params.eventId, ids, actor: params.actor, now }),
+    (tx) => retryInTransaction(tx, { eventId: params.eventId, ids, actor: params.actor, now: params.now }),
     RETRY_TRANSACTION_OPTIONS,
   );
 }
