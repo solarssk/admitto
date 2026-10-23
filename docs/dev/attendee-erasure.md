@@ -14,6 +14,7 @@ On this page:
 - [The CLI](#the-cli)
 - [The screens](#the-screens)
 - [Removing an attendee](#removing-an-attendee)
+- [Deleting a guest registration](#deleting-a-guest-registration)
 - [Job failure privacy](#job-failure-privacy)
 - [Files left in storage](#files-left-in-storage)
 - [Passes still at the provider](#passes-still-at-the-provider)
@@ -322,6 +323,64 @@ Where an Administrator or Superadmin reaches the removal (`apps/admin`).
 - "Attendee erased (GDPR)" or "Attendees bulk erased (GDPR)" for an erasure, and for an entry from before the split.
 - The Details show the reason in words (`Reason: Duplicate entry`).
 - The Action filter has one option for both, "Attendee erased or removed", because both are written under the same action types.
+
+## Deleting a guest registration
+
+`deleteRegistrations` ([`packages/tickets/src/registration-deletion.ts`](../../packages/tickets/src/registration-deletion.ts)) deletes the registrations that guests made through the event form. Staff use it to answer a request to delete a person's data, and to clear out rejected and old registrations by hand. It runs in the caller's transaction and mails no one.
+
+### The API
+
+- `POST /api/admin/events/:eventId/registrations/delete` with `{ "ids": [...] }`. One registration is a list of one. At most 500 ids.
+- `POST /api/admin/events/:eventId/registrations/delete-by-filter` with `{ "status", "older_than", "q", "expected", "selection_digest" }`. The filter is the one of the list, `expected` is the `total` the list showed for it, and `selection_digest` is the name the list gave the registrations it showed (the list answers it for a filter that selects at most 500, read in the same snapshot as its page and its total, so it names the registrations those were read from).
+
+Both are open to the Administrator and Superadmin of the event, and both are allowed on an archived event, like Erase: a request to delete data does not expire with the event. They spend the attendee bulk-mutation budget (20 a minute), and the wallet bulk budget as well when the event has wallet credentials.
+
+The answer is `{ results, deleted, attendees_erased, wallet_pending }`. A result is `deleted` (with the erased attendee's id for an accepted registration) or `gone`. An id that is not a registration of this event is `gone`, whoever it belongs to.
+
+### What happens to a registration
+
+| State | What the deletion does |
+|---|---|
+| Waiting for the address, waiting for a decision, on the waiting list, rejected | The registration is deleted with its queued mail. The guest can register again with the address. The link they were mailed finds nothing |
+| Accepted | The attendee is erased by `eraseAttendees`, the one path of every erasure, which deletes the registration with it |
+
+An accepted registration is erased exactly like **Erase personal data** does it, so Reports keep their numbers:
+
+- The ticket stops working, and the pass at the wallet provider is deleted after the commit.
+- The place is free again, unless the person was admitted or the event is archived. An admitted guest keeps their place, because they came.
+- The same two audit entries are written (`attendee_erased` or `attendees_bulk_erased`, `method: "erase"`). The page of the erased attendee says who erased them, and a restore from a backup can repeat the erasure.
+- Open exports and imports of the event are stopped, as in every erasure.
+
+Nothing else erases an attendee in this path. A bare `registration.delete` of an accepted registration would leave the attendee behind with their data, so the delete statement for registrations without an attendee carries `attendee_id IS NULL`.
+
+### Which registrations a filter takes
+
+A deletion cannot be undone, so a filter never takes what the staff member did not see:
+
+- The filter is read again under the registration queue with the rule of the list (`registrationListWhere`). When the count is not `expected`, nothing is deleted: `409 registration_count_changed` with `expected` and `matched`. A registration that grew old enough to join an "older than" filter since the list was read changes the count too.
+- The same count is not the same registrations: one that left the filter and one that joined it since the list was read leave the number where it was. So the ids that the filter selects now are named (`registrationSelectionDigest`, the SHA-256 of the ids in order) and must have the `selection_digest` the list gave. Otherwise nothing is deleted: `409 registration_selection_changed` with `matched`. The name is no secret and guards against a stale list, not against anyone.
+- A filter selects at most 500 registrations (`MAX_REGISTRATION_BULK_IDS`), or `422 too_many_registrations` with `matched` and `limit`. The staff member narrows it.
+- When the event has wallet credentials, at most 100 of them may be accepted, because each erased attendee is a call to the provider after the commit (`WALLET_BULK_SEND_LIMIT`). Over that, `422 too_many_accepted` with `accepted` and `limit`.
+- A filter must have a status, an age or a search. One that selects everything is refused with `400 validation_failed`, and so is a value outside the lists.
+
+### The audit entries
+
+One `registrations_deleted` entry in the event's activity log and one in the central audit log, in the transaction of the deletion. They hold the registration ids, the attendee ids of the accepted ones, the count, `reason: "staff"` and `by` (`ids` or `filter`). For a filter they also hold its closed values (`status`, `older_than`) and `search: true` when a search was used, never the words, which are a name or an address. A request that deleted nothing writes none.
+
+### Locks
+
+The deletion takes the locks of an erasure, in the order of [Rules for code](#rules-for-code): the jobs of the event, the registration queue, the registration rows in id order, and the attendees inside `eraseAttendees`. It takes the jobs first even when no registration turns out to be accepted. It cannot know before it holds the queue, and taking them afterwards could deadlock with an erasure. The price is that a deletion waits for an import that is running, like an erasure.
+
+It takes no capacity lock. It takes no seat, and a seat it frees is freed under the attendee's row.
+
+### What is left
+
+A registration mail that was already handed to the mail provider when the deletion runs can still go out once, as for an erasure ([Not done by the function](#not-done-by-the-function)). What the guest already received stays in their mailbox and in the provider's Sent Items.
+
+### Tests
+
+- `registration-deletion.test.ts` in `packages/tickets/test`: each state, an accepted registration (ticket, place, an admitted guest, an archived event), the filter, the caps, the audit entries, the rollback, and the deletion against an admission, an erasure, a writer that holds the capacity lock, a guest, and another deletion, each side first.
+- `registration-delete-routes.test.ts` in `apps/web/test/integration`: access, the shape of a request, the answers, the wallet pass, and the filter against the list.
 
 ## Job failure privacy
 
@@ -800,6 +859,7 @@ A pass whose request left no trace on the row at all. Only a request from before
   - The inventory records `deleted` for every column, and `attendee_id` is a real relation so that the test finds the table. Whatever erases or removes an attendee must delete the registration as well: the one linked by `attendee_id`, and the ones in the same event with one of the person's addresses (`collectAttendeeAddresses`, see "How an address is matched" below).
   - A registration that another attendee was accepted from is that attendee's, even with the same address (two attendees can hold one address in two spellings). It goes when that attendee is erased or removed.
   - `RegistrationMail` has no address or text of its own and goes with its registration (cascade).
+  - Staff delete a registration with `deleteRegistrations` ([Deleting a guest registration](#deleting-a-guest-registration)). An accepted one erases its attendee with `eraseAttendees`. Never delete an accepted registration on its own: the attendee would keep the person's data.
   - A new column on `Registration` gets its decision in the same pull request.
 - **Taking locks: one order.**
   - A transaction that takes several of these locks takes them in this order. A step it does not need is skipped, never taken later.
@@ -819,6 +879,7 @@ A pass whose request left no trace on the row at all. Only a request from before
   - A request that must not wait with a pooled connection (a guest's submission) uses `tryLockRegistrationQueue`, the same key without waiting, in the same place of the order. On `false` it ends its transaction and tries again later.
   - Where the writers of registrations in `packages/tickets` stand in that order:
     - `admitRegistrations` (staff, may wait): the capacity lock (`runEventCapacityTransaction`), the registration queue at the start of `work`, the registration rows in id order (`lockRegistrationsForUpdate`), then the attendees it inserts. It takes the capacity lock because it takes seats; the state of each row and the seats are read again under both, and a request that needs more seats than are free changes nothing.
+    - `deleteRegistrations` (staff, may wait): the jobs of the event, the registration queue, the registration rows in id order, then the attendees of the accepted ones, in `eraseAttendees`. The jobs come first although most deletions erase nobody, because a row can turn out to be accepted only under the queue. No capacity lock: it takes no seat.
     - `placeRegistration` and `confirmRegistrationAddress` (a guest, never waits): the same order with both locks taken by trying (`runEventCapacityTransaction` with `tryLock`, `tryAcquireEventCapacityLock`, then `tryLockRegistrationQueue`) inside `runPublicWrite`. It ends the transaction when a lock is held, pauses without a connection, lets only a few writes try at once in a process, and answers busy after about two seconds, with nothing written. A submission takes the capacity lock even when it only stores a registration that waits for its address: one path, and the room for the guest is read under it.
     - `rejectRegistrations` (staff, may wait): the registration queue, then the rows. No capacity lock: it neither takes nor frees a seat.
     - `retryRegistrationMails` (staff, may wait): the registration queue, then the `RegistrationMail` rows it resets to `queued`. No capacity lock, and no `Registration` row: it neither takes a seat nor changes a state. An erasure or a deletion that came first has deleted the registration with its mail, and the retry answers `gone`.

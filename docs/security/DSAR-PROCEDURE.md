@@ -32,7 +32,7 @@ flowchart TD
 
 ## 2. Verify identity
 
-- Match the requester to an attendee record (email, ticket reference, or an ID checked by the organizer).
+- Match the requester to an attendee record (email, ticket reference, or an ID checked by the organizer). A guest who registered through the event form may never have become an attendee. Match them to their registration instead (name or email).
 - If you cannot verify identity, do not disclose data. Explain what proof is required.
 
 ## 3. Access (export)
@@ -45,11 +45,12 @@ flowchart TD
 
 Start only after legal confirms that erasure is required and no retention exception applies.
 
-There are two actions. Pick one by the reason:
+There are three actions. Pick one by the reason:
 
 | Situation | Action | Reports |
 |-----------|--------|---------|
-| A privacy request | **Erase personal data** (the recommended path) | Do not change. The entry stays as an anonymous attendee |
+| A privacy request from an attendee | **Erase personal data** (the recommended path) | Do not change. The entry stays as an anonymous attendee |
+| A privacy request from a guest who registered through the event form and was not accepted (waiting, rejected, not confirmed) | **Delete registration** ([4.3](#43-delete-a-guest-registration)) | Do not change. The registration is deleted for good |
 | An entry that should never have existed: a duplicate, a test person, a row from the wrong import file | **Remove from event** | Change. The attendee is deleted for good |
 
 **Remove from event** is not the way to answer a privacy request. It is refused on an archived event, whose numbers are final. An archived event is still answered with **Erase personal data**.
@@ -155,6 +156,30 @@ Admitto also deletes a pass that it never managed to record (its save failed, or
 | A pass is still being made at the moment of the removal | The request that makes it deletes it. If that request dies first, the pass stays at the provider. An erasure asks again for ten minutes, but a removal has no row to ask from | Delete the pass in the provider's own console |
 | A pass was made before that id was written, by a request that died without leaving anything on the row | Admitto does not find it | Delete the pass in the provider's own console |
 
+### 4.3 Delete a guest registration
+
+Use it for a guest who registered through the event form and asks to delete their data. They may never have become an attendee. Their registration (name, address, answers, a companion's name and answers, and when the terms were accepted) is personal data too, and no other action removes it.
+
+**What it does**
+
+- A registration that is waiting for the address, waiting for a decision, on the waiting list or rejected is deleted for good, with its queued mail. The confirmation link the guest was sent finds nothing. The guest can register again with the address.
+- An accepted registration is an attendee as well. Deleting it erases the attendee exactly as **Erase personal data** does ([4.1](#41-erase-personal-data)): the ticket stops working, the wallet pass is deleted at the provider, and the Reports totals do not change. The place is free again, unless the person was already admitted or the event is archived.
+- It also works when the event is archived.
+- Nothing is mailed to the guest.
+
+**Find the registration.** `GET /api/admin/events/:eventId/registrations?q=<name or email>` lists the registrations that match, in every state. Its answer names people, so keep it out of tickets and chat.
+
+**How.** Use an authenticated staff session and a CSRF token (the same session model as other admin mutations).
+
+- One or several registrations: `POST /api/admin/events/:eventId/registrations/delete` with `{ "ids": [...] }`. You can delete up to 500 at a time. An id that is not a registration of this event answers `gone`.
+- Everything a filter selects: `POST /api/admin/events/:eventId/registrations/delete-by-filter` with `{ "status": "rejected", "older_than": "90d", "expected": <total>, "selection_digest": <selection_digest> }`. Use the same parameters as the list (`status`, `older_than`, `q`, and at least one of them), and the `total` and `selection_digest` the list gave for them. Admitto reads the filter again before it deletes. If the number is not the one you were given, if the registrations are not the ones the list showed, or if there are more than 500, it deletes nothing and says so.
+
+**How long to keep registrations.** Admitto deletes only the registrations that were never confirmed, 24 hours after the submission. Waiting, rejected and accepted registrations stay until you delete them. Your organisation decides how long to keep them.
+
+**Audit.** The event action log and the central admin audit log get a `registrations_deleted` entry: the registration ids, the attendee ids of the accepted ones and the counts. They never hold a name, an address or the words of a search. An accepted registration also leaves the usual erasure entry.
+
+**Backups and mail.** A restore from a backup brings back what was deleted, so repeat the deletions from the ids in the audit entries. Mail the guest already received stays in their mailbox and in the Sent Items of your mail provider.
+
 ### Erasure without the admin UI (CLI fallback)
 
 A privacy request does not wait for the admin UI. When the UI and the API cannot be reached, but the database can, run the emergency CLI from the same image the app runs from.
@@ -196,7 +221,7 @@ It does what the erase API does:
 - **Audit:** the event action log and the central admin audit log record who erased how many people and which ids (`method: "erase"`, `source: "cli"`), never a name or an address. `--operator-email` is required for the real run. It names the actor, whom the page of the erased person then shows, as done on the emergency command line.
 - **Wallet pass:** if the provider cannot be reached, or the event's wallet credentials are no longer set, the command prints how many passes are still there and exits with code 2. Run the same command again. People who are already erased are left alone, and only their passes are tried again. Or let the worker's daily retention run do it. If a pass keeps failing, fix the wallet credentials in Event settings, or delete the pass in the provider's own console.
 - **Open admin screens** show the change within 30 seconds. The CLI does not notify them.
-- **Not offered here:** **Remove from event** (a hard delete for mistakes) stays in the admin UI and API. It changes Reports, and it is not an emergency. The old manual SQL delete is gone. It bypassed both audit writers and the wallet provider, and it removed the entry instead of erasing the personal data.
+- **Not offered here:** **Remove from event** (a hard delete for mistakes) stays in the admin UI and API. It changes Reports, and it is not an emergency. **Delete registration** ([4.3](#43-delete-a-guest-registration)) stays in the API too, so a guest who was not accepted has no command here. For a guest who was accepted, `attendees erase` deletes the registration with the attendee. The old manual SQL delete is gone. It bypassed both audit writers and the wallet provider, and it removed the entry instead of erasing the personal data.
 
 ## 5. SLA (customer-defined)
 

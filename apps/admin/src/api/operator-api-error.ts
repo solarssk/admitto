@@ -129,6 +129,10 @@ export const CODE_MESSAGES: Record<string, string> = {
   password_change_required:
     "You must change your password before continuing. Update it in Account or go to /change-password.",
   password_too_common: "This password is too common or predictable. Choose a different one.",
+  registration_count_changed:
+    "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
+  registration_selection_changed:
+    "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
   required_custom_data_field_missing: "A required custom field is missing.",
   required_field_not_on_form:
     "A required field must also be on the registration form, or guests cannot answer it. Turn it on for the form, or make the field optional.",
@@ -156,6 +160,10 @@ export const CODE_MESSAGES: Record<string, string> = {
   token_conflict: "This token is already used by another asset in this event.",
   too_many_attendees: "Too many attendees selected.",
   too_many_rows: "File exceeds the 50 000 row limit. Split the file and import in parts.",
+  too_many_accepted:
+    "Too many accepted guests are selected to delete at once while wallet passes are in use. Select fewer accepted guests and try again.",
+  too_many_registrations:
+    "Too many registrations match to delete them at once. Narrow the filter, or select fewer, and try again.",
   too_many_streams: "Too many live connections. Try again shortly.",
   "too many requests": "Too many requests. Wait a moment and try again.",
   totp_required: "Enter your authenticator app code to continue.",

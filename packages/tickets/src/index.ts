@@ -163,6 +163,14 @@ export type {
   RegistrationFilterResult,
   RegistrationListFilter,
 } from "./registration-list.js";
+export { isEmptyRegistrationFilter, registrationSelectionDigest } from "./registration-selection.js";
+export { deleteRegistrations } from "./registration-deletion.js";
+export type {
+  DeleteRegistrationsParams,
+  DeleteRegistrationsResult,
+  DeleteRegistrationsTarget,
+  DeletedRegistration,
+} from "./registration-deletion.js";
 export {
   RESERVED_CUSTOM_DATA_SOURCE_FIELDS,
   isReservedCustomDataSourceField,

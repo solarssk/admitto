@@ -191,6 +191,10 @@ import {
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
 import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "./admin/attendee-erase-routes.js";
+import {
+  handleDeleteEventRegistrations,
+  handleDeleteEventRegistrationsByFilter,
+} from "./admin/registration-delete-routes.js";
 import { handleBulkRemoveEventAttendees, handleRemoveEventAttendee } from "./admin/attendee-remove-routes.js";
 import {
   handleGetWalletPushJob,
@@ -2287,6 +2291,28 @@ export function createApp(options: CreateAppOptions = {}) {
     // The pass of each erased attendee is deleted at the provider after the commit.
     walletActionBulkRateLimitIfWalletConfigured,
     (c) => handleBulkEraseEventAttendees(c, db),
+  );
+  // Delete guest registrations, one by one, by selection or by filter. An accepted registration is an attendee, and
+  // deleting it erases them, so this is an erasure too: not behind guardArchivedEvent (a privacy request is still valid
+  // after the event has ended), the budgets of bulk-erase, and the pass of each erased attendee is deleted at the provider
+  // after the commit. The route checks on its own that the caller manages the event.
+  app.post(
+    "/api/admin/events/:eventId/registrations/delete",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    walletActionBulkRateLimitIfWalletConfigured,
+    (c) => handleDeleteEventRegistrations(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/registrations/delete-by-filter",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    walletActionBulkRateLimitIfWalletConfigured,
+    (c) => handleDeleteEventRegistrationsByFilter(c, db),
   );
   // Remove from event (the hard delete, for mistakes, with a reason from a fixed list). Behind
   // guardArchivedEvent: the numbers of an archived event are final. The pass of each removed attendee
