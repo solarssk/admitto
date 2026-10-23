@@ -297,6 +297,32 @@ function registrationMode(settings: SettingsRow | null | undefined): Registratio
   return settings?.mode === "approval" || settings?.mode === "automatic" ? settings.mode : null;
 }
 
+/** The event of `slug` when it has registration on and is not archived, with its settings; null for every other reason,
+ * which the callers answer alike. The one rule of what a registration route may find (D-B1, D-B10), for the form and
+ * for the confirmation of an address. */
+async function findLiveEvent(
+  db: PrismaClient,
+  slug: string,
+): Promise<{ row: EventRow; settings: SettingsRow; mode: RegistrationFormModel["mode"] } | null> {
+  if (!EVENT_SLUG.test(slug)) return null;
+  const row = await findEvent(db, slug);
+  const settings = row?.registration_settings;
+  const mode = registrationMode(settings);
+  if (!row || !settings || mode === null || row.archived_at !== null) return null;
+  return { row, settings, mode };
+}
+
+/** Whether the event is over at `now` (D-B10): its form closes with it, and so does the confirmation of an address. */
+function isOver(row: EventRow, now: Date): boolean {
+  const end = eventEndsAtUtc({
+    date: row.date,
+    eventHoursStart: row.event_hours_start,
+    eventHoursEnd: row.event_hours_end,
+    timezone: row.timezone,
+  });
+  return now.getTime() >= end.getTime();
+}
+
 /**
  * The state of the registration page of the event named by `slug` at `now`.
  *
@@ -308,25 +334,39 @@ function registrationMode(settings: SettingsRow | null | undefined): Registratio
  *   required question can be drawn; else `not_found`, as if registration were off.
  */
 export async function resolveRegistration(db: PrismaClient, slug: string, now: Date): Promise<ResolvedRegistration> {
-  if (!EVENT_SLUG.test(slug)) return NOT_FOUND;
-  const row = await findEvent(db, slug);
-  const settings = row?.registration_settings;
-  const mode = registrationMode(settings);
+  const live = await findLiveEvent(db, slug);
+  if (!live) return NOT_FOUND;
+  const { row, settings, mode } = live;
   // `access_methods` holds exactly one method in this release (D-C1); only the link is built here.
-  if (!row || !settings || mode === null || row.archived_at !== null) return NOT_FOUND;
   if (settings.access_methods.length !== 1 || settings.access_methods[0] !== "link") return NOT_FOUND;
 
   const event = toFormEvent(row);
-  const end = eventEndsAtUtc({
-    date: row.date,
-    eventHoursStart: row.event_hours_start,
-    eventHoursEnd: row.event_hours_end,
-    timezone: row.timezone,
-  });
-  if (now.getTime() >= end.getTime()) {
-    return { kind: "closed", page: { event, contact: await loadContact(db, row.id) } };
-  }
+  if (isOver(row, now)) return { kind: "closed", page: { event, contact: await loadContact(db, row.id) } };
   return loadOpenForm(db, row, settings, mode, event);
+}
+
+/** What the pages of the link that confirms an address (`/r/:slug/confirm/:token`) need to know about the event. */
+export type ResolvedConfirmation =
+  | { kind: "not_found" }
+  | { kind: "closed"; page: ClosedFormModel }
+  | { kind: "open"; eventId: string; event: FormEvent; contact: FormContact | null };
+
+const NOT_FOUND_CONFIRMATION: ResolvedConfirmation = { kind: "not_found" };
+
+/**
+ * The event of a confirmation link at `now`. The guest holds a registration already, so the form's own conditions do not
+ * apply: the way in may be switched off, the Turnstile keys cleared or a text unpublished since, and the link still
+ * works. What closes it is what closes the registration itself (see `findLiveEvent`): an event that has registration off,
+ * is archived or is unknown is `not_found` (the one 404), and an event that is over is `closed`. The service that confirms
+ * (`confirmRegistrationAddress`) judges the same again under its locks.
+ */
+export async function resolveConfirmation(db: PrismaClient, slug: string, now: Date): Promise<ResolvedConfirmation> {
+  const live = await findLiveEvent(db, slug);
+  if (!live) return NOT_FOUND_CONFIRMATION;
+  const event = toFormEvent(live.row);
+  const contact = await loadContact(db, live.row.id);
+  if (isOver(live.row, now)) return { kind: "closed", page: { event, contact } };
+  return { kind: "open", eventId: live.row.id, event, contact };
 }
 
 /** {@link resolveRegistration}, as far as the page needs it. */

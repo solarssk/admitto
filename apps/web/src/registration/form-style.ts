@@ -108,10 +108,14 @@ export const REGISTRATION_PAGE_CSS = `
 .reg-center { padding: 28px 24px 24px; display: grid; gap: 14px; justify-items: center; text-align: center; }
 .reg-badge { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; color: var(--primary); background: var(--primary-tint); }
 .reg-badge--muted { color: var(--text-secondary); background: var(--surface-sunken); border: 1px solid var(--border); }
+.reg-badge--ok { color: var(--status-ok-fg); background: var(--status-ok-tint); }
+.reg-badge--warn { color: var(--status-warn-fg); background: var(--status-warn-tint); }
 .reg-center h1 { margin: 0; font-size: var(--fs-h2); letter-spacing: var(--ls-normal); line-height: 1.3; overflow-wrap: anywhere; }
 .reg-center h1:focus-visible { box-shadow: none; }
 .reg-center p { margin: 0; max-width: 40ch; color: var(--text-secondary); overflow-wrap: anywhere; }
 .reg-center p b { color: var(--text-primary); font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+.reg-center form { display: grid; width: 100%; justify-items: center; }
+.reg-center .at-btn { width: 100%; max-width: 320px; }
 .reg-facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-sunken); font-size: var(--fs-sm); color: var(--text-secondary); }
 .reg-facts span { display: inline-flex; align-items: center; gap: 6px; }
 .reg-facts .ic { color: var(--text-muted); font-size: 15px; }

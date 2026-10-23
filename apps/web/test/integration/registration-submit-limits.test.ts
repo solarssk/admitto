@@ -254,6 +254,32 @@ describe("the mail budget of an event", () => {
     expect(INLINE_RATE_LIMITS["registration:mail-event"].max).toBe(1000);
   });
 
+  it("bounds the confirmations an event sends again by the cap of the event, apart from its rows", async () => {
+    await withBase(5, async () => {
+      const slug = nextSlug("resends");
+      const eventId = await seeder.addEvent(slug, { settings: { verify_email: true } });
+      const h = harness({ prisma });
+      const guests = [nextEmail("resend"), nextEmail("resend"), nextEmail("resend")];
+      for (const email of guests) expect((await h.post(slug, h.body(slug, { email }))).status).toBe(200);
+      let requeued = 0;
+      // Three registrations use three of the five rows, and each is sent again twice, as the address's budget (3 a day) allows:
+      // six resends are asked for, and five are the cap.
+      for (let round = 0; round < 2; round += 1) {
+        for (const email of guests) {
+          const row = await prisma.registration.findUniqueOrThrow({ where: { event_id_email: { event_id: eventId, email } } });
+          const aged = new Date(Date.now() - 3_600_000);
+          await prisma.registrationMail.updateMany({ where: { registration_id: row.id }, data: { queued_at: aged, status: "sent" } });
+
+          expect((await h.post(slug, h.body(slug, { email }))).status).toBe(200);
+
+          const after = await prisma.registrationMail.findFirstOrThrow({ where: { registration_id: row.id } });
+          if (after.queued_at.getTime() !== aged.getTime()) requeued += 1;
+        }
+      }
+      expect(requeued).toBe(5);
+    });
+  });
+
   it("withholds the mail of the registrations that come after the budget, stores them, and answers as before", async () => {
     const slug = nextSlug("evt-cap");
     const eventId = await seeder.addEvent(slug, { capacity: null, settings: { verify_email: true } });

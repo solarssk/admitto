@@ -46,7 +46,8 @@ function respondForm(c: Context, form: RegistrationFormModel, theme: BrandingThe
   return c.html(renderRegistrationFormPage(form, { nonce, theme }), 200);
 }
 
-function respondClosed(c: Context, page: ClosedFormModel, theme: BrandingTheme | null): Response {
+/** The page of an event that is over, which the confirmation of an address answers too (./confirm-route.ts). */
+export function respondClosed(c: Context, page: ClosedFormModel, theme: BrandingTheme | null): Response {
   applyHeaders(
     c,
     getRegistrationPageSecurityHeaders(createAuthPageScriptNonce(), {

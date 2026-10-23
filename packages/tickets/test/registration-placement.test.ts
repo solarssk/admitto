@@ -8,11 +8,13 @@ import type { PrismaClient } from "@admitto/db";
 import type { RegistrationAccessMethod } from "@admitto/db/status";
 import { eraseAttendees } from "../src/erase-attendees.js";
 import { RegistrantInputError } from "../src/registrant-input.js";
-import { enqueueRegistrationMail } from "../src/registration-mail-queue.js";
+import { enqueueRegistrationMail, requeueMailForMoment } from "../src/registration-mail-queue.js";
 import {
+  CONFIRMATION_RESEND_COOLDOWN_MS,
   REGISTRATION_CONFIRM_WINDOW_MS,
   confirmRegistrationAddress,
   placeRegistration,
+  type PlacementOptions,
   type RegistrantSubmission,
 } from "../src/registration-placement.js";
 import {
@@ -243,6 +245,11 @@ describe("placeRegistration: an address that has a place already (D-B14)", () =>
     for (const status of states) {
       const attendee = status === "accepted" ? await make.attendee(eventId) : undefined;
       const existing = await make.registration(eventId, { status, attendeeId: attendee?.id });
+      // A registration that waits for its address has the confirmation mail a submission queued for it just now, so a second
+      // submission right away mails nothing (the cooldown; the re-send itself is tested below).
+      if (status === "awaiting_email") {
+        await db.registrationMail.create({ data: { registration_id: existing.id, event_id: eventId, template_name: "registration-confirm" } });
+      }
       const before = { counts: await make.counts(eventId), row: await db.registration.findUnique({ where: { id: existing.id } }) };
 
       const answer = await place(eventId, make.registrant({ email: existing.email, first_name: "Somebody", last_name: "Else" }));
@@ -293,7 +300,7 @@ describe("placeRegistration: an address that has a place already (D-B14)", () =>
     expect(answers).toEqual([RECEIVED, RECEIVED, RECEIVED]);
   });
 
-  it("does not queue the confirmation again for a registration that waits for its address (that is the re-send, for the callers)", async () => {
+  it("keeps one registration and one confirmation mail when the address is submitted again right away (the cooldown of the re-send)", async () => {
     const eventId = await make.event({ verify: true });
     const registrant = make.registrant();
     await place(eventId, registrant);
@@ -334,6 +341,274 @@ describe("placeRegistration: an address that has a place already (D-B14)", () =>
 
     const attendees = await db.attendee.findMany({ where: { event_id: eventId, erased_at: null } });
     expect(attendees.map((row) => row.email)).toEqual([person.email]);
+  });
+});
+
+describe("placeRegistration: the guest sends the form again while the address waits for its confirmation (D-C5)", () => {
+  /** A registration that waits for its address, made the way a submission makes it, and the row of its mail. */
+  async function waiting(options: EventOptions = {}) {
+    const eventId = await make.event(options);
+    const registrant = make.registrant();
+    await place(eventId, registrant);
+    const row = (await make.registrationByEmail(eventId, registrant.email))!;
+    const mail = await db.registrationMail.findFirstOrThrow({ where: { registration_id: row.id } });
+    return { eventId, registrant, row, mail };
+  }
+  /** The worker sent the mail an hour ago. */
+  const sentAnHourAgo = (mailId: string) =>
+    db.registrationMail.update({
+      where: { id: mailId },
+      data: {
+        status: "sent",
+        attempts: 1,
+        retryable: null,
+        queued_at: new Date(Date.now() - 3_600_000),
+        attempted_at: new Date(Date.now() - 3_600_000),
+        sent_at: new Date(Date.now() - 3_600_000),
+        provider_message_id: "provider-message-1",
+      },
+    });
+  /** The same address again, with other names: what a stranger who typed it would send. */
+  const again = (eventId: string, registrant: RegistrantSubmission, options: PlacementOptions = {}, method: RegistrationAccessMethod = "link") =>
+    placeRegistration(db, { eventId, method, registrant: { ...registrant, first_name: "Somebody", last_name: "Else" } }, options);
+  const mailRow = (id: string) => db.registrationMail.findUniqueOrThrow({ where: { id } });
+
+  it.each([["link" as const], ["password" as const]])(
+    "puts the mail with the link back in the queue as a new revision (%s), and changes nothing else",
+    async (method) => {
+      const { eventId, registrant, row, mail } = await waiting();
+      await sentAnHourAgo(mail.id);
+      const before = { registration: await db.registration.findUnique({ where: { id: row.id } }), counts: await make.counts(eventId) };
+
+      expect(await again(eventId, registrant, {}, method)).toEqual(RECEIVED);
+
+      // The registration is as it was, with the answers of the first submission and the time its link runs out. The row of the
+      // mail is the same row: the link is made of the registration's id, so it is the same link.
+      expect(await db.registration.findUnique({ where: { id: row.id } })).toEqual(before.registration);
+      expect(await make.counts(eventId)).toEqual(before.counts);
+      const queued = await mailRow(mail.id);
+      expect(queued).toMatchObject({
+        registration_id: row.id,
+        template_name: "registration-confirm",
+        status: "queued",
+        attempts: 0,
+        retryable: null,
+        attempted_at: null,
+        sent_at: null,
+        error_code: null,
+        error: null,
+        provider_message_id: "provider-message-1",
+      });
+      expect(queued.queued_at.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    },
+  );
+
+  it("mails again only when the last mail was queued the cooldown ago, and asks the address's budget only then", async () => {
+    const { eventId, registrant, mail } = await waiting();
+    const queuedAt = (await mailRow(mail.id)).queued_at.getTime();
+    const asked = vi.fn(async () => true);
+    const options = (at: number): PlacementOptions => ({ now: new Date(at), mail: { addressAllowed: asked } });
+
+    expect(await again(eventId, registrant, options(queuedAt + CONFIRMATION_RESEND_COOLDOWN_MS - 1))).toEqual(RECEIVED);
+    expect(asked).not.toHaveBeenCalled();
+    expect((await mailRow(mail.id)).queued_at.getTime()).toBe(queuedAt);
+
+    expect(await again(eventId, registrant, options(queuedAt + CONFIRMATION_RESEND_COOLDOWN_MS))).toEqual(RECEIVED);
+    expect(asked).toHaveBeenCalledTimes(1);
+    expect((await mailRow(mail.id)).queued_at.getTime()).toBe(queuedAt + CONFIRMATION_RESEND_COOLDOWN_MS);
+    // And that mail starts the cooldown again.
+    expect(await again(eventId, registrant, options(queuedAt + CONFIRMATION_RESEND_COOLDOWN_MS + 1_000))).toEqual(RECEIVED);
+    expect(asked).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks the event's budget of resends, with the cap of the event, after the cooldown and before the address's budget", async () => {
+    const { eventId, registrant, mail } = await waiting({ capacity: 400 });
+    const queuedAt = (await mailRow(mail.id)).queued_at.getTime();
+    const order: string[] = [];
+    const resendAllowed = vi.fn(async (_cap: number) => {
+      order.push("event");
+      return true;
+    });
+    const addressAllowed = vi.fn(async () => {
+      order.push("address");
+      return true;
+    });
+    const mailLimits = { resendAllowed, addressAllowed, event: { base: 1000, windowMs: 86_400_000 } };
+
+    await again(eventId, registrant, { now: new Date(queuedAt + CONFIRMATION_RESEND_COOLDOWN_MS - 1), mail: mailLimits });
+    expect(order).toEqual([]);
+    await again(eventId, registrant, { now: new Date(queuedAt + CONFIRMATION_RESEND_COOLDOWN_MS), mail: mailLimits });
+
+    expect(order).toEqual(["event", "address"]);
+    // The cap is the larger of the base and three a seat: 3 x 400.
+    expect(resendAllowed).toHaveBeenCalledExactlyOnceWith(1200);
+  });
+
+  it("leaves the mail as it was, answers the same and says the event's budget was spent, when its resends are used up", async () => {
+    const { eventId, registrant, mail } = await waiting();
+    await sentAnHourAgo(mail.id);
+    const before = await mailRow(mail.id);
+    const onWithheld = vi.fn();
+    const addressAllowed = vi.fn(async () => true);
+    const mailLimits = { event: { base: 1000, windowMs: 86_400_000 }, resendAllowed: async () => false, addressAllowed, onWithheld };
+
+    expect(await again(eventId, registrant, { mail: mailLimits })).toEqual(RECEIVED);
+
+    expect(onWithheld).toHaveBeenCalledExactlyOnceWith("event");
+    expect(addressAllowed).not.toHaveBeenCalled();
+    expect(await mailRow(mail.id)).toEqual(before);
+  });
+
+  it("does not ask the budget of resends for a new registration: its mail is a row of the event's budget", async () => {
+    const eventId = await make.event();
+    const resendAllowed = vi.fn(async (_cap: number) => true);
+
+    expect(await place(eventId, make.registrant(), { mail: { event: { base: 5, windowMs: 86_400_000 }, resendAllowed } })).toEqual(RECEIVED);
+
+    expect(resendAllowed).not.toHaveBeenCalled();
+  });
+
+  it.each([["address" as const], ["event" as const]])(
+    "leaves the mail as it was, answers the same and says which budget was spent, when the %s budget is spent",
+    async (spent) => {
+      const { eventId, registrant, mail } = await waiting({ capacity: null });
+      await sentAnHourAgo(mail.id);
+      const before = await mailRow(mail.id);
+      const onWithheld = vi.fn();
+      // An event without a limit has the base alone as its cap, and this registration's mail row already uses it.
+      const mailLimits =
+        spent === "address"
+          ? { addressAllowed: async () => false, onWithheld }
+          : { event: { base: 1, windowMs: 86_400_000 }, onWithheld };
+
+      expect(await again(eventId, registrant, { mail: mailLimits })).toEqual(RECEIVED);
+
+      expect(onWithheld).toHaveBeenCalledExactlyOnceWith(spent);
+      expect(await mailRow(mail.id)).toEqual(before);
+    },
+  );
+
+  it("queues the mail when the first one was withheld and there is no row to put back", async () => {
+    const eventId = await make.event();
+    const registrant = make.registrant();
+    const refused = { addressAllowed: async () => false };
+    await placeRegistration(db, { eventId, method: "link", registrant }, { mail: refused });
+    const row = (await make.registrationByEmail(eventId, registrant.email))!;
+    expect(await make.templatesOf(row.id)).toEqual([]);
+
+    expect(await again(eventId, registrant, { mail: { addressAllowed: async () => true } })).toEqual(RECEIVED);
+
+    expect(await make.templatesOf(row.id)).toEqual(["registration-confirm"]);
+    expect((await mailRow((await db.registrationMail.findFirstOrThrow({ where: { registration_id: row.id } })).id)).status).toBe("queued");
+  });
+
+  it("mails nothing again for a registration that does not wait for its address, for an address an attendee holds, and for single sign-on", async () => {
+    const eventId = await make.event({ verify: true });
+    const asked = vi.fn(async () => true);
+    const options: PlacementOptions = { mail: { addressAllowed: asked } };
+    /** A registration of this status with a confirmation mail that was sent an hour ago. */
+    const withOldMail = async (status: string, extra: { email?: string; attendeeId?: string } = {}) => {
+      const row = await make.registration(eventId, { status, ...extra });
+      const mail = await db.registrationMail.create({
+        data: { registration_id: row.id, event_id: eventId, template_name: "registration-confirm" },
+      });
+      await sentAnHourAgo(mail.id);
+      return { row, mail: await mailRow(mail.id) };
+    };
+    const held = await make.attendee(eventId);
+    const accepted = await make.attendee(eventId);
+    const cases = [
+      await withOldMail("pending"),
+      await withOldMail("waitlist"),
+      await withOldMail("rejected"),
+      await withOldMail("accepted", { attendeeId: accepted.id }),
+      // The address is an attendee's (an import won): the confirmation could only end in "already registered".
+      await withOldMail("awaiting_email", { email: held.email }),
+    ];
+
+    for (const { row } of cases) {
+      expect(await again(eventId, { ...make.registrant(), email: row.email }, options)).toEqual(RECEIVED);
+    }
+    const waitingRow = await withOldMail("awaiting_email");
+    expect(await again(eventId, { ...make.registrant(), email: waitingRow.row.email }, options, "sso")).toEqual({
+      outcome: "already_registered",
+    });
+
+    expect(asked).not.toHaveBeenCalled();
+    for (const { mail } of [...cases, waitingRow]) expect(await mailRow(mail.id)).toEqual(mail);
+  });
+
+  it("does not make the link last longer: it runs out when it would have", async () => {
+    const { eventId, registrant, row, mail } = await waiting();
+    await sentAnHourAgo(mail.id);
+
+    await again(eventId, registrant);
+
+    expect((await db.registration.findUniqueOrThrow({ where: { id: row.id } })).confirm_expires_at?.getTime()).toBe(row.confirm_expires_at?.getTime());
+  });
+});
+
+describe("requeueMailForMoment", () => {
+  it("does nothing for a moment that has no mail, and does not ask", async () => {
+    const eventId = await make.event();
+    const row = await make.registration(eventId, { status: "pending" });
+    const allow = vi.fn(() => true);
+
+    const queued = await db.$transaction((tx) =>
+      requeueMailForMoment(tx, { eventId, registration: row, moment: { to: "pending", afterConfirmation: true } }, new Date(), allow),
+    );
+
+    expect(queued).toBe(false);
+    expect(allow).not.toHaveBeenCalled();
+    expect(await make.templatesOf(row.id)).toEqual([]);
+  });
+
+  it("queues no mail that the registration no longer fits, and does not ask: another state, or a link that ran out (registrationMailMisfit)", async () => {
+    const eventId = await make.event();
+    const pending = await make.registration(eventId, { status: "pending" });
+    const ranOut = await make.registration(eventId, { status: "awaiting_email", expiresAt: new Date(Date.now() - 1_000) });
+    const allow = vi.fn(() => true);
+
+    for (const registration of [pending, ranOut]) {
+      const queued = await db.$transaction((tx) =>
+        requeueMailForMoment(tx, { eventId, registration, moment: { to: "awaiting_email" } }, new Date(), allow),
+      );
+      expect(queued).toBe(false);
+      expect(await make.templatesOf(registration.id)).toEqual([]);
+    }
+    expect(allow).not.toHaveBeenCalled();
+  });
+
+  it("hands the row as it is, or null, to the decision, and writes only when it says yes", async () => {
+    const eventId = await make.event();
+    const row = await make.registration(eventId, { status: "awaiting_email" });
+    const entry = { eventId, registration: row, moment: { to: "awaiting_email" } as const };
+    const now = new Date();
+
+    const refusedWithNoRow = vi.fn(() => false);
+    expect(await db.$transaction((tx) => requeueMailForMoment(tx, entry, now, refusedWithNoRow))).toBe(false);
+    expect(refusedWithNoRow).toHaveBeenCalledWith(null);
+    expect(await make.templatesOf(row.id)).toEqual([]);
+
+    expect(await db.$transaction((tx) => requeueMailForMoment(tx, entry, now, () => true))).toBe(true);
+    const queued = await db.registrationMail.findFirstOrThrow({ where: { registration_id: row.id } });
+    await db.registrationMail.update({ where: { id: queued.id }, data: { status: "failed", attempts: 3, retryable: false, error_code: "send_failed", error: "x" } });
+
+    const refusedWithRow = vi.fn(() => false);
+    expect(await db.$transaction((tx) => requeueMailForMoment(tx, entry, now, refusedWithRow))).toBe(false);
+    expect(refusedWithRow).toHaveBeenCalledWith(expect.objectContaining({ id: queued.id, queued_at: queued.queued_at }));
+    expect((await db.registrationMail.findUniqueOrThrow({ where: { id: queued.id } })).status).toBe("failed");
+
+    expect(await db.$transaction((tx) => requeueMailForMoment(tx, entry, now, () => true))).toBe(true);
+    expect(await db.registrationMail.findUniqueOrThrow({ where: { id: queued.id } })).toMatchObject({
+      status: "queued",
+      attempts: 0,
+      retryable: null,
+      error_code: null,
+      error: null,
+      queued_at: now,
+    });
+    expect(await db.registrationMail.count({ where: { registration_id: row.id } })).toBe(1);
   });
 });
 

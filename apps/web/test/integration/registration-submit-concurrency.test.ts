@@ -8,8 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { acquireEventCapacityLock } from "@admitto/tickets";
-import { SelectiveStore, eventSeeder, harness, nextEmail, signature } from "../helpers/registration-submit-harness.js";
+import { SelectiveStore, eventSeeder, harness, holdCapacityLock as holdLock, nextEmail, signature } from "../helpers/registration-submit-harness.js";
 
 const ORG = "org-reg95c-concurrency";
 
@@ -34,31 +33,7 @@ afterAll(async () => {
 });
 
 /** What an import does to the event: takes the capacity lock and keeps it until `release` is called. */
-function holdCapacityLock(eventId: string) {
-  let release!: () => void;
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let started!: () => void;
-  const hasStarted = new Promise<void>((resolve) => {
-    started = resolve;
-  });
-  const transaction = holderClient.$transaction(
-    async (tx) => {
-      await acquireEventCapacityLock(tx, eventId);
-      started();
-      await released;
-    },
-    { timeout: 60_000 },
-  );
-  return {
-    started: hasStarted,
-    release: async () => {
-      release();
-      await transaction;
-    },
-  };
-}
+const holdCapacityLock = (eventId: string) => holdLock(holderClient, eventId);
 
 /** How many transactions of this database wait for the capacity lock of this event right now. */
 async function waitingForCapacityLock(eventId: string): Promise<number> {

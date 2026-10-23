@@ -217,17 +217,39 @@ describe("one answer for every address (D-B14)", () => {
           ...extra,
         },
       });
-    const awaiting = (await make(nextEmail("awaiting"), "awaiting_email")).email;
+    // A registration that waits for its address has the confirmation mail its submission queued just now, so a second
+    // submission right away mails nothing (the cooldown of the re-send); `resend` has one queued an hour ago.
+    const waiting = await make(nextEmail("awaiting"), "awaiting_email");
+    await prisma.registrationMail.create({ data: { registration_id: waiting.id, event_id: eventId, template_name: "registration-confirm" } });
+    const awaiting = waiting.email;
+    const toResend = await make(nextEmail("resend"), "awaiting_email");
+    await prisma.registrationMail.create({
+      data: {
+        registration_id: toResend.id,
+        event_id: eventId,
+        template_name: "registration-confirm",
+        status: "sent",
+        attempts: 1,
+        queued_at: new Date(Date.now() - 3_600_000),
+        sent_at: new Date(Date.now() - 3_600_000),
+      },
+    });
     const pending = (await make(nextEmail("pending"), "pending")).email;
     const rejected = (await make(nextEmail("rejected"), "rejected")).email;
     const attendeeEmail = nextEmail("attendee");
     await prisma.attendee.create({ data: { event_id: eventId, email: attendeeEmail, name: "Held Attendee", status: "revoked" } });
     const spent = nextEmail("spent");
     for (let i = 0; i < 3; i += 1) await checkRegistrationMailRecipientRateLimit(store, spent);
-    return { slug, eventId, store, h, emails: { fresh: nextEmail("fresh"), awaiting, pending, rejected, attendee: attendeeEmail, spent } };
+    return {
+      slug,
+      eventId,
+      store,
+      h,
+      emails: { fresh: nextEmail("fresh"), awaiting, resend: toResend.email, pending, rejected, attendee: attendeeEmail, spent },
+    };
   }
 
-  it("answers a new address, one that waits for its address, one that waits for a decision, a rejected one, an attendee's and one whose mail was withheld with the same status, headers and bytes", async () => {
+  it("answers a new address, one that waits for its address (its link mailed again or not), one that waits for a decision, a rejected one, an attendee's and one whose mail was withheld with the same status, headers and bytes", async () => {
     const { slug, h, emails } = await arrange();
 
     const signatures = [];
@@ -249,6 +271,21 @@ describe("one answer for every address (D-B14)", () => {
 
     expect(await countsOf(eventId)).toEqual(before.counts);
     expect(await prisma.registration.findMany({ where: { event_id: eventId }, orderBy: { email: "asc" } })).toEqual(before.rows);
+  });
+
+  it("mails the link again to an address that waits for it, when its last mail is old, and changes nothing else: the same mail row, the same registration", async () => {
+    const { slug, eventId, h, emails } = await arrange();
+    const registration = await prisma.registration.findUniqueOrThrow({ where: { event_id_email: { event_id: eventId, email: emails.resend } } });
+    const mail = await prisma.registrationMail.findFirstOrThrow({ where: { registration_id: registration.id } });
+    const others = { counts: await countsOf(eventId) };
+
+    expect((await h.post(slug, h.body(slug, { email: emails.resend, first_name: "Somebody", last_name: "Else" }))).status).toBe(200);
+
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id: registration.id } })).toEqual(registration);
+    expect(await countsOf(eventId)).toEqual(others.counts);
+    const again = await prisma.registrationMail.findUniqueOrThrow({ where: { id: mail.id } });
+    expect(again).toMatchObject({ status: "queued", attempts: 0, sent_at: null });
+    expect(again.queued_at.getTime()).toBeGreaterThan(mail.queued_at.getTime());
   });
 
   it("holds every one of those answers for the same floor of time, counted from the end of the challenge check", async () => {
