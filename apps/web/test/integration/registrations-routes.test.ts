@@ -716,13 +716,13 @@ describe("the list", () => {
 
     it("tells apart the mails that staff may send again", async () => {
       const rows: [string, RegistrationMailTemplateName, Partial<Prisma.RegistrationMailUncheckedCreateInput>, boolean][] = [
-        ["failed-for-good", "registration-confirm", { status: "failed", retryable: false }, true],
-        ["failed-unknown", "registration-confirm", { status: "failed", retryable: null }, true],
-        ["failed-retrying", "registration-confirm", { status: "failed", retryable: true }, false],
-        ["queued", "registration-confirm", { status: "queued" }, false],
-        ["sent", "registration-confirm", { status: "sent" }, false],
-        ["accepted", "registration-confirm", { status: "accepted" }, false],
-        ["cancelled", "registration-confirm", { status: "cancelled", retryable: false }, false],
+        ["failed-for-good", "registration-received", { status: "failed", retryable: false }, true],
+        ["failed-unknown", "registration-received", { status: "failed", retryable: null }, true],
+        ["failed-retrying", "registration-received", { status: "failed", retryable: true }, false],
+        ["queued", "registration-received", { status: "queued" }, false],
+        ["sent", "registration-received", { status: "sent" }, false],
+        ["accepted", "registration-received", { status: "accepted" }, false],
+        ["cancelled", "registration-received", { status: "cancelled", retryable: false }, false],
       ];
       for (const [slug, template, extra] of rows) {
         const id = await addRegistration({ id: `reg-mail-${slug}`, email: `${slug}@example.com` });
@@ -735,6 +735,30 @@ describe("the list", () => {
           can_retry: canRetry,
         });
       }
+    });
+
+    it("does not offer the retry of a failed ticket row: the ticket is sent again from the attendee", async () => {
+      const id = await addRegistration({ email: "ticket-failed@example.com", status: "accepted" });
+      await addMail(id, "ticket", { status: "failed", retryable: false });
+      expect(await lastMailOf(id)).toMatchObject({ template_name: "ticket", status: "failed", can_retry: false });
+    });
+
+    it("does not offer the retry of a mail its registration no longer fits: the worker would cancel it", async () => {
+      // Turned down with no notice, the failed "received" mail stays the last; and a confirmation link can run out.
+      const rejected = await addRegistration({ email: "moved-on@example.com", status: "rejected" });
+      await addMail(rejected, "registration-received", { status: "failed", retryable: false });
+      const expired = await addRegistration({
+        email: "expired-link@example.com",
+        status: "awaiting_email",
+        createdAt: new Date(Date.now() - 3 * DAY_MS),
+      });
+      await addMail(expired, "registration-confirm", { status: "failed", retryable: false });
+      const waiting = await addRegistration({ email: "valid-link@example.com", status: "awaiting_email" });
+      await addMail(waiting, "registration-confirm", { status: "failed", retryable: false });
+
+      expect(await lastMailOf(rejected)).toMatchObject({ status: "failed", can_retry: false });
+      expect(await lastMailOf(expired)).toMatchObject({ status: "failed", can_retry: false });
+      expect(await lastMailOf(waiting)).toMatchObject({ status: "failed", can_retry: true });
     });
 
     it("never takes the mail of a registration that is not on the page", async () => {
@@ -906,7 +930,8 @@ describe("one registration", () => {
           template_name: "ticket",
           status: "failed",
           retryable: false,
-          can_retry: true,
+          // A ticket row is sent again from the attendee, not from here.
+          can_retry: false,
           attempts: 3,
           queued_at: "2026-10-02T08:00:10.000Z",
           attempted_at: "2026-10-02T08:10:00.000Z",

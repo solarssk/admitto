@@ -123,6 +123,8 @@ export const CODE_MESSAGES: Record<string, string> = {
   mappings_required: "Role mappings are required before enabling this provider.",
   no_local_password: "Password is managed by your identity provider.",
   not_admitted: "This attendee isn't currently checked in.",
+  not_enough_seats:
+    "There are not enough free seats for everyone selected. Select fewer guests, or raise the event's capacity first.",
   not_found: "The requested item was not found.",
   password_change_required:
     "You must change your password before continuing. Update it in Account or go to /change-password.",

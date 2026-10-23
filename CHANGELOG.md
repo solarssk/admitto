@@ -26,6 +26,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Show icons, questions that open under another answer, and a list of suggestions on the guest registration form, as in the approved design ([#1786](https://github.com/solarssk/admitto/pull/1786))
 - Add icons, "show only when" conditions and suggestions to the attendee field editor, and show them on the field list ([#1787](https://github.com/solarssk/admitto/pull/1787))
 - Warn in the field editor, and in the delete dialog, when other fields are shown only for an answer to the field ([#1787](https://github.com/solarssk/admitto/pull/1787))
+- Add an admin API to accept or reject guest registrations, up to 500 at once, and to send a failed registration mail again ([#1789](https://github.com/solarssk/admitto/pull/1789))
 - Add sending the guest registration form, with a bot check and one answer for every address; off until an event turns registration on ([#1790](https://github.com/solarssk/admitto/pull/1790))
 - Add `registration:mail-event`, a daily cap on the registration mail one event queues (1000, or 3 per seat), tunable with `RATE_LIMIT_OVERRIDES` ([#1790](https://github.com/solarssk/admitto/pull/1790))
 
