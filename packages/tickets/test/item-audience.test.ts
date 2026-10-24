@@ -164,7 +164,10 @@ describe("the readers of an attendee's items", () => {
     const unguarded = readers.filter(
       (file) => !NEED_NOT.has(file) && !APPLIES_THE_RULE.test(readFileSync(path.join(root, file), "utf8")),
     );
-    expect(unguarded).toEqual([]);
+    expect(
+      unguarded,
+      "These files read the item tables and do not apply itemAppliesToAttendee (src/item-audience.ts): apply it, or add the file to NEED_NOT with the reason it need not.",
+    ).toEqual([]);
   });
 
   it("lists no file that is gone or that no longer reads the items", () => {
