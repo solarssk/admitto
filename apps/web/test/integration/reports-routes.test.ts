@@ -3096,6 +3096,89 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       await prisma.event.deleteMany({ where: { id: EVENT_ITEMS } });
     }
   });
+
+  it("lists a companion let in among the items of the guest who brought one, and counts the companions beside the guests", async () => {
+    const EVENT_COMPANIONS = "evt-reports-companions";
+    const cleanUp = async () => {
+      await prisma.attendeeItemState.deleteMany({ where: { event_item: { event_id: EVENT_COMPANIONS } } });
+      await prisma.eventItem.deleteMany({ where: { event_id: EVENT_COMPANIONS } });
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_COMPANIONS } });
+      await prisma.event.deleteMany({ where: { id: EVENT_COMPANIONS } });
+    };
+    await cleanUp();
+    await prisma.event.create({
+      data: {
+        id: EVENT_COMPANIONS,
+        title: "Companions Reports Event",
+        slug: "reports-event-companions",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    const badge = await prisma.eventItem.create({ data: { event_id: EVENT_COMPANIONS, key: "badge", label: "Badge" } });
+    const companion = await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_COMPANIONS,
+        key: "companion",
+        label: "Companion",
+        config: { audience: "with_companion", requires_return: false, issue_on_checkin: false },
+      },
+    });
+    const guests = [
+      { id: "att-rep-comp-with", name: "Guest With Companion", at: "09:00" },
+      { id: "att-rep-comp-removed", name: "Guest Whose Companion Was Removed", at: "09:05" },
+      { id: "att-rep-comp-waiting", name: "Guest With Companion Waiting", at: "09:10" },
+    ];
+    await prisma.attendee.createMany({
+      data: guests.map((guest) => ({
+        id: guest.id,
+        event_id: EVENT_COMPANIONS,
+        email: `${guest.id}@example.com`,
+        name: guest.name,
+        admitted_at: new Date(`2026-10-01T${guest.at}:00.000Z`),
+        ...mkAttendeeToken(),
+      })),
+    });
+    await prisma.attendeeCompanion.createMany({
+      data: [
+        { attendee_id: "att-rep-comp-with", slot: 1, name: "Companion One" },
+        { attendee_id: "att-rep-comp-waiting", slot: 1, name: "Companion Two" },
+      ],
+    });
+    await prisma.attendeeItemState.createMany({
+      data: [
+        { attendee_id: "att-rep-comp-with", event_item_id: badge.id, state: "issued" },
+        { attendee_id: "att-rep-comp-with", event_item_id: companion.id, state: "issued" },
+        // Staff removed this guest's companion after the companion was let in: the state stays, the companion is not there.
+        { attendee_id: "att-rep-comp-removed", event_item_id: badge.id, state: "issued" },
+        { attendee_id: "att-rep-comp-removed", event_item_id: companion.id, state: "issued" },
+        { attendee_id: "att-rep-comp-waiting", event_item_id: companion.id, state: "pending" },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_COMPANIONS}/reports`, { headers: { Cookie: adminCookie } });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        summary: { admitted: number; total_attendees: number; no_shows: number; companions_admitted: number };
+        admission_log: Array<{ attendee_id: string; items: string[] }>;
+      };
+      const itemsOf = (id: string) => body.admission_log.find((row) => row.attendee_id === id)?.items;
+      expect(itemsOf("att-rep-comp-with")).toEqual(["Badge", "Companion"]);
+      expect(itemsOf("att-rep-comp-removed")).toEqual(["Badge"]);
+      expect(itemsOf("att-rep-comp-waiting")).toEqual([]);
+      // The guests stay what the report counts; the companions let in are counted beside them.
+      expect(body.summary).toMatchObject({ admitted: 3, total_attendees: 3, no_shows: 0, companions_admitted: 1 });
+    } finally {
+      await cleanUp();
+    }
+  });
+
+  it("counts no companions for an event without any", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports`, { headers: { Cookie: adminCookie } });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { summary: { companions_admitted: number } }).summary.companions_admitted).toBe(0);
+  });
 });
 
 describe("GET /api/admin/events/:eventId/reports/export", () => {
