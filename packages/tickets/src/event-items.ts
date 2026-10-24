@@ -87,7 +87,7 @@ async function ensureDefaultEventItem(eventId: string, db: DbClient, item: Defau
 }
 
 /**
- * Lazy-init the default "badge" EventItem row — idempotent (Lock #7).
+ * Lazy-init the default "badge" EventItem row - idempotent (Lock #7).
  * Safe to call repeatedly; `skipDuplicates` makes it a no-op once the row exists
  * (including when a caller already created its own "badge" item beforehand).
  */
@@ -97,8 +97,8 @@ export function ensureBadgeEventItem(eventId: string, db: DbClient): Promise<voi
 
 /**
  * Creates the event's "companion" item when it has none (see DEFAULT_COMPANION_ITEM) - idempotent, like the badge. Called by
- * the admission that saves a companion, in its transaction. An organiser may disable or delete the item; the next
- * companion admitted creates it again, as a deleted badge comes back.
+ * the admission that saves a companion, in its transaction. An organiser may switch the item off, and it stays off, or
+ * delete it, and the next companion admitted creates it again, as a deleted badge comes back.
  */
 export function ensureCompanionEventItem(eventId: string, db: DbClient): Promise<void> {
   return ensureDefaultEventItem(eventId, db, DEFAULT_COMPANION_ITEM);
