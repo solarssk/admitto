@@ -10,7 +10,9 @@ import {
   REQUEST_MAIL_KINDS,
   REQUEST_STATUS_ORDER,
   isRequestAge,
+  defaultRequestStatus,
   isRequestStatus,
+  requestAgeLabel,
   requestCompanionsLabel,
   requestGuestName,
   requestMailKind,
@@ -19,6 +21,8 @@ import {
   requestStatusFromSearch,
   requestStatusLabel,
   requestStatusOptions,
+  requestsTotal,
+  withCount,
 } from "../../src/registration/registrationRequests.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -46,13 +50,14 @@ describe("the states the list can be limited to", () => {
     expect(requestStatusLabel("awaiting_email")).toBe("Awaiting email");
   });
 
-  it("reads the state from the address, and anything it does not know as every state", () => {
+  it("reads the state from the address, every state only when it says so, and anything it does not know as nothing said", () => {
     expect(requestStatusFromSearch(new URLSearchParams("tab=requests&status=pending"))).toBe("pending");
     expect(requestStatusFromSearch(new URLSearchParams("status=waitlist"))).toBe("waitlist");
     expect(requestStatusFromSearch(new URLSearchParams("status=all"))).toBe("all");
-    expect(requestStatusFromSearch(new URLSearchParams("status=nope"))).toBe("all");
-    expect(requestStatusFromSearch(new URLSearchParams("status="))).toBe("all");
-    expect(requestStatusFromSearch(new URLSearchParams(""))).toBe("all");
+    // Not a state: the tab opens on what it opens on (defaultRequestStatus), as for an address without one.
+    expect(requestStatusFromSearch(new URLSearchParams("status=nope"))).toBeNull();
+    expect(requestStatusFromSearch(new URLSearchParams("status="))).toBeNull();
+    expect(requestStatusFromSearch(new URLSearchParams(""))).toBeNull();
     expect(isRequestStatus(null)).toBe(false);
     expect(isRequestStatus("accepted")).toBe(true);
   });
@@ -164,5 +169,37 @@ describe("what a row says", () => {
     expect(requestMailTone({ status: "failed", retryable: true })).toEqual({ label: "Retrying", variant: "warn" });
     expect(requestMailTone({ status: "bounced", retryable: null })).toEqual({ label: "Bounced", variant: "error" });
     expect(requestMailTone({ status: "cancelled", retryable: null })).toEqual({ label: "Cancelled", variant: "neutral" });
+  });
+});
+
+describe("what the tab opens on", () => {
+  it("is the requests that wait for a decision when staff decide by hand and some wait", () => {
+    expect(defaultRequestStatus(counts({ pending: 3 }))).toBe("pending");
+  });
+
+  it("is every state when nothing waits, when requests are accepted by themselves, when registration is off, and when the numbers are not known", () => {
+    expect(defaultRequestStatus(counts({ pending: 0, accepted: 9 }))).toBe("all");
+    expect(defaultRequestStatus({ ...counts({ pending: 3 }), mode: "automatic" })).toBe("all");
+    expect(defaultRequestStatus({ ...counts({ pending: 3 }), mode: null })).toBe("all");
+    expect(defaultRequestStatus(null)).toBe("all");
+  });
+});
+
+describe("the words and numbers around the list", () => {
+  it("adds a number to a label once it is known, and leaves the label as it is until then", () => {
+    expect(withCount("Accepted", 120)).toBe("Accepted (120)");
+    expect(withCount("Accepted", 0)).toBe("Accepted (0)");
+    expect(withCount("Accepted", null)).toBe("Accepted");
+  });
+
+  it("adds up the requests of every state, and has no total before the numbers are known", () => {
+    expect(requestsTotal(counts({ pending: 4, waitlist: 3, accepted: 120, rejected: 2, awaiting_email: 11 }))).toBe(140);
+    expect(requestsTotal(null)).toBeNull();
+  });
+
+  it("names an age as the filter does, and an age it does not know by itself", () => {
+    expect(requestAgeLabel("90d")).toBe("90 days ago");
+    expect(requestAgeLabel("180d")).toBe("6 months ago");
+    expect(requestAgeLabel("2d")).toBe("2d");
   });
 });

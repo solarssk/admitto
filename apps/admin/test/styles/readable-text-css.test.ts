@@ -66,6 +66,7 @@ const users = parse(read("apps/admin/src/pages/users-page.css"));
 const reports = parse(read("apps/admin/src/pages/reports-page.css"));
 const attendees = parse(read("apps/admin/src/attendees/attendees.css"));
 const requests = parse(read("apps/admin/src/registration/registration-requests.css"));
+const requestDetail = parse(read("apps/admin/src/registration/request-detail.css"));
 const notifications = parse(read("apps/admin/src/settings/notifications-panel.css"));
 
 describe("the baseline: running text runs to the edge of its column, short standalone texts are balanced", () => {
@@ -306,9 +307,27 @@ describe("the Requests tab of the Registration page", () => {
     }
   });
 
-  it("gives the guest the widest column of the table and the last email the room of its longest name, so a row stays two lines tall", () => {
-    expect(sets(bodyOf(requests, ".registration-requests__table thead th:first-child"), "width", "32%")).toBe(true);
-    expect(sets(bodyOf(requests, ".registration-requests__table thead th:nth-child(4)"), "min-width", "9.5rem")).toBe(true);
+  it("gives the guest the widest column of the table, the company the room of a long department and the last email the room of its longest name, so a row stays two lines tall (the first column holds the checkbox)", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__table thead th:nth-child(2)"), "width", "32%")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__table thead th:nth-child(3)"), "min-width", "12rem")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__table thead th:nth-child(5)"), "min-width", "9.5rem")).toBe(true);
+  });
+
+  it("balances a company and a department, which stand alone in their cell, so that a name of two lines does not end on a word or two", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__company > span"), "text-wrap", "balance")).toBe(true);
+  });
+
+  it("gives the muted texts of a selected row and card the secondary grey, which is readable on the tint (the muted one is under 4.5:1)", () => {
+    for (const selector of [
+      ".attendees-table-v2__row--selected .registration-requests__email, .attendees-table-v2__row--selected .registration-requests__department, .attendees-table-v2__row--selected .registration-requests__mail-kind, .attendees-table-v2__row--selected .registration-requests__none, .registration-requests__card--selected .registration-requests__email, .registration-requests__card--selected .registration-requests__affiliation, .registration-requests__card--selected .registration-requests__mail-kind, .registration-requests__card--selected .registration-requests__card-label, .registration-requests__card--selected .registration-requests__none",
+    ]) {
+      expect(sets(bodyOf(requests, selector), "color", "var\\(--text-secondary\\)")).toBe(true);
+    }
+  });
+
+  it("keeps the delete-all button quiet until it is pointed at, and gives the queue line a place to wrap on a phone", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__delete-matching"), "color", "var\\(--text-secondary\\)")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__queue"), "flex-wrap", "wrap")).toBe(true);
   });
 
   it("keeps the table at a width it can be read in, and lets only it scroll sideways, never the page", () => {
@@ -320,6 +339,19 @@ describe("the Requests tab of the Registration page", () => {
     const card = bodyOf(requests, ".registration-requests__card-mail .registration-requests__mail");
     expect(sets(card, "flex-direction", "row")).toBe(true);
     expect(sets(bodyOf(requests, ".registration-requests__mail"), "flex-direction", "column")).toBe(true);
+  });
+
+  it("lets the name and the address of the request window wrap, gives a long answer the whole row, and has one column of pairs on a phone", () => {
+    for (const selector of [".request-detail__name, .request-detail__email"]) {
+      expect(sets(bodyOf(requestDetail, selector), "overflow-wrap", "anywhere"), selector).toBe(true);
+    }
+    expect(sets(bodyOf(requestDetail, ".request-detail__wide"), "grid-column", "1 / -1")).toBe(true);
+    expect(sets(bodyOf(requestDetail, ".request-detail__grid", "@media (max-width: 520px)"), "grid-template-columns", "minmax\\(0, 1fr\\)")).toBe(true);
+  });
+
+  it("lets the head of an email wrap, so that its badge goes under its name on a phone, and keeps Delete apart from the decisions", () => {
+    expect(sets(bodyOf(requestDetail, ".request-detail__mail-head"), "flex-wrap", "wrap")).toBe(true);
+    expect(sets(bodyOf(requestDetail, ".request-detail__delete"), "margin-right", "auto")).toBe(true);
   });
 
   it("is a column of cards, a card a column of lines, with no fixed height", () => {
