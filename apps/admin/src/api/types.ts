@@ -1542,6 +1542,100 @@ export interface RegistrationListParams {
   pageSize: number;
 }
 
+/** One email of a request's history, as the detail lists it. */
+export interface RegistrationMailDto extends RegistrationMailBriefDto {
+  id: string;
+  attempts: number;
+  queued_at: string;
+  attempted_at: string | null;
+  sent_at: string | null;
+  /** A short code for why the email did not go out, never the text of an exception. */
+  error_code: string | null;
+  /** The sentence the worker stored for that code. */
+  error: string | null;
+}
+
+/** The person a guest brings: a name and their answers. */
+export interface RegistrationCompanionDto {
+  name: string;
+  custom_data: Record<string, unknown> | null;
+}
+
+/** GET /api/admin/events/:eventId/registrations/:id: one request in full. */
+export interface RegistrationDetailDto {
+  id: string;
+  status: RegistrationStatus;
+  email: string;
+  first_name: string;
+  last_name: string;
+  company: string | null;
+  department: string | null;
+  /** The answers as they were stored, by the key of the field they answer. */
+  custom_data: Record<string, unknown> | null;
+  companions: RegistrationCompanionDto[];
+  created_at: string;
+  email_verified_at: string | null;
+  /** Set while the request waits for the guest to confirm the address. */
+  confirm_expires_at: string | null;
+  /** When the terms were accepted. */
+  accepted_at: string | null;
+  /** The key of each extra consent to the time it was given. */
+  consents: Record<string, string>;
+  decided_at: string | null;
+  /** The staff member who decided; null for an automatic decision or none yet. */
+  decided_by: { id: string; name: string } | null;
+  locale: string | null;
+  /** The attendee this request was accepted as; null for any other state. */
+  attendee_id: string | null;
+  /** Oldest first. */
+  mails: RegistrationMailDto[];
+}
+
+/** What became of one request of an acceptance. `accepted` carries the new attendee. */
+export type AcceptRegistrationResultDto =
+  | { id: string; outcome: "accepted"; attendee_id: string }
+  | { id: string; outcome: "already_decided" | "awaiting_email" | "already_attendee" | "gone" };
+
+/** POST .../registrations/accept */
+export interface AcceptRegistrationsDto {
+  results: AcceptRegistrationResultDto[];
+}
+
+/** POST .../registrations/reject */
+export interface RejectRegistrationsDto {
+  results: { id: string; outcome: "rejected" | "already_decided" | "awaiting_email" | "gone" }[];
+}
+
+/** POST .../registrations/retry-mail */
+export interface RetryRegistrationMailsDto {
+  results: { id: string; outcome: "retried" | "not_retryable" | "gone" }[];
+}
+
+export type DeleteRegistrationResultDto =
+  | { id: string; outcome: "deleted"; attendee_id?: string }
+  | { id: string; outcome: "gone" };
+
+/** POST .../registrations/delete and .../registrations/delete-by-filter */
+export interface DeleteRegistrationsDto {
+  results: DeleteRegistrationResultDto[];
+  deleted: number;
+  /** The accepted requests among them: their attendees were erased too. */
+  attendees_erased: number;
+  /** Erased attendees whose wallet pass is still to be deleted at the provider. */
+  wallet_pending: number;
+}
+
+/** What deleting everything a filter selects sends: the filter of the list, its `total` and its `selection_digest`. */
+export interface DeleteRegistrationsByFilterBody {
+  status?: RegistrationStatus;
+  olderThan?: string;
+  q?: string;
+  /** The `total` the list showed for the filter. */
+  expected: number;
+  /** The `selection_digest` the list gave for the filter. */
+  selectionDigest: string;
+}
+
 export interface SaveMapsSettingsBody {
   enabled?: boolean;
   tileUrl?: string | null;

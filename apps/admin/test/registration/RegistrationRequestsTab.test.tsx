@@ -1,19 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMemoryRouter, Outlet, RouterProvider } from "react-router";
-import { ToastProvider } from "@admitto/ui";
 import { ApiError } from "../../src/api/client.js";
-import type {
-  EventDto,
-  RegistrationCountsDto,
-  RegistrationListDto,
-  RegistrationListItemDto,
-} from "../../src/api/types.js";
+import type { RegistrationListDto } from "../../src/api/types.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
-import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import { advanceTimers, deferred, hangUntilAborted, isOff, mockMatchMedia } from "../test-utils.js";
+import { answer, bodyRows, counts, guestNames, renderTab, request, requestsPanel, table } from "./requestsFixtures.js";
 
 const fetchRegistrations = vi.fn();
 const fetchRegistrationCounts = vi.fn();
@@ -36,62 +29,6 @@ vi.mock("../../src/registration/RegistrationLegalTab.js", () => ({
   RegistrationLegalTab: () => <p>The legal texts of the event</p>,
 }));
 
-const event = { id: "evt-1", title: "Demo", slug: "demo", archived_at: null } as EventDto;
-
-function request(id: string, over: Partial<RegistrationListItemDto> = {}): RegistrationListItemDto {
-  return {
-    id,
-    first_name: "Ann",
-    last_name: "Kowalska",
-    email: `${id}@example.com`,
-    company: null,
-    department: null,
-    status: "pending",
-    created_at: "2026-10-23T10:14:00.000Z",
-    companions_count: 0,
-    last_mail: null,
-    ...over,
-  };
-}
-
-function answer(items: RegistrationListItemDto[], total = items.length, page = 1, pageSize = 25): RegistrationListDto {
-  return { items, total, page, pageSize, selection_digest: null };
-}
-
-function counts(byStatus: Partial<RegistrationCountsDto["by_status"]> = {}, mode: RegistrationCountsDto["mode"] = "approval"): RegistrationCountsDto {
-  return {
-    mode,
-    by_status: { awaiting_email: 0, pending: 0, waitlist: 0, accepted: 0, rejected: 0, ...byStatus },
-    needs_decision: byStatus.pending ?? 0,
-  };
-}
-
-/** What the event frame gives every page of an event: the event, in the outlet context. */
-function renderTab({ search = "?tab=requests", path = "/admin/events/evt-1/registration" } = {}) {
-  const router = createMemoryRouter(
-    [
-      {
-        element: <Outlet context={{ event }} />,
-        children: [
-          { path: "/admin/events/:eventId/registration", element: <RegistrationPage /> },
-          { path: "/admin/registration", element: <RegistrationPage /> },
-        ],
-      },
-    ],
-    { initialEntries: [`${path}${search}`] },
-  );
-  render(
-    <ToastProvider>
-      <RouterProvider router={router} />
-    </ToastProvider>,
-  );
-  return { router };
-}
-
-const requestsPanel = () => screen.getByRole("tabpanel", { name: "Requests" });
-const table = () => within(requestsPanel()).getByRole("table", { name: "Requests" });
-const bodyRows = () => within(table()).getAllByRole("row").slice(1);
-const guestNames = () => bodyRows().map((row) => row.querySelector(".registration-requests__name")?.textContent);
 const placeholder = () => screen.queryByText("Loading requests");
 const lastCall = () => fetchRegistrations.mock.calls.at(-1) as [string, Record<string, unknown>, AbortSignal];
 
@@ -116,7 +53,8 @@ beforeEach(() => {
   fetchRegistrations.mockReset();
   fetchRegistrationCounts.mockReset();
   fetchRegistrations.mockResolvedValue(answer([request("r1")]));
-  fetchRegistrationCounts.mockResolvedValue(counts({ pending: 1 }));
+  // An event that accepts by itself: the tab opens on every state, which is what these tests are about (the queue as the default view has its own tests).
+  fetchRegistrationCounts.mockResolvedValue(counts({ pending: 1 }, "automatic"));
 });
 
 afterEach(() => {
@@ -282,7 +220,8 @@ describe("RegistrationRequestsTab: the requests", () => {
     await listLoaded();
 
     const headings = within(table()).getAllByRole("columnheader").map((cell) => cell.textContent);
-    expect(headings).toEqual(["Guest", "Company", "Status", "Last email", "Registered"]);
+    // The first column holds the checkbox that selects the page: it has no words.
+    expect(headings).toEqual(["", "Guest", "Company", "Status", "Last email", "Registered"]);
     const [first, second, third] = bodyRows();
     expect(within(first!).getByText("Ann Kowalska")).toBeTruthy();
     expect(within(first!).getByText("r1@example.com")).toBeTruthy();
@@ -422,7 +361,7 @@ describe("RegistrationRequestsTab: nothing to list", () => {
     fetchRegistrations.mockImplementation(async (_event: string, params: Record<string, unknown>) =>
       "status" in params || "olderThan" in params || "q" in params ? answer([]) : answer([request("r1")]),
     );
-    const { router } = renderTab({ search: "?tab=requests&status=pending" });
+    const { router } = renderTab({ search: "?tab=requests&status=accepted" });
 
     expect(await screen.findByText("No matches")).toBeTruthy();
     expect(screen.getByText("Try a different search, or clear your filters.")).toBeTruthy();
@@ -431,7 +370,8 @@ describe("RegistrationRequestsTab: nothing to list", () => {
 
     await listLoaded();
     expect(lastCall()[1]).toEqual({ page: 1, pageSize: 25 });
-    expect(router.state.location.search).toBe("?tab=requests");
+    // Every state is written, not left out: a request that waits would otherwise be what the tab opens on again.
+    expect(router.state.location.search).toBe("?tab=requests&status=all");
     expect((screen.getByRole("textbox", { name: "Search requests by name or email" }) as HTMLInputElement).value).toBe("");
   });
 });
@@ -443,7 +383,7 @@ describe("RegistrationRequestsTab: the focus when the empty list goes", () => {
 
   it("goes to the card when the button that cleared the filters goes with the empty list, so the next Tab goes on from there", async () => {
     filteredAnswers();
-    renderTab({ search: "?tab=requests&status=pending" });
+    renderTab({ search: "?tab=requests&status=accepted" });
     const clear = await screen.findByRole("button", { name: "Clear filters" });
     clear.focus();
 
@@ -456,7 +396,7 @@ describe("RegistrationRequestsTab: the focus when the empty list goes", () => {
 
   it("goes to the card also when the list that comes back is empty for good, and the button goes with its words", async () => {
     fetchRegistrations.mockImplementation(async (_event: string, params: Record<string, unknown>) => ("status" in params ? answer([]) : answer([])));
-    renderTab({ search: "?tab=requests&status=pending" });
+    renderTab({ search: "?tab=requests&status=accepted" });
     const clear = await screen.findByRole("button", { name: "Clear filters" });
     clear.focus();
 
@@ -468,7 +408,7 @@ describe("RegistrationRequestsTab: the focus when the empty list goes", () => {
 
   it("leaves the focus alone when it has moved on before the list came back", async () => {
     filteredAnswers();
-    renderTab({ search: "?tab=requests&status=pending" });
+    renderTab({ search: "?tab=requests&status=accepted" });
     const clear = await screen.findByRole("button", { name: "Clear filters" });
     clear.focus();
     const read = deferred<RegistrationListDto>();
@@ -485,7 +425,7 @@ describe("RegistrationRequestsTab: the focus when the empty list goes", () => {
 
   it("does not take the focus when the empty list goes without the button having held it", async () => {
     filteredAnswers();
-    renderTab({ search: "?tab=requests&status=pending" });
+    renderTab({ search: "?tab=requests&status=accepted" });
     const clear = await screen.findByRole("button", { name: "Clear filters" });
 
     fireEvent.click(clear);
@@ -545,14 +485,14 @@ describe("RegistrationRequestsTab: the state filter", () => {
     expect(router.state.location.search).toBe("?tab=requests&status=pending");
   });
 
-  it("goes back to every state, and takes the state out of the address", async () => {
+  it("goes back to every state, and writes it to the address: an address without a state opens on what waits", async () => {
     const { router } = renderTab({ search: "?tab=requests&status=pending" });
     await listLoaded();
 
     pickStatus("All statuses (1)");
 
     await waitFor(() => expect(lastCall()[1]).toEqual({ page: 1, pageSize: 25 }));
-    expect(router.state.location.search).toBe("?tab=requests");
+    expect(router.state.location.search).toBe("?tab=requests&status=all");
   });
 
   it("starts at the first page when the state changes", async () => {
