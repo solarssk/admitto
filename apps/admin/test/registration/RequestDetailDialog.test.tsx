@@ -313,6 +313,24 @@ describe("what a request says", () => {
     expect(api.fetchEventCustomFields).toHaveBeenCalledTimes(2);
   });
 
+  it("names the consents by their keys, made readable, when the texts could not be read, and reads them again the next time", async () => {
+    api.fetchLegalDocuments.mockRejectedValueOnce(new ApiError(500, "boom", "internal_error"));
+    api.fetchRegistration.mockResolvedValue(detail("r1", { consents: { marketing: "2026-10-23T10:14:00.000Z" } }));
+    renderTab({ search: EVERY_STATE });
+    await loaded();
+
+    let box = await openRequest("r1", "Ann Kowalska");
+    await within(box).findByText("Consents");
+    expect(valueOf(box, "Marketing")).toBe(`Given ${utc("2026-10-23T10:14:00.000Z")}`);
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(within(box).getByRole("button", { name: "Close" }));
+
+    api.fetchRegistration.mockResolvedValue(detail("r2", { consents: { marketing: "2026-10-23T11:00:00.000Z" } }));
+    box = await openRequest("r2", "Bo Lee");
+    await within(box).findByText("Consents");
+    expect(api.fetchLegalDocuments).toHaveBeenCalledTimes(2);
+  });
+
   it("reads the questions and the texts once for the tab, and not for each request that is opened", async () => {
     api.fetchRegistration.mockImplementation(async (_event: string, id: string) => detail(id));
     renderTab({ search: EVERY_STATE });

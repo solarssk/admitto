@@ -62,6 +62,8 @@ function useQueueFocus(rootRef: RefObject<HTMLDivElement | null>, answer: Reques
     indexRef.current = null;
     const panel = rootRef.current?.querySelector<HTMLElement>(".registration-requests__panel");
     if (index === null) return panel;
+    // The root is there whenever the handover runs: it runs after a render of this component.
+    /* v8 ignore next */
     const opens = rootRef.current?.querySelectorAll<HTMLElement>("[data-request-open]") ?? [];
     return opens[Math.min(index, opens.length - 1)] ?? panel;
   });

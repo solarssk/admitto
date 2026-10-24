@@ -130,6 +130,20 @@ describe("the selection and the bulk bar", () => {
     expect(menuItem(/^Delete requests/)).toBeTruthy();
   });
 
+  it("asks to confirm the rejection from the menu on a narrow screen, and closes the menu", async () => {
+    mockMatchMedia(false);
+    renderTab({ search: EVERY_STATE });
+    await screen.findByRole("list", { name: "Requests" });
+
+    tick("Ann Kowalska");
+    openMenu();
+    fireEvent.click(menuItem(/^Reject/));
+
+    expect(await dialogNamed("Reject this request?")).toBeTruthy();
+    // An open dialog hides the page from the role queries, so the menu is looked for among the hidden elements too.
+    expect(screen.queryByRole("menu", { hidden: true })).toBeNull();
+  });
+
   it("offers Accept and Reject as buttons, and Send email again and Delete in the menu, on a wide screen", async () => {
     renderTab({ search: EVERY_STATE });
     await loaded();

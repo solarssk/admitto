@@ -185,6 +185,8 @@ export function useRegistrationDecisions({
 
   const settle = useCallback(
     (applied: Applied) => {
+      // An action is always for rows of an answer that is on screen.
+      /* v8 ignore next */
       const before = answerRef.current?.items ?? [];
       onChangedRef.current({ acted: applied.acted, index: firstActedIndex(before, applied.acted) });
       update((data) => (applied.change === "everything" ? withMatchingDeleted(data) : withRowsChanged(data, applied.change)));
@@ -210,8 +212,12 @@ export function useRegistrationDecisions({
         case "delete":
           return runDelete(eventId, target.rows);
         case "deleteMatching": {
-          const now = matchingTarget(answerRef.current);
-          return now ? runDeleteMatching(eventId, now, answerRef.current?.items ?? []) : Promise.resolve(null);
+          const answer = answerRef.current;
+          const now = matchingTarget(answer);
+          // The dialog closes itself when the filter stops selecting; this is the click that lands in that moment.
+          /* v8 ignore next */
+          if (answer === null || now === null) return Promise.resolve(null);
+          return runDeleteMatching(eventId, now, answer.items);
         }
       }
     },
@@ -220,11 +226,15 @@ export function useRegistrationDecisions({
 
   const confirm = useCallback(
     async ({ notify = false }: { notify?: boolean } = {}) => {
+      // The button of a confirmation exists only while something is pending.
+      /* v8 ignore if */
       if (pending === null) return;
       setBusy(pending.kind);
       setError(null);
       try {
         const applied = await perform(pending, notify);
+        // `null` only for the click described in `perform`.
+        /* v8 ignore else */
         if (applied) settle(applied);
         close();
       } catch (err) {

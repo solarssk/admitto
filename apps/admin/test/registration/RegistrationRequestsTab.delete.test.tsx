@@ -247,6 +247,30 @@ describe("a wallet pass that is still at the provider", () => {
     expect(await screen.findByText("Wallet pass deleted")).toBeTruthy();
   });
 
+  it("tries again only for the attendees the deletion names: a result that is not a deletion, or has no attendee, is left out", async () => {
+    new FakeServer(mix());
+    api.deleteRegistrations.mockResolvedValue({
+      results: [
+        { id: "r2", outcome: "deleted" as const, attendee_id: "att-2" },
+        { id: "r3", outcome: "deleted" as const },
+        { id: "r4", outcome: "not_found" as const },
+      ],
+      deleted: 2,
+      attendees_erased: 1,
+      wallet_pending: 1,
+    });
+    renderTab({ search: EVERY_STATE });
+    await loaded();
+    askToDelete("Bo Lee");
+    press(await dialogNamed("Delete this request?"), "Delete");
+    const dialog = await dialogNamed("Personal data erased");
+    api.bulkEraseAttendees.mockResolvedValue({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 0, wallet_removed_ids: ["att-2"] });
+
+    press(dialog, "Try again");
+
+    await waitFor(() => expect(api.bulkEraseAttendees).toHaveBeenCalledWith("evt-1", ["att-2"]));
+  });
+
   it("stays open, with the number that is left, when the pass is still there", async () => {
     const dialog = await deleteTheAcceptedOne();
     api.bulkEraseAttendees.mockResolvedValue({ erased: 0, already_erased: 1, not_found: 0, wallet_pending: 1, wallet_removed_ids: [] });
