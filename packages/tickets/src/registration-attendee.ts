@@ -4,6 +4,7 @@ import { readRegistrationCompanions } from "./attendee-companion.js";
 import { customDataValue } from "./custom-data.js";
 import { filterCustomDataAttributeFields } from "./custom-data-reserved.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
+import { ensureCompanionEventItem } from "./event-items.js";
 import { writeBulkActionLog, type OpsAuditContext } from "./ops-audit.js";
 import type { EventItemContent } from "./types.js";
 import { normalizeCustomDataFieldValue } from "./validate-custom-data.js";
@@ -78,7 +79,9 @@ export async function findAttendeeAddresses(
  * Writes the companions of an accepted registration for the attendee made from it (D-E5): one row each, in the slots 1
  * to n, with the name the registration holds and the answers that still fit the event's companion questions, as the
  * guest's own answers do (attendeeCustomDataFromAnswers). The companions are those the seats were counted for
- * (readRegistrationCompanions, which seatsNeeded counts too). Nothing is read when the registration holds none.
+ * (readRegistrationCompanions, which seatsNeeded counts too). Nothing is read when the registration holds none. The
+ * event's "companion" item is made in the same transaction (ensureCompanionEventItem), so that an event has it exactly
+ * when it has a companion, and the operator at the door is offered it for this guest.
  */
 async function createCompanions(
   tx: Prisma.TransactionClient,
@@ -96,6 +99,7 @@ async function createCompanions(
       return { attendee_id: attendeeId, slot: index + 1, name: companion.name, ...(answers ? { custom_data: answers } : {}) };
     }),
   });
+  await ensureCompanionEventItem(eventId, tx);
 }
 
 /**
