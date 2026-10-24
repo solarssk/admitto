@@ -1799,6 +1799,17 @@ function nextFormAfterPassStatusChange(
   return mergeFormAfterReload(currentForm, previousDetail, updated, attributeFields);
 }
 
+/** Why restoring a pass was refused for want of room: one seat for an attendee alone, and more (in places, not in
+ * people) when their companions come back with them. */
+function restoreCapacityMessage({ current, capacity, incoming }: EventFullMeta): string {
+  if (incoming != null && incoming > 1) {
+    const free = Math.max(0, capacity - current);
+    const companions = incoming === 2 ? "their companion" : "their companions";
+    return `Not enough free places: this attendee and ${companions} need ${incoming}, and ${free} ${free === 1 ? "is" : "are"} free. Free a place or increase capacity before restoring this pass.`;
+  }
+  return `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`;
+}
+
 /** Classifies a failed pass status change into the UI action it should trigger — extracted out
  * of handlePassStatusChange (SonarCloud S3776). */
 function classifyPassStatusError(err: unknown): PassStatusErrorOutcome {
@@ -2401,10 +2412,7 @@ export function AttendeeDetailPage() {
       const outcome = classifyPassStatusError(err);
       if (outcome.kind === "capacity") {
         setRestoreCapacityBlocked(outcome.eventFull);
-        const { current, capacity } = outcome.eventFull;
-        setRevokeError(
-          `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`,
-        );
+        setRevokeError(restoreCapacityMessage(outcome.eventFull));
       } else if (outcome.kind === "stale_write") {
         addToast("Someone else updated this attendee. Page will reload.", "warning");
         void handleReload();

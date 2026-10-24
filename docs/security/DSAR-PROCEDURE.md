@@ -61,9 +61,9 @@ After either action, remove copies from local exports, mail logs and backups, pe
 
 **What it does.** It anonymises the attendee in place. It also works when the event is archived.
 
-- **Erased:** name, email, company, notes, custom answers, ticket link, copies of the messages sent, the wallet pass at the provider, and the person's address in saved import results. Nothing that identifies the person or opens their ticket is left. The exact list is in [attendee-erasure.md](../dev/attendee-erasure.md).
+- **Erased:** name, email, company, notes, custom answers, ticket link, copies of the messages sent, the wallet pass at the provider, the person's address in saved import results, and the name and answers of the companion they brought. Nothing that identifies the person or opens their ticket is left. The exact list is in [attendee-erasure.md](../dev/attendee-erasure.md).
 - **Kept:** the entry, as an anonymous attendee. The Reports totals do not change.
-- **Capacity:** it changes by one place. A person who had not checked in yet, on an event that is not archived, is marked cancelled, so their place becomes free.
+- **Capacity:** it changes by the attendee's place and one for each companion. A person who had not checked in yet, on an event that is not archived, is marked cancelled, so their places become free.
 
 **How**
 
@@ -123,7 +123,7 @@ Use it for a mistake only. It deletes the attendee for good, so Reports change w
 
 **What gets removed and audited**
 
-- Dependent delivery, wallet and check-in rows are removed in one transaction. The notes and the attendee's own activity log go with the row.
+- Dependent delivery, wallet and check-in rows are removed in one transaction. The notes, the attendee's own activity log and their companions go with the row.
 - The address is also blanked on mail that staff addressed to the person on behalf of another attendee, and in the saved results of the event's imports.
 - The event action log gets an entry: `attendee_erased`, or one `attendees_bulk_erased` entry for a bulk removal. It is told apart from an erasure by `method: "remove"`.
 - The central admin audit log gets an entry too: one per single removal, one per bulk request.

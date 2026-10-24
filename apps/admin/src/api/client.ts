@@ -1,5 +1,6 @@
 import type { SystemTemplateName } from "@admitto/mail-templates/systemTemplates";
 import type {
+  AddSuggestedFieldsResponse,
   AttendeeCardDto,
   AttendeeDetailDto,
   AttendeeMailStatusFilter,
@@ -189,9 +190,9 @@ export type EventFullMeta = {
   capacity: number;
   /** Active attendee count at the time of the capacity check. */
   current: number;
-  /** New rows an import would add (import commit only). */
+  /** The seats the request needs: the new rows an import would add, or the attendee and each companion being restored. */
   incoming?: number;
-  /** Projected total after import (import commit only). */
+  /** The seats in use if the request went through (an import commit, or the restore of an attendee with companions). */
   projected?: number;
 };
 
@@ -735,6 +736,13 @@ export async function createEventCustomField(
     jsonPostInit(body),
   );
   return parseJson<EventCustomFieldDto>(res);
+}
+
+/** Adds the suggested questions (parking, travel, accommodation) that the event does not have yet, all or none: 201 with the keys it
+ * added, or 200 with none when they are all there already. Throws ApiError, 422 `field_limit_reached` when they do not all fit. */
+export async function addSuggestedEventCustomFields(eventId: string): Promise<AddSuggestedFieldsResponse> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/custom-fields/suggested`, jsonPostInit({}));
+  return parseJson<AddSuggestedFieldsResponse>(res);
 }
 
 /** Update a custom field's label/type/required/options. source_field is immutable after create. */

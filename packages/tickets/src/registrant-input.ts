@@ -1,15 +1,13 @@
 import { z } from "zod";
-import { EVENT_CUSTOM_FIELD_LONG_TEXT_MAX, EVENT_CUSTOM_FIELD_TEXT_MAX } from "@admitto/shared";
+import { EVENT_CUSTOM_FIELD_LONG_TEXT_MAX, EVENT_CUSTOM_FIELD_TEXT_MAX, MAX_CUSTOM_FIELDS_PER_EVENT } from "@admitto/shared";
 import { isErasedPlaceholderEmail } from "./erase-attendees.js";
 import { codePointLength } from "./custom-field-formats.js";
 import { buildCustomDataFromInput } from "./validate-custom-data.js";
 import { filterCustomDataAttributeFields } from "./custom-data-reserved.js";
 import type { EventItemContent } from "./types.js";
 
-/** Per-event cap on custom attendee data field definitions - same placement/rationale as
- * MAX_IMAGE_ASSETS_PER_EVENT (bounds growth, generous for real use). Also the most keys an
- * anonymous registrant payload may carry: one answer per field. */
-export const MAX_CUSTOM_FIELDS_PER_EVENT = 20;
+// The cap lives in @admitto/shared (the admin app needs it too); this package keeps exporting it under the same name.
+export { MAX_CUSTOM_FIELDS_PER_EVENT };
 
 /** First and last name, each. Matches the staff attendee schema. */
 export const REGISTRANT_NAME_MAX = 100;
@@ -187,9 +185,9 @@ export const registrantEmailSchema = z
   .refine((value) => !isErasedPlaceholderEmail(value), "reserved_address");
 
 /** A custom field as the public form sees it: the registry row plus the two columns that decide
- * whether an anonymous registrant may answer it. `applies_to` is absent until companions exist and
- * then means `guest`. `description` is the organiser's note shown under the question; absent when
- * the field has none. */
+ * whether an anonymous registrant may answer it. `applies_to` is whose answer the question asks for;
+ * absent means `guest` (loadRegistrantFormFields sets it only for a question about a companion).
+ * `description` is the organiser's note shown under the question; absent when the field has none. */
 export type RegistrantFormField = EventItemContent & {
   show_on_form: boolean;
   applies_to?: "guest" | "companion";

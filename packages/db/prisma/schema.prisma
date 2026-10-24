@@ -213,6 +213,12 @@ model EventCustomField {
   // The keys are checked in the application (a strict Zod object in @admitto/tickets), so a new rule needs no migration.
   // Only `text`, `long_text` and `phone` fields take rules.
   rules         Json?
+  // Whose answer the question asks for: "guest" (the attendee, which is what every field was until now) or "companion"
+  // (the guest's +1, D-E5). An answer to a companion question lives in AttendeeCompanion.custom_data, never in
+  // Attendee.custom_data, so every reader of the attendee's answers reads the guest fields only
+  // (loadEventCustomDataFields). Values: CUSTOM_FIELD_APPLIES_TO in packages/db/src/status.ts, backed by the CHECK
+  // constraint EventCustomField_applies_to_check (migration SQL).
+  applies_to    String   @default("guest")
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 
@@ -366,6 +372,8 @@ model Attendee {
   action_logs               AttendeeActionLog[]
   // The guest registration this attendee was accepted from (null for an import or a manual add).
   registration              Registration?
+  // The attendee's companions (+1, D-E5); each holds a seat while the attendee is active.
+  companions                AttendeeCompanion[]
 
   @@unique([event_id, email])
   // Enforce agency-UUID uniqueness per event for idempotent re-import.
@@ -377,6 +385,32 @@ model Attendee {
   // Composite key for CheckIn FK — attendee_id + event_id must match the same row.
   @@unique([id, event_id])
   @@index([external_uuid])
+}
+
+// A companion (+1) of an attendee (v0.8, D-B3, D-E5): the person who comes with a guest and takes a seat of the event's
+// limit but is not an attendee, and has no ticket of their own. One table and a slot, not columns on Attendee, so that "one
+// companion" is a rule of the application (MAX_COMPANION_SLOTS in @admitto/tickets) and not of the schema (D-E5). Personal
+// data of a third party: the erasure inventory decides every column (packages/tickets/test/erasure-inventory.test.ts).
+// The seat goes with the attendee: a companion counts only while the attendee is active (status outside revoked and
+// cancelled), so erasing an attendee who was not admitted frees both seats, and one who was admitted frees none (the
+// row stays, with a placeholder name and no answers). Deleting the attendee deletes the rows (cascade).
+// Rows are made by createAttendeeFromRegistration (the admission of a registration that brings one), emptied by
+// eraseAttendees, and changed by staff only through writeAttendeeCompanion and removeAttendeeCompanion, which take
+// lockAttendeeRow first. Constraints in migration SQL (not expressible here): AttendeeCompanion_slot_check (slot >= 1)
+// and AttendeeCompanion_custom_data_is_object (SQL NULL or a JSON object; write Prisma.DbNull, never JsonNull).
+model AttendeeCompanion {
+  id          String   @id @default(cuid())
+  attendee_id String
+  attendee    Attendee @relation(fields: [attendee_id], references: [id], onDelete: Cascade)
+  // 1-based position among the attendee's companions; 1 in 0.8.
+  slot        Int
+  name        String
+  // Answers to the event's companion questions (applies_to = "companion"), key to text, like Attendee.custom_data.
+  custom_data Json?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@unique([attendee_id, slot])
 }
 
 model WalletPass {

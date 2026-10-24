@@ -29,9 +29,21 @@ describe("event seats", () => {
     });
   });
 
-  it("counts seats the same as heads while no companion exists", async () => {
-    const { db, count } = makeDb(9);
+  it("counts the seats with one statement for the event, of the attendees and their companions together (the numbers are tested against a database in attendee-companion-seats.test.ts)", async () => {
+    const queryRaw = vi.fn().mockResolvedValue([{ seats: 9 }]);
+    const { db, count } = makeDb();
+    Object.assign(db, { $queryRaw: queryRaw });
+
     await expect(countSeatsInUse(db, "evt-1")).resolves.toBe(9);
-    expect(count).toHaveBeenCalledWith({ where: activeAttendeeWhere("evt-1") });
+
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(queryRaw.mock.calls[0]!.slice(1)).toContain("evt-1");
+    expect(count).not.toHaveBeenCalled();
+  });
+
+  it("has no seat to count when the statement returns no row", async () => {
+    const { db } = makeDb();
+    Object.assign(db, { $queryRaw: vi.fn().mockResolvedValue([]) });
+    await expect(countSeatsInUse(db, "evt-1")).resolves.toBe(0);
   });
 });

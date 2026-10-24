@@ -34,6 +34,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Show who accepted, rejected or deleted guest registrations in Organisation settings > Logs > Audit, and filter by these actions ([#1794](https://github.com/solarssk/admitto/pull/1794))
 - Add the page behind the guest confirmation link: opening it confirms nothing, its button does, and the link works for 24 hours ([#1795](https://github.com/solarssk/admitto/pull/1795))
 - Add the Requests tab to the Registration page, listing the requests guests sent with search, filters and pages, and a Registrations row on the Overview checklist ([#1796](https://github.com/solarssk/admitto/pull/1796))
+- Add "Add suggested questions" on the Registration page's Fields tab: one click adds parking, travel and accommodation questions, and a new event has no fields ([#1803](https://github.com/solarssk/admitto/pull/1803))
 - Add accepting, rejecting and deleting guest requests to the Requests tab, one by one or in bulk, with a window for each request's answers and emails
 - Add sending a failed guest email again from the Requests tab, for any failed email except the ticket
 - Add Delete all matching to the Requests tab, which deletes up to 500 requests a filter selects and refuses if the list changed meanwhile
@@ -61,6 +62,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Clear an attendee's earlier addresses, recorded when staff edited them, from other attendees' mail and saved import results when the attendee is erased or removed ([#1768](https://github.com/solarssk/admitto/pull/1768))
 - Redact the guest confirmation link in the access log, and keep a short hash that tells links apart ([#1795](https://github.com/solarssk/admitto/pull/1795))
 - Bump `zod` to 4.6.6 (high: memory exhaustion on oversized collections, GHSA-mrhx-c7xc-m3w5), and `hono` and `ip-address` past moderate advisories ([#1797](https://github.com/solarssk/admitto/pull/1797))
+- Bump `undici` (high: denial of service in the EventSource parser), `fast-uri` and `nodemailer` past their advisories ([#1805](https://github.com/solarssk/admitto/pull/1805))
 
 ## [0.7.7] - 2026-10-18
 

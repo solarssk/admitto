@@ -22,6 +22,11 @@ export function isFreeInputCustomFieldType(type: string): boolean {
   return type === "text" || type === "long_text" || type === "date" || type === "datetime" || type === "phone";
 }
 
+/** Per-event cap on custom attendee field definitions: bounds growth, and is generous for real use. It is also the most keys an
+ * anonymous registrant payload may carry (one answer per field). Here, not in the server package, because the field list of the admin
+ * app tells an organiser how much room an action needs before it asks the server. */
+export const MAX_CUSTOM_FIELDS_PER_EVENT = 20;
+
 /** Longest `text` answer, in characters. */
 export const EVENT_CUSTOM_FIELD_TEXT_MAX = 100;
 /** Longest `long_text` answer, in characters. */

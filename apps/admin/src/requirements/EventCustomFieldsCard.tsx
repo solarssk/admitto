@@ -1,10 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Card, EmptyState, HintLabel, IconButton, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, deleteEventCustomField } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventCustomFieldDto, EventDto } from "../api/types.js";
+import type { AddSuggestedFieldsResponse, EventCustomFieldDto, EventDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { SuggestedQuestionsDialog } from "../registration/SuggestedQuestionsDialog.js";
+import { addedMessage } from "../registration/suggestedQuestions.js";
 import { customFieldTypeIcon, customFieldTypeLabel } from "./customFieldType.js";
 import { disambiguatedLabel, findDuplicateLabels } from "./duplicateLabels.js";
 import { EventCustomFieldModal } from "./EventCustomFieldModal.js";
@@ -234,7 +236,16 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
   const [editField, setEditField] = useState<EventCustomFieldDto | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EventCustomFieldDto | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const suggestButtonRef = useRef<HTMLButtonElement>(null);
+  // The suggested-questions window unmounts when it closes, and a browser leaves the focus on <body> then: closing it is counted, and
+  // the effect that follows the render puts the focus back on the button that opened it.
+  const [suggestFocusBack, setSuggestFocusBack] = useState(0);
   const form = useFieldFormControls({ eventId, fields, onChanged, onUpdated, rootRef: sectionRef });
+
+  useEffect(() => {
+    if (suggestFocusBack > 0) suggestButtonRef.current?.focus();
+  }, [suggestFocusBack]);
 
   const onRegistrationPage = placement === "registration";
   const text = CARD_TEXT[placement];
@@ -244,6 +255,19 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
   function closeModal() {
     setAddOpen(false);
     setEditField(null);
+  }
+
+  function closeSuggested() {
+    setSuggestOpen(false);
+    setSuggestFocusBack((count) => count + 1);
+  }
+
+  /** The server has answered: tell how many questions it added, and read the list again (it also changes when another admin added
+   * the same questions first, and the answer is that none were added). */
+  function handleSuggestedAdded(outcome: AddSuggestedFieldsResponse) {
+    closeSuggested();
+    addToast(addedMessage(outcome.added.length), outcome.added.length > 0 ? "success" : "info");
+    onChanged();
   }
 
   async function handleDelete() {
@@ -326,19 +350,37 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
         padded={!showTable}
         title={<HintLabel hint={text.hint}>{text.title}</HintLabel>}
         actions={
-          <ArchivedGuard event={event} reasonId="add-custom-field-reason">
-            {(guard) => (
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<i className="ti ti-plus" />}
-                {...guard}
-                onClick={() => setAddOpen(true)}
-              >
-                Add field
-              </Button>
-            )}
-          </ArchivedGuard>
+          <>
+            {onRegistrationPage ? (
+              <ArchivedGuard event={event} reasonId="add-suggested-questions-reason">
+                {(guard) => (
+                  <Button
+                    ref={suggestButtonRef}
+                    variant="secondary"
+                    size="sm"
+                    icon={<i className="ti ti-wand" />}
+                    {...guard}
+                    onClick={() => setSuggestOpen(true)}
+                  >
+                    Add suggested questions
+                  </Button>
+                )}
+              </ArchivedGuard>
+            ) : null}
+            <ArchivedGuard event={event} reasonId="add-custom-field-reason">
+              {(guard) => (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<i className="ti ti-plus" />}
+                  {...guard}
+                  onClick={() => setAddOpen(true)}
+                >
+                  Add field
+                </Button>
+              )}
+            </ArchivedGuard>
+          </>
         }
       >
         {renderBody()}
@@ -357,6 +399,8 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
           }}
         />
       )}
+
+      {suggestOpen && <SuggestedQuestionsDialog eventId={eventId} fields={fields} onClose={closeSuggested} onAdded={handleSuggestedAdded} />}
 
       <ConfirmDialog
         open={deleteTarget !== null}
