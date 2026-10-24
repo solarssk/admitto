@@ -35,6 +35,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add the page behind the guest confirmation link: opening it confirms nothing, its button does, and the link works for 24 hours ([#1795](https://github.com/solarssk/admitto/pull/1795))
 - Add the Requests tab to the Registration page, listing the requests guests sent with search, filters and pages, and a Registrations row on the Overview checklist ([#1796](https://github.com/solarssk/admitto/pull/1796))
 - Add "Add suggested questions" on the Registration page's Fields tab: one click adds parking, travel and accommodation questions, and a new event has no fields ([#1803](https://github.com/solarssk/admitto/pull/1803))
+- Add a guest's companion: it takes a seat, is marked in at check-in, and counts as "People on site" on the Overview and in Reports; guests cannot bring one yet ([#1808](https://github.com/solarssk/admitto/pull/1808))
 
 ### Changed
 

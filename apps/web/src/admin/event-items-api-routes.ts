@@ -13,6 +13,7 @@ import {
   findConflictingContentField,
   assertContentFieldsNotAssignedElsewhere,
   ContentFieldAlreadyAssignedError,
+  EVENT_ITEM_AUDIENCES,
   type EventItemConfig,
 } from "@admitto/tickets";
 import {
@@ -47,6 +48,7 @@ const eventItemConfigSchema = z
     content_fields: z.array(slugField.min(1).max(60)).max(20).optional(),
     requires_return: z.boolean().optional(),
     issue_on_checkin: z.boolean().optional(),
+    audience: z.enum(EVENT_ITEM_AUDIENCES).optional(),
   })
   .strict()
   .refine(
@@ -116,9 +118,10 @@ function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
     content_fields: o.content_fields,
     requires_return: o.requires_return,
     issue_on_checkin: o.issue_on_checkin,
+    audience: o.audience,
   });
   if (!parsed.success) return null;
-  // parsed.data always has all 3 keys, even when a value is `undefined` - Object.keys() would
+  // parsed.data always has all 4 keys, even when a value is `undefined` - Object.keys() would
   // never see it as empty, so filter those out before deciding whether anything is actually set.
   const defined = Object.fromEntries(
     Object.entries(parsed.data).filter(([, v]) => v !== undefined),

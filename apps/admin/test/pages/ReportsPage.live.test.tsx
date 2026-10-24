@@ -130,6 +130,7 @@ function reportFixture(
       admission_rate_pct: Math.round((admitted / 10) * 1000) / 10,
       peak_hour: "14:00",
       peak_hour_count: admitted,
+      companions_admitted: 0,
     },
     by_hour: [],
     by_ticket_type: [],
@@ -605,6 +606,53 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
 
     expect(await screen.findByText("No matches")).toBeTruthy();
     expect(screen.queryByText("Vip Guest")).toBeNull();
+  });
+});
+
+describe("ReportsPage: people on site (the companions let in with their guests)", () => {
+  const withCompanions = (admitted: number, companions: number) =>
+    reportFixture(admitted, { summary: { ...reportFixture(admitted).summary, companions_admitted: companions } });
+  const sentence = () => document.querySelector(".reports-people-on-site")?.textContent ?? null;
+
+  it("says nothing of companions while none has been let in: the figures look as they always did", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+
+    renderPage();
+
+    await waitFor(() => expect(admittedValue()).toBe("5"));
+    expect(sentence()).toBeNull();
+    expect(screen.queryByText(/People on site/)).toBeNull();
+  });
+
+  it("adds one sentence under the figures: the guests and the companions, and how many of each", async () => {
+    fetchEventReports.mockResolvedValue(withCompanions(5, 2));
+
+    renderPage();
+
+    await waitFor(() => expect(sentence()).toBe("People on site: 7 (5 guests and 2 companions)."));
+    // The figures stay on the guests.
+    expect(admittedValue()).toBe("5");
+    expect(noShowsValue()).toBe("5");
+  });
+
+  it("says 'guest' and 'companion' for one of each", async () => {
+    fetchEventReports.mockResolvedValue(withCompanions(1, 1));
+
+    renderPage();
+
+    await waitFor(() => expect(sentence()).toBe("People on site: 2 (1 guest and 1 companion)."));
+  });
+
+  it("counts a guest who has just checked in, before the report is read again", async () => {
+    fetchEventReports.mockResolvedValue(withCompanions(5, 2));
+    renderPage();
+    await waitFor(() => expect(sentence()).toBe("People on site: 7 (5 guests and 2 companions)."));
+
+    act(() => {
+      streamHandler?.(liveEvent);
+    });
+
+    await waitFor(() => expect(sentence()).toBe("People on site: 8 (6 guests and 2 companions)."));
   });
 });
 

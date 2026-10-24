@@ -1,4 +1,5 @@
 import type { EventCustomFieldRules, EventCustomFieldType } from "@admitto/shared";
+import type { EventItemAudience } from "./item-audience.js";
 
 export type TicketMode = "internal" | "agency";
 
@@ -78,6 +79,9 @@ export type EventItemConfig = {
   content_fields?: string[];
   requires_return?: boolean;
   issue_on_checkin?: boolean;
+  /** Who is offered the item: every attendee (`all`, also when absent) or only those who bring a companion
+   * (`with_companion`). Read through `itemAppliesToAttendee` (item-audience.ts), nowhere else. */
+  audience?: EventItemAudience;
 };
 
 export type AttendeeCardItemDto = {

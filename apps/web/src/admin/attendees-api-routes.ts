@@ -84,6 +84,7 @@ import {
   UnknownTicketTypeError,
   acquireEventTicketTypesLock,
   REVOCABLE_ITEM_STATES,
+  filterItemsForAttendee,
   type AdmitResult,
   type AttendeeCustomFieldFilter,
   type AttendeeMailStatusFilter,
@@ -472,9 +473,10 @@ export type AttendeeDetailDto = {
 };
 
 /** Read-only event-day item summary for the attendee detail page — same source data as the
- * check-in AttendeeCardDto (enabled EventItems + this attendee's AttendeeItemState rows), but
- * without getAttendeeCard's ensureAttendeeItemStates write-on-read side effect: a plain detail
- * view has no reason to create pending-state rows the operator card would lazily backfill.
+ * check-in AttendeeCardDto (enabled EventItems that apply to the attendee + this attendee's
+ * AttendeeItemState rows), but without getAttendeeCard's ensureAttendeeItemStates write-on-read
+ * side effect: a plain detail view has no reason to create pending-state rows the operator card
+ * would lazily backfill.
  * Deliberately doesn't surface each item's configured content_fields (e.g. shirt size) inline -
  * with several fields configured that reads as clutter next to the item name and duplicates the
  * Additional information card, which already lists every custom_data field on its own (PO review). */
@@ -483,10 +485,11 @@ async function loadAttendeeItemsSummary(
   eventId: string,
   attendeeId: string,
 ): Promise<AttendeeDetailItemDto[]> {
-  const items = await db.eventItem.findMany({
+  const enabled = await db.eventItem.findMany({
     where: { event_id: eventId, enabled: true },
     orderBy: { key: "asc" },
   });
+  const items = await filterItemsForAttendee(db, attendeeId, enabled);
   if (items.length === 0) return [];
 
   const states = await db.attendeeItemState.findMany({
