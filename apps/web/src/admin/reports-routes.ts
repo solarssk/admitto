@@ -1459,7 +1459,9 @@ async function loadCustomFieldReportsAggregates(
   const [totalAttendees, customFields] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
     db.eventCustomField.findMany({
-      where: { event_id: eventId },
+      // The attendee's own fields: the answers charted here are Attendee.custom_data, which a question about a
+      // companion never writes to.
+      where: { event_id: eventId, applies_to: "guest" },
       // Same order as the field list and every other reader (eventCustomFieldOrderBy).
       orderBy: eventCustomFieldOrderBy(),
     }),
@@ -3016,8 +3018,9 @@ async function exportCustomFieldReportsCsv(
       select: CUSTOM_FIELDS_EXPORT_ATTENDEE_SELECT,
     }),
     loadEventTicketTypes(db, eventId),
+    // The attendee's own fields, like the report above: their answers are the columns of this file.
     db.eventCustomField.findMany({
-      where: { event_id: eventId },
+      where: { event_id: eventId, applies_to: "guest" },
       orderBy: eventCustomFieldOrderBy(),
     }),
   ]);

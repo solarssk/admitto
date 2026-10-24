@@ -215,6 +215,33 @@
   vertical-align: middle;
 }
 
+/* The title and two buttons ("Add suggested questions", "Add field") do not fit one line on a phone, and the header has a fixed
+   height: it grows, with the title first and the buttons under it, instead of a button hanging out of the card. */
+@media (max-width: 640px) {
+  .requirements-section--registration .at-card__header {
+    flex-wrap: wrap;
+    height: auto;
+    padding-block: var(--space-3);
+  }
+
+  .requirements-section--registration .at-card__actions {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+}
+
+/* The two buttons are each a line of their own at this width, so they are as wide as the card instead of two different widths
+   (as on the Legal tab). */
+@media (max-width: 480px) {
+  .requirements-section--registration .at-card__actions > * {
+    flex: 1 1 100%;
+  }
+
+  .requirements-section--registration .at-card__actions .at-btn {
+    width: 100%;
+  }
+}
+
 .requirements-section--registration .requirements-item-status-col {
   width: 6rem;
 }

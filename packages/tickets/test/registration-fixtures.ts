@@ -126,6 +126,17 @@ export function fixtures(db: PrismaClient) {
     for (let i = 0; i < count; i += 1) await attendee(eventId, { status });
   };
 
+  /** A companion of the attendee, in slot 1 unless the options say otherwise. */
+  const companion = (attendeeId: string, options: { slot?: number; name?: string; customData?: Record<string, string> } = {}) =>
+    db.attendeeCompanion.create({
+      data: {
+        attendee_id: attendeeId,
+        slot: options.slot ?? 1,
+        name: options.name ?? `Companion ${++seq}`,
+        ...(options.customData ? { custom_data: options.customData } : {}),
+      },
+    });
+
   /** A registration with the columns its status requires, as the CHECK constraints ask. */
   const registration = (
     eventId: string,
@@ -173,7 +184,7 @@ export function fixtures(db: PrismaClient) {
     logs: await db.attendeeActionLog.count({ where: { event_id: eventId } }),
   });
 
-  return { event, address, registrant, attendee, attendees, registration, templatesOf, registrationByEmail, counts };
+  return { event, address, registrant, attendee, attendees, companion, registration, templatesOf, registrationByEmail, counts };
 }
 
 /**
@@ -245,6 +256,42 @@ export const lockWaiters = async (db: PrismaClient): Promise<number> => {
 };
 
 /**
+ * A client whose transactions are the real ones, options included, except that the operation is handed what `around`
+ * makes of the real transaction client: a stand-in that records, counts or holds a call.
+ */
+export function wrapTransactions(source: PrismaClient, around: (tx: Prisma.TransactionClient) => Prisma.TransactionClient): PrismaClient {
+  const transaction = source.$transaction.bind(source);
+  return new Proxy(source, {
+    get(target, key, receiver) {
+      if (key !== "$transaction") return Reflect.get(target, key, receiver) as unknown;
+      return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, options?: { timeout?: number; maxWait?: number }) =>
+        transaction((tx) => operation(around(tx)), options);
+    },
+  });
+}
+
+/** The transaction client with one member replaced, and everything else the real one. */
+export function replacing<K extends keyof Prisma.TransactionClient>(
+  tx: Prisma.TransactionClient,
+  name: K,
+  replacement: Prisma.TransactionClient[K],
+): Prisma.TransactionClient {
+  return new Proxy(tx, {
+    get(actual, property, receiver) {
+      return property === name ? replacement : (Reflect.get(actual, property, receiver) as unknown);
+    },
+  });
+}
+
+/**
+ * Whether a raw query is the count of the seats of this event (countSeatsInUse): a statement over the attendees and
+ * their companions, with the event's id among its values. Written as a tag, so its pieces and its values arrive apart.
+ */
+export function isSeatCount(strings: unknown, values: readonly unknown[], eventId: string): boolean {
+  return Array.isArray(strings) && strings.some((piece) => String(piece).includes('"AttendeeCompanion"')) && values.includes(eventId);
+}
+
+/**
  * A client that stays inside the transaction for as long as `release` is not called, right after the first count of
  * the seats of the event (what a writer that takes a seat does under the capacity lock): its locks are held, its
  * work is half done, and `reached` says it got there.
@@ -259,35 +306,17 @@ export function pauseAfterSeatCount(source: PrismaClient, eventId: string) {
     release = resolve;
   });
   let paused = false;
-  const transaction = source.$transaction.bind(source);
-  const client = new Proxy(source, {
-    get(target, key, receiver) {
-      if (key !== "$transaction") return Reflect.get(target, key, receiver);
-      return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, options?: { timeout?: number; maxWait?: number }) =>
-        transaction(async (tx) => {
-          const attendee = new Proxy(tx.attendee, {
-            get(delegate, method, delegateReceiver) {
-              if (method !== "count") return Reflect.get(delegate, method, delegateReceiver);
-              return async (args: Prisma.AttendeeCountArgs) => {
-                const value = await delegate.count(args);
-                if (!paused && args.where?.event_id === eventId) {
-                  paused = true;
-                  reached();
-                  await released;
-                }
-                return value;
-              };
-            },
-          });
-          return operation(
-            new Proxy(tx, {
-              get(actual, property, actualReceiver) {
-                return property === "attendee" ? attendee : Reflect.get(actual, property, actualReceiver);
-              },
-            }),
-          );
-        }, options);
-    },
+  const client = wrapTransactions(source, (tx) => {
+    const queryRaw = async (strings: unknown, ...values: unknown[]) => {
+      const rows: unknown = await Reflect.apply(tx.$queryRaw, tx, [strings, ...values]);
+      if (!paused && isSeatCount(strings, values, eventId)) {
+        paused = true;
+        reached();
+        await released;
+      }
+      return rows;
+    };
+    return replacing(tx, "$queryRaw", queryRaw as unknown as Prisma.TransactionClient["$queryRaw"]);
   });
   return { client, reached: hasReached, release };
 }

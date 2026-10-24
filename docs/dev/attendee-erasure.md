@@ -3,7 +3,7 @@
 `eraseAttendees` ([`packages/tickets/src/erase-attendees.ts`](../../packages/tickets/src/erase-attendees.ts)) anonymises attendees in place.
 
 - The row stays, so the Reports totals and the admission log keep their numbers.
-- Capacity is the one thing that moves. A person who is not admitted yet, on an event that is not archived, becomes `cancelled`, and their place is free again.
+- Capacity is the one thing that moves. A person who is not admitted yet, on an event that is not archived, becomes `cancelled`, and their places are free again: their own and their companion's (a companion holds a place only while the attendee is active).
 - Nothing that identifies the person or opens their ticket is left.
 - It is a different action from removing an attendee (a hard delete, for mistakes), which changes Reports.
 
@@ -28,7 +28,8 @@ On this page:
 | Where | What erasure does |
 |---|---|
 | Attendee | Name and email become placeholders (`Erased attendee`, `erased-<id>@erased.invalid`). Names, company, department, custom answers, ticket token, QR payload, agency ids and public ref are cleared. `erased_at` is set. Admission time is cut to the hour in the event timezone. |
-| Attendee status | A person not admitted yet, on an event that is not archived, becomes `cancelled`, so their place is free. Otherwise the status stays. |
+| Attendee status | A person not admitted yet, on an event that is not archived, becomes `cancelled`, so their places are free (theirs and their companion's). Otherwise the status stays. |
+| Companion | The row of each companion stays: the name becomes a placeholder (`Erased companion`) and the answers are cleared. A companion holds a place only while the attendee is active, so the places of an attendee who was cancelled by the erasure are free, and the places of one who was admitted (or whose event is archived) stay taken. |
 | Notes, activity log | Deleted. |
 | Check-ins | Kept without notes, with the time cut to the hour. Because of that cut, "undo the last scan on this device" refuses when an erased scan on the device could have been the last one (it cannot tell). It does not undo an older, live attendee instead. |
 | Email deliveries | Kept as rows for the Mail report, without recipient, subject, body, provider message id and error text. Mail still waiting to go out is cancelled first. |
@@ -222,7 +223,7 @@ More about what is sent:
 2. **Then, in one transaction:**
    - The attendee rows are locked in id order.
    - Their deliveries, wallet pass, check-ins and the registration they were accepted from are deleted.
-   - The attendee rows are deleted. Notes, the per-attendee activity log and item hand-outs go by cascade.
+   - The attendee rows are deleted. Notes, the per-attendee activity log, item hand-outs and companions go by cascade.
    - The copies of the identity elsewhere are scrubbed (`scrubAttendeeTraces`, shared with the erasure). That means the address on other attendees' deliveries that staff addressed to this person, the name and address in the creation entry of the central audit log, and the registrations of the event with one of the person's addresses that no other attendee was accepted from. The saved import results are scrubbed too (`scrubImportJobResults`).
    - The audit entries are written, in the event's activity log and in the central admin audit log.
 3. **After the commit,** the files that the event's exports and imports left in storage are deleted ([Files left in storage](#files-left-in-storage)).
@@ -861,6 +862,19 @@ A pass whose request left no trace on the row at all. Only a request from before
   - `RegistrationMail` has no address or text of its own and goes with its registration (cascade).
   - Staff delete a registration with `deleteRegistrations` ([Deleting a guest registration](#deleting-a-guest-registration)). An accepted one erases its attendee with `eraseAttendees`. Never delete an accepted registration on its own: the attendee would keep the person's data.
   - A new column on `Registration` gets its decision in the same pull request.
+- **A companion (+1) is attendee data too.**
+  - An `AttendeeCompanion` is a guest's companion: a third party with no ticket, who holds a name and the answers to the event's companion questions. The inventory records `placeholder` for the name and `cleared` for the answers. The row **stays**: `eraseAttendees` empties it (`ERASED_COMPANION_NAME`, no answers) and never deletes it, and Remove from event deletes the rows by cascade.
+  - **The seat goes with the attendee.** A companion holds a seat only while its attendee is active (`activeAttendeeWhere`: status outside `revoked` and `cancelled`). So erasing someone who was not admitted cancels them and frees both seats, and erasing someone who was admitted frees none, because the status and the row stay. `countSeatsInUse` is the one count of seats (the active attendees plus their companions, in one statement), and `countActiveAttendees` the one count of heads. The rule of "active" is written twice, as the Prisma where-clause and as the SQL of the seat count, from one list of statuses (`CAPACITY_EXCLUDED_STATUSES`); `attendee-companion-seats.test.ts` pins the two to each other for every status.
+  - **Three functions write the table, and the erasure empties it; no other code touches it.**
+    - `createAttendeeFromRegistration` writes the companions of a registration when it makes the attendee, in the transaction that counted the seats for them under the capacity lock and the registration queue. `seatsNeeded` and the rows it writes both come from `readRegistrationCompanions`, so the seats a guest was given are the rows they get.
+    - `writeAttendeeCompanion` and `removeAttendeeCompanion` are for staff. Each takes `lockAttendeeRow` as its first statement and refuses an attendee who is gone (`isAttendeeGone`), so an edit that waits for an erasure finds the attendee erased and writes nothing, and an erasure that waits for an edit empties what the edit wrote.
+    - They never add a companion, because a companion takes a seat. To add one, take the capacity lock and count the seats first, in the order of locks below.
+  - **The registration keeps what the guest submitted.** The accepted registration holds the companion as the form sent it (`Registration.companions`), as it holds the guest's own answers, and an edit or a removal by staff does not change that copy: it changes the attendee's companion only. The copy goes with the registration, when an erasure or a removal of the attendee deletes it, or when staff delete the registration.
+  - **How many companions** is `MAX_COMPANION_SLOTS` in `@admitto/tickets` (1 in 0.8) and nothing else: not the table, not the registration.
+  - **A question about a companion** is an `EventCustomField` with `applies_to = 'companion'`. Its answer goes to `AttendeeCompanion.custom_data`, never to `Attendee.custom_data`, so every reader of an attendee's own answers reads the guest's fields only. `loadEventCustomDataFields(db, eventId)` defaults to `guest`. The readers that query the registry themselves (the Attendees list's filters, the custom fields report and its export) filter on `applies_to: "guest"`. A new reader of an attendee's answers does the same.
+  - **Restoring an attendee** to an active status needs a seat for each (`countSeatsOfAttendee` in `guardPatchCapacityRestore`, under the capacity lock), and says so in places.
+  - Never put a companion's name or answer in a log, an error or an audit entry. Ids and counts only.
+  - Tests: `attendee-companion-erasure.test.ts` (the seats of an erasure, a removal and a deleted registration, and a scan of the whole database for the companion's name), `attendee-companion-write.test.ts` (the boundary, and each side first against an open erasure or removal), `attendee-companion-seats.test.ts`, `registration-concurrency.test.ts` and `apps/web/test/integration/shared-event-capacity.test.ts` (the last seats).
 - **Taking locks: one order.**
   - A transaction that takes several of these locks takes them in this order. A step it does not need is skipped, never taken later.
     1. The attendee job queue of the event (`lockAttendeeJobQueue`). An event deletion takes `lockEventForScopedWrite` before it.
@@ -898,7 +912,7 @@ A pass whose request left no trace on the row at all. Only a request from before
   - Ticket issuing and the event-day operations already do: check-in, undo and revoke, item hand-outs, notes, the activity log, the door search and card.
 - **Writing a row that belongs to an attendee?**
   - Call `lockAttendeeRow` ([`attendee-lock.ts`](../../packages/tickets/src/attendee-lock.ts)) first, in the same transaction.
-  - Why: a check-in, note, item state, log entry, wallet pass or email delivery is inserted under the weakest row lock. Without the lock, the insert can wait for a running erasure and land after it.
+  - Why: a check-in, note, item state, log entry, wallet pass, email delivery or companion is written under the weakest row lock. Without the lock, the insert can wait for a running erasure and land after it.
   - A filter such as `attendee: { erased_at: null }` does not close that race.
   - A write that updates the attendee row itself puts `erased_at: null` in its own `where` instead.
   - A transaction that deletes an attendee and its children calls `lockAttendeesForUpdate` first. So it takes the attendee row before the children, like everything else (the other order can deadlock).

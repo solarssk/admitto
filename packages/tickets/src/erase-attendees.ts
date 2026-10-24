@@ -10,6 +10,9 @@ export const ERASED_ATTENDEE_NAME = "Erased attendee";
 
 export const ERASED_EMAIL_DOMAIN = "erased.invalid";
 
+/** Written to `AttendeeCompanion.name` of the companion of an erased attendee. The row stays (see eraseAttendees). */
+export const ERASED_COMPANION_NAME = "Erased companion";
+
 /** True for an address in the namespace reserved for erased attendees. No attendee can be given
  * one: it would collide with the placeholder of the attendee it is named after and make that
  * erasure fail on the unique (event, email) index. Enforced by a CHECK on live rows too. */
@@ -97,6 +100,9 @@ export const ERASE_TRANSACTION_TIMEOUT_MS = 60_000;
  *   cut to the hour. A person not admitted yet on a live event is cancelled, so their place is
  *   free again; on an archived event, or once admitted, the status is left alone because the
  *   numbers there are final.
+ * - The companions (AttendeeCompanion) keep their rows: the name becomes a placeholder and the answers are cleared. The
+ *   seat of a companion goes with the attendee, so an attendee cancelled here frees both seats and one who stays
+ *   active (admitted, or on an archived event) keeps both.
  * - Notes and the per-attendee activity log are deleted.
  * - Check-ins stay (the hourly chart and the device breakdown read them) without notes, time cut
  *   to the hour.
@@ -203,6 +209,14 @@ export async function eraseAttendees(
   // The rows are locked and were just read as not erased, so this is exactly `toErase`.
   const erasedIds = erased.map((row) => row.id);
   const erasedList = Prisma.join(erasedIds);
+
+  // The companions lose the person, not the row: an attendee who was admitted keeps their seat, and their companion's,
+  // in the count of the seats and in Reports. One who was not admitted is cancelled above, which takes both seats out
+  // of the count (a companion counts only while the attendee is active), so there is nothing to keep for them but the row.
+  await tx.attendeeCompanion.updateMany({
+    where: { attendee_id: { in: erasedIds } },
+    data: { name: ERASED_COMPANION_NAME, custom_data: Prisma.DbNull },
+  });
 
   const [notes, actionLogs] = await Promise.all([
     tx.attendeeNote.deleteMany({ where: { event_id: eventId, attendee_id: { in: erasedIds } } }),

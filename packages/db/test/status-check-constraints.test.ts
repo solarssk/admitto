@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { createTestPrismaClient } from "../src/testing.js";
 import { assertTestDatabaseUrl } from "../src/testDbGuard.js";
+import { CUSTOM_FIELD_APPLIES_TO } from "../src/status.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..");
@@ -138,5 +139,34 @@ describe("status DB check constraints", () => {
         prisma!.$executeRaw`UPDATE "AttendeeItemState" SET "state" = 'bogus' WHERE "attendee_id" = ${attendeeId} AND "event_item_id" = ${eventItemId}`,
       "AttendeeItemState_state_check",
     );
+  });
+});
+
+describe("EventCustomField.applies_to check constraint", () => {
+  const insertField = (key: string, appliesTo: string) =>
+    prisma!.$executeRaw`
+      INSERT INTO "EventCustomField" ("id", "event_id", "source_field", "label", "applies_to", "updated_at")
+      VALUES (${`field-${key}`}, ${EVENT_ID}, ${key}, ${key}, ${appliesTo}, now())`;
+
+  it("accepts every value of CUSTOM_FIELD_APPLIES_TO, so the list in status.ts and the constraint say the same", async () => {
+    for (const value of CUSTOM_FIELD_APPLIES_TO) {
+      await expect(insertField(`applies_${value}`, value)).resolves.toBe(1);
+    }
+  });
+
+  it("rejects any other value, whatever its case or padding", async () => {
+    for (const value of ["bogus", "Guest", "GUEST", " companion", "guest ", ""]) {
+      await expectCheckViolation(() => insertField(`applies_bad_${value.length}_${value.trim()}`, value), "EventCustomField_applies_to_check");
+    }
+  });
+
+  it("refuses NULL, and defaults a field created without a value to the guest", async () => {
+    await expect(
+      prisma!.$executeRaw`
+        INSERT INTO "EventCustomField" ("id", "event_id", "source_field", "label", "applies_to", "updated_at")
+        VALUES ('field-applies-null', ${EVENT_ID}, 'applies_null', 'Null', NULL, now())`,
+    ).rejects.toMatchObject({ code: "P2010" });
+    const created = await prisma!.eventCustomField.create({ data: { event_id: EVENT_ID, source_field: "applies_default", label: "Default" } });
+    expect(created.applies_to).toBe("guest");
   });
 });

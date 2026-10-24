@@ -11,10 +11,24 @@ export {
 } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
 export { isAttendeeGone, lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "./attendee-lock.js";
+export {
+  MAX_COMPANION_SLOTS,
+  readRegistrationCompanions,
+  removeAttendeeCompanion,
+  writeAttendeeCompanion,
+} from "./attendee-companion.js";
+export type {
+  AttendeeCompanionRemoveResult,
+  AttendeeCompanionTarget,
+  AttendeeCompanionWriteResult,
+  RegistrationCompanion,
+  WriteAttendeeCompanionParams,
+} from "./attendee-companion.js";
 export { attendeeIsLive, keepLiveRows } from "./lock-check.js";
 export type { LockedAttendee } from "./attendee-lock.js";
 export {
   ERASED_ATTENDEE_NAME,
+  ERASED_COMPANION_NAME,
   ERASED_EMAIL_DOMAIN,
   ERASE_TRANSACTION_TIMEOUT_MS,
   erasedAttendeeEmail,
@@ -375,4 +389,10 @@ export type {
   RetryRegistrationMailsParams,
   RetryRegistrationMailsResult,
 } from "./registration-mail-retry.js";
-export { activeAttendeeWhere, countActiveAdmittedAttendees, countActiveAttendees, countSeatsInUse } from "./event-seats.js";
+export {
+  activeAttendeeWhere,
+  countActiveAdmittedAttendees,
+  countActiveAttendees,
+  countSeatsInUse,
+  countSeatsOfAttendee,
+} from "./event-seats.js";
