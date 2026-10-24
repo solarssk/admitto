@@ -167,10 +167,15 @@ Use it for a guest who registered through the event form and asks to delete thei
 - It also works when the event is archived.
 - Nothing is mailed to the guest.
 
-**Find the registration.** `GET /api/admin/events/:eventId/registrations?q=<name or email>` lists the registrations that match, in every state. Its answer names people, so keep it out of tickets and chat.
+**How**
 
-**How.** Use an authenticated staff session and a CSRF token (the same session model as other admin mutations).
+- **One or several requests:** **Admin → the event → Registration → Requests**. Type the guest's name or address in the search. Open the request and select **Delete**, or tick it and choose **More actions → Delete requests**. The dialog says what is removed. For an accepted request it says that the attendee is erased too.
+- **Everything a filter selects:** choose a state, an age or a search, then select **Delete all matching**. The button is offered when the filter selects 500 requests or fewer. Admitto reads the filter again before it deletes, and deletes nothing if the list is not what you saw.
+- If a wallet pass could not be deleted at the provider, a second dialog says so and offers **Try again**. It repeats only that step.
 
+**Direct API fallback.** If the SPA is unavailable, use an authenticated staff session and a CSRF token (the same session model as other admin mutations).
+
+- Find the registration: `GET /api/admin/events/:eventId/registrations?q=<name or email>` lists the registrations that match, in every state. Its answer names people, so keep it out of tickets and chat.
 - One or several registrations: `POST /api/admin/events/:eventId/registrations/delete` with `{ "ids": [...] }`. You can delete up to 500 at a time. An id that is not a registration of this event answers `gone`.
 - Everything a filter selects: `POST /api/admin/events/:eventId/registrations/delete-by-filter` with `{ "status": "rejected", "older_than": "90d", "expected": <total>, "selection_digest": <selection_digest> }`. Use the same parameters as the list (`status`, `older_than`, `q`, and at least one of them), and the `total` and `selection_digest` the list gave for them. Admitto reads the filter again before it deletes. If the number is not the one you were given, if the registrations are not the ones the list showed, or if there are more than 500, it deletes nothing and says so.
 

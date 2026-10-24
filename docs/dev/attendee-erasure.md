@@ -337,6 +337,8 @@ Both are open to the Administrator and Superadmin of the event, and both are all
 
 The answer is `{ results, deleted, attendees_erased, wallet_pending }`. A result is `deleted` (with the erased attendee's id for an accepted registration) or `gone`. An id that is not a registration of this event is `gone`, whoever it belongs to.
 
+The admin app calls both from the Requests tab of the Registration page (`apps/admin/src/registration/`). A deletion by filter sends the filter, `total` and `selection_digest` of the newest answer of the list, never ones it kept from an earlier read: the page drops the digest as soon as an action has changed what the filter selects, and offers the button again with the next answer. A `wallet_pending` above zero opens the same dialog as an erasure, whose Try again calls the erasure of the erased attendees (the `attendee_id`s of the answer).
+
 ### What happens to a registration
 
 | State | What the deletion does |
@@ -381,6 +383,7 @@ A registration mail that was already handed to the mail provider when the deleti
 
 - `registration-deletion.test.ts` in `packages/tickets/test`: each state, an accepted registration (ticket, place, an admitted guest, an archived event), the filter, the caps, the audit entries, the rollback, and the deletion against an admission, an erasure, a writer that holds the capacity lock, a guest, and another deletion, each side first.
 - `registration-delete-routes.test.ts` in `apps/web/test/integration`: access, the shape of a request, the answers, the wallet pass, and the filter against the list.
+- `RegistrationRequestsTab.delete.test.tsx` in `apps/admin/test/registration`: the dialogs, what they say of an accepted request, the filter with its total and digest against a stand-in server that refuses a stale one, and the wallet dialog.
 
 ## Job failure privacy
 
