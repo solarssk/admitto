@@ -242,6 +242,42 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(event).toBeNull();
   });
 
+  it("allows delete when the only event items are the badge and the companion item, which Admitto makes itself", async () => {
+    const eventId = await createEvent({ archived: true });
+    await prisma.eventItem.createMany({
+      data: [
+        { event_id: eventId, key: "badge", label: "Badge", enabled: true },
+        {
+          event_id: eventId,
+          key: "companion",
+          label: "Companion",
+          enabled: true,
+          config: { audience: "with_companion", requires_return: false, issue_on_checkin: false },
+        },
+      ],
+    });
+
+    const res = await deleteEventRequest(eventId, superCookie);
+    expect(res.status).toBe(200);
+
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+  });
+
+  it("still returns 409 for an item of the organiser's next to the companion item", async () => {
+    const eventId = await createEvent({ archived: true });
+    await prisma.eventItem.createMany({
+      data: [
+        { event_id: eventId, key: "companion", label: "Companion", enabled: true },
+        { event_id: eventId, key: "giftbag", label: "Gift bag", enabled: true },
+      ],
+    });
+
+    const res = await deleteEventRequest(eventId, superCookie);
+    expect(res.status).toBe(409);
+
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).not.toBeNull();
+  });
+
   it("returns 409 when archived but has a custom ticket type", async () => {
     const eventId = await createEvent({ archived: true });
     await prisma.ticketType.create({
