@@ -452,7 +452,7 @@ describe("countCompanionsIssued", () => {
     expect((await counted(eventId)).companions).toBe(1);
   });
 
-  it("stops counting a companion handed back to 'pending' by an admin, and counts one marked 'returned' as not on site", async () => {
+  it("counts a companion only while the state is issued, not pending, returned, lost, a problem or not applicable", async () => {
     const eventId = await eventWithCompanionItem();
     const attendee = await guest(eventId, { companion: "Companion Example", admitted: true });
     await issue(eventId, attendee.id);

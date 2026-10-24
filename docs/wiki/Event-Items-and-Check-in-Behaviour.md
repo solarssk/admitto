@@ -40,7 +40,8 @@ Operators see the intended item actions and check-in flow for the event, includi
 - An item action records a real issue or return; configure only actions operators should perform.
 - Disabling an item does not erase its earlier issue and return history.
 - **Badge** cannot be deleted; disable it when badges are not used at the door.
-- **Companion** is an item Admitto adds by itself when it admits a guest who brings a companion. Only guests who have a companion are offered it at check-in, with the companion's name beside it, and the operator marks it issued when the companion comes in. You can switch it off. If you delete it, the next guest with a companion adds it again. Guests cannot register a companion yet, so no event has this item yet.
+- **Companion** is an item Admitto adds by itself when it admits a guest who brings a companion. Only guests who have a companion are offered it at check-in, with the companion's name beside it. The operator marks it issued when the companion comes in.
+- You can switch **Companion** off. If you delete it, the next guest with a companion adds it again. Guests cannot register a companion yet, so no event has this item yet.
 - Badge automation cannot be enabled without a usable Badge item.
 - Turning off manual lookup affects the check-in screen, not the admin Attendees page.
 - Avoid changing these settings while operators are actively admitting attendees.
