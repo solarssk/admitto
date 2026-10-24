@@ -86,14 +86,24 @@ export async function lookupAttendees(
   });
 }
 
-/** The names of an attendee's companions, in slot order. Only the check-in card reads them (D-E5): it is where they are welcomed. */
-async function loadCompanionNames(db: DbClient, attendeeId: string): Promise<string[]> {
+/**
+ * The names of an attendee's companions, in slot order, read only when one of the items is for guests with a companion:
+ * the check-in card is where a companion is welcomed (D-E5), so an operator has to know whom. An event with no such
+ * item pays nothing for it.
+ */
+async function loadCompanionNames(db: DbClient, attendeeId: string, items: readonly { config: unknown }[]): Promise<string[]> {
+  if (!items.some((item) => isCompanionAudience(item.config as EventItemConfig | null))) return [];
   const rows = await db.attendeeCompanion.findMany({
     where: { attendee_id: attendeeId },
     orderBy: { slot: "asc" },
     select: { name: true },
   });
   return rows.map((row) => row.name);
+}
+
+/** What the card says beside an item: what its content fields say and, on an item for guests with a companion, the companion's name first. */
+function itemHint(config: EventItemConfig | null, contents: string | undefined, companionNames: readonly string[]): string | undefined {
+  return isCompanionAudience(config) ? prefixCompanionNames(contents, companionNames) : contents;
 }
 
 export async function getAttendeeCard(
@@ -134,10 +144,7 @@ export async function getAttendeeCard(
     where: { event_id: eventId, enabled: true },
     orderBy: { key: "asc" },
   });
-  // The names of the guest's companions, read only when an item is for them: an operator has to know whom they welcome.
-  const companionNames = enabledItems.some((item) => isCompanionAudience(item.config as EventItemConfig | null))
-    ? await loadCompanionNames(prisma, attendeeId)
-    : [];
+  const companionNames = await loadCompanionNames(prisma, attendeeId, enabledItems);
   const eventItems = enabledItems.filter((item) =>
     itemAppliesToAttendee(item.config as EventItemConfig | null, companionNames.length > 0),
   );
@@ -200,7 +207,7 @@ export async function getAttendeeCard(
         icon: item.icon ?? null,
         state,
         actions: operatorItemActions(state, config),
-        detail: isCompanionAudience(config) ? prefixCompanionNames(contents, companionNames) : contents,
+        detail: itemHint(config, contents, companionNames),
       };
     }),
     notes: notes.map((n) => ({

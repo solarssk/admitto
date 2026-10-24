@@ -216,7 +216,11 @@ describe("who is offered the companion item", () => {
     await ensureAttendeeItemStates(withCompanion.id, eventId, db);
     await ensureAttendeeItemStates(alone.id, eventId, db);
 
-    const keysOf = async (attendeeId: string) => (await stateRows(attendeeId)).map((row) => row.event_item.key).sort();
+    const keysOf = async (attendeeId: string) => {
+      const keys = (await stateRows(attendeeId)).map((row) => row.event_item.key);
+      keys.sort();
+      return keys;
+    };
     expect(await keysOf(withCompanion.id)).toEqual(["badge", "companion"]);
     expect(await keysOf(alone.id)).toEqual(["badge"]);
   });

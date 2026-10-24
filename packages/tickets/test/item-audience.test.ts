@@ -146,8 +146,8 @@ describe("the readers of an attendee's items", () => {
   const readers = [path.join(root, "packages/tickets/src"), path.join(root, "apps/web/src")]
     .flatMap((directory) => sourceFiles(directory))
     .filter((file) => READS_ITEMS.test(readFileSync(file, "utf8")))
-    .map(relative)
-    .sort();
+    .map(relative);
+  readers.sort();
 
   it("finds the readers it knows, so that the scan is looking in the right place", () => {
     expect(readers).toEqual(
