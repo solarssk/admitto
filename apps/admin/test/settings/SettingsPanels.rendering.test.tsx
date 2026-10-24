@@ -1180,6 +1180,29 @@ describe("AuditLogPanel rendering", () => {
     }
   });
 
+  it("names a change of the password of a guest registration, as a plain entry, and offers it in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          id: "audit-password",
+          action_type: "registration_password_changed",
+          metadata: { event_id: "evt-1", event_title: "Summit", change: "cleared" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Guest registration password changed").className).toContain("at-badge--neutral");
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    expect(screen.getByRole("button", { name: "Guest registration password changed" })).toBeTruthy();
+  });
+
   it("shows the reason of a removal in words, in Details and in the copied row", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [

@@ -18,16 +18,24 @@
  *    form meanwhile (a text unpublished, the keys removed, the way in switched off) or changed its questions: a form that
  *    is not open now is the same 404, and the fields are judged by what the form asks now. What `placeRegistration`
  *    rechecks itself, under its locks, is the mode, the archive and the end of the event.
- * 7. The fields are judged (422 with a fixed sentence for each) and the terms must be accepted.
- * 8. Only now the database is written, in `placeRegistration`, and the mail is queued in the same transaction. The mail
+ * 7. An event whose way in is the password (D-C3): the tries at it are counted, the client address's budget first and then
+ *    the event's, and the password is checked, all before anything that depends on the address or on a field. The
+ *    count comes after the challenge, so a bot that has no token spends nothing of the budget of a company behind one
+ *    address, and the client's budget comes first, so a client that is out of tries cannot spend the event's. A password
+ *    that is wrong, missing, not a text or too long is the one `403 access_denied`, and an event whose way in is the link
+ *    ignores a password it is sent, with no error and no line in a log.
+ * 8. The fields are judged (422 with a fixed sentence for each) and the terms must be accepted.
+ * 9. Only now the database is written, in `placeRegistration`, and the mail is queued in the same transaction. The mail
  *    of a new registration is withheld, not the registration, when the address or the event has spent its budget.
  *
  * What the guest is told does not depend on the address (D-B14). A new address, an address that has a registration in any
  * state, an address of an attendee in any status and one whose mail was withheld all get the same answer, with the same
  * headers, and not sooner than one another: the answer waits until a floor of time has passed since the challenge was
- * checked, so the extra work of storing a new registration does not show. What may differ does not depend on the
- * address: the form is closed (404), full (409), the challenge or a field is refused (400, 422), a limit is spent (429),
- * a lock is held (503).
+ * checked, so the extra work of storing a new registration does not show. The same holds for an event with a password,
+ * where the guest who knows it is told what any guest is told (the list of guests is not given away to a group that
+ * shares one password), and a wrong password waits for the same floor, which holds the hash of the check too. What may
+ * differ does not depend on the address: the form is closed (404), full (409), the challenge or a field is refused (400,
+ * 422), the password is refused (403), a limit is spent (429), a lock is held (503).
  *
  * Nothing that identifies a guest is written to a log, and no answer carries a word of an exception.
  */
@@ -40,11 +48,20 @@ import {
   checkRegistrationEventRateLimit,
   checkRegistrationEventResendRateLimit,
   checkRegistrationMailRecipientRateLimit,
+  checkRegistrationPasswordEventRateLimit,
+  checkRegistrationPasswordRateLimit,
 } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { respondRegistrationNotFound } from "../registration-page-security.js";
 import { botChallengeFailureStatus, resolveChallengeHosts, verifyBotChallenge, type BotChallengeDeps } from "./bot-challenge.js";
-import { ERROR_KEY_CHALLENGE, type RegistrationSubmitInvalid, type RegistrationSubmitOk } from "./form-contract.js";
+import { isEventPassword, notePasswordTriesRefused } from "./event-password.js";
+import {
+  ACCESS_DENIED_ERROR,
+  ERROR_KEY_CHALLENGE,
+  type RegistrationSubmitDenied,
+  type RegistrationSubmitInvalid,
+  type RegistrationSubmitOk,
+} from "./form-contract.js";
 import { resolveRegistration, type ResolvedRegistration } from "./form-model.js";
 import {
   SUBMIT_MESSAGES,
@@ -115,7 +132,7 @@ export interface RegistrationSubmitDeps {
   pace?: AnswerPace;
 }
 
-type JsonStatus = 200 | 400 | 409 | 415 | 422 | 429 | 500 | 503;
+type JsonStatus = 200 | 400 | 403 | 409 | 415 | 422 | 429 | 500 | 503;
 
 /** Every JSON answer of the route: the same headers, whatever it says. */
 function json(c: Context, body: unknown, status: JsonStatus): Response {
@@ -127,6 +144,11 @@ function json(c: Context, body: unknown, status: JsonStatus): Response {
 const received = (c: Context): Response => json(c, { ok: true } satisfies RegistrationSubmitOk, 200);
 
 const malformed = (c: Context): Response => json(c, { error: "invalid_request" }, 400);
+
+const tooManyRequests = (c: Context): Response => json(c, { error: "too many requests" }, 429);
+
+/** The one answer to a password that does not open the event, for every reason and every address. */
+const accessDenied = (c: Context): Response => json(c, { error: ACCESS_DENIED_ERROR } satisfies RegistrationSubmitDenied, 403);
 
 function tryAgain(c: Context): Response {
   c.header("Retry-After", RETRY_AFTER_SECONDS);
@@ -178,18 +200,18 @@ async function refuseChallenge(
  * The submission becomes a registration. Two budgets can withhold its mail without stopping it (MN-05): the event's,
  * counted in the database by `placeRegistration` under its lock, and the address's, asked by `placeRegistration` too,
  * only when it is about to queue the mail of a registration it stores. A request that is told to try again, finds the
- * event full or the address known, spends nothing of the address's budget. 111 passes the method of an event whose
- * way in is the password.
+ * event full or the address known, spends nothing of the address's budget. The registration is made the way the event's
+ * way in says: the link and the password both mail the address a confirmation link first (D-C5).
  */
 function placeSubmission(
   deps: RegistrationSubmitDeps,
-  eventId: string,
+  { eventId, access }: Pick<Extract<ResolvedRegistration, { kind: "open" }>, "eventId" | "access">,
   registrant: RegistrantSubmission,
 ): Promise<PlaceRegistrationResult> {
   const budget = INLINE_RATE_LIMITS["registration:mail-event"];
   return placeRegistration(
     deps.db,
-    { eventId, method: "link", registrant },
+    { eventId, method: access.method, registrant },
     {
       ...deps.placement,
       mail: {
@@ -237,6 +259,34 @@ function rulesOf(target: Extract<ResolvedRegistration, { kind: "open" }>, now: D
   };
 }
 
+/**
+ * The answer that refuses the password of an event whose way in is the password, or null when the guest may go on (and
+ * for an event that has another way in, which has no password to check). The two budgets are spent by every try that
+ * gets here, the right ones too (see `registration:password`); a refusal for want of a budget is a 429 like the event's
+ * ceiling, and writes one line for the operator with the id of the event and nothing of the guest or the client. A wrong
+ * password waits for the floor of time before it is answered, like every answer that follows the challenge.
+ */
+async function refusePassword(
+  c: Context,
+  deps: RegistrationSubmitDeps,
+  open: Extract<ResolvedRegistration, { kind: "open" }>,
+  password: unknown,
+  hold: () => Promise<void>,
+): Promise<Response | null> {
+  if (open.access.method !== "password") return null;
+  if (!(await checkRegistrationPasswordRateLimit(deps.store, c))) {
+    notePasswordTriesRefused(open.eventId, "client");
+    return tooManyRequests(c);
+  }
+  if (!(await checkRegistrationPasswordEventRateLimit(deps.store, open.eventId))) {
+    notePasswordTriesRefused(open.eventId, "event");
+    return tooManyRequests(c);
+  }
+  if (await isEventPassword(password, open.access.passwordHash)) return null;
+  await hold();
+  return accessDenied(c);
+}
+
 async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Response> {
   const now = new Date();
   const envelope = await readBody(c);
@@ -250,17 +300,18 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
   if (refusal) return refusal;
   const pace = deps.pace ?? REAL_PACE;
   const startedAt = pace.now();
-  if (!(await checkRegistrationEventRateLimit(deps.store, target.eventId))) {
-    return json(c, { error: "too many requests" }, 429);
-  }
+  if (!(await checkRegistrationEventRateLimit(deps.store, target.eventId))) return tooManyRequests(c);
 
   // The second look (step 6 of the head of this file): the same lookup as the first, so that the form the guest is judged
   // against, and written for, is the one that is open now and not the one that was open before the challenge.
   const open = await resolveRegistration(deps.db, slug, new Date());
   if (open.kind !== "open") return respondRegistrationNotFound(c);
 
-  // PR 111: the shared password of an event whose way in is the password is checked here, after the challenge and
-  // before any work that depends on the address, and a wrong one is one answer whoever the address is.
+  // The password (step 7 of the head of this file) is judged by the event as the second look found it: an event that was
+  // switched to the password between the two looks asks for it, and one switched away from it does not.
+  const hold = () => holdAnswer(pace, startedAt);
+  const refused = await refusePassword(c, deps, open, envelope.password, hold);
+  if (refused) return refused;
 
   const checked = checkSubmission(envelope, rulesOf(open, now));
   if (checked.kind === "malformed") return malformed(c);
@@ -268,14 +319,14 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
 
   let placed: PlaceRegistrationResult;
   try {
-    placed = await placeSubmission(deps, open.eventId, checked.registrant);
+    placed = await placeSubmission(deps, open, checked.registrant);
   } catch (error) {
     if (prismaCode(error) !== "P2002") throw error;
     // The address got a registration while this request ran: the guest is told what a known address is told, and after
     // the same wait, as the work of a new address is the one thing the wait is there to hide.
     placed = { outcome: "received" };
   }
-  return answerPlacement(c, placed, () => holdAnswer(pace, startedAt));
+  return answerPlacement(c, placed, hold);
 }
 
 export function prismaCode(error: unknown): string | undefined {

@@ -15,7 +15,10 @@
  *
  * Each field that can say something has one message slot under it, which keeps its height whether
  * it shows the field's note or an error, so an error never moves what is next to it. The field is
- * described by its slot (`aria-describedby`), which is how a screen reader hears the error.
+ * described by its slot (`aria-describedby`), which is how a screen reader hears the error. The one field that is not part
+ * of the form, the event password (./form-page.ts shows it on a screen of its own), keeps its room whether or not it has
+ * an error, and its slot is also a live region, because the answer that sends the guest back to it arrives while the
+ * form, where the focus was, is going out of sight.
  *
  * The questions are drawn by type. {@link QUESTION_RENDERERS} is the one place that knows which
  * types the page can draw: a new type of answer is added there (and to `EVENT_CUSTOM_FIELD_TYPES`).
@@ -37,7 +40,7 @@
  * rule would block a send in a way the server does not; the server is the one judge of an answer.
  * A control's `maxlength` is the longest raw text the server looks at, never less.
  */
-import type { EventCustomFieldRules, EventCustomFieldType, ShowWhen } from "@admitto/shared";
+import { REGISTRATION_PASSWORD_MAX, type EventCustomFieldRules, type EventCustomFieldType, type ShowWhen } from "@admitto/shared";
 import {
   REGISTRANT_EMAIL_MAX,
   REGISTRANT_LONG_TEXT_MAX,
@@ -83,10 +86,11 @@ const REQUIRED_MARK = '<span class="reg-req" aria-hidden="true">*</span>';
  * company, the terms, the security check) takes no room until it has an error to show: the fields stand one gap apart,
  * as they do in the admin forms, and the error opens under its field, as an inline error does there.
  */
-function slot(id: string, note: string | null): string {
+function slot(id: string, note: string | null, options: { keepRoom?: boolean; live?: boolean } = {}): string {
   const hint = note ? `<span class="reg-slot__hint">${esc(note)}</span>` : "";
-  const kind = note ? "at-hint reg-slot" : "at-hint reg-slot reg-slot--collapsed";
-  return `<p class="${kind}" id="m-${id}" data-slot>${hint}<span class="reg-slot__err at-hint--error">${icon("alert")}<span data-msg-text></span></span></p>`;
+  const kind = note || options.keepRoom ? "at-hint reg-slot" : "at-hint reg-slot reg-slot--collapsed";
+  const live = options.live ? ' aria-live="polite" aria-atomic="true"' : "";
+  return `<p class="${kind}" id="m-${id}"${live} data-slot>${hint}<span class="reg-slot__err at-hint--error">${icon("alert")}<span data-msg-text></span></span></p>`;
 }
 
 function labelOf(id: string, text: string, required: boolean): string {
@@ -633,6 +637,36 @@ function renderTermsRow(model: RegistrationFormModel): string {
 function renderConsentRow(consent: FormConsent, index: number): string {
   const text = `${esc(consent.title)}<small>Optional. ${legalLink(consent.path, "Read what you agree to")}.</small>`;
   return `<label class="at-check"><input type="checkbox" id="f-consent-${index}" name="consent-${index}" data-consent="${esc(consent.key)}"><span class="at-check__box">${checkTick()}</span><span>${text}</span></label>`;
+}
+
+/**
+ * The field of the password screen (D-C3), with the label, the lock and the slot of the mockup. It is not a field of the
+ * form: it has no `data-field`, so the form's own checks never read it, and the script trims nothing of it (a space is part
+ * of a password). The script keeps what is typed in a variable until the form is sent. A browser or an extension that
+ * offers to fill or save a password is told to leave it alone: it is a code from an invitation, not an account.
+ * `maxlength` is twice the longest password, in UTF-16 units, which only stops a huge paste: the server judges the length.
+ *
+ * Not everything listens: Safari on an iPhone slides up "Use Strong Password?" when the box is focused, whatever the markup
+ * says. It was tried with `autocomplete` as `off`, `current-password` and `one-time-code`, and with a plain text box under
+ * `-webkit-text-security`: the same sheet each time, so it comes from how iOS reads the page (a registration that wants a
+ * password), not from an attribute. The guest closes it and types.
+ */
+export function renderPasswordField(): string {
+  const input = `<input class="at-input" id="f-password" name="event-password"${attrs([
+    ["type", "password"],
+    ["autocomplete", "off"],
+    ["autocapitalize", "none"],
+    ["spellcheck", "false"],
+    ["maxlength", String(REGISTRATION_PASSWORD_MAX * 2)],
+    ["aria-describedby", "m-f-password"],
+    ["data-1p-ignore", "true"],
+    ["data-lpignore", "true"],
+    ["data-bwignore", "true"],
+    ["data-form-type", "other"],
+    ["data-control", true],
+  ])}>`;
+  const box = `<div class="at-inputgroup">${icon("lock", "ic at-inputgroup__icon")}${input}</div>`;
+  return `<div class="at-field" data-password-field>${labelOf("f-password", "Event password", false)}${box}${slot("f-password", null, { keepRoom: true, live: true })}</div>`;
 }
 
 /** The Turnstile widget. Cloudflare's script finds the `cf-turnstile` element and draws the widget in

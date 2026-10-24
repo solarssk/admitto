@@ -18,6 +18,10 @@
  *   For the answer to a long text, a date, a date and time or a phone number only the key counts: the
  *   page says a sentence of its own for it (the field carries it as `data-invalid`) and ignores the
  *   message, so nothing the server sends for those fields reaches the page.
+ * - `403 { error: "access_denied" }`: only for an event whose way in is the password, and only when the password
+ *   is wrong, missing or not one. The page goes back to its password screen with its own sentence under the field, keeps
+ *   what the guest typed in the form, and asks for the check again. The same answer, byte for byte, whatever the address
+ *   of the guest is and whichever way the password is wrong.
  * - `429` or `503`: the page says "Try again in a moment." Any other status gets a general message.
  *
  * The route (./submit-route.ts) also answers with statuses that get the general message: the one 404 of a form that is
@@ -55,6 +59,11 @@ export interface RegistrationSubmitBody {
   consents: string[];
   /** The Cloudflare Turnstile token. Single use. */
   challenge: string;
+  /** The shared password of the event, typed on the page's password screen, for an event whose way in is the password
+   * and for no other: an event that is open to the public link ignores it. The page keeps it in a variable of its script
+   * from "Continue" to the send and puts it nowhere else (not in an address, a cookie or storage). Absent when the page
+   * has no password screen. The server judges it: the page only sees that something was typed. */
+  password?: string;
 }
 
 /** `200` answer. */
@@ -65,6 +74,15 @@ export interface RegistrationSubmitOk {
 /** `400` or `422` answer. */
 export interface RegistrationSubmitInvalid {
   errors: Record<string, string>;
+}
+
+/** The `error` of the `403` answer to a wrong password. One code for every reason, and no field: it says nothing about the
+ * form, the address or what is wrong with the password. */
+export const ACCESS_DENIED_ERROR = "access_denied";
+
+/** `403` answer. */
+export interface RegistrationSubmitDenied {
+  error: typeof ACCESS_DENIED_ERROR;
 }
 
 /** The names of the fixed fields in `errors`. */

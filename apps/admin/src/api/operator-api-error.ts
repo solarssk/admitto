@@ -1,4 +1,9 @@
-import { CONTACT_PHONE_MAX_DIGITS, CONTACT_PHONE_MIN_DIGITS } from "@admitto/shared";
+import {
+  CONTACT_PHONE_MAX_DIGITS,
+  CONTACT_PHONE_MIN_DIGITS,
+  REGISTRATION_PASSWORD_MAX,
+  REGISTRATION_PASSWORD_MIN,
+} from "@admitto/shared";
 import { ApiError } from "./client.js";
 
 const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
@@ -13,6 +18,9 @@ export const CONTACT_PHONE_ERROR = `Enter a valid phone number: digits only, bet
  * code the server can emit has an entry here (or explicit inline handling). Not meant as a
  * general-purpose lookup elsewhere; call operatorApiErrorMessage()/hasApiErrorCode() instead. */
 export const CODE_MESSAGES: Record<string, string> = {
+  // The answer of the guest route to a password that does not open the event. A guest's page words it itself; it is mapped
+  // here so that nothing that reads this map is left with a bare code.
+  access_denied: "The event password did not work.",
   actor_mfa_required:
     "You need a confirmed authenticator app, passkey, or security key on your own account before you can reset another superadmin's two-factor or password, or revoke their sessions. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has one confirmed to do this instead.",
   api_key_required:
@@ -131,6 +139,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   password_too_common: "This password is too common or predictable. Choose a different one.",
   registration_count_changed:
     "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
+  registration_password_length: `The event password needs ${REGISTRATION_PASSWORD_MIN} to ${REGISTRATION_PASSWORD_MAX} characters.`,
   registration_selection_changed:
     "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
   required_custom_data_field_missing: "A required custom field is missing.",

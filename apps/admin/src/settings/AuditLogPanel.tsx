@@ -110,6 +110,7 @@ const ACTION_LABELS: Record<string, string> = {
   org_branding_logo_uploaded: "Organization branding logo uploaded",
   registration_accepted: "Guest registration accepted",
   registration_access_methods_updated: "Guest registration access methods updated",
+  registration_password_changed: "Guest registration password changed",
   registration_rejected: "Guest registration rejected",
   registration_turnstile_cleared: "Guest registration Turnstile keys removed",
   registration_turnstile_updated: "Guest registration Turnstile keys updated",
