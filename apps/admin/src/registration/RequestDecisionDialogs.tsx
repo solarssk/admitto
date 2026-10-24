@@ -98,9 +98,10 @@ function DeleteDialog({ rows, busy, error, onConfirm, onCancel }: Readonly<Dialo
   const one = rows.length === 1;
   let lead = "";
   if (accepted > 0) {
+    const verb = accepted === 1 ? "is" : "are";
     lead = one
       ? "This request is accepted, so the guest is an attendee. Deleting it also erases the attendee."
-      : `${accepted} of these requests ${accepted === 1 ? "is" : "are"} accepted. Deleting an accepted request also erases the attendee.`;
+      : `${accepted} of these requests ${verb} accepted. Deleting an accepted request also erases the attendee.`;
   }
   return (
     <ConfirmDialog

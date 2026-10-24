@@ -52,7 +52,8 @@ const requests = (count: number): string => `${count} ${pluralize(count, "reques
 
 /** Names the seats of a refusal as the staff member counts them. A guest who brings someone takes two. */
 export function notEnoughSeatsMessage({ free, needed }: NotEnoughSeatsMeta): string {
-  const left = free === 0 ? "No seats are free" : `Only ${free} ${free === 1 ? "seat is" : "seats are"} free`;
+  const seatsAre = free === 1 ? "seat is" : "seats are";
+  const left = free === 0 ? "No seats are free" : `Only ${free} ${seatsAre} free`;
   return `${left}, and the guests you chose need ${needed} (a companion takes a seat too). Nobody was accepted. Choose fewer guests, or raise the event's capacity first.`;
 }
 

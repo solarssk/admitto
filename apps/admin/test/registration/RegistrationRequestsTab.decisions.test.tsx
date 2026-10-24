@@ -372,7 +372,7 @@ describe("accepting", () => {
     // No toast says that something was done.
     expect(screen.queryByText(/requests? accepted\./)).toBeNull();
     expect(refreshEvent).not.toHaveBeenCalled();
-    expect(api.fetchRegistrations.mock.calls.length).toBe(readsBefore);
+    expect(api.fetchRegistrations.mock.calls).toHaveLength(readsBefore);
     expect(bulkBar()?.textContent).toContain("2 selected");
     // It can be tried again with fewer guests: Cancel, untick one, ask again.
     press(dialog, "Cancel");
