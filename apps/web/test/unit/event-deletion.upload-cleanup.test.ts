@@ -71,6 +71,8 @@ describe("deleteEvent — managed upload cleanup", () => {
       eventImageAsset: {
         findMany: vi.fn().mockResolvedValue([{ url: imageUrl }]),
       },
+      registration: { count: vi.fn().mockResolvedValue(0) },
+      registrationMail: { count: vi.fn().mockResolvedValue(0) },
     };
 
     const db = {
@@ -91,10 +93,16 @@ describe("deleteEvent — managed upload cleanup", () => {
   it("hands the keys of the jobs it deleted, and only those that have a file, to the file cleanup after commit", async () => {
     const eventId = "evt-upload-cleanup";
     const calls: string[] = [];
+    const lockNames: [prefix: string, name: string][] = [
+      ["attendee-job-queue:", "queue lock"],
+      ["registration-queue:", "registration queue lock"],
+    ];
     const tx = {
-      // The two advisory locks, told apart by their key: the scoped one of mail settings, then the job queue.
+      // The three advisory locks, told apart by their key: the scoped one of mail settings, the job queue, and the
+      // registration queue.
       $executeRaw: vi.fn().mockImplementation(async (sql: { values: unknown[] }) => {
-        calls.push(String(sql.values[0]).startsWith("attendee-job-queue:") ? "queue lock" : "scoped lock");
+        const key = String(sql.values[0]);
+        calls.push(lockNames.find(([prefix]) => key.startsWith(prefix))?.[1] ?? "scoped lock");
         return 0;
       }),
       // The rows of the jobs are locked first, then the row of the event (both SELECT ... FOR UPDATE), the same order
@@ -135,6 +143,13 @@ describe("deleteEvent — managed upload cleanup", () => {
       mailTemplate: { count: vi.fn().mockResolvedValue(0), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       mailSettings: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       eventImageAsset: { findMany: vi.fn().mockResolvedValue([]) },
+      registration: {
+        count: vi.fn().mockImplementation(async () => {
+          calls.push("registrations count");
+          return 0;
+        }),
+      },
+      registrationMail: { count: vi.fn().mockResolvedValue(0) },
     };
     deleteEventJobFilesBestEffort.mockImplementation(async () => {
       calls.push("job files");
@@ -152,8 +167,19 @@ describe("deleteEvent — managed upload cleanup", () => {
       "org-1/events/evt-upload-cleanup/b.csv",
     ]);
     // The row of the event is locked before its jobs are read, and the files go after the rows: the event is deleted
-    // first, in the transaction.
-    expect(calls).toEqual(["scoped lock", "queue lock", "job rows lock", "event row lock", "jobs delete", "event.delete", "job files"]);
+    // first, in the transaction. The registration queue comes between the job rows and the event row (the order of
+    // lockRegistrationQueue), and the registrations are counted before the delete takes them with the event.
+    expect(calls).toEqual([
+      "scoped lock",
+      "queue lock",
+      "job rows lock",
+      "registration queue lock",
+      "event row lock",
+      "jobs delete",
+      "registrations count",
+      "event.delete",
+      "job files",
+    ]);
     deleteEventJobFilesBestEffort.mockReset().mockResolvedValue(undefined);
   });
 

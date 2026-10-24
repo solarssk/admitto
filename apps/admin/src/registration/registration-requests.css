@@ -1,0 +1,150 @@
+/* The Requests tab of the Registration page: a card with the Attendees list's toolbar (attendees.css, which the toolbar
+   imports), the requests as a table or as cards, and the pager. The toolbar, the table headings and the busy and dimmed states
+   are the ones the other lists use; what is here is the shape of a request. */
+
+.registration-requests {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.registration-requests__table-wrap {
+  position: relative;
+  overflow-x: auto;
+}
+
+.registration-requests__table {
+  min-width: 640px;
+}
+
+/* The guest is what a person reads first and the column that holds the longest text (an address), so it asks for its room before the others do. The
+   last email keeps the room for the longest name of a mail ("Address confirmation") on one line, so that a row stays two lines tall. */
+.registration-requests__table thead th:first-child {
+  width: 32%;
+}
+
+.registration-requests__table thead th:nth-child(4) {
+  min-width: 9.5rem;
+}
+
+/* Cells top-aligned: a long name or address makes a tall row, and its badges stay level with the name instead of the middle of it. */
+.registration-requests__table tbody td {
+  vertical-align: top;
+}
+
+/* The guest. A name or an address is read in full, so it wraps (and breaks inside a word only when it does not fit) instead of being cut. */
+.registration-requests__guest {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.registration-requests__name {
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* "+1": the guest brings someone, who takes a seat too. */
+.registration-requests__plus {
+  margin-left: var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+.registration-requests__email {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.registration-requests__company {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+.registration-requests__department,
+.registration-requests__affiliation {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.registration-requests__mail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.registration-requests__mail-kind {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.registration-requests__none {
+  color: var(--text-muted);
+}
+
+.registration-requests__table time,
+.registration-requests__cards time {
+  color: var(--text-secondary);
+}
+
+/* Cards, below the width the table fits: one request each, in the rhythm of the Attendees cards. */
+.registration-requests__cards {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.registration-requests__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.registration-requests__card:last-child {
+  border-bottom: 0;
+}
+
+.registration-requests__card-facts,
+.registration-requests__card-mail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-sm);
+}
+
+.registration-requests__card-label {
+  color: var(--text-muted);
+}
+
+/* In a card the badge and what the email was share a line, as the label shares it with them. */
+.registration-requests__card-mail .registration-requests__mail {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The line under the placeholder after 8 seconds of waiting. Its status region is empty, and has no height, until then. */
+.registration-requests__slow {
+  display: block;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  text-align: center;
+}
+
+/* PaginationFooter assumes a padded card body; this card has none, so the table can reach its edges. */
+.registration-requests__footer {
+  padding: 0 var(--space-4) var(--space-4);
+}

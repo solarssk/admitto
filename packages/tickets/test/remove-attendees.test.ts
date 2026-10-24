@@ -99,6 +99,32 @@ describe("removeAttendees", () => {
     expect(await prisma.attendeeNote.count({ where: { attendee_id: keep.id } })).toBe(1);
   });
 
+  it("deletes the registrations of the removed attendee, accepted and same-address, and no one else's", async () => {
+    const a = await createAttendee();
+    const base = { first_name: "Guest", last_name: "Test", name: "Guest Test" };
+    const accepted = await prisma.registration.create({
+      data: { ...base, event_id: EVENT_ID, email: `before-edit-${a.email}`, status: "accepted", attendee_id: a.id },
+    });
+    await prisma.registrationMail.create({
+      data: { registration_id: accepted.id, event_id: EVENT_ID, template_name: "ticket" },
+    });
+    const unlinked = await prisma.registration.create({
+      data: { ...base, event_id: EVENT_ID, email: a.email.toLowerCase(), status: "pending" },
+    });
+    const otherEvent = await prisma.registration.create({
+      data: { ...base, event_id: OTHER_EVENT_ID, email: a.email.toLowerCase(), status: "pending" },
+    });
+    const stranger = await prisma.registration.create({
+      data: { ...base, event_id: EVENT_ID, email: "registration-stranger@example.com", status: "waitlist" },
+    });
+
+    await remove([a.id]);
+
+    expect(await prisma.registration.count({ where: { id: { in: [accepted.id, unlinked.id] } } })).toBe(0);
+    expect(await prisma.registrationMail.count({ where: { registration_id: accepted.id } })).toBe(0);
+    expect(await prisma.registration.count({ where: { id: { in: [otherEvent.id, stranger.id] } } })).toBe(2);
+  });
+
   it("answers not found for ids that are not attendees of the event, and leaves those attendees alone", async () => {
     const mine = await createAttendee();
     const elsewhere = await createAttendee(OTHER_EVENT_ID);
@@ -114,7 +140,7 @@ describe("removeAttendees", () => {
     expect(await remove([])).toEqual({
       removedIds: [],
       notFoundIds: [],
-      counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0 },
+      counts: { emailDeliveries: 0, walletPasses: 0, checkIns: 0, registrations: 0 },
       walletTargets: [],
       untrackedWalletTargets: [],
       previousEmails: [],
@@ -319,6 +345,31 @@ describe("an address the person had before an edit", () => {
     expect([...result.previousEmails].sort((a, b) => a.localeCompare(b))).toEqual([
       "right.address@example.com",
       "typo.address@example.com",
+    ]);
+    expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: resent.id } })).toMatchObject({
+      recipient_email: null,
+      status: "cancelled",
+    });
+  });
+
+  it("is scrubbed too when only the activity log names it: staff edited it before any ticket mail went to it", async () => {
+    const gone = await createAttendee(EVENT_ID, "edited.right@example.com");
+    const other = await createAttendee();
+    await prisma.attendeeActionLog.create({
+      data: {
+        event_id: EVENT_ID,
+        attendee_id: gone.id,
+        action_type: "attendee_edited",
+        metadata: { fields: ["email"], field_changes: { email: { from: "Edited.Wrong@example.com", to: "edited.right@example.com" } } },
+      },
+    });
+    const resent = await delivery(other.id, { purpose: "resend", status: "queued", recipient_email: "edited.wrong@example.com" });
+
+    const result = await remove([gone.id]);
+
+    expect([...result.previousEmails].sort((a, b) => a.localeCompare(b))).toEqual([
+      "edited.right@example.com",
+      "edited.wrong@example.com",
     ]);
     expect(await prisma.emailDelivery.findUniqueOrThrow({ where: { id: resent.id } })).toMatchObject({
       recipient_email: null,

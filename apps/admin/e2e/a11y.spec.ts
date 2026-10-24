@@ -197,10 +197,25 @@ const ADMIN_SURFACES: {
     ],
     blocking: true,
   },
+  {
+    // Not in the menu yet, so it is reached by its address. It opens on the Requests tab: the page of requests, and the numbers
+    // that the tab strip and the state filter show (the event itself is read by the page frame, as for every page).
+    name: "admin-registration",
+    path: (i) => `/admin/events/${i.event}/registration`,
+    data: (i) => [`/api/admin/events/${i.event}/registrations`, `/api/admin/events/${i.event}/registrations/counts`],
+    blocking: true,
+  },
+  {
+    // Its Legal tab: the list of the event's legal texts. The editor, and the code it needs, load only when a text is opened.
+    name: "admin-registration-legal",
+    path: (i) => `/admin/events/${i.event}/registration?tab=legal`,
+    data: (i) => [`/api/admin/events/${i.event}/legal-documents`],
+    blocking: true,
+  },
 ];
 
 test("admin pages", async ({ page, baseURL }, testInfo) => {
-  // Six pages, each waited for and scanned, plus the sign-in: more than the 30 s default.
+  // Seven pages, each waited for and scanned, plus the sign-in: more than the 30 s default.
   test.setTimeout(180_000);
   // Re-seed first: it resets the admin's MFA (a retry after a failed attempt could not enrol TOTP
   // again otherwise) and puts the attendee back to "not admitted", the state whose "Not yet" item

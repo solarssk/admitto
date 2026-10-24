@@ -21,7 +21,7 @@ Open **Organisation settings**. Save one area at a time and verify the visible r
 | **General** | Instance behaviour and base configuration shown by the panel, including **Support contact** (used in the User-Agent for Nominatim and MET Norway requests) |
 | **Branding** | Organisation name, logo, colour palette and fonts |
 | **Mail** | The organisation-wide mail transport |
-| **External services** | Weather and Maps connections |
+| **External services** | Weather and Maps connections, and the Cloudflare Turnstile keys for guest registration |
 | **Notifications** | Security alerts to admin staff |
 | **Security** | MFA, session policy, passkey sign-in, trusted script origins |
 | **Archiving** | Retention and completed-event controls. Switch between Active and Archived lists (paginated). Each row can show who created and who last archived the event, and when |
@@ -33,7 +33,7 @@ Open **Organisation settings**. Save one area at a time and verify the visible r
 
 One consolidated tab for organisation name, logo, colour palette, built-in fonts and custom font uploads, with one shared Save and Reset.
 
-- **Theme by surface:** the Admin panel's colour and font pick are the instance's base. The Ticket page can keep matching the Admin panel automatically (**Same as Admin panel**), or use its own colour and font, independently of each other. The Registration form's controls are reserved for a future registration surface and stay disabled.
+- **Theme by surface:** the Admin panel's colour and font pick are the instance's base. The Ticket page can keep matching the Admin panel automatically (**Same as Admin panel**), or use its own colour and font, independently of each other. The Registration form's controls are not available yet and stay disabled.
 - **Logo upload:** uploading a logo opens an adjust popup, so you can trim margins before saving. Transparent PNG and WebP keep their transparency.
 - **Re-crop behaviour:** **Edit image** restores the last crop and zoom after Save and reload, because Admitto keeps the full upload for re-edit. Organisation logos uploaded before crop persistence need one full-file upload the first time you re-crop. Later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto.
 
@@ -52,6 +52,14 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - Enable it and choose the provider, OpenStreetMap/Nominatim, with the tile URL, attribution, max zoom and geocoding base URL.
 - Turning **Maps** off disables static map tiles and map previews. Address lookup (Nominatim) for the Location tab keeps working.
 - The Nominatim HTTP timeout (`GEOCODING_TIMEOUT_MS`) stays a deployment setting with no UI field.
+
+**Guest registration**
+
+- Save the Cloudflare Turnstile **Site key** and **Secret key** here. Turnstile checks that a visitor to the registration form is not a bot. A form that guests reach by a public link or a password stays closed until both keys are saved.
+- The secret key is stored encrypted and is never shown again. Use **Set**, **Change** or **Clear** on it, then Save once for the whole tab.
+- In Cloudflare, add the address of this instance to the hostnames of the widget.
+- Cloudflare sees each visitor's IP address and browser details when the form opens. Name it in your privacy notice. See [SUBPROCESSORS.md](https://github.com/solarssk/admitto/blob/main/docs/security/SUBPROCESSORS.md).
+- Guest registration itself is not available yet. The card only stores the keys that it will need.
 
 **Support contact and Test connection**
 
@@ -108,7 +116,7 @@ Review Core infrastructure and External integrations status.
 
 **Guidance for a row**
 
-- A down or degraded row that Admitto knows shows **Why** it is in that state, **What it affects** and **What to do** lines when expanded, above its own details. It has a link to the relevant settings tab where one applies. Known rows are the database, data encryption, rate limits, the background worker, the mail queue, sending mail, identity providers, Cloudflare Access, file storage, address lookup, weather and bounce detection.
+- A down or degraded row that Admitto knows shows **Why** it is in that state, **What it affects** and **What to do** lines when expanded, above its own details. It has a link to the relevant settings tab where one applies. Known rows are the database, data encryption, rate limits, the background worker, the mail queue, the registration mail queue, sending mail, identity providers, Cloudflare Access, file storage, address lookup, weather, bounce detection and bot protection.
 - A down or degraded row Admitto does not recognise yet says so under **Why**. It only suggests reloading, running live checks again and using **Copy for GitHub Issue**, without guessing what it affects.
 - If the core checks cannot be read at all, the **Database**, **Rate-limit storage**, **Data encryption** and **Instance URL** rows say so (Degraded, "Could not evaluate ...") instead of claiming a specific problem. The **Database** row is Down only when its own probe fails.
 - A healthy row shows only its details.
@@ -132,7 +140,9 @@ Review Core infrastructure and External integrations status.
 **Core and External**
 
 - **Background worker** (in Core): a heartbeat from the Admitto worker process that drains mail and runs import and export jobs, bounce detection and retention. If that row is degraded, start the worker (`npm run worker` locally, or the compose `worker` service). Once its heartbeat is at least a minute old, its expanded details show **Last seen** (for example "12 min before this report"). It is measured against this report's own **Generated** time, not the current time.
+- **Registration mail queue** (in Core) counts the emails that guest registrations queue, such as the confirmation link, the same way **Mail delivery queue** counts ticket emails. It is Degraded when an email failed and will be tried again, when an email failed for good in the last seven days (the mail service refused it, its text could not be used, or every attempt was used, so the worker has stopped trying), or when 50 or more are waiting. It shows counts only. A registration that is not confirmed within 24 hours is deleted, so a confirmation link that never arrives means the guest has to register again.
 - **External rows** are labelled **role, provider**, for example `Address lookup, Nominatim`, `Map tiles, OpenStreetMap`, and `Weather, MET Norway` or `Weather, Open-Meteo`. Turning **Maps** off in External services marks **Map tiles** as Maps disabled. **Address lookup, Nominatim** stays available for the Location tab. Each configured identity provider appears as its own row. Cloudflare Access is listed separately.
+- **Bot protection, Turnstile** is Degraded when guest registration by public link or password is on for an event but the Turnstile keys are not saved, or when the saved secret key cannot be read (often a changed `ENCRYPTION_KEY`). It is Not configured while no event needs the keys and none are saved. It does not call Cloudflare, so it does not show whether Cloudflare accepts the keys.
 - **File storage** reports whether the local upload directory (`UPLOAD_DIR`) exists and is writable. If the folder is missing, it shows as not configured (Admitto creates it on the first branding upload). A misconfigured path that points at a file instead of a folder is reported as down.
 
 **Run live checks and export**

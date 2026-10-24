@@ -65,6 +65,7 @@ const staff = parse(read("apps/admin/src/staff.css"));
 const users = parse(read("apps/admin/src/pages/users-page.css"));
 const reports = parse(read("apps/admin/src/pages/reports-page.css"));
 const attendees = parse(read("apps/admin/src/attendees/attendees.css"));
+const requests = parse(read("apps/admin/src/registration/registration-requests.css"));
 const notifications = parse(read("apps/admin/src/settings/notifications-panel.css"));
 
 describe("the baseline: running text runs to the edge of its column, short standalone texts are balanced", () => {
@@ -287,5 +288,77 @@ describe("the pieces of the second review round (Reports chart, Danger zone, tab
 
   it("keeps the text under the wallet preview clear of the stacked layers that peek out under the card", () => {
     expect(sets(bodyOf(preview, ".wallet-message-preview"), "gap", "var\\(--space-4\\)")).toBe(true);
+  });
+});
+
+describe("the Requests tab of the Registration page", () => {
+  it("lets a name, an address, a company and a department wrap, and breaks inside a word only when it does not fit: none is cut to an ellipsis", () => {
+    for (const selector of [
+      ".registration-requests__name",
+      ".registration-requests__email",
+      ".registration-requests__company",
+      ".registration-requests__department, .registration-requests__affiliation",
+    ]) {
+      const body = bodyOf(requests, selector);
+      expect(sets(body, "overflow-wrap", "anywhere"), selector).toBe(true);
+      expect(declares(body, "white-space"), selector).toBe(false);
+      expect(declares(body, "text-overflow"), selector).toBe(false);
+    }
+  });
+
+  it("gives the guest the widest column of the table and the last email the room of its longest name, so a row stays two lines tall", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__table thead th:first-child"), "width", "32%")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__table thead th:nth-child(4)"), "min-width", "9.5rem")).toBe(true);
+  });
+
+  it("keeps the table at a width it can be read in, and lets only it scroll sideways, never the page", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__table"), "min-width", "640px")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__table-wrap"), "overflow-x", "auto")).toBe(true);
+  });
+
+  it("puts the badge and the name of the last email on one line in a card, and in a column in the table", () => {
+    const card = bodyOf(requests, ".registration-requests__card-mail .registration-requests__mail");
+    expect(sets(card, "flex-direction", "row")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__mail"), "flex-direction", "column")).toBe(true);
+  });
+
+  it("is a column of cards, a card a column of lines, with no fixed height", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__cards"), "flex-direction", "column")).toBe(true);
+    const card = bodyOf(requests, ".registration-requests__card");
+    expect(sets(card, "flex-direction", "column")).toBe(true);
+    expect(declares(card, "height")).toBe(false);
+  });
+});
+
+describe("the Registration page's suggested questions: the card header, the window and its badges (looked at in real Chrome at 1280px and 390px)", () => {
+  const requirements = parse(read("apps/admin/src/requirements/requirements.css"));
+  const suggested = parse(read("apps/admin/src/registration/suggested-questions.css"));
+
+  it("lets the header of the card grow on a phone, with the title first and the two buttons under it, instead of a button hanging out of the card", () => {
+    const header = bodyOf(requirements, ".requirements-section--registration .at-card__header", "@media (max-width: 640px)");
+    expect(sets(header, "flex-wrap", "wrap")).toBe(true);
+    expect(sets(header, "height", "auto")).toBe(true);
+    expect(sets(bodyOf(requirements, ".requirements-section--registration .at-card__actions", "@media (max-width: 640px)"), "flex-wrap", "wrap")).toBe(true);
+  });
+
+  it("gives the two buttons of the header a line each, as wide as the card, from 480px down, as on the Legal tab", () => {
+    expect(sets(bodyOf(requirements, ".requirements-section--registration .at-card__actions > *", "@media (max-width: 480px)"), "flex", "1 1 100%")).toBe(true);
+    expect(sets(bodyOf(requirements, ".requirements-section--registration .at-card__actions .at-btn", "@media (max-width: 480px)"), "width", "100%")).toBe(true);
+  });
+
+  it("scrolls the window of the questions on a screen too short for it, so that its buttons can still be reached", () => {
+    const body = bodyOf(suggested, ".confirm-dialog__panel:has(.suggested-questions)");
+    expect(sets(body, "max-height", "100%")).toBe(true);
+    expect(sets(body, "overflow-y", "auto")).toBe(true);
+  });
+
+  it("puts the badge of a question under its words on a phone, as wide as its own words and not as a bar across the row", () => {
+    expect(sets(bodyOf(suggested, ".suggested-questions__row", "@media (max-width: 480px)"), "grid-template-columns", String.raw`minmax\(0, 1fr\)`)).toBe(true);
+    expect(sets(bodyOf(suggested, ".suggested-questions__row .at-badge", "@media (max-width: 480px)"), "justify-self", "start")).toBe(true);
+  });
+
+  it("wraps the words of a question inside their column instead of cutting them", () => {
+    expect(sets(bodyOf(suggested, ".suggested-questions__title"), "overflow-wrap", "anywhere")).toBe(true);
+    expect(sets(bodyOf(suggested, ".suggested-questions__text"), "min-width", "0")).toBe(true);
   });
 });

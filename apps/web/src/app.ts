@@ -191,6 +191,10 @@ import {
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
 import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "./admin/attendee-erase-routes.js";
+import {
+  handleDeleteEventRegistrations,
+  handleDeleteEventRegistrationsByFilter,
+} from "./admin/registration-delete-routes.js";
 import { handleBulkRemoveEventAttendees, handleRemoveEventAttendee } from "./admin/attendee-remove-routes.js";
 import {
   handleGetWalletPushJob,
@@ -254,10 +258,42 @@ import {
 import {
   handleListEventCustomFields,
   handleCreateEventCustomField,
+  handleAddSuggestedEventCustomFields,
   handlePatchEventCustomField,
+  handleReorderEventCustomFields,
   handleDeleteEventCustomField,
   handleGetEventCustomFieldOptionUsage,
 } from "./admin/event-custom-fields-routes.js";
+import {
+  handleListLegalDocuments,
+  handleGetLegalDocument,
+  handlePutLegalDocument,
+  handlePublishLegalDocument,
+  handleUnpublishLegalDocument,
+  handleDeleteLegalDocument,
+} from "./admin/legal-documents-routes.js";
+import {
+  handleCountEventRegistrations,
+  handleGetEventRegistration,
+  handleListEventRegistrations,
+} from "./admin/registrations-api-routes.js";
+import {
+  handleAcceptEventRegistrations,
+  handleRejectEventRegistrations,
+  handleRetryEventRegistrationMails,
+} from "./admin/registration-decisions-routes.js";
+import { MAX_LEGAL_BODY_BYTES } from "./legal/legal-documents.js";
+import { loadPublishedLegalPage, respondLegalPage } from "./legal/legal-page.js";
+import { respondRegistrationNotFound } from "./registration-page-security.js";
+import { handleGetRegistrationForm } from "./registration/form-routes.js";
+import {
+  handleGetConfirmation,
+  handlePostConfirmation,
+  registrationConfirmGuards,
+  type RegistrationConfirmDeps,
+} from "./registration/confirm-route.js";
+import { registrationSubmitGuards } from "./registration/submit-guards.js";
+import { handlePostRegistration, type RegistrationSubmitDeps } from "./registration/submit-route.js";
 import {
   handleListEventTicketTypes,
   handleCreateEventTicketType,
@@ -272,6 +308,10 @@ import {
   handlePreviewEventTemplate,
   handleTestSendEventTemplate,
   handleTestSendEventTemplateById,
+  handleGetSystemTemplate,
+  handlePutSystemTemplate,
+  handlePreviewSystemTemplate,
+  handleTestSendSystemTemplate,
   handleListEventDeliveries,
   handleGetEventDelivery,
   handleGetRenderedEventDelivery,
@@ -339,6 +379,13 @@ import {
   handlePostWeatherTest,
   handlePostMapsTest,
 } from "./admin/external-services-routes.js";
+import {
+  handleDeleteRegistrationTurnstile,
+  handleGetRegistrationAccessMethods,
+  handleGetRegistrationTurnstile,
+  handlePutRegistrationAccessMethods,
+  handlePutRegistrationTurnstile,
+} from "./admin/registration-settings-routes.js";
 import {
   handleGetNotificationSettings,
   handlePutNotificationSettings,
@@ -474,6 +521,11 @@ export interface CreateAppOptions {
   opsHealthToken?: string | null;
   /** JSON access log per request (defaults to `LOG_HTTP_REQUESTS` env). */
   logHttpRequests?: boolean;
+  /** Test-only injection points of `POST /r/:slug`: the transport of the bot challenge, the wait for a lock and the
+   * floor of time of an answer. */
+  registrationSubmit?: Pick<RegistrationSubmitDeps, "challenge" | "placement" | "pace">;
+  /** Test-only injection point of `POST /r/:slug/confirm/:token`: the wait for a lock and the places among the writes. */
+  registrationConfirm?: Pick<RegistrationConfirmDeps, "placement">;
 }
 
 /**
@@ -842,6 +894,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const templateBodyLimit = bodyLimit({
     maxSize: MAX_TEMPLATE_BODY_BYTES,
     onError: (c) => c.json({ error: "template too large" }, 400),
+  });
+  const legalDocumentBodyLimit = bodyLimit({
+    maxSize: MAX_LEGAL_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const templateTestSendBodyLimit = bodyLimit({
     maxSize: MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
@@ -1910,6 +1966,31 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     (c) => handlePostMapsTest(c, db),
   );
+  // Guest registration instance settings: the Turnstile keys and the access methods. Superadmin
+  // only; the handlers check the role themselves, the gate only proves a staff session.
+  app.get("/api/admin/registration/turnstile", staffAdminGate, (c) =>
+    handleGetRegistrationTurnstile(c, db),
+  );
+  app.put(
+    "/api/admin/registration/turnstile",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutRegistrationTurnstile(c, db),
+  );
+  app.delete("/api/admin/registration/turnstile", jsonPostCsrf, staffAdminGate, (c) =>
+    handleDeleteRegistrationTurnstile(c, db),
+  );
+  app.get("/api/admin/registration/access-methods", staffAdminGate, (c) =>
+    handleGetRegistrationAccessMethods(c, db),
+  );
+  app.put(
+    "/api/admin/registration/access-methods",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutRegistrationAccessMethods(c, db),
+  );
   app.get("/api/admin/notification-settings", staffAdminGate, (c) =>
     handleGetNotificationSettings(c, db),
   );
@@ -1972,6 +2053,18 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     guardArchivedEvent((c) => handleCreateEventCustomField(c, db)),
   );
+  app.post(
+    "/api/admin/events/:eventId/custom-fields/suggested",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleAddSuggestedEventCustomFields(c, db)),
+  );
+  app.put(
+    "/api/admin/events/:eventId/custom-fields/order",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleReorderEventCustomFields(c, db)),
+  );
   app.patch(
     "/api/admin/events/:eventId/custom-fields/:fieldId",
     jsonPostCsrf,
@@ -1983,6 +2076,72 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleDeleteEventCustomField(c, db)),
+  );
+  app.get("/api/admin/events/:eventId/legal-documents", staffAdminGate, (c) => handleListLegalDocuments(c, db));
+  app.get("/api/admin/events/:eventId/legal-documents/:ref", staffAdminGate, (c) => handleGetLegalDocument(c, db));
+  app.put(
+    "/api/admin/events/:eventId/legal-documents/:ref",
+    jsonPostCsrf,
+    staffAdminGate,
+    legalDocumentBodyLimit,
+    guardArchivedEvent((c) => handlePutLegalDocument(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/legal-documents/:ref/publish",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePublishLegalDocument(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/legal-documents/:ref/unpublish",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleUnpublishLegalDocument(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/legal-documents/:ref",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteLegalDocument(c, db)),
+  );
+  // Guest registrations of an event, read only (the decisions and the deletion are other routes).
+  // The list shares the attendee search budget: it is the same kind of search over an event's people.
+  // `counts` is registered before `:id`, which would otherwise take it for an id.
+  app.get("/api/admin/events/:eventId/registrations", staffAdminGate, adminAttendeesSearchRateLimit, (c) =>
+    handleListEventRegistrations(c, db),
+  );
+  app.get("/api/admin/events/:eventId/registrations/counts", staffAdminGate, (c) =>
+    handleCountEventRegistrations(c, db),
+  );
+  app.get("/api/admin/events/:eventId/registrations/:id", staffAdminGate, (c) =>
+    handleGetEventRegistration(c, db),
+  );
+  // Decisions on guest registrations: accept, reject, send a failed mail again. One registration is a list of one.
+  // The chain of the bulk attendee routes: CSRF, staff gate, body cap, the shared bulk-mutation budget, and the
+  // archived-event guard (an archived event is read-only: nothing is decided in it).
+  app.post(
+    "/api/admin/events/:eventId/registrations/accept",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    guardArchivedEvent((c) => handleAcceptEventRegistrations(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/registrations/reject",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    guardArchivedEvent((c) => handleRejectEventRegistrations(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/registrations/retry-mail",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    guardArchivedEvent((c) => handleRetryEventRegistrationMails(c, db)),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
@@ -2151,6 +2310,28 @@ export function createApp(options: CreateAppOptions = {}) {
     // The pass of each erased attendee is deleted at the provider after the commit.
     walletActionBulkRateLimitIfWalletConfigured,
     (c) => handleBulkEraseEventAttendees(c, db),
+  );
+  // Delete guest registrations, one by one, by selection or by filter. An accepted registration is an attendee, and
+  // deleting it erases them, so this is an erasure too: not behind guardArchivedEvent (a privacy request is still valid
+  // after the event has ended), the budgets of bulk-erase, and the pass of each erased attendee is deleted at the provider
+  // after the commit. The route checks on its own that the caller manages the event.
+  app.post(
+    "/api/admin/events/:eventId/registrations/delete",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    walletActionBulkRateLimitIfWalletConfigured,
+    (c) => handleDeleteEventRegistrations(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/registrations/delete-by-filter",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    walletActionBulkRateLimitIfWalletConfigured,
+    (c) => handleDeleteEventRegistrationsByFilter(c, db),
   );
   // Remove from event (the hard delete, for mistakes, with a reason from a fixed list). Behind
   // guardArchivedEvent: the numbers of an archived event are final. The pass of each removed attendee
@@ -2455,6 +2636,37 @@ export function createApp(options: CreateAppOptions = {}) {
     adminCommunicationRateLimit,
     guardArchivedEvent((c) =>
       handleTestSendEventTemplateById(c, db, rateLimitStore, mailDeliveryDeps, mailInjectedBaseUrl),
+    ),
+  );
+  // The four registration mails, by name: the same four actions as the ticket template's own routes above, for a mail
+  // that has no row of its own yet (the editor opens the built-in default). Once a mail has a row, the by-id routes
+  // above serve it. Same chains, limits and archive rules as their counterparts.
+  app.get("/api/admin/events/:eventId/system-templates/:name", staffAdminGate, (c) =>
+    handleGetSystemTemplate(c, db),
+  );
+  app.put(
+    "/api/admin/events/:eventId/system-templates/:name",
+    jsonPostCsrf,
+    staffAdminGate,
+    templateBodyLimit,
+    guardArchivedEvent((c) => handlePutSystemTemplate(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/system-templates/:name/preview",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminTemplatePreviewRateLimit,
+    templateBodyLimit,
+    (c) => handlePreviewSystemTemplate(c, db, mailInjectedBaseUrl),
+  );
+  app.post(
+    "/api/admin/events/:eventId/system-templates/:name/test-send",
+    jsonPostCsrf,
+    staffAdminGate,
+    templateTestSendBodyLimit,
+    adminCommunicationRateLimit,
+    guardArchivedEvent((c) =>
+      handleTestSendSystemTemplate(c, db, rateLimitStore, mailDeliveryDeps, mailInjectedBaseUrl),
     ),
   );
   app.post(
@@ -3024,6 +3236,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use("/t/*", publicRateLimit);
   app.use("/q/*", publicRateLimit);
   app.use("/m/*", publicRateLimit);
+  // Legal texts of an event, read by a guest before registering. The same per-IP bucket as the
+  // registration form's page: one visitor, one budget for reading.
+  app.use("/legal/*", rateLimit(rateLimitStore, "registration:page"));
 
   // Public static map PNG for tickets / mail {{event_map_url}} - event-scoped, no token
   // (venue coordinates are intended for attendees). Filename is "{eventId}.png".
@@ -3048,6 +3263,72 @@ export function createApp(options: CreateAppOptions = {}) {
     c.header("X-Content-Type-Options", "nosniff");
     c.header("X-Robots-Tag", "noindex, nofollow");
     return c.body(new Uint8Array(result.png), 200);
+  });
+
+  // The guest registration form of an event (D-C2: the public link, with the Turnstile challenge).
+  // Silent until an event turns registration on: an unknown slug, registration off, an archived
+  // event, a method other than the link (the password and the company sign-in answer the same
+  // 404 until 111 and 118) and an event that is not ready all answer one 404, byte for byte. Its
+  // own budget per visitor (`registration:page`), shared with /legal. POST /r/:slug is 95c.
+  app.get("/r/:slug", rateLimit(rateLimitStore, "registration:page"), (c) =>
+    handleGetRegistrationForm(c, {
+      db,
+      loadTheme: loadOptionalBrandingTheme,
+      serverError: (ctx) => renderPublicHtmlError(ctx, 500),
+    }),
+  );
+  // The same form, sent (95c): the cross-site check, the limiter per IP and the body cap come first, then the route
+  // checks the bot challenge before it writes anything. One answer for every address (D-B14); its order and its
+  // answers are in registration/submit-route.ts. The event is looked up by the rules of the page above, so the
+  // 404 here is the one 404 of the registration routes.
+  app.post(
+    "/r/:slug",
+    ...registrationSubmitGuards(rateLimitStore),
+    (c) =>
+      handlePostRegistration(c, {
+        db,
+        store: rateLimitStore,
+        injectedBaseUrl: mailInjectedBaseUrl,
+        ...options.registrationSubmit,
+      }),
+  );
+
+  // The link in the confirmation mail of a registration (110, D-C5). The token is the credential: one whose signature does
+  // not match is the one 404 before anything is read. GET shows a page with a button and changes nothing (mail scanners
+  // follow links); POST, the button, confirms. Its own budget per visitor (`registration:confirm`). The order and the
+  // answers are in registration/confirm-route.ts.
+  const registrationConfirm: RegistrationConfirmDeps = {
+    db,
+    loadTheme: loadOptionalBrandingTheme,
+    serverError: (ctx) => renderPublicHtmlError(ctx, 500),
+    ...options.registrationConfirm,
+  };
+  app.get("/r/:slug/confirm/:token", rateLimit(rateLimitStore, "registration:confirm"), (c) =>
+    handleGetConfirmation(c, registrationConfirm),
+  );
+  app.post("/r/:slug/confirm/:token", ...registrationConfirmGuards(rateLimitStore), (c) =>
+    handlePostConfirmation(c, registrationConfirm),
+  );
+
+  // A published legal text. Anything else (no such event, no such text, a draft, a ref that is not
+  // one) is the same 404, byte for byte, so the response does not say which events exist or what
+  // they have written. No cookie is read or set; the headers are the ticket page's zero-script ones.
+  app.get("/legal/:eventSlug/:ref", async (c) => {
+    let page;
+    try {
+      page = await loadPublishedLegalPage(db, c.req.param("eventSlug"), c.req.param("ref"));
+    } catch (err) {
+      console.error("loadPublishedLegalPage failed:", { reason: err instanceof Error ? err.name : "unknown" });
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "legal_page_failed",
+        fields: { route: "/legal/:eventSlug/:ref" },
+      });
+      return renderPublicHtmlError(c, 500);
+    }
+    if (!page) return respondRegistrationNotFound(c);
+    return respondLegalPage(c, page, await loadOptionalBrandingTheme());
   });
 
   /**

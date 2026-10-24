@@ -1,4 +1,6 @@
+import type { SystemTemplateName } from "@admitto/mail-templates/systemTemplates";
 import type {
+  AddSuggestedFieldsResponse,
   AttendeeCardDto,
   AttendeeDetailDto,
   AttendeeMailStatusFilter,
@@ -44,6 +46,7 @@ import type {
   OpsConfigDto,
   UpdateOpsConfigPatch,
   EventTemplateDto,
+  EventTemplateSourceDto,
   SaveTemplateBody,
   UpdateTemplateMetadataBody,
   PreviewTemplateResponse,
@@ -87,6 +90,15 @@ import type {
   ExternalServicesConnectionTestResponse,
   SaveWeatherSettingsBody,
   SaveMapsSettingsBody,
+  RegistrationTurnstileDto,
+  SaveRegistrationTurnstileBody,
+  LegalDocumentDto,
+  LegalDocumentsListResponse,
+  LegalDocumentWithContentDto,
+  SaveLegalDocumentBody,
+  RegistrationCountsDto,
+  RegistrationListDto,
+  RegistrationListParams,
   NotificationSettingsResponse,
   SaveNotificationSettingsBody,
   NotificationSettingsTestResponse,
@@ -172,9 +184,9 @@ export type EventFullMeta = {
   capacity: number;
   /** Active attendee count at the time of the capacity check. */
   current: number;
-  /** New rows an import would add (import commit only). */
+  /** The seats the request needs: the new rows an import would add, or the attendee and each companion being restored. */
   incoming?: number;
-  /** Projected total after import (import commit only). */
+  /** The seats in use if the request went through (an import commit, or the restore of an attendee with companions). */
   projected?: number;
 };
 
@@ -696,6 +708,13 @@ export async function createEventCustomField(
   return parseJson<EventCustomFieldDto>(res);
 }
 
+/** Adds the suggested questions (parking, travel, accommodation) that the event does not have yet, all or none: 201 with the keys it
+ * added, or 200 with none when they are all there already. Throws ApiError, 422 `field_limit_reached` when they do not all fit. */
+export async function addSuggestedEventCustomFields(eventId: string): Promise<AddSuggestedFieldsResponse> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/custom-fields/suggested`, jsonPostInit({}));
+  return parseJson<AddSuggestedFieldsResponse>(res);
+}
+
 /** Update a custom field's label/type/required/options. source_field is immutable after create. */
 export async function updateEventCustomField(
   eventId: string,
@@ -707,6 +726,21 @@ export async function updateEventCustomField(
     jsonPatchInit(patch),
   );
   return parseJson<EventCustomFieldDto>(res);
+}
+
+/** Puts an event's custom fields in a new order: `ids` are the ids of ALL the event's fields, each once, in the order
+ * they should appear, and the answer is the fields in that order. Rejected with 409 `stale_write` when the event has
+ * other fields now (one was added or deleted since the list was read): read the list again. */
+export async function reorderEventCustomFields(
+  eventId: string,
+  ids: readonly string[],
+): Promise<EventCustomFieldDto[]> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/custom-fields/order`,
+    jsonPutInit({ ids }),
+  );
+  const data = await parseJson<EventCustomFieldsListResponse>(res);
+  return data.items;
 }
 
 /** How many attendees currently have each option value of a select-type custom field - fetched
@@ -1817,6 +1851,58 @@ export async function testSendEventTemplateById(
   return parseJson<TemplateTestSendResponse>(res);
 }
 
+/** What the editor opens a registration mail with: the event's own text, else the organization's, else the built-in default. */
+export async function fetchEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  signal?: AbortSignal,
+): Promise<EventTemplateSourceDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventTemplateSourceDto>(res);
+}
+
+/** Save the event's own text of a registration mail. The first save of a mail that runs on the default creates its row. */
+export async function saveEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  body: SaveTemplateBody,
+): Promise<MailTemplateDetail> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}`,
+    jsonPutInit(body),
+  );
+  return parseTemplateActionJson<MailTemplateDetail>(res);
+}
+
+/** Render a draft of a registration mail with sample data (no DB write). */
+export async function previewEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  body: SaveTemplateBody,
+): Promise<PreviewTemplateResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}/preview`,
+    jsonPostInit(body),
+  );
+  return parseTemplateActionJson<PreviewTemplateResponse>(res);
+}
+
+/** Send a test mail of a registration mail as the event has it now (its own text, else the default). */
+export async function testSendEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  body: TestSendBody,
+): Promise<TemplateTestSendResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}/test-send`,
+    jsonPostInit(body),
+  );
+  return parseJson<TemplateTestSendResponse>(res);
+}
+
 /** Queue or dry-run a bulk send for selected attendees. */
 export async function sendEventBulk(
   eventId: string,
@@ -2425,6 +2511,89 @@ export async function saveMapsSettings(
   const res = await fetch("/api/admin/external-services/maps", jsonPutInit(body));
   const data = await parseJson<{ maps: ExternalServicesResponse["maps"] }>(res);
   return data.maps;
+}
+
+export async function fetchRegistrationTurnstile(signal?: AbortSignal): Promise<RegistrationTurnstileDto> {
+  const res = await fetch("/api/admin/registration/turnstile", { credentials: "same-origin", signal });
+  return parseJson<RegistrationTurnstileDto>(res);
+}
+
+export async function saveRegistrationTurnstile(body: SaveRegistrationTurnstileBody): Promise<RegistrationTurnstileDto> {
+  const res = await fetch("/api/admin/registration/turnstile", jsonPutInit(body));
+  return parseJson<RegistrationTurnstileDto>(res);
+}
+
+function legalDocumentsUrl(eventId: string, ref?: string): string {
+  const base = `/api/admin/events/${encodeURIComponent(eventId)}/legal-documents`;
+  return ref === undefined ? base : `${base}/${encodeURIComponent(ref)}`;
+}
+
+/** The legal texts of an event, without their HTML, with what registration still lacks and the limits an editor keeps to. */
+export async function fetchLegalDocuments(eventId: string, signal?: AbortSignal): Promise<LegalDocumentsListResponse> {
+  const res = await fetch(legalDocumentsUrl(eventId), { credentials: "same-origin", signal });
+  return parseJson<LegalDocumentsListResponse>(res);
+}
+
+/** One legal text with its cleaned HTML. 404 `not_found` for a text that has not been written. */
+export async function fetchLegalDocument(eventId: string, ref: string, signal?: AbortSignal): Promise<LegalDocumentWithContentDto> {
+  const res = await fetch(legalDocumentsUrl(eventId, ref), { credentials: "same-origin", signal });
+  return parseJson<LegalDocumentWithContentDto>(res);
+}
+
+/** Creates the text or replaces it; its publication is not touched, so a published text changes on its public page at once.
+ * The answer carries the HTML as it was cleaned, which can differ from `content_html`. */
+export async function saveLegalDocument(
+  eventId: string,
+  ref: string,
+  body: SaveLegalDocumentBody,
+): Promise<LegalDocumentWithContentDto> {
+  const res = await fetch(legalDocumentsUrl(eventId, ref), jsonPutInit(body));
+  return parseJson<LegalDocumentWithContentDto>(res);
+}
+
+/** Makes the saved text readable on its public page. Idempotent. */
+export async function publishLegalDocument(eventId: string, ref: string): Promise<LegalDocumentDto> {
+  const res = await fetch(`${legalDocumentsUrl(eventId, ref)}/publish`, jsonPostInit({}));
+  return parseJson<LegalDocumentDto>(res);
+}
+
+/** Takes the text off its public page. Idempotent. 409 `legal_document_in_use` while registration is on and needs it. */
+export async function unpublishLegalDocument(eventId: string, ref: string): Promise<LegalDocumentDto> {
+  const res = await fetch(`${legalDocumentsUrl(eventId, ref)}/unpublish`, jsonPostInit({}));
+  return parseJson<LegalDocumentDto>(res);
+}
+
+/** Deletes the text. 409 `legal_document_in_use` while registration is on and needs it. */
+export async function deleteLegalDocument(eventId: string, ref: string): Promise<void> {
+  const res = await fetch(legalDocumentsUrl(eventId, ref), jsonDeleteInit());
+  await parseJson<{ ok: boolean }>(res);
+}
+
+function registrationsUrl(eventId: string, suffix = ""): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/registrations${suffix}`;
+}
+
+/**
+ * One page of the guest requests of an event, oldest first, with how many match in all. A left-out filter selects every
+ * request. 400 `validation_failed` for a search text the server cannot search for, 403 for someone who does not manage the event.
+ */
+export async function fetchRegistrations(
+  eventId: string,
+  params: RegistrationListParams,
+  signal?: AbortSignal,
+): Promise<RegistrationListDto> {
+  const query = new URLSearchParams({ page: String(params.page), pageSize: String(params.pageSize) });
+  if (params.status) query.set("status", params.status);
+  if (params.olderThan) query.set("older_than", params.olderThan);
+  if (params.q) query.set("q", params.q);
+  const res = await fetch(`${registrationsUrl(eventId)}?${query.toString()}`, { credentials: "same-origin", signal });
+  return parseJson<RegistrationListDto>(res);
+}
+
+/** How many requests an event has in each state, and the registration mode (null while registration is off). */
+export async function fetchRegistrationCounts(eventId: string, signal?: AbortSignal): Promise<RegistrationCountsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/counts"), { credentials: "same-origin", signal });
+  return parseJson<RegistrationCountsDto>(res);
 }
 
 /** Probe weather provider from a draft (no persist). */

@@ -23,6 +23,9 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
   - [Implemented in codebase](#implemented-in-codebase)
   - [SSO and two-factor authentication](#sso-and-two-factor-authentication)
 - [Authorization (RBAC)](#authorization-rbac)
+- [Legal texts of an event](#legal-texts-of-an-event)
+- [Guest registration submit](#guest-registration-submit)
+- [Address confirmation](#address-confirmation)
 - [Optional hardening (customer choice)](#optional-hardening-customer-choice)
 - [Rate limiting](#rate-limiting)
   - [Public and authentication](#public-and-authentication)
@@ -64,7 +67,7 @@ Notes on the rows above:
 
 - **Strong auth.** WebAuthn means FIDO2 passkeys and security keys, for example Face ID, Windows Hello or YubiKey. They are usable for enrollment, sign-in and step-up. An SSO sign-in does not use them: the identity provider decides, see [SSO and two-factor authentication](#sso-and-two-factor-authentication).
 - **Edge access (ZTNA).** For example **Cloudflare Access**. The gateway verifies identity (via the same OIDC provider or its own) and device posture before it proxies the request through. It complements, and does not replace, Admitto's own RBAC.
-- **Browser hardening.** Baseline headers on responses: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, HSTS with `includeSubDomains`, and `X-Robots-Tag: noindex, nofollow`. The staff SPA and the auth pages also get a route-specific Content-Security-Policy, with extra trusted origins configurable by a superadmin (Settings → Security).
+- **Browser hardening.** Baseline headers on responses: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, HSTS with `includeSubDomains`, and `X-Robots-Tag: noindex, nofollow`. The staff SPA and the auth pages also get a route-specific Content-Security-Policy, with extra trusted origins configurable by a superadmin (Settings → Security). The public registration page gets its own policy: scripts only with a per-response nonce (no `unsafe-inline`), `connect-src` and `form-action` limited to the page's own origin, `Referrer-Policy: same-origin`, `Cache-Control: no-store`, and Cloudflare Turnstile allowed in `script-src` and `frame-src` only when the instance has Turnstile keys. That policy ignores the configurable trusted origins, so a superadmin cannot widen the trust of a page that collects personal data. The not-found answer for an unknown link and for a closed event is the same page, with no branding loaded.
 - **API answers are not stored.** Every answer the application sends under `/api/` carries `Cache-Control: no-store`, so browsers and proxies are told not to keep a copy. This matters on shared devices such as check-in tablets. The live check-in stream is the one exception and sends `no-cache`.
 
 ---
@@ -268,6 +271,73 @@ Access checks are enforced on API routes and staff UI entry points.
 
 ---
 
+## Legal texts of an event
+
+An event can carry its own privacy notice, event terms and extra consents. An event admin writes them and anonymous guests read them on public pages, so the whole path treats them as content from a signed-in user that is shown to strangers.
+
+| Control | What it does |
+|---------|--------------|
+| Access | `/api/admin/events/:eventId/legal-documents` needs an admin of the event's organisation or a superadmin, checked on the server. An operator gets 403, and so does an admin of another organisation. Writes are refused for an archived event. |
+| Sanitiser | The HTML is cleaned once, on save, with an allowlist ([`sanitize-legal-html.ts`](../../apps/web/src/legal/sanitize-legal-html.ts), built on `sanitize-html`): paragraphs, headings h2 to h4, bold, italic, lists, quotes, rules and links. There is no `style`, `class`, `id`, event handler, image, table, form or frame. A link must be an absolute http, https or mailto URL without a user name or password; any other link becomes plain text. Only the cleaned HTML is stored and served. Cleaning is repeated until the result stops changing; a text that has not settled after four passes is refused (422 `legal_document_unsupported`). |
+| Page headers | `GET /legal/<event slug>/<text>` has the zero-script headers of the ticket page: `script-src 'none'`, `connect-src 'none'`, `form-action 'none'`, `frame-ancestors 'none'`, `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `noindex`. It reads and sets no cookie. This is the second layer behind the sanitiser. |
+| One 404 | An event that does not exist, a text that does not exist, a draft and a malformed address all get the same 404, byte for byte, as the registration form's not-found page. A draft cannot be previewed at its public address, not even by a signed-in admin. |
+| Limits | A title of up to 200 characters, a text of up to 100 000 characters, a request body of up to 512 KB, and up to 10 extra consents per event. |
+| Audit | Saving, publishing, withdrawing and deleting a text write an entry to the audit log (event, kind and key). The text is never written there. |
+| Reach | A published text is served whatever the event's registration setting is, and for an archived event too, so a guest can read again what they were told and accepted. A draft is never served. |
+| Tabs | When an event has two or more published texts, each page shows tabs to the others (title and link only, read in the same query as the text). A draft and the texts of another event never appear, and a page with a single text has no tabs. |
+| Gate | The registration settings, which come in a later change, must call the gate in the transaction that turns registration on: it answers 409 `legal_documents_missing` until the privacy notice, the terms and every extra consent the event asks for are published. Already today, a text that registration needs cannot be withdrawn or deleted while registration is on (409 `legal_document_in_use`). The gate and the withdrawal take one lock per event, so they cannot interleave. |
+| Rate limit | The pages share the per-IP bucket of the registration form's page (300 / 60 s, see [Public and authentication](#public-and-authentication)). |
+
+A legal text holds no guest data and has no per-guest copy: a registration records only when its terms were accepted, not which text. What the text says about the organisation is what the organisation wrote. It is deleted with its event.
+
+---
+
+## Guest registration submit
+
+`POST /r/:slug` is the one anonymous route that writes a guest's personal data, so everything on it is built to give a stranger nothing and to cost the system little. It is the page's own endpoint, not an API for other programs: the body is the contract in [`form-contract.ts`](../../apps/web/src/registration/form-contract.ts), which can change.
+
+| Control | What it does |
+|---------|--------------|
+| Order of checks | Each step is cheaper than the one after it: the cross-site check, the per-IP limit and the 64 KB cap (before the handler); the content type (415) and the shape of the body (400); the event; the bot challenge; the per-event ceiling; the event once more (the challenge is a call over the network, and the form may have been closed or changed meanwhile: a form that is not open now is the same 404, an event that ended meanwhile included, as the clock is read again there and once more at the write under the locks, and the fields are judged by what it asks now); the fields (422); and only then the database is written. |
+| One 404 | An unknown slug, registration off, an archived event, an event that is over, and a form that is not ready (a legal text not published, no Turnstile keys, another way in) all answer the one 404 of the registration routes, byte for byte, as the form's page does. The route looks the event up with the page's own code, so a request tells a stranger no more than the page does. |
+| Bot challenge | The Turnstile token is checked with Cloudflare on every request, bound to the event and to the instance's host. It works once. A refused token is a 400 with one sentence for every reason; a check that cannot be made is a 503. Nothing is written before it passes. |
+| One answer | A new address, an address with a registration in any state, an attendee's address in any status, and a registration whose mail was withheld all get `200 {"ok":true}` with the same headers and the same bytes. A new submission never changes a registration that exists. |
+| Time floor | Each of those answers waits until 250 ms have passed since the challenge was checked, so the extra work of storing a new registration does not show in the time. So does the answer to two requests for one address that race each other and meet the database's refusal of a second row. The wait holds no database connection. The figure is a first value, to be measured under load in the review of the release. |
+| Fixed sentences | A refused field gets a sentence from a fixed set, chosen by the field and the kind of answer. Nothing a guest typed and no text of an exception is sent back. |
+| Terms and consents | The terms must be accepted (422 under the terms otherwise). The time of the acceptance and of each extra consent that was ticked is stored. Only consents of this event's published texts are accepted; any other key is a 400. |
+| Lock held | An import holds the event's capacity lock while it runs. The route only tries for the lock. After about two seconds it answers `503 {"error":"try_again"}` with `Retry-After: 5` and nothing written, the same for every address. At most three submissions per process try at once, so the connection pool stays free for staff. |
+| Mail budgets | The mail of a new registration is withheld, and the registration is stored, when its address has had 3 mails in 24 h across the instance or when the event has used its budget (see [Public and authentication](#public-and-authentication)). The answer does not change. A spent event budget writes one `registration_mail_withheld` warning an hour per event to the system log, with the event id and nothing else. |
+| Send again | A form sent again for an address whose registration still waits for its confirmation queues the same link once more: the row of the confirmation mail is put back in the queue, so the link is the same and it expires when it did. It happens at most once in 10 minutes for a registration, under the address's budget, the event's budget of mail rows, and the event's budget of resends (the rows do not grow with a resend, so it has a count of its own: the same cap, kept in the rate-limit store). What the second submission typed is not stored. The answer, the headers and the time are those of every other address. |
+| Logs | Nothing that identifies a guest is logged. An unexpected failure logs the class of the error, its database error code and the route name, and the guest gets `500 {"error":"internal_error"}`. |
+
+The answers that do not depend on the address may differ: the form is closed (404) or full (409 `full`), the challenge or a field is refused (400, 422), a limit is spent (429), a lock is held (503). One residual is accepted until the release review measures it: under heavy load the work of a new address can outlast the floor.
+
+---
+
+## Address confirmation
+
+A guest who registers by the public link gets a mail with a link, and the registration waits for the click (24 hours). `GET` and `POST /r/:slug/confirm/:token` are the two routes behind that link. They are anonymous, and the link is the only proof they have, so everything rests on the signature in it.
+
+| Control | What it does |
+|---------|--------------|
+| The link | `/r/<event slug>/confirm/<registration id>.<signature>`. The signature is an HMAC of the registration id, made with the instance key under a prefix of its own, and nothing is stored. It is compared in constant time. The link for a registration is always the same, so a mail that is sent again carries it unchanged. |
+| A bad token | A token that is not shaped like one, or whose signature does not match, answers the one 404 of the registration routes, byte for byte, before anything is read from the database. The same 404 answers an unknown event, registration off and an archived event. A stranger who guesses links learns nothing. |
+| Opening does not confirm | `GET` (and `HEAD`) shows a page with a button and changes nothing. Mail scanners, link previews and prefetching browsers open the links of a message, so opening cannot be what confirms. The page says nothing about the registration, and is the same page for a registration that exists and for one that does not. |
+| The button | `POST` confirms. It is a plain form that posts to the page's own address, with no script on the page. It has the cross-site check, the per-IP limit (`registration:confirm`, shared with the page) and a 1 KB cap on a body that is never read. |
+| What the answer says | The link is the proof of the address, so the answer says where the registration stands: registered, waiting for the organisers, on the waiting list, already confirmed, expired, already registered as an attendee, event full, or try again. It holds no name, address or answer of the guest. A registration that the organisers turned down is told as "already confirmed", as a rejection is not told when the organisers chose not to send the mail. |
+| Expiry | The link works until `confirm_expires_at`, 24 hours after the registration. The service judges it by the clock read after both locks are held, on every try, so a link that runs out while the request waits is expired. A link that ran out and a registration that was deleted answer alike: which it is depends on when the clean-up last ran. |
+| What closes it | Registration off, an archived event or an unknown event: the 404. An event that is over: the closed page. The way in, the bot check keys, the texts and the questions of the form do not close it: a guest who holds a link is not turned away because they changed meanwhile. |
+| Locks | The same as a submission: the capacity lock and the registration queue, taken by trying. A held lock (an import, an erasure) ends the transaction with nothing written and, after about two seconds, answers `503` with `Retry-After: 5` and a page with a button to try again. The link stays valid. |
+| Twice | A second click, or several at once, finds the registration placed and says so: one attendee, one ticket mail, no error. |
+| Erased | An erasure deletes the registration, so its link finds nothing. An erasure that is still running holds the queue, and the confirmation does not go ahead. |
+| Logs | The access log holds `/r/<event slug>/confirm/[redacted]` and a short hash that tells two requests for one link apart from other links. A failure logs the class of the error only. |
+
+Two things are different from the submit route, on purpose. There is no floor of time on the answers: only the holder of a valid link reaches the database, and what they are told is about their own registration. And the form's own conditions do not apply, as the row "What closes it" says.
+
+**What stays outside Admitto.** A reverse proxy or a CDN in front of the app logs the full path, and so holds the link for as long as it keeps its access log. The link is worth 24 hours at most, and only until it is used. Redact the path of `/r/*/confirm/*` in those logs, or keep them short. The mail provider's Sent Items holds the mail with the link, as it holds any other mail.
+
+---
+
 ## Optional hardening (customer choice)
 
 Organizations with stricter policies often add controls **outside** the application:
@@ -303,6 +373,7 @@ Application throttles use a fixed window (default **60 seconds** unless noted).
 
 - `REDIS_URL` (with a password of at least 16 characters) is required outside development and test. The application refuses to boot without it, so limits are shared across replicas and survive restarts.
 - Only development and test runs fall back to an in-memory store per process.
+- If Redis becomes unreachable while running, the store falls back to an in-memory limiter per process and logs a warning. Limits keep being enforced (per process, not shared); no route fails open or closed on this.
 
 **Retuning limits.**
 
@@ -334,12 +405,26 @@ Application throttles use a fixed window (default **60 seconds** unless noted).
 | all `/api/account/*` routes except the notification unread-count poll (see the third note) | client IP | 30 / 60 s | no (checked before the session) |
 | `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
 | `POST /api/wallet/webhook/passcreator/:eventId` (+ `/voided`, `/first-confirmed`) | event; client IP | 120 / 60 s per event; 600 / 60 s per IP | no session (PassCreator signature required) |
+| `GET /r/:slug` (public registration form) | client IP | 300 / 60 s | no |
+| `GET /legal/:eventSlug/:text` (legal text of an event) | client IP, the same bucket as the registration form's page | 300 / 60 s | no |
+| `POST /r/:slug` (registration submit) | client IP; then event, after the bot challenge | 120 / 60 s; 600 / 60 s per event | no |
+| `GET`/`POST /r/:slug/confirm/:token` (address confirmation) | client IP | 120 / 60 s | no |
+| registration password check | client IP | 10 / 15 min | no |
+| registration mail to one address | address (keyed hash), whole instance | 3 / 24 h | no |
+| registration mail of one event | event, counted in the database | 1000 / 24 h, or 3 per seat if that is more | no |
 
 Notes on the rows above:
 
 - **Per-email sign-in limit.** It runs inside the handler. Every attempt is counted before the password is checked, so a correct password is refused too once the budget is spent.
 - **MFA verification.** TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min. At sign-in the account also has one counter per user, across all sessions and addresses.
 - **Account routes.** The notification unread-count poll has its own per-user bucket, 20 / 60 s.
+- **Registration limits.** The `registration:page`, `registration:submit`, `registration:confirm` and `registration:password` policies, and the inline `registration:event`, `registration:mail-recipient` and `registration:mail-event` limits, exist before the routes that use them. `registration:page` is in use on the form's page (`GET /r/:slug`) and on the legal text pages. `POST /r/:slug` uses `registration:submit`, `registration:event`, `registration:mail-recipient` and `registration:mail-event` (see [Guest registration submit](#guest-registration-submit)). `registration:confirm` is used by the two routes of the [address confirmation](#address-confirmation); `registration:password` waits for the route that comes next.
+  - **Per IP, generous on purpose.** The audience is staff of one company, often behind one NAT, so the per-IP numbers are high (compare `/t`, 500 / 60 s) and an IPv6 client is keyed by its /64 network. The bot challenge and the per-address mail limit are the real brakes. Raise or lower them with `RATE_LIMIT_OVERRIDES`, for example `{"registration:submit":{"max":30}}`.
+  - **No slug in any key.** The slug is a caller-chosen path segment, so a bucket per slug would let anyone starve an event and create unbounded keys. The per-event ceiling (`registration:event`) is keyed by event id and is counted only after the bot challenge has passed and the event is found.
+  - **Quiet when exceeded.** Page, submit and confirm do not write an `auth.rate_limit.exceeded` entry, because anyone can trigger them and would flush the 1000-entry system-log buffer. Only the password limit does (scope `registration`), as an attempt to guess the shared event password is worth a trace.
+  - **Mail per address.** Counts only the queueing of a registration mail; the registrant gets the same answer either way. The budget is spent by a mail that is queued, not by a request: an address that has a place already, a full event, a refused form and a request told to try again spend nothing. The address enters the store only as a keyed hash, with a prefix of its own, so it never matches the test-send tag of the same address.
+  - **Mail per event.** `registration:mail-event` is the base of a count of the event's mail rows queued in the last `windowMs` (24 h) for registrations created in that time, made in PostgreSQL under the registration queue, so a restart does not reset it and guests who submit at once cannot get past it. The mail that staff queue by deciding on an older registration is not counted. The cap is the larger of the base and three per seat of the event. A confirmation link sent again adds no row, so the resends of an event are counted apart, with the same cap and window, in the rate-limit store (a restart of a replica resets its share, and with Redis down the limit applies per process). Retune the base with `RATE_LIMIT_OVERRIDES`, for example `{"registration:mail-event":{"max":3000}}`: it moves both.
+  - **Redis unreachable.** The limits keep applying per process and a warning is logged (see **Store: Redis**). They neither fail open nor fail closed. With several app replicas the effective limit is multiplied by their number until Redis is back.
 
 ### Check-in live updates (SSE stream)
 
@@ -381,8 +466,8 @@ Notes on the rows above:
 |---------|--------|----------------|------|
 | `POST …/import/preview` | user + event | 10 / 60 s | event admin |
 | `POST …/import/commit` | user + event | 5 / 60 s | event admin |
-| `POST …/template/preview` | user + event | 20 / 60 s | event admin |
-| `POST …/template/test-send` | user + event | 5 / 60 s burst, 20 / h sustained | event admin |
+| `POST …/template/preview`, `…/templates/:id/preview`, `…/system-templates/:name/preview` | user + event | 20 / 60 s | event admin |
+| `POST …/template/test-send`, `…/templates/:id/test-send`, `…/system-templates/:name/test-send` | user + event | 5 / 60 s burst, 20 / h sustained | event admin |
 | `POST /api/admin/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
 | `POST …/events/:eventId/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | superadmin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | admin (operators search through the check-in lookup) |
@@ -410,9 +495,9 @@ Notes on the rows above:
 - **Bulk wallet actions.** Bulk-erase, bulk-remove and bulk-revoke-pass share this bucket whenever the event has wallet configured. All of them are capped at max 100 attendees per request in that case.
 - **Event-wide wallet jobs.** One background job runs per event at a time, and there is no 100-attendee cap.
 
-**Test mail to one address.** All three test-mail routes above (`template/test-send` and both `mail-settings/test` routes) also share one additional budget on top of their own per-user/event bucket:
+**Test mail to one address.** Every test-mail route above (the three template test sends and both `mail-settings/test` routes) also shares one additional budget on top of its own per-user/event bucket:
 
-- It is **5 / hour per recipient address, instance-wide**. It is not scoped to the calling user, event, or which of the three routes sent it.
+- It is **5 / hour per recipient address, instance-wide**. It is not scoped to the calling user, event, or which of the routes sent it.
 - It bounds how much test mail any single external address can receive, even if a compromised admin session rotates between routes, events, or accounts to work around the per-user/event limits above.
 
 Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not just gated at the HTTP-route layer: see [Outbound HTTP](#outbound-http-ssrf-mitigation) below.
@@ -432,6 +517,9 @@ These are separate from rate limits.
 - **Templates:** template JSON is sized for a body field of at most 200k characters.
 - **Bulk-attendee-id requests** (the mutation and wallet routes above): at most 0.5 MB, with each attendee id itself capped at 128 characters. See `apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and `apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
 - **Pre-authentication routes** (`POST /login`, `/api/auth/login`, `/setup`, `/mfa/verify`, `/api/auth/mfa/verify`): at most 16 KB. The three wallet webhook routes: at most 64 KB (`preAuthBodyLimit`, `walletWebhookBodyLimit`). Where a route has an IP rate limit, it runs before the cap, so oversized requests are counted too.
+- **`POST /r/:slug` (registration submit):** at most 64 KB (`MAX_REGISTRATION_BODY_BYTES`), `413 request too large`. Order: cross-site check, IP limiter, body cap, then the content type (`application/json`, else 415) and parsing, so a chunked body without `Content-Length` is capped too and oversized requests are still counted. The cross-site check only stops browsers posting from another site; the bot challenge and the limits are the defence against scripts.
+- **`POST /r/:slug/confirm/:token` (address confirmation):** at most 1 KB (`MAX_CONFIRM_BODY_BYTES`), `413 request too large`. The body is never read: the form of the page has no field. Order as for the submit: cross-site check, IP limiter, body cap.
+- **`PUT …/legal-documents/:ref` (legal text):** at most 512 KB (`MAX_LEGAL_BODY_BYTES`), `400 request too large`, after the cross-site check and the sign-in. The text itself is limited to 100 000 characters.
 - **Check-in POST routes:** the six routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit).
 - **`POST /api/ops/system-logs`:** at most 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check).
 - The check-in routes and `POST /api/ops/system-logs` both answer `413 request too large`.
@@ -560,6 +648,17 @@ Separately, event-level dedicated mail transport also requires superadmin (match
 - There is no allowlist escape hatch for this destination.
 - The Send test action is rate limited per user.
 
+**Bot challenge destination (registration form).** The Cloudflare Turnstile check of the public registration form (`apps/web/src/registration/bot-challenge.ts`) posts the saved secret key and the guest's token to one fixed address, `https://challenges.cloudflare.com/turnstile/v0/siteverify`.
+
+- The address is a constant. No setting and no request can change it, so there is nothing for an SSRF guard or a DNS pin to protect.
+- A redirect fails the call, so the secret key never follows one to another host.
+- The whole exchange, answer included, gets 5 s, with no retry (a token works once). The answer is read up to 16 KB.
+- The visitor's IP address is not sent. The token and the secret key are never logged, and the check writes no log line of its own.
+- **The check fails closed.** Missing keys, a database that cannot be read, a network error, a timeout, a non-2xx answer, a body that is not the expected JSON, a token solved on another host and a token made for another event each refuse the submission. Only a confirmed pass lets it through. Without both keys, a form that uses a public link or a password is closed, also on `localhost`.
+- **Test keys.** Cloudflare's published test keys cannot open the form. The always-pass secret answers for `example.com` with no event binding, and the check refuses it as a configuration problem (503). A local run needs a real widget that lists `localhost` as a hostname.
+- **Egress.** The `app` container needs outbound HTTPS to `challenges.cloudflare.com`. Where egress is filtered, allow that host, or the form answers 503.
+- The keys are set by a superadmin only (Organisation Settings → External services). The secret key is stored encrypted, shown to no one after saving, and every change is in the audit log with field names only.
+
 **PassCreator call pacing** (not SSRF: availability and abuse hardening). Every outbound call to PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one choke point, `PassCreatorClient.requestRaw`. It paces requests proactively, rather than reacting to a 429 after PassCreator's own limit is already exceeded.
 
 - **Spacing.** At least 150ms between calls, across every caller: single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and webhook resubscribe-on-save.
@@ -578,7 +677,7 @@ Separately, event-level dedicated mail transport also requires superadmin (match
 ## Data protection in operations
 
 - **Ticket / QR payload:** opaque random identifier - no attendee name or email embedded in the QR.
-- **Integration credentials** (mail, OIDC, Wallet/PassCreator): stored encrypted in the application database; key supplied at deploy time via environment variable.
+- **Integration credentials** (mail, OIDC, Wallet/PassCreator, the Turnstile secret key): stored encrypted in the application database; key supplied at deploy time via environment variable.
 - **Logs:**
   - They are intended for operations, not analytics.
   - Attendee-facing data (recipient addresses, import content) and secrets are never logged in full.

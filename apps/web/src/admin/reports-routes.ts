@@ -13,6 +13,7 @@ import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   buildExportColumnLabels,
   countPendingGraceInactivePasses,
+  eventCustomFieldOrderBy,
   loadEventTicketTypes,
   writeBulkActionLog,
   type TicketTypeInfo,
@@ -1458,15 +1459,20 @@ async function loadCustomFieldReportsAggregates(
   const [totalAttendees, customFields] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
     db.eventCustomField.findMany({
-      where: { event_id: eventId },
-      // Same order as the Requirements page's own field list (event-custom-fields-routes.ts).
-      orderBy: [{ created_at: "asc" }, { id: "asc" }],
+      // The attendee's own fields: the answers charted here are Attendee.custom_data, which a question about a
+      // companion never writes to.
+      where: { event_id: eventId, applies_to: "guest" },
+      // Same order as the field list and every other reader (eventCustomFieldOrderBy).
+      orderBy: eventCustomFieldOrderBy(),
     }),
   ]);
 
   const fields = await Promise.all(
     customFields.map(async (field) => {
-      const type = field.type as EventCustomFieldReportsResponse["fields"][number]["type"];
+      // The chart kind, not the field's own type: every free-input type (text, long text, date, date and
+      // time, phone) is charted as `text`, by how many attendees answered it.
+      const type: EventCustomFieldReportsResponse["fields"][number]["type"] =
+        field.type === "select" || field.type === "boolean" ? field.type : "text";
       if (type === "text") {
         const answered = await countAttendeesWithCustomFieldAnswered(db, eventId, field.source_field);
         return {
@@ -3012,9 +3018,10 @@ async function exportCustomFieldReportsCsv(
       select: CUSTOM_FIELDS_EXPORT_ATTENDEE_SELECT,
     }),
     loadEventTicketTypes(db, eventId),
+    // The attendee's own fields, like the report above: their answers are the columns of this file.
     db.eventCustomField.findMany({
-      where: { event_id: eventId },
-      orderBy: [{ created_at: "asc" }, { id: "asc" }],
+      where: { event_id: eventId, applies_to: "guest" },
+      orderBy: eventCustomFieldOrderBy(),
     }),
   ]);
 

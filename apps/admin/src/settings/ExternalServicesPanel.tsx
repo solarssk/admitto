@@ -17,23 +17,38 @@ import {
 } from "@admitto/ui";
 import {
   fetchExternalServices,
+  fetchRegistrationTurnstile,
   saveMapsSettings,
+  saveRegistrationTurnstile,
   saveWeatherSettings,
   testWeatherConnection,
   testMapsConnection,
 } from "../api/client.js";
-import type { ExternalServicesResponse, WeatherProviderId } from "../api/types.js";
+import type {
+  ExternalServicesResponse,
+  RegistrationTurnstileDto,
+  WeatherProviderId,
+} from "../api/types.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { NO_AUTOFILL_PROPS, SettingsFooter } from "./mailTransportFormParts.js";
 import { PanelLoadError } from "./PanelLoadError.js";
+import { RegistrationTurnstileCard } from "./RegistrationTurnstileCard.js";
+import {
+  buildTurnstileSaveBody,
+  turnstileDirty,
+  turnstileDraftFrom,
+  turnstileValidationErrors,
+  type TurnstileDraft,
+} from "./registrationTurnstile.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 
-/** The cards of the panel, for its placeholder: Weather and Maps, each with an intro and fields. */
+/** The cards of the panel, for its placeholder: Weather, Maps and Guest registration, each with an intro and fields. */
 const EXTERNAL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "weather", title: "Weather", intro: true, fields: 1, rows: 1, rowHeight: 24 },
   { id: "maps", title: "Maps", intro: true, fields: 4, controlHeight: 62 },
+  { id: "registration", title: "Guest registration", intro: true, fields: 2, columns: 2, controlHeight: 82, rows: 1, rowHeight: 36 },
 ];
 
 const WEATHER_CARD_HINT =
@@ -159,6 +174,16 @@ function mapsDirty(draft: MapsDraft, saved: MapsDraft): boolean {
   );
 }
 
+/** True when any of the three cards differs from what was last saved or loaded. */
+function externalServicesDirty(
+  drafts: { weather: WeatherDraft | null; maps: MapsDraft | null; turnstile: TurnstileDraft | null },
+  saved: { weather: WeatherDraft | null; maps: MapsDraft | null; turnstile: TurnstileDraft | null },
+): boolean {
+  if (!drafts.weather || !saved.weather || !drafts.maps || !saved.maps) return false;
+  if (weatherDirty(drafts.weather, saved.weather) || mapsDirty(drafts.maps, saved.maps)) return true;
+  return drafts.turnstile !== null && saved.turnstile !== null && turnstileDirty(drafts.turnstile, saved.turnstile);
+}
+
 function apiKeyPlaceholder(required: boolean, configured: boolean): string {
   if (configured) return "••••••••";
   return required ? "Required" : "Optional";
@@ -237,14 +262,17 @@ function buildWeatherSaveBody(draft: WeatherDraft): {
 
 type SettledSave = PromiseSettledResult<ExternalServicesResponse["weather"] | null>;
 type SettledMapsSave = PromiseSettledResult<ExternalServicesResponse["maps"] | null>;
+type SettledTurnstileSave = PromiseSettledResult<RegistrationTurnstileDto | null>;
 
 function toastExternalServicesSaveResult(
   addToast: (message: string, variant: "success" | "error" | "info") => void,
   opts: {
     saveWeather: boolean;
     saveMaps: boolean;
+    saveTurnstile: boolean;
     weatherResult: SettledSave;
     mapsResult: SettledMapsSave;
+    turnstileResult: SettledTurnstileSave;
   },
 ): void {
   const failures: string[] = [];
@@ -256,6 +284,11 @@ function toastExternalServicesSaveResult(
   if (opts.saveMaps && opts.mapsResult.status === "rejected") {
     failures.push(
       operatorApiErrorMessage(opts.mapsResult.reason, "Failed to save maps settings."),
+    );
+  }
+  if (opts.saveTurnstile && opts.turnstileResult.status === "rejected") {
+    failures.push(
+      operatorApiErrorMessage(opts.turnstileResult.reason, "Failed to save guest registration settings."),
     );
   }
   if (failures.length === 0) {
@@ -289,33 +322,49 @@ export function ExternalServicesPanel() {
   const [mapsDraft, setMapsDraft] = useState<MapsDraft | null>(null);
   const weatherSavedRef = useRef<WeatherDraft | null>(null);
   const mapsSavedRef = useRef<MapsDraft | null>(null);
+  const [turnstile, setTurnstile] = useState<RegistrationTurnstileDto | null>(null);
+  const [turnstileDraft, setTurnstileDraft] = useState<TurnstileDraft | null>(null);
+  const turnstileSavedRef = useRef<TurnstileDraft | null>(null);
   const [weatherTesting, setWeatherTesting] = useState(false);
   const [mapsTesting, setMapsTesting] = useState(false);
 
   const panel = usePanelLoad({
-    fetch: fetchExternalServices,
-    apply: (res) => {
-      setData(res);
-      const w = weatherDraftFrom(res.weather);
-      const m = mapsDraftFrom(res.maps);
+    fetch: async (signal) => {
+      const [services, registration] = await Promise.all([
+        fetchExternalServices(signal),
+        fetchRegistrationTurnstile(signal),
+      ]);
+      return { services, registration };
+    },
+    apply: ({ services, registration }) => {
+      setData(services);
+      const w = weatherDraftFrom(services.weather);
+      const m = mapsDraftFrom(services.maps);
+      const t = turnstileDraftFrom(registration);
       setWeatherDraft(w);
       setMapsDraft(m);
+      setTurnstile(registration);
+      setTurnstileDraft(t);
       weatherSavedRef.current = w;
       mapsSavedRef.current = m;
+      turnstileSavedRef.current = t;
       setValidationErrors([]);
     },
     fallback: "Could not load external services.",
   });
 
-  const hasUnsavedChanges = useMemo(() => {
-    if (!weatherDraft || !mapsDraft || !weatherSavedRef.current || !mapsSavedRef.current) {
-      return false;
-    }
-    return (
-      weatherDirty(weatherDraft, weatherSavedRef.current) ||
-      mapsDirty(mapsDraft, mapsSavedRef.current)
-    );
-  }, [weatherDraft, mapsDraft]);
+  const hasUnsavedChanges = useMemo(
+    () =>
+      externalServicesDirty(
+        { weather: weatherDraft, maps: mapsDraft, turnstile: turnstileDraft },
+        {
+          weather: weatherSavedRef.current,
+          maps: mapsSavedRef.current,
+          turnstile: turnstileSavedRef.current,
+        },
+      ),
+    [weatherDraft, mapsDraft, turnstileDraft],
+  );
 
   const showOpenMeteoFields = weatherDraft?.provider === "openmeteo";
   const apiKeyRequired = Boolean(
@@ -359,15 +408,17 @@ export function ExternalServicesPanel() {
     );
   }
 
-  if (!data || !weatherDraft || !mapsDraft) return null;
+  if (!data || !weatherDraft || !mapsDraft || !turnstile || !turnstileDraft) return null;
 
   // Narrowed locals: nested handlers do not keep the null-check narrowing on state.
   const weather = weatherDraft;
   const maps = mapsDraft;
+  const registration = turnstileDraft;
 
   function handleReset() {
     setWeatherDraft({ ...weatherSavedRef.current! });
     setMapsDraft({ ...mapsSavedRef.current! });
+    setTurnstileDraft({ ...turnstileSavedRef.current! });
     setValidationErrors([]);
   }
 
@@ -427,12 +478,17 @@ export function ExternalServicesPanel() {
     const savedMaps = mapsSavedRef.current!;
     const saveWeather = weatherDirty(weather, savedWeather);
     const saveMaps = mapsDirty(maps, savedMaps);
-    const errors = collectSaveValidationErrors({
-      apiKeyMissing,
-      saveWeather,
-      saveMaps,
-      mapsDraft: maps,
-    });
+    const turnstileBody = buildTurnstileSaveBody(registration, turnstileSavedRef.current!);
+    const saveTurnstile = turnstileBody !== null;
+    const errors = [
+      ...collectSaveValidationErrors({
+        apiKeyMissing,
+        saveWeather,
+        saveMaps,
+        mapsDraft: maps,
+      }),
+      ...turnstileValidationErrors(registration),
+    ];
     if (errors.length > 0) {
       setValidationErrors(errors);
       return;
@@ -452,9 +508,10 @@ export function ExternalServicesPanel() {
         geocodingBaseUrl: maps.geocodingBaseUrl.trim(),
       };
 
-      const [weatherResult, mapsResult] = await Promise.allSettled([
+      const [weatherResult, mapsResult, turnstileResult] = await Promise.allSettled([
         saveWeather ? saveWeatherSettings(weatherBody) : Promise.resolve(null),
         saveMaps ? saveMapsSettings(mapsBody) : Promise.resolve(null),
+        saveTurnstile ? saveRegistrationTurnstile(turnstileBody) : Promise.resolve(null),
       ]);
 
       if (weatherResult.status === "fulfilled" && weatherResult.value) {
@@ -469,12 +526,20 @@ export function ExternalServicesPanel() {
         setMapsDraft(m);
         mapsSavedRef.current = m;
       }
+      if (turnstileResult.status === "fulfilled" && turnstileResult.value) {
+        const t = turnstileDraftFrom(turnstileResult.value);
+        setTurnstile(turnstileResult.value);
+        setTurnstileDraft(t);
+        turnstileSavedRef.current = t;
+      }
 
       toastExternalServicesSaveResult(addToast, {
         saveWeather,
         saveMaps,
+        saveTurnstile,
         weatherResult,
         mapsResult,
+        turnstileResult,
       });
     } finally {
       setSaving(false);
@@ -751,6 +816,8 @@ export function ExternalServicesPanel() {
           </div>
         </div>
       </Card>
+
+      <RegistrationTurnstileCard dto={turnstile} draft={registration} onChange={setTurnstileDraft} />
 
       <SettingsFooter
         validationErrors={validationErrors}

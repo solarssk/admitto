@@ -554,9 +554,22 @@ describe("template previews on archived events", () => {
     expect(body.subject).toBe("Reminder for Archiving Event");
   });
 
+  it("renders POST /system-templates/:name/preview", async () => {
+    await archive();
+    const res = await postJson("/system-templates/registration-confirm/preview", "POST", {
+      subject_template: "Confirm {{event_name}}",
+      body_template: '<p><a href="{{confirm_url}}">Confirm</a></p>',
+      template_format: "html",
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string; html: string };
+    expect(body.subject).toBe("Confirm Archiving Event");
+    expect(body.html).toContain("/confirm/");
+  });
+
   it("still refuses a preview from an admin of another organisation (the handlers now do the access check alone)", async () => {
     // EVENT_OTHER is archived and belongs to ORG_OTHER, which adminCookie has no role in.
-    for (const path of ["/template/preview", "/templates/any-template/preview"]) {
+    for (const path of ["/template/preview", "/templates/any-template/preview", "/system-templates/registration-confirm/preview"]) {
       const res = await app.request(`/api/admin/events/${EVENT_OTHER}${path}`, {
         method: "POST",
         headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -576,6 +589,8 @@ describe("template previews on archived events", () => {
       ["/template/test-send", "POST"],
       ["/templates/any-template", "PUT"],
       ["/templates/any-template/test-send", "POST"],
+      ["/system-templates/registration-confirm", "PUT"],
+      ["/system-templates/registration-confirm/test-send", "POST"],
       ["/send", "POST"],
     ];
     for (const [path, method] of blocked) {

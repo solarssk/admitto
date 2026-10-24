@@ -1,6 +1,9 @@
+import { isDateAnswer, isDateTimeAnswer, isQuestionShown } from "@admitto/shared";
 import { filterCustomDataAttributeFields } from "@admitto/tickets/custom-data-reserved";
 import { fetchEventCustomFields } from "../api/client.js";
 import type { EventCustomFieldDto } from "../api/types.js";
+import { formatIsoCalendarDate, formatWallClockDateTime } from "../utils/event-dates.js";
+import { answerExpectation, answerProblem } from "./answerFormat.js";
 
 /** The registry row shape is exactly what attendee forms need - no separate flatten/merge step. */
 export type CustomDataFieldDef = EventCustomFieldDto;
@@ -33,6 +36,27 @@ export function initialCustomFieldValues(fields: CustomDataFieldDef[]): Record<s
   return Object.fromEntries(fields.map((field) => [field.source_field, ""]));
 }
 
+/** The fields an attendee form draws for the answers it holds, in the order it draws them. A question is drawn only when it is asked
+ * (`isQuestionShown` of `@admitto/shared`, the one place that decides: the registration form, the server and these forms all call it),
+ * and a question that is shown for an answer to another is drawn right after that other one, so that the answer that makes it appear
+ * never moves. A question that is not asked is hidden: it is not required and not sent, and what is saved for it stays as it is. */
+export function shownCustomFields(fields: readonly CustomDataFieldDef[], answers: Record<string, string>): CustomDataFieldDef[] {
+  const conditionOf = (field: CustomDataFieldDef) => field.rules?.show_when?.field;
+  const shown: CustomDataFieldDef[] = [];
+  const place = (field: CustomDataFieldDef) => {
+    if (isQuestionShown(field, answers)) shown.push(field);
+    for (const other of fields) {
+      if (conditionOf(other) === field.source_field && other !== field) place(other);
+    }
+  };
+  for (const field of fields) {
+    // A question with a condition is placed after the question it depends on, unless the form has no such question.
+    const controller = conditionOf(field);
+    if (controller === undefined || !fields.some((other) => other.source_field === controller)) place(field);
+  }
+  return shown;
+}
+
 /** Client-side validation before save/create; returns user-facing message or null. */
 function isAcceptedBooleanValue(value: string): boolean {
   const lower = value.trim().toLowerCase();
@@ -46,31 +70,56 @@ function isAcceptedBooleanValue(value: string): boolean {
   );
 }
 
+/** What is wrong with `trimmed` as an answer to a single choice or a yes or no field, or null (also for any other type). */
+function choiceProblem(field: CustomDataFieldDef, trimmed: string): string | null {
+  const type = field.type ?? "text";
+  const options = field.options ?? [];
+  if (type === "select" && !options.includes(trimmed)) {
+    return `${field.label} must be one of: ${options.join(", ")}.`;
+  }
+  if (type === "boolean" && !isAcceptedBooleanValue(trimmed)) {
+    return `${field.label} must be Yes or No.`;
+  }
+  return null;
+}
+
 export function validateCustomFieldsForm(
   fields: CustomDataFieldDef[],
   values: Record<string, string>,
 ): string | null {
   for (const field of fields) {
+    // A question that is not asked is not required, and what is typed for it is not sent, so it is not judged either.
+    if (!isQuestionShown(field, values)) continue;
     const raw = values[field.source_field] ?? "";
     const trimmed = raw.trim();
-    const type = field.type ?? "text";
 
     if (field.required && !trimmed) {
       return `${field.label} is required.`;
     }
     if (!trimmed) continue;
 
-    if (type === "select") {
-      const options = field.options ?? [];
-      if (!options.includes(trimmed)) {
-        return `${field.label} must be one of: ${options.join(", ")}.`;
-      }
-    }
-    if (type === "boolean" && !isAcceptedBooleanValue(trimmed)) {
-      return `${field.label} must be Yes or No.`;
-    }
+    const problem = choiceProblem(field, trimmed) ?? answerProblem(field, trimmed);
+    if (problem) return problem;
   }
   return null;
+}
+
+/** What to say about a field whose answer the server refused, in the words of the field. */
+function refusedAnswerMessage(field: CustomDataFieldDef): string {
+  const type = field.type ?? "text";
+  if (type === "select") {
+    return `${field.label} must be one of: ${(field.options ?? []).join(", ")}.`;
+  }
+  if (type === "boolean") {
+    return `${field.label} must be Yes or No.`;
+  }
+  // A phone number can be refused though it looks right: one saved before the field became a phone field is not in the form
+  // the server keeps (a + and the digits), and the attendee cannot be edited until it is typed again.
+  if (type === "phone") {
+    return `${field.label} could not be saved as a phone number. Type the number again.`;
+  }
+  const expectation = answerExpectation(field);
+  return expectation ? `${field.label} must be ${expectation}.` : `${field.label} has an invalid value.`;
 }
 
 /** Custom-data validation error codes the server can send on a 400, all of which carry the field
@@ -101,29 +150,48 @@ export function customDataApiErrorMessage(
   if (err.code === "required_custom_data_field_missing") {
     return `${field.label} is required.`;
   }
-  const type = field.type ?? "text";
-  if (type === "select") {
-    return `${field.label} must be one of: ${(field.options ?? []).join(", ")}.`;
-  }
-  if (type === "boolean") {
-    return `${field.label} must be Yes or No.`;
-  }
-  return `${field.label} has an invalid value.`;
+  return refusedAnswerMessage(field);
 }
 
 const TRUTHY_BOOLEAN_ALIASES = new Set(["true", "yes", "1"]);
 const FALSY_BOOLEAN_ALIASES = new Set(["false", "no", "0"]);
 
-/** Display value for a custom_data entry - a `boolean`-type field is stored as the raw string its
- * Select writes ("true"/"false", see CustomDataFieldInput), or possibly "yes"/"no"/"1"/"0" from a
- * CSV import that never went through that control (same aliases validateCustomFieldsForm already
- * accepts). Read-only display shows "Yes"/"No" either way, not the raw stored string. */
-function formatCustomDataValue(value: string, type: CustomDataFieldDef["type"] | undefined): string {
-  if (type !== "boolean") return value;
+function formatBooleanValue(value: string): string {
   const lower = value.trim().toLowerCase();
   if (TRUTHY_BOOLEAN_ALIASES.has(lower)) return "Yes";
   if (FALSY_BOOLEAN_ALIASES.has(lower)) return "No";
   return value;
+}
+
+/** Display value for a custom_data entry - a `boolean`-type field is stored as the raw string its
+ * Select writes ("true"/"false", see CustomDataFieldInput), or possibly "yes"/"no"/"1"/"0" from a
+ * CSV import that never went through that control (same aliases validateCustomFieldsForm already
+ * accepts). Read-only display shows "Yes"/"No" either way, not the raw stored string. A date is
+ * shown in the account's date format; a date and time is the time on the clock at the event, shown
+ * as it is stored with the event's zone named, so every viewer reads the same text. A value that
+ * is not in its type's form (the field was retyped after it was answered) is shown as stored. */
+function formatCustomDataValue(
+  value: string,
+  type: CustomDataFieldDef["type"] | undefined,
+  eventTimeZone: string | undefined,
+): string {
+  switch (type) {
+    case "boolean":
+      return formatBooleanValue(value);
+    case "date":
+      return isDateAnswer(value) ? formatIsoCalendarDate(value) : value;
+    case "datetime":
+      return isDateTimeAnswer(value) ? formatWallClockDateTime(value, eventTimeZone) : value;
+    default:
+      return value;
+  }
+}
+
+const LONG_ANSWER_CHARS = 60;
+
+/** True for an answer that is long enough, or has line breaks, to read better under its label than beside it. */
+export function isLongAnswer(value: string): boolean {
+  return value.length > LONG_ANSWER_CHARS || value.includes("\n");
 }
 
 /** Every custom_data entry, labeled - a configured attribute field gets its registry label,
@@ -137,6 +205,7 @@ export function allCustomDataEntries(
   customData: unknown,
   attributeFields: CustomDataFieldDef[],
   humanizeKey: (key: string) => string,
+  eventTimeZone?: string,
 ): Array<[string, string, string]> {
   if (!customData || typeof customData !== "object" || Array.isArray(customData)) return [];
   const fieldsByKey = new Map(attributeFields.map((f) => [f.source_field, f]));
@@ -147,7 +216,7 @@ export function allCustomDataEntries(
     )
     .map(([key, value]) => {
       const field = fieldsByKey.get(key);
-      return [key, field?.label ?? humanizeKey(key), formatCustomDataValue(value, field?.type)];
+      return [key, field?.label ?? humanizeKey(key), formatCustomDataValue(value, field?.type, eventTimeZone)];
     });
 }
 

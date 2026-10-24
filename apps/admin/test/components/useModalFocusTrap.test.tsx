@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useModalFocusTrap } from "../../src/components/useModalFocusTrap.js";
-import { useDropdownMenu } from "../../src/components/useDropdownMenu.js";
+import { isAnyDropdownMenuOpen, useDropdownMenu, usePopoverEscape } from "../../src/components/useDropdownMenu.js";
 import { useRef, useState } from "react";
 
 function makePanel(): HTMLDivElement {
@@ -137,6 +137,142 @@ describe("useModalFocusTrap", () => {
     // With no picker open, Escape reaches the modal trap normally again.
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useModalFocusTrap with another trap opened over it", () => {
+  /** A dialog (the outer trap) that opens a calendar-like panel (the inner trap) over itself, as a date picker does in a dialog. */
+  function DialogWithTrappedPanel({ onCancel, onClosePanel }: { onCancel: () => void; onClosePanel: () => void }) {
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+    const [open, setOpen] = useState(false);
+    useModalFocusTrap(dialogRef, true, onCancel);
+    useModalFocusTrap(panelRef, open, () => {
+      onClosePanel();
+      setOpen(false);
+    });
+    return (
+      <div ref={dialogRef}>
+        <button onClick={() => setOpen(true)}>Open panel</button>
+        {open && (
+          <div ref={panelRef} data-testid="panel">
+            <button>Day</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  it("gives Escape to the trap that opened last, and leaves the one under it open", () => {
+    const onCancel = vi.fn();
+    const onClosePanel = vi.fn();
+    render(<DialogWithTrappedPanel onCancel={onCancel} onClosePanel={onClosePanel} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open panel" }));
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onClosePanel).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("panel")).toBeNull();
+  });
+
+  it("gives Escape back to the trap under it once the one over it has closed", () => {
+    const onCancel = vi.fn();
+    render(<DialogWithTrappedPanel onCancel={onCancel} onClosePanel={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open panel" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("still handles Escape in the trap that is alone, as many times as it is pressed", () => {
+    const panel = makePanel();
+    const onCancel = vi.fn();
+    renderHook(() => useModalFocusTrap({ current: panel }, true, onCancel));
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it("forgets a trap that closed or went away, so that the one that is left gets Escape", () => {
+    const outer = makePanel();
+    const inner = makePanel();
+    const onCancelOuter = vi.fn();
+    const onCancelInner = vi.fn();
+    renderHook(() => useModalFocusTrap({ current: outer }, true, onCancelOuter));
+    const innerHook = renderHook(() => useModalFocusTrap({ current: inner }, true, onCancelInner));
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancelInner).toHaveBeenCalledTimes(1);
+    expect(onCancelOuter).not.toHaveBeenCalled();
+
+    innerHook.unmount();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancelOuter).toHaveBeenCalledTimes(1);
+    expect(onCancelInner).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("usePopoverEscape", () => {
+  function DialogWithPopover({ onCancel, onEscape }: { onCancel: () => void; onEscape: () => void }) {
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const [open, setOpen] = useState(false);
+    useModalFocusTrap(dialogRef, true, onCancel);
+    usePopoverEscape(open, () => {
+      onEscape();
+      setOpen(false);
+    });
+    return (
+      <div ref={dialogRef}>
+        <button onClick={() => setOpen(true)}>Open popover</button>
+        {open && <div data-testid="popover">Popover</div>}
+      </div>
+    );
+  }
+
+  it("takes Escape from the dialog it sits in while it is open, and closes itself", () => {
+    const onCancel = vi.fn();
+    const onEscape = vi.fn();
+    render(<DialogWithPopover onCancel={onCancel} onEscape={onEscape} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open popover" }));
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onEscape).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("popover")).toBeNull();
+
+    // Closed, it no longer counts: the next Escape is the dialog's.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onEscape).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing while it is closed, and for any other key", () => {
+    const onEscape = vi.fn();
+    const onCancel = vi.fn();
+    render(<DialogWithPopover onCancel={onCancel} onEscape={onEscape} />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onEscape).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open popover" }));
+    fireEvent.keyDown(document, { key: "Enter" });
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(onEscape).not.toHaveBeenCalled();
+    expect(screen.getByTestId("popover")).toBeTruthy();
+  });
+
+  it("stops counting as an open dropdown when it goes away without being closed", () => {
+    const hook = renderHook(({ open }) => usePopoverEscape(open, vi.fn()), { initialProps: { open: true } });
+    expect(isAnyDropdownMenuOpen()).toBe(true);
+    hook.unmount();
+    expect(isAnyDropdownMenuOpen()).toBe(false);
   });
 });
 

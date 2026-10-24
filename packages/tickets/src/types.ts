@@ -1,3 +1,5 @@
+import type { EventCustomFieldRules, EventCustomFieldType } from "@admitto/shared";
+
 export type TicketMode = "internal" | "agency";
 
 export type ResolveTicketContext = {
@@ -60,9 +62,12 @@ export type CheckInScanParams = {
 export type EventItemContent = {
   label: string;
   source_field: string;
-  type?: "text" | "select" | "boolean";
+  type?: EventCustomFieldType;
   required?: boolean;
   options?: string[];
+  /** The rules of the field (`EventCustomField.rules`); absent = none: format rules for a `text`, `long_text` or
+   * `phone` field, and the icon, condition (`show_when`) and suggestions of the registration form. */
+  rules?: EventCustomFieldRules;
 };
 
 /** Per-item JSON config: operator hints and issuance behaviour flags (ADR 0025).

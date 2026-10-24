@@ -11,10 +11,24 @@ export {
 } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
 export { isAttendeeGone, lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "./attendee-lock.js";
+export {
+  MAX_COMPANION_SLOTS,
+  readRegistrationCompanions,
+  removeAttendeeCompanion,
+  writeAttendeeCompanion,
+} from "./attendee-companion.js";
+export type {
+  AttendeeCompanionRemoveResult,
+  AttendeeCompanionTarget,
+  AttendeeCompanionWriteResult,
+  RegistrationCompanion,
+  WriteAttendeeCompanionParams,
+} from "./attendee-companion.js";
 export { attendeeIsLive, keepLiveRows } from "./lock-check.js";
 export type { LockedAttendee } from "./attendee-lock.js";
 export {
   ERASED_ATTENDEE_NAME,
+  ERASED_COMPANION_NAME,
   ERASED_EMAIL_DOMAIN,
   ERASE_TRANSACTION_TIMEOUT_MS,
   erasedAttendeeEmail,
@@ -33,6 +47,8 @@ export {
   stopOpenAttendeeJobs,
 } from "./stop-open-jobs.js";
 export { removeAttendees } from "./remove-attendees.js";
+export { lockRegistrationQueue, lockRegistrationsForUpdate, tryLockRegistrationQueue } from "./registration-lock.js";
+export type { LockedRegistration } from "./registration-lock.js";
 export type {
   RemoveAttendeesParams,
   RemoveAttendeesResult,
@@ -98,7 +114,9 @@ export {
 } from "./wallet-custom-fields.js";
 export { buildItemDetail } from "./event-item-contents.js";
 export {
+  eventCustomFieldOrderBy,
   loadEventCustomDataFields,
+  loadRegistrantFormFields,
   validateContentFieldReferences,
   UnknownContentFieldError,
   findConflictingContentField,
@@ -107,10 +125,66 @@ export {
 } from "./event-custom-fields.js";
 export {
   buildCustomDataFromInput,
+  keepShownAnswers,
   normalizeCustomDataFieldValue,
   validateCustomDataPatch,
   assertCustomDataMeetsRequirements,
 } from "./validate-custom-data.js";
+export {
+  eventCustomFieldRulesFitType,
+  eventCustomFieldRulesSchema,
+  hasNoRules,
+  readStoredFieldRules,
+} from "./custom-field-rules.js";
+// The checks of conditions between fields live in @admitto/shared, so that the admin app's field editor asks the very same ones.
+export { controlsOtherFields, findShowWhenProblem } from "@admitto/shared";
+export type { ConditionField, ShowWhenProblem } from "@admitto/shared";
+export {
+  MAX_CUSTOM_FIELDS_PER_EVENT,
+  REGISTRANT_EMAIL_MAX,
+  REGISTRANT_LONG_TEXT_MAX,
+  REGISTRANT_NAME_MAX,
+  REGISTRANT_TEXT_MAX,
+  RegistrantInputError,
+  buildRegistrantCustomData,
+  normalizeRegistrantLongText,
+  normalizeRegistrantText,
+  pickRegistrantFormFields,
+  pickRegistrantProfileFields,
+  registrantEmailSchema,
+  registrantNameSchema,
+  registrantRawLimit,
+  registrantTextSchema,
+} from "./registrant-input.js";
+export type { RegistrantFormField, RegistrantProfileFields } from "./registrant-input.js";
+export {
+  MAX_REGISTRATION_BULK_IDS,
+  REGISTRATION_AGE_FILTERS,
+  REGISTRATION_SEARCH_MAX_LENGTH,
+  REGISTRATION_SEARCH_MAX_WORDS,
+  canRetryRegistrationMail,
+  isRegistrationAgeFilter,
+  isRegistrationStatus,
+  parseRegistrationFilter,
+  parseRegistrationSearch,
+  registrationAgeCutoff,
+  registrationListWhere,
+} from "./registration-list.js";
+export type {
+  RegistrationAgeFilter,
+  RegistrationFilterField,
+  RegistrationFilterInput,
+  RegistrationFilterResult,
+  RegistrationListFilter,
+} from "./registration-list.js";
+export { isEmptyRegistrationFilter, registrationSelectionDigest } from "./registration-selection.js";
+export { deleteRegistrations } from "./registration-deletion.js";
+export type {
+  DeleteRegistrationsParams,
+  DeleteRegistrationsResult,
+  DeleteRegistrationsTarget,
+  DeletedRegistration,
+} from "./registration-deletion.js";
 export {
   RESERVED_CUSTOM_DATA_SOURCE_FIELDS,
   isReservedCustomDataSourceField,
@@ -261,4 +335,64 @@ export type {
 } from "./types.js";
 export type { EventOpsConfig } from "./ops-config.js";
 
-export { acquireEventCapacityLock, eventCapacityLockKey, EVENT_CAPACITY_TRANSACTION_OPTIONS, runEventCapacityTransaction } from "./event-capacity.js";
+export {
+  acquireEventCapacityLock,
+  eventCapacityLockKey,
+  EVENT_CAPACITY_TRANSACTION_OPTIONS,
+  EventLockBusyError,
+  runEventCapacityTransaction,
+  tryAcquireEventCapacityLock,
+} from "./event-capacity.js";
+export type { EventCapacityTransactionOptions } from "./event-capacity.js";
+export { runPublicWrite } from "./public-write-gate.js";
+export type { PublicWriteOptions, PublicWriteResult } from "./public-write-gate.js";
+export {
+  enqueueRegistrationMail,
+  enqueueRegistrationMails,
+  registrationMailFor,
+  registrationMailMisfit,
+} from "./registration-mail-queue.js";
+export type { RegistrationMailEntry, RegistrationMailMisfit, RegistrationMailMoment } from "./registration-mail-queue.js";
+export { seatsNeeded } from "./registration-seats.js";
+export type { PlacedStatus } from "./registration-seats.js";
+export { createAttendeeFromRegistration } from "./registration-attendee.js";
+export type { RegistrationAttendeeSource } from "./registration-attendee.js";
+export {
+  EVENT_MAIL_CAP_PER_SEAT,
+  REGISTRATION_CONFIRM_WINDOW_MS,
+  confirmRegistrationAddress,
+  eventMailCap,
+  placeRegistration,
+} from "./registration-placement.js";
+export type {
+  ConfirmRegistrationInput,
+  ConfirmRegistrationResult,
+  PlaceRegistrationInput,
+  PlaceRegistrationResult,
+  PlacementOptions,
+  RegistrantSubmission,
+  SubmissionMailLimits,
+} from "./registration-placement.js";
+export { admitRegistrations, rejectRegistrations } from "./registration-decisions.js";
+export type {
+  AdmitOutcome,
+  AdmitRegistrationsParams,
+  AdmitRegistrationsResult,
+  RejectOutcome,
+  RejectRegistrationsParams,
+  RejectRegistrationsResult,
+  StaffActor,
+} from "./registration-decisions.js";
+export { retryRegistrationMails } from "./registration-mail-retry.js";
+export type {
+  RetryMailOutcome,
+  RetryRegistrationMailsParams,
+  RetryRegistrationMailsResult,
+} from "./registration-mail-retry.js";
+export {
+  activeAttendeeWhere,
+  countActiveAdmittedAttendees,
+  countActiveAttendees,
+  countSeatsInUse,
+  countSeatsOfAttendee,
+} from "./event-seats.js";

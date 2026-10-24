@@ -8,7 +8,9 @@ import { customDataValue } from "./custom-data.js";
 export const WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX = "custom:";
 
 /** Only select (dictionary) and boolean custom fields are exposed to wallet field mapping - free
- * text is excluded (unpredictable length/content for a pass card), per ROADMAP.md's v0.7.1 scope. */
+ * input is excluded (text, long text, date, date and time, phone: unpredictable length/content for
+ * a pass card), per ROADMAP.md's v0.7.1 scope. An allowlist on purpose: a type added later stays
+ * off the pass until someone lists it here. */
 const WALLET_MAPPABLE_CUSTOM_FIELD_TYPES = new Set(["select", "boolean"]);
 
 /**

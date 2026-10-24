@@ -12,6 +12,8 @@ export {
   rateLimit,
   createHealthzRateLimitMiddleware,
   checkOidcLinkStepUpRateLimit,
+  checkRegistrationEventRateLimit,
+  checkRegistrationMailRecipientRateLimit,
   type InlineRateLimitName,
   type RatePolicyName,
 } from "./policies.js";

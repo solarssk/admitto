@@ -6,6 +6,7 @@ import { loadEventCustomDataFields } from "./event-custom-fields.js";
 import { lockAttendeeRow } from "./attendee-lock.js";
 import { ensureAttendeeItemStates, operatorItemActions } from "./item-states.js";
 import { isAdmittable } from "./admittable.js";
+import { activeAttendeeWhere } from "./event-seats.js";
 import type { AttendeeCardDto, EventItemConfig, LookupAttendeeResult } from "./types.js";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -194,13 +195,13 @@ export async function getAttendeeCard(
 /**
  * Door stats over ACTIVE attendees only (#380): revoked/cancelled don't consume
  * capacity and aren't expected at the door, so they're excluded from both
- * counts — same denominator as the Overview KPI (countActiveAttendees).
+ * counts — same denominator as the Overview KPI (countActiveAttendees, a count of heads, not seats).
  */
 export async function getCheckInStats(
   eventId: string,
   prisma: PrismaClient,
 ): Promise<{ admitted_count: number; total_count: number }> {
-  const activeWhere = { event_id: eventId, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } };
+  const activeWhere = activeAttendeeWhere(eventId);
   const [admitted_count, total_count] = await Promise.all([
     prisma.attendee.count({ where: { ...activeWhere, admitted_at: { not: null } } }),
     prisma.attendee.count({ where: activeWhere }),

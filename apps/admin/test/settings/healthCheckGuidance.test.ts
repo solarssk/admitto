@@ -170,6 +170,75 @@ describe("healthCheckGuidance", () => {
     expect(guidance).toBe(UNRECOGNISED_STATE_GUIDANCE);
   });
 
+  it("gives registration_mail degraded with failed_terminal>0 the guidance for a mail nobody will retry, before the retry guidance", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("registration_mail", "degraded", [
+        { key: "failed_retryable", value: "3" },
+        { key: "failed_terminal", value: "2" },
+        { key: "queued", value: "0" },
+        { key: "degraded_threshold", value: "50" },
+      ]),
+    );
+    expect(guidance).toEqual({
+      cause: "The mail service refused some registration emails, or their text could not be used, and the worker has stopped trying them.",
+      impact:
+        "Those guests did not receive their email. Without the confirmation link a registration cannot be confirmed, and it is deleted after 24 hours.",
+      nextStep: "Check that Email sending works and that the registration email texts are valid, then contact the guests or ask them to register again.",
+    });
+  });
+
+  it("gives registration_mail degraded with failed_retryable>0 the retry guidance, and its own words for a guest", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("registration_mail", "degraded", [
+        { key: "failed_retryable", value: "3" },
+        { key: "queued", value: "10" },
+        { key: "degraded_threshold", value: "50" },
+      ]),
+    );
+    expect(guidance).toEqual({
+      cause: "The mail service did not accept some registration emails, or could not be reached.",
+      impact:
+        "Some guests have not received their registration email yet, and a confirmation link stops working after 24 hours. The worker retries automatically, a limited number of times.",
+      nextStep: "If the number does not go down, check that the worker is running and that Email sending works.",
+    });
+  });
+
+  it("gives registration_mail degraded with queued>=threshold and no retryable failures the many-registrations guidance", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("registration_mail", "degraded", [
+        { key: "failed_retryable", value: "0" },
+        { key: "queued", value: "80" },
+        { key: "degraded_threshold", value: "50" },
+      ]),
+    );
+    expect(guidance).toEqual({
+      cause: "More registration emails were queued than the worker has sent so far.",
+      impact:
+        "Guests are waiting for their emails, and a confirmation link stops working after 24 hours. This is normal right after many people registered at once.",
+      nextStep: "If the number does not go down, check the Background worker, Email sending and Instance URL rows.",
+    });
+  });
+
+  it("gives registration_mail degraded below the threshold, with nothing failing, the unrecognised-state guidance, and an ok row none", () => {
+    expect(
+      healthCheckGuidance(
+        checkRow("registration_mail", "degraded", [
+          { key: "failed_retryable", value: "0" },
+          { key: "queued", value: "10" },
+          { key: "degraded_threshold", value: "50" },
+        ]),
+      ),
+    ).toBe(UNRECOGNISED_STATE_GUIDANCE);
+    expect(healthCheckGuidance(checkRow("registration_mail", "ok"))).toBeNull();
+  });
+
+  it("gives registration_mail degraded with no queued detail the shared could-not-read guidance", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("registration_mail", "degraded", [{ key: "degraded_threshold", value: "50" }]),
+    );
+    expect(guidance?.cause).toBe("An error occurred while Admitto was reading the data for this check.");
+  });
+
   it("gives email_sending down/live_check=failed the mail-connection guidance with a link", () => {
     const guidance = healthCheckGuidance(
       checkRow("email_sending", "down", [{ key: "live_check", value: "failed" }]),
@@ -254,7 +323,38 @@ describe("healthCheckGuidance", () => {
     });
   });
 
-  it.each(["identity_provider_idp-1", "cloudflare_access", "address_lookup", "bounce_ingest", "background_worker", "wallet_passes", "weather", "email_sending", "mail_delivery_queue"])(
+  it("gives registration_captcha degraded/reason=keys_missing the save-the-keys guidance with a link", () => {
+    expect(
+      healthCheckGuidance(checkRow("registration_captcha", "degraded", [{ key: "reason", value: "keys_missing" }])),
+    ).toEqual({
+      cause: "Registration by public link or password is switched on for at least one event, but the Turnstile site key or secret key is not saved.",
+      impact: "That registration form stays closed, so guests cannot sign up.",
+      nextStep: "Save both Turnstile keys under Guest registration in External services.",
+      link: { label: "Open External services", to: "/admin/settings?tab=external" },
+    });
+  });
+
+  it("gives registration_captcha degraded/reason=secret_unreadable the enter-it-again guidance with a link", () => {
+    const guidance = healthCheckGuidance(
+      checkRow("registration_captcha", "degraded", [{ key: "reason", value: "secret_unreadable" }]),
+    );
+    expect(guidance?.cause).toContain("ENCRYPTION_KEY");
+    expect(guidance?.impact).toBe("Registration forms that use a public link or a password stay closed, so guests cannot sign up.");
+    expect(guidance?.nextStep).toContain("Enter the secret key again");
+    expect(guidance?.link).toEqual({ label: "Open External services", to: "/admin/settings?tab=external" });
+  });
+
+  it("says nothing for a registration_captcha row that is ok or not configured", () => {
+    expect(healthCheckGuidance(checkRow("registration_captcha", "ok"))).toBeNull();
+    expect(healthCheckGuidance(checkRow("registration_captcha", "not_configured"))).toBeNull();
+  });
+
+  it("gives a registration_captcha row in a state it does not know the unrecognised-state guidance", () => {
+    expect(healthCheckGuidance(checkRow("registration_captcha", "degraded"))).toBe(UNRECOGNISED_STATE_GUIDANCE);
+    expect(healthCheckGuidance(checkRow("registration_captcha", "down"))).toBe(UNRECOGNISED_STATE_GUIDANCE);
+  });
+
+  it.each(["identity_provider_idp-1", "cloudflare_access", "address_lookup", "bounce_ingest", "background_worker", "wallet_passes", "weather", "email_sending", "mail_delivery_queue", "registration_mail", "registration_captcha"])(
     "gives %s degraded/reason=lookup_failed the shared could-not-read guidance",
     (id) => {
       const guidance = healthCheckGuidance(
@@ -507,6 +607,12 @@ describe("healthCheckGuidance", () => {
       checkRow("background_worker", "degraded", [{ key: "reason", value: "stale" }]),
       checkRow("mail_delivery_queue", "degraded", [{ key: "failed_retryable", value: "2" }]),
       checkRow("mail_delivery_queue", "degraded", [
+        { key: "queued", value: "80" },
+        { key: "degraded_threshold", value: "50" },
+      ]),
+      checkRow("registration_mail", "degraded", [{ key: "failed_retryable", value: "2" }]),
+      checkRow("registration_mail", "degraded", [{ key: "failed_terminal", value: "2" }]),
+      checkRow("registration_mail", "degraded", [
         { key: "queued", value: "80" },
         { key: "degraded_threshold", value: "50" },
       ]),

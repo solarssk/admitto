@@ -14,7 +14,7 @@ Download the current CSV template from **Import attendees**. Headers are trimmed
 | `department` | No | Attendee department or team. |
 | `external_uuid` | No | Existing identifier supplied by an external ticket source. |
 | `qr_payload` | No | Existing QR value supplied by an external ticket source. Leave empty for Admitto-generated tickets. |
-| Custom field key | Depends on field | Use the `source_field` key from **Requirements**. Required custom fields must have a valid value. |
+| Custom field key | Depends on field | Use the `source_field` key from **Requirements**. Required custom fields must have a valid value. A field that is shown only for a certain answer to another field is required only for rows with that answer, and a value in it for any other row is not saved. The **Required CSV columns** list on the import page says how to write each field, for example a date as `YYYY-MM-DD`. |
 
 ## File format and row numbers
 

@@ -1,5 +1,5 @@
 import type { Prisma } from "@admitto/db";
-import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db";
+import { countSeatsInUse } from "@admitto/tickets";
 
 export class ImportCapacityExceededError extends Error {
   readonly code = "event_full" as const;
@@ -39,12 +39,7 @@ export async function assertImportCapacityInTx(
   });
   if (event?.capacity == null) return null;
 
-  const current = await tx.attendee.count({
-    where: {
-      event_id: eventId,
-      status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
-    },
-  });
+  const current = await countSeatsInUse(tx, eventId);
   const projected = current + incomingCount;
   if (projected <= event.capacity) return null;
 

@@ -340,6 +340,40 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(newsletterRow?.textContent).toContain("Newsletter consent (Yes/No or true/false)");
   });
 
+  it("tells how to write a date, a date and time, a phone number and a long text, and what the rules of a text field ask for", async () => {
+    const field = (source_field: string, label: string, type: string, extra: Record<string, unknown> = {}) => ({
+      id: source_field,
+      source_field,
+      label,
+      description: null,
+      type,
+      required: false,
+      options: null,
+      rules: null,
+      created_at: "2026-01-01T00:00:00.000Z",
+      ...extra,
+    });
+    fetchEventCustomFields.mockResolvedValue([
+      field("arrival_day", "Arrival day", "date", { description: "The day they arrive" }),
+      field("arrival", "Arrival", "datetime"),
+      field("mobile", "Mobile", "phone", { rules: { digits_only: true, example: "600100200" } }),
+      field("abstract", "Abstract", "long_text"),
+      field("postcode", "Postcode", "text", { description: "Postcode", rules: { digits_only: true, min_length: 5, max_length: 5, example: "01234" } }),
+      field("diet", "Diet", "text", { description: "Dietary needs" }),
+    ]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const noteOf = (slug: string) => screen.getByText(slug).closest("tr")!.querySelectorAll("td")[2]!.textContent;
+    expect(noteOf("arrival_day")).toBe("The day they arrive (date as YYYY-MM-DD)");
+    expect(noteOf("arrival")).toBe("No description provided (date and time as YYYY-MM-DDTHH:mm, the time at the event)");
+    expect(noteOf("mobile")).toBe("No description provided (phone number with 3 to 15 digits, digits only, for example 600100200)");
+    expect(noteOf("abstract")).toBe("No description provided (long text, at most 1000 characters)");
+    expect(noteOf("postcode")).toBe("Postcode (digits only, exactly 5 characters, for example 01234)");
+    // A text field with no rules has no note.
+    expect(noteOf("diet")).toBe("Dietary needs");
+  });
+
   it("lists parse warnings on the validation summary", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(

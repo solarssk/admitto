@@ -98,11 +98,14 @@ import { hasWalletStatusChip } from "../attendees/walletStatusChip.js";
 import { walletRegistrationLabel } from "../attendees/walletRegistrationLabel.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
+import { SectionLabel } from "../attendees/SectionLabel.js";
 import {
   allCustomDataEntries,
   customDataApiErrorMessage,
   fetchAttendeeCustomFields,
+  isLongAnswer,
   readCustomDataField,
+  shownCustomFields,
   validateCustomFieldsForm,
 } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
@@ -129,11 +132,12 @@ import { formatDeliveryHistoryTimeParts, deliveryHistoryIcon, deliveryStatusBadg
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
 import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
-import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { attendeeFieldAttrs } from "../utils/no-autofill.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
 import { ACTIVITY_PAGE_SIZE_OPTIONS, useActivityLog } from "../attendees/useActivityLog.js";
 import "../attendees/attendees.css";
+import "../attendees/attendee-fields-grid.css";
 
 const TAB_IDS = ["overview", "activity", "notes"] as const;
 type TabId = (typeof TAB_IDS)[number];
@@ -928,7 +932,11 @@ function itemStateTone(state: string): "ok" | "muted" {
  * custom data) — extracted out of the component (SonarCloud S3776: keeps the comparison chain out
  * of the component's own cognitive-complexity count, the same way EventOverviewPage.tsx extracts
  * buildReadinessItems). */
-function isAttendeeFormDirty(form: AttendeeFormState | null, baseline: AttendeeFormState | null): boolean {
+function isAttendeeFormDirty(
+  form: AttendeeFormState | null,
+  baseline: AttendeeFormState | null,
+  attributeFields: CustomDataFieldDef[],
+): boolean {
   if (form === null || baseline === null) return false;
   return (
     form.first_name !== baseline.first_name ||
@@ -938,7 +946,10 @@ function isAttendeeFormDirty(form: AttendeeFormState | null, baseline: AttendeeF
     form.department !== baseline.department ||
     form.ticket_type !== baseline.ticket_type ||
     form.rsvp_status !== baseline.rsvp_status ||
-    JSON.stringify(form.customFields) !== JSON.stringify(baseline.customFields)
+    // An answer typed for a question that a condition now hides is not an edit: it is not saved.
+    shownCustomFields(attributeFields, form.customFields).some(
+      (field) => (form.customFields[field.source_field] ?? "") !== (baseline.customFields[field.source_field] ?? ""),
+    )
   );
 }
 
@@ -1063,7 +1074,7 @@ function AttendeeOverviewTab({
           ) : (
             <div className="attendee-detail-readonly">
               {customDataEntries.map(([key, label, value]) => (
-                <div className="attendee-detail-row" key={key}>
+                <div className={`attendee-detail-row${isLongAnswer(value) ? " attendee-detail-row--long" : ""}`} key={key}>
                   <span>{label}</span>
                   <span>{value}</span>
                 </div>
@@ -1677,7 +1688,8 @@ function buildAttendeePatch(
   if (form.rsvp_status !== detail.rsvp_status) patch.rsvp_status = form.rsvp_status;
 
   const customDataPatch: Record<string, string | null> = {};
-  for (const field of attributeFields) {
+  // Only the questions that are asked: what is typed for one that a condition hides is not sent, and what is saved for it stays.
+  for (const field of shownCustomFields(attributeFields, form.customFields)) {
     const key = field.source_field;
     const next = form.customFields[key] ?? "";
     const current = readCustomDataField(detail.custom_data, key) ?? "";
@@ -1785,6 +1797,17 @@ function nextFormAfterPassStatusChange(
 ): AttendeeFormState {
   if (!currentForm) return toAttendeeForm(updated, attributeFields);
   return mergeFormAfterReload(currentForm, previousDetail, updated, attributeFields);
+}
+
+/** Why restoring a pass was refused for want of room: one seat for an attendee alone, and more (in places, not in
+ * people) when their companions come back with them. */
+function restoreCapacityMessage({ current, capacity, incoming }: EventFullMeta): string {
+  if (incoming != null && incoming > 1) {
+    const free = Math.max(0, capacity - current);
+    const companions = incoming === 2 ? "their companion" : "their companions";
+    return `Not enough free places: this attendee and ${companions} need ${incoming}, and ${free} ${free === 1 ? "is" : "are"} free. Free a place or increase capacity before restoring this pass.`;
+  }
+  return `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`;
 }
 
 /** Classifies a failed pass status change into the UI action it should trigger — extracted out
@@ -2159,7 +2182,7 @@ export function AttendeeDetailPage() {
   const mailConfigured = useMailConfigured(eventId);
 
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
-  const isDirty = isAttendeeFormDirty(form, baseline);
+  const isDirty = isAttendeeFormDirty(form, baseline, attributeFields);
 
   /** Removes this attendee from the event for good, with the reason chosen in the dialog. The attendee's page is gone
    * after that, so the operator goes back to the list. */
@@ -2389,10 +2412,7 @@ export function AttendeeDetailPage() {
       const outcome = classifyPassStatusError(err);
       if (outcome.kind === "capacity") {
         setRestoreCapacityBlocked(outcome.eventFull);
-        const { current, capacity } = outcome.eventFull;
-        setRevokeError(
-          `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`,
-        );
+        setRevokeError(restoreCapacityMessage(outcome.eventFull));
       } else if (outcome.kind === "stale_write") {
         addToast("Someone else updated this attendee. Page will reload.", "warning");
         void handleReload();
@@ -2736,7 +2756,7 @@ export function AttendeeDetailPage() {
   const attendeeSource = deriveAttendeeSource(detail.action_log_first_action_type);
   // Seeded together with `detail` by applyDetail, so it exists whenever a detail does.
   const activityLog = activity.log!;
-  const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
+  const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey, event.timezone);
   // Falls back to [] against a stale API response missing this field (e.g. an apps/web dev
   // server running from before event_items was added - it doesn't hot-reload) instead of
   // crashing the whole page on detail.event_items.length.
@@ -2821,7 +2841,12 @@ export function AttendeeDetailPage() {
   return (
     <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
       <PageHeader
-        title={detail.name}
+        title={
+          <span className="attendee-detail-title">
+            <Avatar name={detail.name} size="lg" aria-hidden="true" />
+            <span>{detail.name}</span>
+          </span>
+        }
         subtitle="Manage this attendee's profile, ticket, and check-in status."
         className="attendee-detail-pageheader"
         actions={
@@ -3040,120 +3065,128 @@ export function AttendeeDetailPage() {
               className="attendee-form__fieldset-wrapper"
             >
               <fieldset className="attendee-form__fieldset" disabled={isEventArchived(event)}>
-                <div className="at-field">
-                  <label className="at-label" htmlFor="attendee-edit-rsvp-status">
-                    Attendance
-                  </label>
-                  <SearchableSelect
-                    id="attendee-edit-rsvp-status"
-                    label="Attendance"
-                    placeholder="Select attendance…"
-                    searchPlaceholder="Search attendance…"
-                    emptyLabel="No attendance options found"
-                    showLabel={false}
-                    value={form.rsvp_status}
-                    options={RSVP_STATUS_OPTIONS}
-                    onChange={(id) => setForm({ ...form, rsvp_status: id as RsvpStatus })}
+                <div className="attendee-fields-grid">
+                  <div className="at-field">
+                    <label className="at-label" htmlFor="attendee-edit-rsvp-status">
+                      Attendance
+                    </label>
+                    <SearchableSelect
+                      id="attendee-edit-rsvp-status"
+                      label="Attendance"
+                      placeholder="Select attendance…"
+                      searchPlaceholder="Search attendance…"
+                      emptyLabel="No attendance options found"
+                      showLabel={false}
+                      value={form.rsvp_status}
+                      options={RSVP_STATUS_OPTIONS}
+                      onChange={(id) => setForm({ ...form, rsvp_status: id as RsvpStatus })}
+                    />
+                  </div>
+                  <div className="at-field">
+                    <label className="at-label" htmlFor="attendee-edit-ticket-type">
+                      Ticket type
+                    </label>
+                    <SearchableSelect
+                      id="attendee-edit-ticket-type"
+                      label="Ticket type"
+                      placeholder="Select ticket type…"
+                      searchPlaceholder="Search ticket types…"
+                      emptyLabel="No ticket types found"
+                      showLabel={false}
+                      value={form.ticket_type}
+                      options={buildTicketTypeOptions(orphanedTicketType, ticketTypes)}
+                      onChange={(id) => setForm({ ...form, ticket_type: id })}
+                    />
+                  </div>
+                  {ticketTypesError && (
+                    <Notice
+                      variant="error"
+                      role="alert"
+                      className="attendee-fields-grid__full"
+                      actionBusy={ticketTypesRetry.busy}
+                      action={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          loading={ticketTypesRetry.busy}
+                          onClick={ticketTypesRetry.retry}
+                        >
+                          Retry
+                        </Button>
+                      }
+                    >
+                      {ticketTypesError}
+                    </Notice>
+                  )}
+                  <div className="attendee-fields-grid__full">
+                    <Input
+                      label="Email"
+                      type="text"
+                      inputMode="email"
+                      icon={<i className="ti ti-mail" aria-hidden="true" />}
+                      value={form.email}
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      required
+                      {...attendeeFieldAttrs("edit-attendee-contact")}
+                    />
+                  </div>
+                  {emailChanged && (
+                    <Notice variant="warning" className="attendee-form__warn">
+                      This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
+                    </Notice>
+                  )}
+                  {emailConflict && (
+                    <Notice variant="error" role="alert" className="attendee-fields-grid__full">
+                      This email is already used by another attendee in this event. Use a different email address.
+                    </Notice>
+                  )}
+                  <Input
+                    label="First name"
+                    icon={<i className="ti ti-user" aria-hidden="true" />}
+                    value={form.first_name}
+                    onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+                    required
+                    {...attendeeFieldAttrs("edit-attendee-given")}
                   />
+                  <Input
+                    label="Last name"
+                    icon={<i className="ti ti-user" aria-hidden="true" />}
+                    value={form.last_name}
+                    onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+                    required
+                    {...attendeeFieldAttrs("edit-attendee-family")}
+                  />
+                  <Input
+                    label="Company"
+                    icon={<i className="ti ti-building" aria-hidden="true" />}
+                    value={form.company}
+                    onChange={(e) => setForm({ ...form, company: e.target.value })}
+                    {...attendeeFieldAttrs("edit-attendee-org")}
+                  />
+                  <Input
+                    label="Department"
+                    icon={<i className="ti ti-sitemap" aria-hidden="true" />}
+                    value={form.department}
+                    onChange={(e) => setForm({ ...form, department: e.target.value })}
+                  />
+                  {attributeFields.length > 0 && <SectionLabel className="attendee-fields-grid__full">Custom fields</SectionLabel>}
+                  {shownCustomFields(attributeFields, form.customFields).map((field) => (
+                    <CustomDataFieldInput
+                      key={field.source_field}
+                      field={field}
+                      eventTimeZone={event.timezone}
+                      value={form.customFields[field.source_field] ?? ""}
+                      disabled={saving || reloading || staleWrite}
+                      onChange={(next) =>
+                        setForm({
+                          ...form,
+                          customFields: { ...form.customFields, [field.source_field]: next },
+                        })
+                      }
+                    />
+                  ))}
                 </div>
-                <Input
-                  label="Email"
-                  type="text"
-                  inputMode="email"
-                  icon={<i className="ti ti-mail" aria-hidden="true" />}
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  required
-                  {...NO_AUTOFILL_PROPS}
-                />
-                {emailChanged && (
-                  <Notice variant="warning" className="attendee-form__warn">
-                    This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
-                  </Notice>
-                )}
-                {emailConflict && (
-                  <Notice variant="error" role="alert">
-                    This email is already used by another attendee in this event. Use a different email address.
-                  </Notice>
-                )}
-                <Input
-                  label="First name"
-                  icon={<i className="ti ti-user" aria-hidden="true" />}
-                  value={form.first_name}
-                  onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-                  required
-                  {...NO_AUTOFILL_PROPS}
-                />
-                <Input
-                  label="Last name"
-                  icon={<i className="ti ti-user" aria-hidden="true" />}
-                  value={form.last_name}
-                  onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                  required
-                  {...NO_AUTOFILL_PROPS}
-                />
-                <Input
-                  label="Company"
-                  icon={<i className="ti ti-building" aria-hidden="true" />}
-                  value={form.company}
-                  onChange={(e) => setForm({ ...form, company: e.target.value })}
-                />
-                <Input
-                  label="Department"
-                  icon={<i className="ti ti-sitemap" aria-hidden="true" />}
-                  value={form.department}
-                  onChange={(e) => setForm({ ...form, department: e.target.value })}
-                />
-                <div className="at-field">
-                  <label className="at-label" htmlFor="attendee-edit-ticket-type">
-                    Ticket type
-                  </label>
-                  <SearchableSelect
-                    id="attendee-edit-ticket-type"
-                    label="Ticket type"
-                    placeholder="Select ticket type…"
-                    searchPlaceholder="Search ticket types…"
-                    emptyLabel="No ticket types found"
-                    showLabel={false}
-                    value={form.ticket_type}
-                    options={buildTicketTypeOptions(orphanedTicketType, ticketTypes)}
-                    onChange={(id) => setForm({ ...form, ticket_type: id })}
-                  />
-                </div>
-                {ticketTypesError && (
-                  <Notice
-                    variant="error"
-                    role="alert"
-                    actionBusy={ticketTypesRetry.busy}
-                    action={
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        loading={ticketTypesRetry.busy}
-                        onClick={ticketTypesRetry.retry}
-                      >
-                        Retry
-                      </Button>
-                    }
-                  >
-                    {ticketTypesError}
-                  </Notice>
-                )}
-                {attributeFields.map((field) => (
-                  <CustomDataFieldInput
-                    key={field.source_field}
-                    field={field}
-                    value={form.customFields[field.source_field] ?? ""}
-                    disabled={saving || reloading || staleWrite}
-                    onChange={(next) =>
-                      setForm({
-                        ...form,
-                        customFields: { ...form.customFields, [field.source_field]: next },
-                      })
-                    }
-                  />
-                ))}
               </fieldset>
             </Tooltip>
             <div className="attendee-form__actions">

@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AddAttendeeModal } from "../../src/attendees/AddAttendeeModal.js";
 import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
+import { setPreferredLocale, setPreferredTimeFormat } from "../../src/utils/locale-store.js";
 import { deferred } from "../test-utils.js";
+import { bitwardenTreatsAsSearchField } from "../checkin/bitwardenSearchField.js";
+import { ANSWER_TYPE_FIELDS, answerField } from "./answerTypeFixtures.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -158,6 +161,14 @@ describe("AddAttendeeModal delayed loading", () => {
       vi.advanceTimersByTime(1);
     });
     expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
+  });
+
+  it("has no labelled break for the custom fields when the event has none", async () => {
+    mockFetchEventCustomFields.mockResolvedValue([]);
+    mockFetchTicketTypes.mockResolvedValue([]);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    await waitFor(() => expect(fields().className).toContain("at-fade-in"));
+    expect(screen.queryByText("Custom fields")).toBeNull();
   });
 
   it("shows the whole form at once, fading in, when the catalogs arrive before the 200ms are up", async () => {
@@ -617,6 +628,12 @@ describe("AddAttendeeModal", () => {
     expect(email.autocomplete).toBe("off");
     expect(email.getAttribute("data-1p-ignore")).toBe("true");
     expect(email.getAttribute("data-lpignore")).toBe("true");
+    // Bitwarden honours that opt-out only for a user who switched it on, so the details of a person read as a search box to its own test,
+    // without the word "email" in the name, which Safari's Hide My Email reads.
+    for (const label of ["Email *", "First name *", "Last name *", "Company"]) {
+      expect(bitwardenTreatsAsSearchField(screen.getByLabelText(label) as HTMLInputElement), label).toBe(true);
+    }
+    expect(email.name).not.toMatch(/mail/i);
 
     expect(screen.getByText(/enter their email, first name, and last name/i)).toBeTruthy();
 
@@ -892,5 +909,372 @@ describe("AddAttendeeModal", () => {
       "evt-b",
       expect.objectContaining({ ticket_type: undefined }),
     );
+  });
+});
+
+// The first mount of the date and time pickers is slow on a loaded runner (the admin suite took 405 s on CI against 100 s on a laptop, and two
+// of these tests ran out of the 10 s of the suite): a test that waits for them has 30 s, so that it fails for what it checks and not for the clock.
+describe("AddAttendeeModal: the answer types of a custom field", { timeout: 30_000 }, () => {
+  const FIELDS = ANSWER_TYPE_FIELDS;
+
+  beforeEach(() => {
+    setPreferredLocale("en-GB");
+    setPreferredTimeFormat("24h");
+  });
+  afterEach(() => {
+    setPreferredLocale(null);
+    setPreferredTimeFormat(undefined);
+    mockFetchEventCustomFields.mockResolvedValue([]);
+  });
+
+  async function openWith(fields: unknown[], props: { eventTimeZone?: string } = {}) {
+    mockFetchEventCustomFields.mockResolvedValue(fields as never);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} {...props} />);
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
+    fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
+    // The first mount of the pickers is slow on a busy machine: wait for as long as it takes, not for a time.
+    await screen.findByLabelText("Abstract", undefined, { timeout: 10_000 });
+    // The pickers mount when the answer arrives, outside act(). A busy machine gets back to the test before their effects have run, and the
+    // first change then runs them: the date picker puts its empty text back over the date that was typed. Let the effects run first.
+    await act(async () => {});
+  }
+
+  const typeAndLeave = (label: string, text: string) => {
+    const box = screen.getByLabelText(label);
+    fireEvent.change(box, { target: { value: text } });
+    fireEvent.blur(box);
+  };
+  const submit = () => fireEvent.click(screen.getByRole("button", { name: "Add attendee" }));
+
+  it("draws each type with its own control", async () => {
+    await openWith(FIELDS, { eventTimeZone: "Europe/Warsaw" });
+    expect((screen.getByLabelText("Abstract") as HTMLTextAreaElement).tagName).toBe("TEXTAREA");
+    expect(screen.getByLabelText("Arrival day")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Arrival" })).toBeTruthy();
+    expect((screen.getByLabelText("Mobile") as HTMLInputElement).type).toBe("tel");
+    expect((screen.getByLabelText("Postcode") as HTMLInputElement).inputMode).toBe("numeric");
+    expect(screen.getByText("Time at the event (Europe/Warsaw).")).toBeTruthy();
+    expect(screen.getByText("Digits only, exactly 5 characters, for example 01234.")).toBeTruthy();
+  });
+
+  it("sends every answer in the form the API takes: the long text as typed, a date, a date and time and a postcode as the server stores them, a phone number as its code and its digits", async () => {
+    mockCreateAttendee.mockResolvedValueOnce({} as never);
+    await openWith(FIELDS);
+    fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "Line one\nLine two" } });
+    typeAndLeave("Arrival day", "2026-11-04");
+    typeAndLeave("Arrival, date", "2026-11-05");
+    typeAndLeave("Arrival, time", "1030");
+    fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "+1 555 0100" } });
+    fireEvent.change(screen.getByLabelText("Postcode"), { target: { value: "01234" } });
+    submit();
+
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(mockCreateAttendee).toHaveBeenCalledWith("evt-1", {
+      email: "jan@example.com",
+      first_name: "Jan",
+      last_name: "Kowalski",
+      company: undefined,
+      department: undefined,
+      ticket_type: undefined,
+      custom_data: {
+        abstract: "Line one\nLine two",
+        arrival_day: "2026-11-04",
+        arrival: "2026-11-05T10:30",
+        mobile: "+15550100",
+        postcode: "01234",
+      },
+    });
+  });
+
+  it("sets the custom fields apart under a labelled break across both columns, after the fixed fields", async () => {
+    await openWith(FIELDS);
+
+    const label = screen.getByText("Custom fields");
+    expect(label.classList.contains("attendees-section-label")).toBe(true);
+    expect(label.classList.contains("attendee-fields-grid__full")).toBe(true);
+    const follows = (before: Node, after: Node) => Boolean(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(screen.getByLabelText("Department"), label)).toBe(true);
+    expect(follows(label, screen.getByLabelText("Abstract"))).toBe(true);
+  });
+
+  it("lays the fields out in two columns, with the email and a long text across both", async () => {
+    await openWith(FIELDS);
+
+    const grid = document.querySelector(".add-attendee-modal__fields") as HTMLElement;
+    expect(grid.classList.contains("attendee-fields-grid")).toBe(true);
+    // The email is the one field of the top of the form that takes a whole row; the other short fields share rows.
+    const whole = grid.querySelector(".attendee-fields-grid__full") as HTMLElement;
+    expect(whole.contains(screen.getByLabelText("Email *"))).toBe(true);
+    expect(whole.contains(screen.getByLabelText("First name *"))).toBe(false);
+    // A long text takes a row for itself; a short answer does not.
+    expect(screen.getByLabelText("Abstract").closest(".at-field")?.classList.contains("custom-data-field--wide")).toBe(true);
+    expect(screen.getByLabelText("Postcode").closest(".at-field")?.classList.contains("custom-data-field--wide")).toBe(false);
+  });
+
+  it("sends nothing for an answer left empty, of any of the types", async () => {
+    mockCreateAttendee.mockResolvedValueOnce({} as never);
+    await openWith(FIELDS);
+    submit();
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(mockCreateAttendee.mock.calls[0]![1]).not.toHaveProperty("custom_data");
+  });
+
+  it.each([
+    ["a date and time with a date and no time", (): void => typeAndLeave("Arrival, date", "2026-11-05"), "Arrival needs both a date and a time."],
+    ["a date and time with a time and no date", (): void => typeAndLeave("Arrival, time", "10:30"), "Arrival needs both a date and a time."],
+    ["a phone number that is too short", (): void => fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "12" } }), "Mobile must be a phone number with 3 to 15 digits."],
+    ["a postcode that breaks its rules", (): void => fireEvent.change(screen.getByLabelText("Postcode"), { target: { value: "0123" } }), "Postcode must be digits only, exactly 5 characters."],
+    ["a long text over its limit", (): void => fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "x".repeat(1001) } }), "Abstract must be at most 1000 characters."],
+  ])("does not send %s, and says why", async (_name, fill, message) => {
+    await openWith(FIELDS);
+    fill();
+    submit();
+    expect(await screen.findByText(message, undefined, { timeout: 10_000 })).toBeTruthy();
+    expect(screen.getByText(message).closest('[role="alert"]')).toBeTruthy();
+    expect(mockCreateAttendee).not.toHaveBeenCalled();
+  });
+
+  it("asks for a required date, and for the time of a required date and time, before it sends", async () => {
+    await openWith([answerField("arrival_day", "Arrival day", "date", { required: true }), answerField("abstract", "Abstract", "long_text")]);
+    submit();
+    expect(await screen.findByText("Arrival day is required.", undefined, { timeout: 10_000 })).toBeTruthy();
+    expect(mockCreateAttendee).not.toHaveBeenCalled();
+  });
+
+  it("explains what the server refused for a date field in the words of the form", async () => {
+    mockCreateAttendee.mockRejectedValueOnce(new ApiError(400, "validation_failed", "validation_failed", undefined, "arrival_day"));
+    await openWith(FIELDS);
+    typeAndLeave("Arrival day", "2026-11-04");
+    submit();
+    expect(await screen.findByText("Arrival day must be a valid date.", undefined, { timeout: 10_000 })).toBeTruthy();
+  });
+
+  it("closes an open calendar or time picker on Escape and keeps the dialog, with what was typed in it, until Escape is pressed again", async () => {
+    const onClose = vi.fn();
+    mockFetchEventCustomFields.mockResolvedValue(FIELDS as never);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={onClose} onCreated={() => {}} />);
+    fireEvent.change(await screen.findByLabelText("First name *", undefined, { timeout: 10_000 }), { target: { value: "Jan" } });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Open calendar" })[0]!);
+    expect(screen.getByRole("dialog", { name: "Choose date" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("First name *") as HTMLInputElement).value).toBe("Jan");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+    expect(screen.getByRole("group", { name: "Choose time" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("group", { name: "Choose time" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("First name *") as HTMLInputElement).value).toBe("Jan");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps what was typed in every control while the attendee is being added", async () => {
+    const created = deferred<never>();
+    mockCreateAttendee.mockReturnValueOnce(created.promise);
+    await openWith(FIELDS);
+    fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "Line one" } });
+    typeAndLeave("Arrival day", "2026-11-04");
+    submit();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Adding…" }).getAttribute("aria-busy")).toBe("true"));
+    expect((screen.getByLabelText("Abstract") as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Abstract") as HTMLTextAreaElement).value).toBe("Line one");
+    expect((screen.getByLabelText("Arrival day") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Arrival day") as HTMLInputElement).value).toBe("04 Nov 2026");
+    expect((screen.getByLabelText("Mobile") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Arrival, time") as HTMLInputElement).disabled).toBe(true);
+  });
+});
+
+describe("AddAttendeeModal: questions that are shown only for an answer", { timeout: 30_000 }, () => {
+  const parking = answerField("parking", "Parking", "boolean");
+  const plate = answerField("plate", "Plate number", "text", {
+    required: true,
+    rules: { show_when: { field: "parking", value: true }, max_length: 8 },
+  });
+  const meal = answerField("meal", "Meal", "select", { options: ["Standard", "Vegan"] });
+  const veganNote = answerField("vegan_note", "Vegan note", "text", { required: true, rules: { show_when: { field: "meal", value: "Vegan" } } });
+  const badge = answerField("badge", "Badge name", "text");
+  const optionalNote = answerField("parking_note", "Parking note", "text", { rules: { show_when: { field: "parking", value: true } } });
+  const FIELDS = [parking, plate, optionalNote, meal, veganNote, badge];
+
+  async function openWith(fields: unknown[]) {
+    mockFetchEventCustomFields.mockResolvedValue(fields as never);
+    mockCreateAttendee.mockResolvedValue({} as never);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
+    fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
+    await screen.findByRole("button", { name: /^Parking,/ });
+  }
+  afterEach(() => {
+    mockFetchEventCustomFields.mockResolvedValue([]);
+    mockCreateAttendee.mockReset();
+  });
+
+  /** Picks `option` in the select whose label is `label` (a yes/no question or a choice question). */
+  const pick = (label: string, option: string) => {
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label},`) }));
+    fireEvent.click(screen.getByRole("button", { name: option, exact: true }));
+  };
+  const submit = () => fireEvent.click(screen.getByRole("button", { name: "Add attendee" }));
+  const sentCustomData = () => (mockCreateAttendee.mock.calls[0]![1] as { custom_data?: Record<string, string> }).custom_data;
+  const asked = (label: RegExp | string) => screen.queryByLabelText(label) !== null;
+
+  describe.each([
+    {
+      kind: "a yes/no question",
+      controller: "Parking",
+      met: "Yes",
+      unmet: "No",
+      answer: "true",
+      dependent: /^Plate number/,
+      label: "Plate number",
+      typed: "AB 123",
+      requiredMessage: "Plate number is required.",
+    },
+    {
+      kind: "a choice question",
+      controller: "Meal",
+      met: "Vegan",
+      unmet: "Standard",
+      answer: "Vegan",
+      dependent: /^Vegan note/,
+      label: "Vegan note",
+      typed: "no eggs",
+      requiredMessage: "Vegan note is required.",
+    },
+  ])("a question that depends on $kind", ({ controller, met, unmet, answer, dependent, typed, requiredMessage }) => {
+    it("is not asked until the answer shows it, and not asked again when the answer changes to another", async () => {
+      await openWith(FIELDS);
+      expect(asked(dependent)).toBe(false);
+      pick(controller, met);
+      expect(asked(dependent)).toBe(true);
+      pick(controller, unmet);
+      expect(asked(dependent)).toBe(false);
+      pick(controller, met);
+      expect(asked(dependent)).toBe(true);
+    });
+
+    it("is not required while it is hidden: the attendee is added without it, and nothing is sent for it", async () => {
+      await openWith(FIELDS);
+      submit();
+      await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+      expect(sentCustomData()).toBeUndefined();
+      expect(screen.queryByText(requiredMessage)).toBeNull();
+    });
+
+    it("is required once it is shown, and the attendee is not added until it is answered", async () => {
+      await openWith(FIELDS);
+      pick(controller, met);
+      submit();
+      expect(await screen.findByText(requiredMessage)).toBeTruthy();
+      expect(mockCreateAttendee).not.toHaveBeenCalled();
+      fireEvent.change(screen.getByLabelText(dependent), { target: { value: typed } });
+      submit();
+      await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+      expect(sentCustomData()).toMatchObject({ [controller === "Parking" ? "plate" : "vegan_note"]: typed });
+    });
+
+    it("sends nothing for what was typed in it and then hidden, and is not required any more", async () => {
+      await openWith(FIELDS);
+      pick(controller, met);
+      fireEvent.change(screen.getByLabelText(dependent), { target: { value: typed } });
+      pick(controller, unmet);
+      submit();
+      await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+      expect(Object.keys(sentCustomData() ?? {})).not.toContain(controller === "Parking" ? "plate" : "vegan_note");
+      expect(sentCustomData()).toEqual({ [controller === "Parking" ? "parking" : "meal"]: controller === "Parking" ? "false" : unmet });
+    });
+
+    it("gives back what was typed when the answer shows it again", async () => {
+      await openWith(FIELDS);
+      pick(controller, met);
+      fireEvent.change(screen.getByLabelText(dependent), { target: { value: typed } });
+      pick(controller, unmet);
+      pick(controller, met);
+      expect((screen.getByLabelText(dependent) as HTMLInputElement).value).toBe(typed);
+    });
+
+  });
+
+  it("draws a question that depends on another right after it, even when the event lists it elsewhere, so that the answer that shows it does not move", async () => {
+    await openWith([veganNote, plate, badge, parking, meal]);
+    const customLabels = () => {
+      const all = Array.from(document.querySelectorAll<HTMLElement>(".add-attendee-modal__fields label.at-label")).map((label) => label.textContent);
+      return all.slice(all.indexOf("Ticket type") + 1);
+    };
+    expect(customLabels()).toEqual(["Badge name", "Parking", "Meal"]);
+    pick("Parking", "Yes");
+    expect(customLabels()).toEqual(["Badge name", "Parking", "Plate number *", "Meal"]);
+    pick("Meal", "Vegan");
+    expect(customLabels()).toEqual(["Badge name", "Parking", "Plate number *", "Meal", "Vegan note *"]);
+    // The question that was picked stays where it was, with the one it shows right behind it.
+    const parkingField = screen.getByRole("button", { name: /^Parking,/ }).closest(".searchable-select")!.parentElement!;
+    expect(parkingField.nextElementSibling?.querySelector("label")?.textContent).toBe("Plate number *");
+    const mealField = screen.getByRole("button", { name: /^Meal,/ }).closest(".searchable-select")!.parentElement!;
+    expect(mealField.nextElementSibling?.querySelector("label")?.textContent).toBe("Vegan note *");
+    pick("Parking", "No");
+    expect(customLabels()).toEqual(["Badge name", "Parking", "Meal", "Vegan note *"]);
+  });
+
+  it("asks the other conditional question of the same answer too, and an optional one is optional", async () => {
+    await openWith(FIELDS);
+    pick("Parking", "Yes");
+    expect(asked(/^Parking note/)).toBe(true);
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "AB 123" } });
+    submit();
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(sentCustomData()).toEqual({ parking: "true", plate: "AB 123" });
+  });
+
+  it("judges a question that is shown by its own rules, and says why it is refused", async () => {
+    await openWith(FIELDS);
+    pick("Parking", "Yes");
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "far too long for it" } });
+    submit();
+    expect(await screen.findByText("Plate number must be at most 8 characters.")).toBeTruthy();
+    expect(mockCreateAttendee).not.toHaveBeenCalled();
+  });
+
+  it("keeps the questions that have no condition as they were: asked, required and sent whatever the answers are", async () => {
+    await openWith([parking, plate, answerField("must", "Must have", "text", { required: true })]);
+    submit();
+    expect(await screen.findByText("Must have is required.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/^Must have/), { target: { value: "x" } });
+    submit();
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(sentCustomData()).toEqual({ must: "x" });
+  });
+
+  it("sends the answer to the question that shows another, whatever it is: Yes is true and No is false", async () => {
+    await openWith(FIELDS);
+    pick("Parking", "No");
+    submit();
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(sentCustomData()).toEqual({ parking: "false" });
+  });
+
+  it("starts the next attendee with the conditional questions hidden again, as the form is cleared", async () => {
+    await openWith(FIELDS);
+    pick("Parking", "Yes");
+    expect(asked(/^Plate number/)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(asked(/^Plate number/)).toBe(false);
+    expect(screen.getByRole("button", { name: "Parking, none selected" })).toBeTruthy();
+  });
+
+  it("draws a question with a condition that the form cannot meet as hidden for good, and does not ask for it", async () => {
+    await openWith([parking, answerField("orphan", "Orphan", "text", { required: true, rules: { show_when: { field: "nothing", value: true } } })]);
+    expect(asked(/^Orphan/)).toBe(false);
+    submit();
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(sentCustomData()).toBeUndefined();
   });
 });

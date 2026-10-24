@@ -8,9 +8,57 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ## [Unreleased]
 
+### Added
+
+- Add rate limits for the upcoming public registration form, tunable with `RATE_LIMIT_OVERRIDES` (`registration:page`, `registration:submit`, `registration:confirm`, `registration:password`, `registration:event`, `registration:mail-recipient`) ([#1753](https://github.com/solarssk/admitto/pull/1753))
+- Add the groundwork for guest registration mails: four English default messages, a signed email-confirmation link, and `confirm_url`, `contact_name` and `contact_email` variables ([#1749](https://github.com/solarssk/admitto/pull/1749))
+- Add a Turnstile card to Organisation settings > External services and a "Bot protection" row to the Health check, for the coming guest registration form ([#1767](https://github.com/solarssk/admitto/pull/1767))
+- Add legal texts per event (privacy notice, event terms, extra consents) with an admin API and public pages at /legal, for the coming registration form ([#1769](https://github.com/solarssk/admitto/pull/1769))
+- Give attendee fields a saved order and a registration-form setting, and refuse a Required field the form would not ask ([#1766](https://github.com/solarssk/admitto/pull/1766))
+- Show tabs between an event's published legal texts on the public /legal pages ([#1770](https://github.com/solarssk/admitto/pull/1770))
+- Add long text, date, date and time and phone answer types and format rules for attendee fields, in the API and the import ([#1773](https://github.com/solarssk/admitto/pull/1773))
+- Add a worker job that sends guest registration mail and deletes registrations not confirmed in 24 hours, with a Health check row for its queue ([#1775](https://github.com/solarssk/admitto/pull/1775))
+- Add the guest registration form at /r/<event slug> for events that use the public link; it stays a not-found page until an event turns registration on ([#1776](https://github.com/solarssk/admitto/pull/1776))
+- Add long text, date, date and time and phone questions to the registration form, with the field's rules as hints ([#1783](https://github.com/solarssk/admitto/pull/1783))
+- Add icons, suggestions and "show only when" conditions to attendee fields (admin API); a question that is not shown is never required or saved ([#1785](https://github.com/solarssk/admitto/pull/1785))
+- Add long text, date, date and time and phone answer types, with format rules, to the field editor, attendee form and import columns list ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Show an avatar with the attendee's initials before the name on the attendee page ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Show icons, questions that open under another answer, and a list of suggestions on the guest registration form, as in the approved design ([#1786](https://github.com/solarssk/admitto/pull/1786))
+- Add icons, "show only when" conditions and suggestions to the attendee field editor, and show them on the field list ([#1787](https://github.com/solarssk/admitto/pull/1787))
+- Warn in the field editor, and in the delete dialog, when other fields are shown only for an answer to the field ([#1787](https://github.com/solarssk/admitto/pull/1787))
+- Add an admin API to accept or reject guest registrations, up to 500 at once, and to send a failed registration mail again ([#1789](https://github.com/solarssk/admitto/pull/1789))
+- Add an admin API to delete guest registrations one by one, by selection or by filter; an accepted one erases its attendee ([#1792](https://github.com/solarssk/admitto/pull/1792))
+- Add sending the guest registration form, with a bot check and one answer for every address; off until an event turns registration on ([#1790](https://github.com/solarssk/admitto/pull/1790))
+- Add `registration:mail-event`, a daily cap on the registration mail one event queues (1000, or 3 per seat), tunable with `RATE_LIMIT_OVERRIDES` ([#1790](https://github.com/solarssk/admitto/pull/1790))
+- Add the four guest registration emails to Communication > Templates, where you can read them, edit them and revert them to the built-in text ([#1791](https://github.com/solarssk/admitto/pull/1791))
+- Show who accepted, rejected or deleted guest registrations in Organisation settings > Logs > Audit, and filter by these actions ([#1794](https://github.com/solarssk/admitto/pull/1794))
+- Add the page behind the guest confirmation link: opening it confirms nothing, its button does, and the link works for 24 hours ([#1795](https://github.com/solarssk/admitto/pull/1795))
+- Add the Requests tab to the Registration page, listing the requests guests sent with search, filters and pages, and a Registrations row on the Overview checklist ([#1796](https://github.com/solarssk/admitto/pull/1796))
+- Add "Add suggested questions" on the Registration page's Fields tab: one click adds parking, travel and accommodation questions, and a new event has no fields ([#1803](https://github.com/solarssk/admitto/pull/1803))
+
+### Changed
+
+- Use the width of the screen in the Add attendee and Edit attendee forms, two fields to a row, with the custom fields under their own heading ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Hide a question that is shown only for another answer in the Add attendee and Edit attendee forms, and do not require or save it ([#1787](https://github.com/solarssk/admitto/pull/1787))
+- Give the Communication template picker a row of its own on a phone, so the open template's name is not cut off ([#1791](https://github.com/solarssk/admitto/pull/1791))
+- Mail the same confirmation link again when a guest sends the form again for an address that still waits, at most every 10 minutes ([#1795](https://github.com/solarssk/admitto/pull/1795))
+- Show the number on a tab in a darker grey, so it can be read on the grey page background ([#1796](https://github.com/solarssk/admitto/pull/1796))
+
+### Fixed
+
+- Save an attendee's email in lower case when staff add or edit it, and refuse an address that differs from another's only in capitals ([#1781](https://github.com/solarssk/admitto/pull/1781))
+- Fix saving a single choice field when only its label or Required switch changed, which failed with "Check the form and try again" ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Fix Escape closing a whole dialog, and what was typed in it, together with an open date or time picker ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Keep Bitwarden from offering to fill an attendee's email, name, company and phone with the staff member's own in the Add attendee and Edit attendee forms ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Fix the date picker for a date before the year 1000, which was written without its leading zeros and showed the calendar of 19xx ([#1784](https://github.com/solarssk/admitto/pull/1784))
+
 ### Security
 
+- Add a strict nonce-based security policy and a uniform not-found page for the coming public registration form ([#1752](https://github.com/solarssk/admitto/pull/1752))
+- Clear an attendee's earlier addresses, recorded when staff edited them, from other attendees' mail and saved import results when the attendee is erased or removed ([#1768](https://github.com/solarssk/admitto/pull/1768))
+- Redact the guest confirmation link in the access log, and keep a short hash that tells links apart ([#1795](https://github.com/solarssk/admitto/pull/1795))
 - Bump `zod` to 4.6.6 (high: memory exhaustion on oversized collections, GHSA-mrhx-c7xc-m3w5), and `hono` and `ip-address` past moderate advisories ([#1797](https://github.com/solarssk/admitto/pull/1797))
+- Bump `undici` (high: denial of service in the EventSource parser), `fast-uri` and `nodemailer` past their advisories ([#1805](https://github.com/solarssk/admitto/pull/1805))
 
 ## [0.7.7] - 2026-10-18
 

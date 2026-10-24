@@ -5,6 +5,7 @@ import {
   UnknownContentFieldError,
   ContentFieldAlreadyAssignedError,
   loadEventCustomDataFields,
+  loadRegistrantFormFields,
   validateContentFieldReferences,
   findConflictingContentField,
   assertContentFieldsNotAssignedElsewhere,
@@ -119,6 +120,62 @@ describe("loadEventCustomDataFields", () => {
     const fields = await loadEventCustomDataFields(prisma, otherEventId);
     expect(fields).toEqual([]);
     await prisma.event.delete({ where: { id: otherEventId } });
+  });
+});
+
+describe("loadRegistrantFormFields and the organiser's note", () => {
+  let prisma: PrismaClient;
+  const ORG_ID = "org_registrant_form_description";
+  const EVENT_ID = "test-event-registrant-form-description";
+
+  beforeAll(async () => {
+    prisma = createTestPrismaClient();
+    await prisma.organization.upsert({
+      where: { id: ORG_ID },
+      create: { id: ORG_ID, name: "Registrant Form Description", slug: "registrant-form-description" },
+      update: {},
+    });
+    await prisma.event.upsert({
+      where: { id: EVENT_ID },
+      create: {
+        id: EVENT_ID,
+        title: "Registrant Form Description Event",
+        slug: "registrant-form-description-event",
+        date: new Date("2026-09-01T09:00:00Z"),
+        organization_id: ORG_ID,
+      },
+      update: {},
+    });
+    await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_ID } });
+    await prisma.eventCustomField.createMany({
+      data: [
+        { event_id: EVENT_ID, source_field: "with_note", label: "With a note", description: "  Allergies, please.  ", show_on_form: true, display_order: 0 },
+        { event_id: EVENT_ID, source_field: "blank_note", label: "Blank note", description: "   ", show_on_form: true, display_order: 1 },
+        { event_id: EVENT_ID, source_field: "no_note", label: "No note", description: null, show_on_form: true, display_order: 2 },
+      ],
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_ID } });
+    await prisma.event.delete({ where: { id: EVENT_ID } });
+    await prisma.organization.delete({ where: { id: ORG_ID } });
+    await prisma.$disconnect();
+  });
+
+  it("carries a description, trimmed, and leaves the key out when there is none or it is blank", async () => {
+    const fields = await loadRegistrantFormFields(prisma, EVENT_ID);
+    expect(fields.map((field) => [field.source_field, field.description])).toEqual([
+      ["with_note", "Allergies, please."],
+      ["blank_note", undefined],
+      ["no_note", undefined],
+    ]);
+    expect(Object.keys(fields[1]!)).not.toContain("description");
+  });
+
+  it("does not hand the description to the readers that never needed it", async () => {
+    const fields = await loadEventCustomDataFields(prisma, EVENT_ID);
+    expect(fields.every((field) => !("description" in field))).toBe(true);
   });
 });
 

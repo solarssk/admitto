@@ -44,13 +44,18 @@ export function assertRenderableCompiledHtml(html: string): void {
   assertSafeHtmlMarkup(html);
 }
 
-/** Returns required URL placeholder names missing from subject/body source. */
-export function findMissingRequiredPlaceholders(subject: string, body: string): string[] {
+/** Returns the required placeholder names missing from subject/body source: the ticket's two URLs unless `required`
+ * names others (see requiredPlaceholdersForTemplate). */
+export function findMissingRequiredPlaceholders(
+  subject: string,
+  body: string,
+  required: ReadonlySet<string> = REQUIRED_URL_PLACEHOLDERS,
+): string[] {
   const found = new Set([
     ...extractPlaceholderNames(subject),
     ...extractPlaceholderNames(body),
   ]);
-  return [...REQUIRED_URL_PLACEHOLDERS].filter((p) => !found.has(p)).sort((a, b) => a.localeCompare(b));
+  return [...required].filter((p) => !found.has(p)).sort((a, b) => a.localeCompare(b));
 }
 
 /** Throws when the source contains unknown placeholders or unsafe HTML markup. `extraAllowed`

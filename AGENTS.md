@@ -25,7 +25,7 @@ This file holds what applies to **every** change. Area-specific rules live in [s
 
 Admitto is a self-hostable **internal event access gateway**: attendee import (CSV/XLSX, agency UUIDs), QR tickets, M365 mail, check-in for operators, admin tooling. Tabler-based staff SPA; OIDC-ready auth.
 
-**Out of scope for MVP:** payments, public registration UI inside Admitto (intake is planned as MS Forms → `/api/ingest` - not yet built), full CRM, drag-and-drop mail builder, native `.pkpass` (PassCreator first).
+**Out of scope for MVP:** payments, full CRM, drag-and-drop mail builder, native `.pkpass` (PassCreator first).
 
 ## Working style
 
@@ -146,6 +146,7 @@ These pass the tests and break later. One line each; the reason and the fix are 
 | Never bind-mount a host directory over a path the image already fills, and never `rm -rf` a bind-mount root | [infra-and-deploy.md](standards/infra-and-deploy.md) |
 | Do not drop the tag from `FROM node:...@sha256:...`; do not document `ILA_*` as a runtime switch | [infra-and-deploy.md](standards/infra-and-deploy.md) |
 | A `.csv`, `.xlsx` or `.pdf` stored under an event's upload folder is deleted a day later unless an `AdminJob.storage_key` names it (the sweep of unnamed job files) | [attendee-erasure.md](docs/dev/attendee-erasure.md) |
+| A transaction that writes a guest `Registration` or its mail takes `lockRegistrationQueue` in the lock order: after the job, catalog and capacity locks (in `work`, not `prepare`), before any event, attendee or registration row | [attendee-erasure.md](docs/dev/attendee-erasure.md#rules-for-code) |
 | A cache marker is validated in every place it is trusted, not only on the fast path | [infra-and-deploy.md](standards/infra-and-deploy.md) |
 | SonarCloud runs from CI only; `NOSONAR` leads its own comment; a near-copy of a sibling file can trip the duplication gate | [ci-and-tooling.md](standards/ci-and-tooling.md) |
 | `eslint-disable-next-line` covers only the next line, so the explanation goes above it | [ci-and-tooling.md](standards/ci-and-tooling.md) |

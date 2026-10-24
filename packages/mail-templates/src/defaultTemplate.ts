@@ -1,5 +1,6 @@
-import type { ResolvedTemplate } from "./types.js";
+import type { ResolvedTemplate, TemplateFormat } from "./types.js";
 import { compileTemplate } from "./compile.js";
+import { DEFAULT_TEMPLATE_NAME, systemTemplateLabel, type SystemTemplateName } from "./systemTemplates.js";
 
 /** Built-in default ticket email — MJML source (text-only header, no logo section). */
 export const DEFAULT_SUBJECT_TEMPLATE = "Your ticket for {{event_name}}";
@@ -35,26 +36,188 @@ export const DEFAULT_BODY_MJML = `<mjml>
   </mj-body>
 </mjml>`;
 
-let cachedBuiltin: ResolvedTemplate | undefined;
-let compilePromise: Promise<ResolvedTemplate> | undefined;
+/** One registration mail in the shared skeleton: greeting, paragraphs, optional button, and the
+ * contact line every guest mail carries (D-B12). Only the wording differs between the four.
+ *
+ * The greeting names no one. Until a guest has confirmed the address, anyone can type any name for it,
+ * so the worker renders `first_name`, `last_name` and `full_name` empty in a mail to such an address
+ * (registration-mail-render.ts in `@admitto/mail-delivery`): "Hi {{first_name}}," would read "Hi ,". */
+function registrationMjml(input: {
+  paragraphs: readonly string[];
+  button?: { href: string; label: string };
+}): string {
+  const paragraphs = input.paragraphs
+    .map((text) => `        <mj-text padding-bottom="16px">\n          ${text}\n        </mj-text>`)
+    .join("\n");
+  const button = input.button
+    ? `
+        <mj-button href="${input.button.href}" background-color="#206bc4" color="#ffffff" font-size="16px" inner-padding="12px 24px" border-radius="4px">
+          ${input.button.label}
+        </mj-button>`
+    : "";
+  return `<mjml>
+  <mj-head>
+    <mj-attributes>
+      <mj-all font-family="Arial, Helvetica, sans-serif" />
+      <mj-text font-size="16px" line-height="24px" color="#333333" />
+    </mj-attributes>
+  </mj-head>
+  <mj-body background-color="#f4f4f4" width="600px">
+    <mj-section background-color="#ffffff" padding="24px">
+      <mj-column>
+        <mj-text align="center" font-size="22px" font-weight="bold" padding-bottom="8px">
+          {{event_name}}
+        </mj-text>
+        <mj-text padding-bottom="16px">
+          Hello,
+        </mj-text>
+${paragraphs}${button}
+        <mj-text align="center" font-size="14px" color="#666666" padding-top="16px">
+          {{event_date}} · {{event_location}}
+        </mj-text>
+        <mj-text align="center" font-size="14px" color="#666666">
+          {{contact_line}}
+        </mj-text>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>`;
+}
 
-/** Pre-compiled built-in default (compiled once, lazily). */
-export async function getBuiltinTemplate(): Promise<ResolvedTemplate> {
-  if (cachedBuiltin) return cachedBuiltin;
-  compilePromise ??= (async () => {
-    const compiledHtmlTemplate = await compileTemplate(DEFAULT_BODY_MJML, "mjml");
-    cachedBuiltin = {
-      subjectTemplate: DEFAULT_SUBJECT_TEMPLATE,
-      compiledHtmlTemplate,
-      templateFormat: "mjml",
-      source: "builtin",
-    };
-    return cachedBuiltin;
-  })().catch((err: unknown) => {
-    compilePromise = undefined;
+/** For a mail that can reach an address nobody has confirmed: whoever typed it was not necessarily its owner. */
+const IGNORE_IF_NOT_YOU = "If you did not register for {{event_name}}, you can ignore this email.";
+
+/** A built-in mail: source text plus the label a fresh override row starts with. */
+export interface BuiltinTemplateSource {
+  label: string;
+  subject: string;
+  body: string;
+  format: TemplateFormat;
+}
+
+/** Every built-in default, by template name. A Map and not an object: a lookup by a name that
+ * came from a row or a request must not reach `Object.prototype` (and `detect-object-injection`
+ * is an error in this package). An unknown name throws instead of falling back to the ticket
+ * mail, because that fallback would send an attendee's ticket in place of a registration notice. */
+const BUILTIN_SOURCES: ReadonlyMap<string, BuiltinTemplateSource> = new Map<
+  string,
+  BuiltinTemplateSource
+>([
+  [
+    DEFAULT_TEMPLATE_NAME,
+    {
+      label: "Ticket email",
+      subject: DEFAULT_SUBJECT_TEMPLATE,
+      body: DEFAULT_BODY_MJML,
+      format: "mjml",
+    },
+  ],
+  [
+    "registration-confirm" satisfies SystemTemplateName,
+    {
+      label: systemTemplateLabel("registration-confirm"),
+      subject: "Confirm your email for {{event_name}}",
+      body: registrationMjml({
+        paragraphs: [
+          "Thank you for registering for {{event_name}}. Please confirm your email address to finish your registration. The link works for 24 hours.",
+          IGNORE_IF_NOT_YOU,
+        ],
+        button: { href: "{{confirm_url}}", label: "Confirm email address" },
+      }),
+      format: "mjml",
+    },
+  ],
+  [
+    "registration-received" satisfies SystemTemplateName,
+    {
+      label: systemTemplateLabel("registration-received"),
+      subject: "We received your registration for {{event_name}}",
+      body: registrationMjml({
+        paragraphs: [
+          "Thank you for registering for {{event_name}}. The organizers review every registration, and we will email you as soon as there is a decision.",
+          IGNORE_IF_NOT_YOU,
+        ],
+      }),
+      format: "mjml",
+    },
+  ],
+  [
+    "registration-waitlist" satisfies SystemTemplateName,
+    {
+      label: systemTemplateLabel("registration-waitlist"),
+      subject: "You are on the waiting list for {{event_name}}",
+      body: registrationMjml({
+        paragraphs: [
+          "{{event_name}} is full at the moment, so your registration is on the waiting list.",
+          "If the organizers can offer you a place, we will email you.",
+          IGNORE_IF_NOT_YOU,
+        ],
+      }),
+      format: "mjml",
+    },
+  ],
+  [
+    "registration-rejected" satisfies SystemTemplateName,
+    {
+      label: systemTemplateLabel("registration-rejected"),
+      subject: "Your registration for {{event_name}}",
+      body: registrationMjml({
+        paragraphs: [
+          "Thank you for your interest in {{event_name}}. We are sorry, but we are not able to offer you a place.",
+        ],
+      }),
+      format: "mjml",
+    },
+  ],
+]);
+
+/** Thrown for a template name with no built-in default. */
+export class UnknownBuiltinTemplateError extends Error {
+  constructor(name: string) {
+    super(`No built-in mail template named "${name}"`);
+    this.name = "UnknownBuiltinTemplateError";
+  }
+}
+
+/** Source (subject, MJML body, label) of a built-in default - what "Revert to default" and a
+ * new override start from. @throws UnknownBuiltinTemplateError for a name with no default. */
+export function getBuiltinTemplateSource(name: string): BuiltinTemplateSource {
+  const source = BUILTIN_SOURCES.get(name);
+  if (!source) throw new UnknownBuiltinTemplateError(name);
+  return source;
+}
+
+/** Label a new row of this name starts with: the built-in's, else the name itself. */
+export function defaultTemplateLabel(name: string): string {
+  return BUILTIN_SOURCES.get(name)?.label ?? name;
+}
+
+const builtinCache = new Map<string, Promise<ResolvedTemplate>>();
+
+async function compileBuiltin(source: ReturnType<typeof getBuiltinTemplateSource>): Promise<ResolvedTemplate> {
+  const compiledHtmlTemplate = await compileTemplate(source.body, source.format);
+  return {
+    subjectTemplate: source.subject,
+    compiledHtmlTemplate,
+    templateFormat: source.format,
+    source: "builtin",
+  };
+}
+
+/** Pre-compiled built-in default (compiled once per name, lazily). `ticket` unless a name is
+ * given. @throws UnknownBuiltinTemplateError for a name with no default. */
+export async function getBuiltinTemplate(
+  name: string = DEFAULT_TEMPLATE_NAME,
+): Promise<ResolvedTemplate> {
+  const cached = builtinCache.get(name);
+  if (cached) return cached;
+  const source = getBuiltinTemplateSource(name);
+  const compiling = compileBuiltin(source).catch((err: unknown) => {
+    builtinCache.delete(name);
     throw err;
   });
-  return compilePromise;
+  builtinCache.set(name, compiling);
+  return compiling;
 }
 
 /**
@@ -62,6 +225,5 @@ export async function getBuiltinTemplate(): Promise<ResolvedTemplate> {
  * Not re-exported from package index — import from `./defaultTemplate.js` in tests.
  */
 export function resetBuiltinTemplateCacheForTests(): void {
-  cachedBuiltin = undefined;
-  compilePromise = undefined;
+  builtinCache.clear();
 }

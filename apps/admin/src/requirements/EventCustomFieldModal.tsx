@@ -1,9 +1,26 @@
 import { useRef, useState } from "react";
-import { Button, IconButton, ModalBackdrop, Tooltip, useToast } from "@admitto/ui";
+import type { EventCustomFieldType } from "@admitto/shared";
+import { Button, IconButton, ModalBackdrop, Notice, Tooltip, useToast } from "@admitto/ui";
 import { createEventCustomField, updateEventCustomField } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto } from "../api/types.js";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
+import { dependencyMessage, dependencyProblem } from "./fieldDependencies.js";
+import { createFieldBody, fieldSaveOf, sameFieldSave, updateFieldPatch, type FieldSave } from "./fieldRequests.js";
+import { FieldRulesEditor } from "./FieldRulesEditor.js";
+import { FieldTypePicker } from "./FieldTypePicker.js";
+import {
+  EMPTY_RULES_DRAFT,
+  formatRulesFromDraft,
+  hasRulesProblem,
+  rulesDraftFromRules,
+  rulesProblems,
+  rulesToSave,
+  sameRules,
+  typeTakesRules,
+  type RulesDraft,
+} from "./fieldRules.js";
+import { FormRulesEditor } from "./FormRulesEditor.js";
 import { slugifyItemKey } from "./itemKey.js";
 import { optionRowsFromOptions, OptionsEditor, type OptionRow } from "./OptionsEditor.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -17,21 +34,31 @@ export interface EventCustomFieldModalProps {
   eventId: string;
   /** null = create a new field; a field row = edit it (source_field becomes read-only). */
   field: EventCustomFieldDto | null;
+  /** The event's fields as the card shows them, the one being edited among them: the question a condition depends on is picked from
+   * them, and the ones that depend on this field hold back a change that would leave them without their answer. */
+  fields: readonly EventCustomFieldDto[];
   onClose: () => void;
   onSaved: () => void;
+  /** A new field is created on the registration form, which is where the Registration page adds it from; left out, it starts
+   * off the form, as the API does by default. Only a new field takes it: an edit leaves the form alone. */
+  showOnForm?: boolean;
 }
 
 type FormState = {
   label: string;
   source_field: string;
   description: string;
-  type: "text" | "select" | "boolean";
+  type: EventCustomFieldDto["type"];
   required: boolean;
   options: OptionRow[];
+  /** The rules, as typed: the format rules, the icon, the condition and the suggestions. What was typed for a type that does not take
+   * it stays, so that going back to a type that does gives it back; what counts as an edit and what is sent follows the type
+   * (`rulesToSave`). */
+  rules: RulesDraft;
 };
 
 function emptyForm(): FormState {
-  return { label: "", source_field: "", description: "", type: "text", required: false, options: [] };
+  return { label: "", source_field: "", description: "", type: "text", required: false, options: [], rules: EMPTY_RULES_DRAFT };
 }
 
 function formFromField(field: EventCustomFieldDto): FormState {
@@ -42,11 +69,12 @@ function formFromField(field: EventCustomFieldDto): FormState {
     type: field.type,
     required: field.required,
     options: optionRowsFromOptions(field.options),
+    rules: rulesDraftFromRules(field.rules),
   };
 }
 
 /** Add/edit modal for one EventCustomField registry row (dietary, shirt size, ...). */
-export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: EventCustomFieldModalProps) {
+export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved, showOnForm = false }: Readonly<EventCustomFieldModalProps>) {
   const { addToast } = useToast();
   const isEdit = field !== null;
   const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
@@ -70,13 +98,44 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
 
   const labelTrimmed = form.label.trim();
   const selectOptions = form.options.map((r) => r.text.trim()).filter(Boolean);
+  // What the server would refuse in the rules, said where the boxes are. A type that takes no format rules has none to refuse.
+  const problems = rulesProblems(form.type, form.rules);
+  // The rules this save would leave on the field: what the form says for its type, and the rules it has no control for.
+  const nextRules = rulesToSave(form.rules, form.type, field?.rules);
+  const save: FieldSave = {
+    type: form.type,
+    label: labelTrimmed,
+    description: form.description.trim(),
+    required: form.required,
+    options: selectOptions,
+    rules: nextRules,
+  };
+  // What the other fields of the event say about it, as the server would (the same checks): a condition on a question that is not on the
+  // form, and a change that leaves a field that is shown for an answer of this one without it. An edit leaves the form flag as it is.
+  const onForm = field ? field.show_on_form : showOnForm;
+  const dependency = dependencyProblem(
+    {
+      source_field: form.source_field,
+      type: form.type,
+      show_on_form: onForm,
+      options: form.type === "select" ? selectOptions : null,
+      rules: nextRules,
+    },
+    fields,
+  );
   const canSubmit =
     labelTrimmed.length > 0 &&
     form.source_field.length > 0 &&
-    (form.type !== "select" || selectOptions.length > 0);
+    (form.type !== "select" || selectOptions.length > 0) &&
+    !hasRulesProblem(problems) &&
+    dependency === null;
   // Create mode always has "something new to save" once canSubmit is true; edit mode also
   // requires the draft to actually differ from the field being edited.
-  const dirty = field ? JSON.stringify(form) !== JSON.stringify(formFromField(field)) : true;
+  const dirty = field ? !sameFieldSave(save, fieldSaveOf(field)) : true;
+  // Whether this changes the type or the format rules of a field that already has answers: they are not converted, only checked against
+  // the new type and rules from now on. The icon, the condition and the suggestions do not judge an answer.
+  const nextFormatRules = typeTakesRules(form.type) ? formatRulesFromDraft(form.rules) : null;
+  const changesAnswerFormat = field !== null && (form.type !== field.type || !sameRules(nextFormatRules, field.rules));
 
   // Options renamed - or blanked, which selectOptions below treats as a removal - away from a
   // value with attendees currently on it. Save gates on these with ConfirmDialog instead of
@@ -90,6 +149,10 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
         return (blanked || renamed) && (usageCounts[r.originalText] ?? 0) > 0;
       })
     : [];
+
+  function selectType(type: EventCustomFieldType) {
+    setForm((f) => ({ ...f, type, options: type === "select" ? f.options : [] }));
+  }
 
   function updateLabel(value: string) {
     setForm((f) => ({
@@ -111,43 +174,12 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   }
 
   async function performSave() {
-    const label = labelTrimmed;
-    const source_field = form.source_field;
-    const description = form.description.trim();
-    const options = selectOptions;
     setSaving(true);
     try {
       if (isEdit) {
-        // Only send options when they actually changed (or the type just switched away from
-        // "select"): re-sending the same list re-derived from the textarea on every save -
-        // e.g. one that only flips "Required" - risks silently rewriting the stored options with
-        // a round-trip artifact (a comma inside an option gets re-split into two) and, since
-        // attendees' custom_data values match options by exact text, breaks their already-saved
-        // selection for no reason tied to what the operator actually changed.
-        const optionsChanged =
-          form.type === "select"
-            ? JSON.stringify(options) !== JSON.stringify(field.options ?? [])
-            : field.type === "select";
-        await updateEventCustomField(eventId, field.id, {
-          label,
-          // null (not undefined) so the server can tell "clear the previous description" apart
-          // from "leave it untouched" - same convention as options below.
-          description: description || null,
-          type: form.type,
-          required: form.required,
-          // null clears a previous select's options when switching away from "select"; omitting
-          // the key (undefined) leaves options untouched - PATCH only updates keys it receives.
-          ...(optionsChanged ? { options: form.type === "select" ? options : null } : {}),
-        });
+        await updateEventCustomField(eventId, field.id, updateFieldPatch(field, save));
       } else {
-        await createEventCustomField(eventId, {
-          source_field,
-          label,
-          description: description || undefined,
-          type: form.type,
-          required: form.required,
-          options: form.type === "select" ? options : undefined,
-        });
+        await createEventCustomField(eventId, createFieldBody(form.source_field, save, showOnForm));
       }
       onSaved();
     } catch (err) {
@@ -236,28 +268,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               <span className="at-label" id="cf-type-label">
                 Field type
               </span>
-              <div
-                className="contents-row__type-picker contents-row__type-picker--block"
-                role="group"
-                aria-labelledby="cf-type-label"
-              >
-                {CUSTOM_FIELD_TYPES.map(({ value, icon, label: btnLabel }) => (
-                  <Tooltip key={value} content={btnLabel}>
-                    <button
-                      type="button"
-                      className={`contents-row__type-btn${form.type === value ? " contents-row__type-btn--active" : ""}`}
-                      onClick={() => {
-                        setForm((f) => ({ ...f, type: value, options: value === "select" ? f.options : [] }));
-                      }}
-                      aria-pressed={form.type === value}
-                      aria-label={btnLabel}
-                    >
-                      <i className={`ti ${icon}`} />
-                      <span>{btnLabel}</span>
-                    </button>
-                  </Tooltip>
-                ))}
-              </div>
+              <FieldTypePicker value={form.type} onChange={selectType} labelledBy="cf-type-label" disabled={saving} />
               <span className="at-hint">
                 {CUSTOM_FIELD_TYPES.find((type) => type.value === form.type)?.hint}
               </span>
@@ -282,6 +293,37 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                 </>
               )}
             </div>
+            {dependency?.kind === "controls_others" && (
+              <Notice variant="warning" as="output">
+                {dependencyMessage(dependency, fields)}
+              </Notice>
+            )}
+            {/* Says nothing for a type that takes no rules. */}
+            <FieldRulesEditor
+              type={form.type}
+              draft={form.rules}
+              problems={problems}
+              saving={saving}
+              onChange={(rules) => setForm((f) => ({ ...f, rules }))}
+            />
+            <FormRulesEditor
+              type={form.type}
+              required={form.required}
+              draft={form.rules}
+              problems={problems}
+              fields={fields}
+              sourceField={form.source_field}
+              onForm={onForm}
+              conditionError={dependency && dependency.kind !== "controls_others" ? dependencyMessage(dependency, fields) : ""}
+              saving={saving}
+              onChange={(rules) => setForm((f) => ({ ...f, rules }))}
+            />
+            {changesAnswerFormat && (
+              <Notice variant="warning" as="output">
+                Answers already saved are not changed, but they are checked against the new type and rules. An attendee whose
+                saved answer no longer fits can&apos;t be edited until that answer is replaced or cleared.
+              </Notice>
+            )}
           </form>
           <div className="event-item-modal__footer">
             <div className="event-item-modal__footer-end">

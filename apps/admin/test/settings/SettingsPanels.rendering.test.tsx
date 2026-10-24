@@ -1155,6 +1155,31 @@ describe("AuditLogPanel rendering", () => {
     expect(screen.queryByRole("button", { name: /GDPR/ })).toBeNull();
   });
 
+  it("names the decisions of staff on guest registrations and their deletion, and offers them in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "audit-accepted", action_type: "registration_accepted" }),
+        makeAuditEntry({ id: "audit-rejected", action_type: "registration_rejected" }),
+        makeAuditEntry({ id: "audit-deleted", action_type: "registrations_deleted" }),
+      ],
+      total: 3,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Guest registration accepted").className).toContain("at-badge--neutral");
+    expect(within(table).getByText("Guest registration rejected").className).toContain("at-badge--neutral");
+    expect(within(table).getByText("Guest registrations deleted").className).toContain("at-badge--error");
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    for (const label of ["Guest registration accepted", "Guest registration rejected", "Guest registrations deleted"]) {
+      expect(screen.getByRole("button", { name: label })).toBeTruthy();
+    }
+  });
+
   it("shows the reason of a removal in words, in Details and in the copied row", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [

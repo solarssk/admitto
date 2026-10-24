@@ -603,7 +603,7 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational - no PI
 |-----------|--------------------|
 | `migrate` | Entrypoint boot steps (migration status, backfills) - a one-shot container, exits after logging `migrate: startup tasks complete` |
 | `app` | `Admitto web running at …`, then the JSON access log (see below), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
-| `worker` | `[worker:<job>] <timestamp> …` lines for heartbeat, mail drain, import/export jobs, bounce ingest, and retention (boot + ~24h) |
+| `worker` | `[worker:<job>] <timestamp> …` lines for heartbeat, mail drain, registration mail (`registration_mail`, counts only), import/export jobs, bounce ingest, and retention (boot + ~24h) |
 | `proxy` | Nginx access/error log (image default) - includes client IPs; rotate/limit via Docker logging options if kept long-term |
 | `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
 | `db` / `redis` | Image defaults (Postgres startup/checkpoints, Redis notices) |
@@ -757,7 +757,7 @@ Key points for this deployment model:
 - Origin invariant: reachable only via Cloudflare or WireGuard tunnel
 - Pre-linking staff identities and selecting the direct OIDC source before enabling `CF_ACCESS_ENABLED`
 
-Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
+Public attendee paths (`/t/*`, `/q/*`, `/legal/*`) must stay bypassed at Cloudflare.
 
 ## Admitto worker (mail, import/export, bounce, retention)
 
