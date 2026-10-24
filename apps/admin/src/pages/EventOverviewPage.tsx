@@ -338,6 +338,25 @@ function SetupChecklistCard({
   );
 }
 
+/** The people on site: the guests checked in and the companions let in with them. The ring and the checked-in figure
+ * stay on the guests (the heads); this tile adds the companions, and tells the two apart. */
+function PeopleOnSiteTile({ guests, companions }: Readonly<{ guests: number; companions: number }>) {
+  return (
+    <div className="overview-glance__tile overview-glance__tile--wide">
+      <span className="overview-glance__icon" aria-hidden="true">
+        <i className="ti ti-users" />
+      </span>
+      <span className="overview-glance__text">
+        <span className="overview-glance__label">People on site</span>
+        <span className="overview-glance__value">
+          {guests + companions}{" "}
+          <span className="overview-glance__aside">({peopleOnSiteBreakdown(guests, companions)})</span>
+        </span>
+      </span>
+    </div>
+  );
+}
+
 /** Check-in progress card: the ring and the one number that matters (how many are in, and how
  * many are not), plus two small facts. The second fact is the wallet install count when the event
  * uses wallets, otherwise the busiest hour. Anything more detailed (by ticket type, by hour)
@@ -434,22 +453,8 @@ function CheckInProgressCard({
               </span>
             </div>
           )}
-          {/* Only once a companion has been let in: an event without companions looks as it always did. The ring and the
-           * checked-in count stay on the guests (the heads); this adds the companions who came in with them. */}
-          {companions > 0 && (
-            <div className="overview-glance__tile overview-glance__tile--wide">
-              <span className="overview-glance__icon" aria-hidden="true">
-                <i className="ti ti-users" />
-              </span>
-              <span className="overview-glance__text">
-                <span className="overview-glance__label">People on site</span>
-                <span className="overview-glance__value">
-                  {admitted + companions}{" "}
-                  <span className="overview-glance__aside">({peopleOnSiteBreakdown(admitted, companions)})</span>
-                </span>
-              </span>
-            </div>
-          )}
+          {/* Only once a companion has been let in: an event without companions looks as it always did. */}
+          {companions > 0 && <PeopleOnSiteTile guests={admitted} companions={companions} />}
         </div>
       </div>
     );
