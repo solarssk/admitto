@@ -27,8 +27,8 @@ export const BADGE_ITEM_KEY = DEFAULT_BADGE_ITEM.key;
 /**
  * The "companion" item (D-E5): the guest's +1, ticked off at the door like a hand-out. It is offered only to the guests
  * who have a companion (`audience: "with_companion"`), is not given back and is not issued at check-in. Unlike the badge
- * it is not there from the start: an admission that saves a companion creates it (`ensureCompanionEventItem`), so the
- * item exists exactly when an event has companions, and an event that has none shows nothing new.
+ * it is not there from the start: an admission that saves a companion creates it (`ensureCompanionEventItem`), so an
+ * event that has no companions never has it and shows nothing new.
  */
 const DEFAULT_COMPANION_ITEM = {
   key: "companion",

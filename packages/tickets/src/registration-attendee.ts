@@ -80,8 +80,8 @@ export async function findAttendeeAddresses(
  * to n, with the name the registration holds and the answers that still fit the event's companion questions, as the
  * guest's own answers do (attendeeCustomDataFromAnswers). The companions are those the seats were counted for
  * (readRegistrationCompanions, which seatsNeeded counts too). Nothing is read when the registration holds none. The
- * event's "companion" item is made in the same transaction (ensureCompanionEventItem), so that an event has it exactly
- * when it has a companion, and the operator at the door is offered it for this guest.
+ * event's "companion" item is made in the same transaction (ensureCompanionEventItem), so that it is there from the
+ * first companion on, and the operator at the door is offered it for this guest; an event without companions never has it.
  */
 async function createCompanions(
   tx: Prisma.TransactionClient,
