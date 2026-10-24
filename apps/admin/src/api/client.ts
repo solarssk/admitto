@@ -183,9 +183,9 @@ export type EventFullMeta = {
   capacity: number;
   /** Active attendee count at the time of the capacity check. */
   current: number;
-  /** New rows an import would add (import commit only). */
+  /** The seats the request needs: the new rows an import would add, or the attendee and each companion being restored. */
   incoming?: number;
-  /** Projected total after import (import commit only). */
+  /** The seats in use if the request went through (an import commit, or the restore of an attendee with companions). */
   projected?: number;
 };
 

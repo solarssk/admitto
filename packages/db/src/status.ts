@@ -222,3 +222,12 @@ export const REGISTRATION_MAIL_STATUS = EMAIL_DELIVERY_STATUS;
 export type LegalDocumentKind = 'privacy_notice' | 'event_terms' | 'consent';
 
 export const LEGAL_DOCUMENT_KIND = ['privacy_notice', 'event_terms', 'consent'] as const satisfies LegalDocumentKind[];
+
+/**
+ * EventCustomField.applies_to values, backed by the CHECK constraint EventCustomField_applies_to_check: whose answer a
+ * question asks for. `guest` is the attendee (every field before v0.8, and the default); `companion` is the guest's +1
+ * (D-E5), whose answers live in AttendeeCompanion.custom_data and never in Attendee.custom_data.
+ */
+export type CustomFieldAppliesTo = 'guest' | 'companion';
+
+export const CUSTOM_FIELD_APPLIES_TO = ['guest', 'companion'] as const satisfies CustomFieldAppliesTo[];

@@ -491,6 +491,91 @@ describe("an admission and an erasure of the same address, each first (ERA-04)",
   });
 });
 
+describe("guests who bring a companion race for the last seats", () => {
+  const bringing = { companions: [{ name: "Companion Example", custom_data: {} }] };
+  const pendingWithCompanion = (eventId: string) => make.registration(eventId, { status: "pending", ...bringing });
+
+  it("lets only one of two such registrations take the last two seats, and the other is refused as a whole", async () => {
+    const eventId = await make.event({ mode: "approval", capacity: 2 });
+    const [a, b] = [await pendingWithCompanion(eventId), await pendingWithCompanion(eventId)];
+
+    const results = await Promise.all([admit(eventId, [a.id]), admit(eventId, [b.id], migrated.connection())]);
+
+    expect(results.map((result) => result.status).sort()).toEqual(["done", "not_enough_seats"]);
+    expect(results.find((result) => result.status === "not_enough_seats")).toEqual({ status: "not_enough_seats", free: 0, needed: 2 });
+    expect(await db.attendee.count({ where: { event_id: eventId } })).toBe(1);
+    expect(await db.attendeeCompanion.count({ where: { attendee: { event_id: eventId } } })).toBe(1);
+    expect(await countSeatsInUse(db, eventId)).toBe(2);
+    expect(await db.registration.count({ where: { event_id: eventId, status: "pending" } })).toBe(1);
+  });
+
+  it("lets a guest with a companion and a guest without one share the last three seats, and refuses a third", async () => {
+    const eventId = await make.event({ mode: "approval", capacity: 3 });
+    const [withCompanion, alone, another] = [
+      await pendingWithCompanion(eventId),
+      await make.registration(eventId, { status: "pending" }),
+      await pendingWithCompanion(eventId),
+    ];
+
+    const results = await Promise.all([admit(eventId, [withCompanion.id]), admit(eventId, [alone.id]), admit(eventId, [another.id])]);
+
+    expect(results.filter((result) => result.status === "done")).toHaveLength(2);
+    expect(await countSeatsInUse(db, eventId)).toBeLessThanOrEqual(3);
+    // Whichever two won, no seat was counted twice and none is missing from the count.
+    expect(await countSeatsInUse(db, eventId)).toBe(
+      (await db.attendee.count({ where: { event_id: eventId } })) + (await db.attendeeCompanion.count({ where: { attendee: { event_id: eventId } } })),
+    );
+  });
+
+  it("makes an admission wait for a writer that took a seat, and then finds that the guest and the companion no longer fit", async () => {
+    const eventId = await make.event({ mode: "approval", capacity: 2 });
+    const row = await pendingWithCompanion(eventId);
+    const writer = holdTransaction(migrated.connection(), async (tx) => {
+      await acquireEventCapacityLock(tx, eventId);
+      return takeASeat(tx, eventId, 2);
+    });
+    expect(await writer.started).toBe("created");
+
+    const admitting = admit(eventId, [row.id]);
+    await waitUntilWaitingForCapacityLock(db, eventId);
+    await writer.commit();
+
+    expect(await admitting).toEqual({ status: "not_enough_seats", free: 1, needed: 2 });
+    expect(await db.attendeeCompanion.count({ where: { attendee: { event_id: eventId } } })).toBe(0);
+  });
+
+  it("makes a writer that comes after an admission with a companion wait for it, and then find the event full", async () => {
+    const eventId = await make.event({ mode: "approval", capacity: 2 });
+    const row = await pendingWithCompanion(eventId);
+    const paused = pauseAfterSeatCount(migrated.connection(), eventId);
+    const admitting = admit(eventId, [row.id], paused.client);
+    await paused.reached;
+
+    const writing = runEventCapacityTransaction(migrated.connection(), eventId, noPrepare, (tx) => takeASeat(tx, eventId, 2));
+    await waitUntilWaitingForCapacityLock(db, eventId);
+    paused.release();
+
+    expect(await admitting).toMatchObject({ status: "done" });
+    expect(await writing).toBe("event_full");
+    expect(await countSeatsInUse(db, eventId)).toBe(2);
+  });
+
+  it("lets only one of two confirmations take the last two seats; the other guest goes to the waiting list", async () => {
+    const eventId = await make.event({ mode: "automatic", capacity: 2 });
+    const awaiting = () => make.registration(eventId, { status: "awaiting_email", ...bringing });
+    const [a, b] = [await awaiting(), await awaiting()];
+
+    const results = await Promise.all([
+      confirmRegistrationAddress(db, { eventId, registrationId: a.id }, patient),
+      confirmRegistrationAddress(migrated.connection(), { eventId, registrationId: b.id }, patient),
+    ]);
+
+    expect(results.map((result) => (result.outcome === "placed" ? result.status : result.outcome)).sort()).toEqual(["accepted", "waitlist"]);
+    expect(await countSeatsInUse(db, eventId)).toBe(2);
+    expect(await db.attendeeCompanion.count({ where: { attendee: { event_id: eventId } } })).toBe(1);
+  });
+});
+
 describe("the confirmation of an address and the re-send of its link, racing (D-C5)", () => {
   /** A registration that waits for its address, made the way a submission makes it. */
   async function awaiting(options: Parameters<typeof make.event>[0] = {}) {

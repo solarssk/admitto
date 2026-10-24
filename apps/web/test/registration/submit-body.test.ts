@@ -304,6 +304,20 @@ describe("checkSubmission: the questions of the organiser", () => {
     expect(checked.kind === "valid" && checked.registrant.custom_data).toEqual({ diet: "vegan" });
   });
 
+  it("treats a question about a companion as none of the guest's: not asked, not required, its answer dropped", () => {
+    const asked = [diet, field({ source_field: "companion_badge", required: true, applies_to: "companion" })];
+
+    const unanswered = checkSubmission(answers({ diet: "vegan" }), rules({ fields: asked }));
+    expect(unanswered.kind === "valid" && unanswered.registrant.custom_data).toEqual({ diet: "vegan" });
+
+    const answered = checkSubmission(answers({ diet: "vegan", companion_badge: "Badge Name" }), rules({ fields: asked }));
+    expect(answered.kind === "valid" && answered.registrant.custom_data).toEqual({ diet: "vegan" });
+
+    // Not even a hostile answer to it is looked at: it is no question of the guest's, so there is nothing to refuse.
+    const hostile = checkSubmission(answers({ diet: "vegan", companion_badge: 5 }), rules({ fields: asked }));
+    expect(hostile.kind === "valid" && hostile.registrant.custom_data).toEqual({ diet: "vegan" });
+  });
+
   it("refuses a body with more answers than an event may have questions, as malformed, naming no question", () => {
     const many = Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`k${i}`, "x"]));
 

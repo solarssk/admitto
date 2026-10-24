@@ -128,7 +128,13 @@ import { loadAttendeeErasureRecordForViewer, type AttendeeErasureRecord } from "
 import { loadEventAdminJob } from "./admin-job-http.js";
 import { enqueueWalletPushJob } from "./wallet-push-routes.js";
 import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
-import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation, runEventCapacityTransaction } from "./event-capacity.js";
+import {
+  assertEventCapacityForIncoming,
+  acquireEventCapacityLock,
+  countSeatsOfAttendee,
+  isCapacityReactivation,
+  runEventCapacityTransaction,
+} from "./event-capacity.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
@@ -700,8 +706,9 @@ async function parseListQuery(
   const ticket_type = parseCommaSeparatedTicketTypes(c.req.query("ticket_type"));
   const rsvp_status = parseCommaSeparatedEnum(c.req.query("rsvp_status"), RSVP_STATUSES);
   const mail_status = parseCommaSeparatedEnum(c.req.query("mail_status"), ATTENDEE_MAIL_STATUS_FILTERS);
+  // The attendee's own fields: a question about a companion is answered into the companion's row, which no filter reads.
   const customFieldDefs = await db.eventCustomField.findMany({
-    where: { event_id: eventId },
+    where: { event_id: eventId, applies_to: "guest" },
     select: { source_field: true, type: true, options: true },
     orderBy: eventCustomFieldOrderBy(),
   });
@@ -1876,18 +1883,21 @@ async function guardPatchEmailChange(
 /** Re-checks event capacity when a PATCH restores a previously non-admittable attendee to an
  * admittable status (capacity_reactivation), under the same advisory lock the create/check-in
  * paths use — returns the forced-admit detail for the audit log, or undefined when nothing
- * needed forcing (or no restore happened at all). Throws a TransactionResponseError carrying the
- * capacity response for the transaction's catch to surface. */
+ * needed forcing (or no restore happened at all). The attendee takes a seat again and so does each of
+ * their companions (a companion holds a seat only while the attendee is active), counted under the lock.
+ * Throws a TransactionResponseError carrying the capacity response for the transaction's catch to surface. */
 async function guardPatchCapacityRestore(
   c: Context,
   tx: Prisma.TransactionClient,
   eventId: string,
+  attendeeId: string,
   existingStatus: string,
   statusChange: PatchAttendeeStatusChange,
 ): Promise<{ forced: true; capacity: number; current: number } | undefined> {
   if (!isCapacityReactivation(existingStatus, statusChange)) return undefined;
   await acquireEventCapacityLock(tx, eventId);
-  const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
+  const seatsNeeded = await countSeatsOfAttendee(tx, attendeeId);
+  const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, seatsNeeded, { restoring: true });
   if (capacityResult instanceof Response) throw new TransactionResponseError(capacityResult);
   if (capacityResult && "forced" in capacityResult) return capacityResult;
   return undefined;
@@ -1973,6 +1983,7 @@ async function runPatchAttendeeTransaction(
     c,
     tx,
     eventId,
+    attendeeId,
     existing.status,
     statusChange,
   );

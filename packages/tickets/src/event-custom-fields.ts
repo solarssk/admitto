@@ -1,4 +1,5 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
+import type { CustomFieldAppliesTo } from "@admitto/db/status";
 import { readStoredFieldRules } from "./custom-field-rules.js";
 import type { RegistrantFormField } from "./registrant-input.js";
 import type { EventItemContent } from "./types.js";
@@ -33,11 +34,17 @@ type CustomFieldRow = {
   rules: Prisma.JsonValue;
   show_on_form: boolean;
   description: string | null;
+  applies_to: string;
 };
 
-function readEventCustomFieldRows(db: CustomFieldDb, eventId: string): Promise<CustomFieldRow[]> {
+/** The rows of an event's registry in the one order, of both audiences, or only those whose answers are about `appliesTo`. */
+function readEventCustomFieldRows(
+  db: CustomFieldDb,
+  eventId: string,
+  appliesTo?: CustomFieldAppliesTo,
+): Promise<CustomFieldRow[]> {
   return db.eventCustomField.findMany({
-    where: { event_id: eventId },
+    where: { event_id: eventId, ...(appliesTo ? { applies_to: appliesTo } : {}) },
     orderBy: eventCustomFieldOrderBy(),
   });
 }
@@ -60,18 +67,26 @@ function toFieldContent(row: CustomFieldRow): EventItemContent {
 
 /** Reads an event's custom-field registry rows - the single source of truth for custom-data
  * field definitions, consumed by the check-in operator card, attendee edit/create, CSV/XLSX
- * import, and export alike. In the order of {@link eventCustomFieldOrderBy}. */
+ * import, and export alike. In the order of {@link eventCustomFieldOrderBy}.
+ *
+ * `appliesTo` is whose answers the fields ask for (EventCustomField.applies_to): the default `guest` is the attendee's
+ * own fields, which is every field every caller has ever read (a field about a companion is answered into
+ * AttendeeCompanion.custom_data, not into Attendee.custom_data, so no reader of an attendee's answers may see it).
+ * Pass `companion` to read the questions about the guest's +1. */
 export async function loadEventCustomDataFields(
   db: CustomFieldDb,
   eventId: string,
+  appliesTo: CustomFieldAppliesTo = "guest",
 ): Promise<EventItemContent[]> {
-  return (await readEventCustomFieldRows(db, eventId)).map(toFieldContent);
+  return (await readEventCustomFieldRows(db, eventId, appliesTo)).map(toFieldContent);
 }
 
 /** The same fields in the same order, each with what the public registration form needs:
- * `show_on_form` and the organiser's `description` (left out when empty). Every field is returned,
- * those off the form too: `buildRegistrantCustomData` drops their keys itself, and a renderer takes
- * the ones to draw with `pickRegistrantFormFields`. */
+ * `show_on_form`, the organiser's `description` (left out when empty) and, for a question about the guest's
+ * companion, `applies_to: "companion"` (left out for the guest's own, which is what absent means).
+ * Every field is returned, of both audiences and those off the form too: `buildRegistrantCustomData` drops the keys
+ * it is not to read itself, and a renderer takes the ones to draw with `pickRegistrantFormFields` (the guest's, unless
+ * it is asked for the companion's), so a question about a companion is never on the guest's form. */
 export async function loadRegistrantFormFields(
   db: CustomFieldDb,
   eventId: string,
@@ -79,6 +94,7 @@ export async function loadRegistrantFormFields(
   const rows = await readEventCustomFieldRows(db, eventId);
   return rows.map((row) => {
     const field: RegistrantFormField = { ...toFieldContent(row), show_on_form: row.show_on_form };
+    if (row.applies_to === "companion") field.applies_to = "companion";
     const description = row.description?.trim();
     if (description) field.description = description;
     return field;
