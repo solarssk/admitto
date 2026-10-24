@@ -28,6 +28,7 @@ export {
   isFreeInputCustomFieldType,
   isQuestionShown,
   eventCustomFieldRulesMaxLength,
+  MAX_CUSTOM_FIELDS_PER_EVENT,
   suggestionKey,
   type EventCustomFieldRules,
   type EventCustomFieldType,
@@ -42,6 +43,12 @@ export {
   type ConditionField,
   type ShowWhenProblem,
 } from "./customFieldConditions.js";
+export {
+  SUGGESTED_EVENT_FIELDS,
+  planSuggestedFields,
+  type SuggestedEventField,
+  type SuggestedFieldsPlan,
+} from "./suggestedEventFields.js";
 export { parseUserAgent, parseUserAgentSafe, parseUserAgentWithVersion } from "./parseUserAgent.js";
 export { NO_COMPRESSION_HEADERS } from "./noCompressionHeaders.js";
 export type { DeliveryDetailDto, DeliveryDto } from "./deliveryDto.js";

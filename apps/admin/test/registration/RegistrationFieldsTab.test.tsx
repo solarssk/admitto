@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, MemoryRouter, Outlet, Route, RouterProvider, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
+import { SUGGESTED_EVENT_FIELDS } from "@admitto/shared";
 import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldDto, EventDto } from "../../src/api/types.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
@@ -17,6 +18,7 @@ const updateEventCustomField = vi.fn();
 const reorderEventCustomFields = vi.fn();
 const deleteEventCustomField = vi.fn();
 const createEventCustomField = vi.fn();
+const addSuggestedEventCustomFields = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
@@ -26,6 +28,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   reorderEventCustomFields: (...args: unknown[]) => reorderEventCustomFields(...args),
   deleteEventCustomField: (...args: unknown[]) => deleteEventCustomField(...args),
   createEventCustomField: (...args: unknown[]) => createEventCustomField(...args),
+  addSuggestedEventCustomFields: (...args: unknown[]) => addSuggestedEventCustomFields(...args),
   fetchEventCustomFieldOptionUsage: vi.fn(async () => ({})),
 }));
 
@@ -408,6 +411,32 @@ describe("RegistrationFieldsTab: a change", () => {
     await waitFor(() => expect(rowNames()).toEqual(["Dietary requirements", "Plate number"]));
     expect(createEventCustomField).toHaveBeenCalledWith("evt-1", expect.objectContaining({ source_field: "plate_number", show_on_form: true }));
     expect((screen.getByRole("switch", { name: "Plate number on the form" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("adds the suggested questions after a confirmation, reads the list again and shows them on the form", async () => {
+    const suggestedFields = SUGGESTED_EVENT_FIELDS.map((suggested) =>
+      field(`field-${suggested.source_field}`, suggested.label, { source_field: suggested.source_field, type: suggested.type, show_on_form: true }),
+    );
+    fetchEventCustomFields.mockResolvedValueOnce([dietary]).mockResolvedValueOnce([dietary, ...suggestedFields]);
+    addSuggestedEventCustomFields.mockResolvedValueOnce({ added: suggestedFields.map((item) => item.source_field), skipped: [] });
+    renderTab();
+    await cardLoaded();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add suggested questions" }));
+    const dialog = screen.getByRole("dialog", { name: "Add suggested questions" });
+    expect(within(dialog).getAllByText("Will be added")).toHaveLength(5);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add 5 questions" }));
+
+    await waitFor(() => expect(rowNames()).toEqual(["Dietary requirements", ...SUGGESTED_EVENT_FIELDS.map((suggested) => suggested.label)]));
+    expect(addSuggestedEventCustomFields).toHaveBeenCalledWith("evt-1");
+    expect(addToast).toHaveBeenCalledWith("Added 5 suggested questions.", "success");
+    expect(fetchEventCustomFields).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect((screen.getByRole("switch", { name: "Do you need accommodation? on the form" }) as HTMLInputElement).checked).toBe(true);
+
+    // Opened again, the window says that there is nothing left to add.
+    fireEvent.click(screen.getByRole("button", { name: "Add suggested questions" }));
+    expect(screen.getByRole("dialog", { name: "Add suggested questions" }).textContent).toContain("Every suggested question is already in your list.");
   });
 
   it("shows a switch that was saved at once, from the answer, without reading the list again", async () => {
