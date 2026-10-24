@@ -369,4 +369,67 @@ describe("EventItemDrawer", () => {
       );
     });
   });
+
+  describe("an item for guests with a companion", () => {
+    const companionItem: EventItemDto = {
+      id: "item-companion",
+      key: "companion",
+      label: "Companion",
+      type: "item",
+      enabled: true,
+      icon: "user",
+      config: { audience: "with_companion", requires_return: false, issue_on_checkin: false },
+    };
+
+    it("keeps its audience when something else is changed and saved: the server replaces the whole config", async () => {
+      vi.mocked(updateEventItem).mockResolvedValueOnce(companionItem);
+      renderDrawer(companionItem);
+
+      fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Plus one" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(updateEventItem).toHaveBeenCalledWith(
+          "evt-1",
+          "item-companion",
+          expect.objectContaining({ label: "Plus one", config: { requires_return: false, content_fields: [], audience: "with_companion" } }),
+        );
+      });
+    });
+
+    it("keeps an audience of 'all' too, as the item had it", async () => {
+      const forEveryone: EventItemDto = { ...giftbagItem, config: { audience: "all", requires_return: false } };
+      vi.mocked(updateEventItem).mockResolvedValueOnce(forEveryone);
+      renderDrawer(forEveryone);
+
+      fireEvent.click(screen.getByRole("switch", { name: "Requires return" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(updateEventItem).toHaveBeenCalledWith(
+          "evt-1",
+          "item-gift",
+          expect.objectContaining({ config: { requires_return: true, content_fields: [], audience: "all" } }),
+        );
+      });
+    });
+
+    it("adds no audience to an item that had none", async () => {
+      vi.mocked(updateEventItem).mockResolvedValueOnce(giftbagItem);
+      renderDrawer(giftbagItem);
+
+      fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Gift bag " } });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(updateEventItem).toHaveBeenCalled());
+      const config = vi.mocked(updateEventItem).mock.calls[0]![2].config;
+      expect(config).toEqual({ requires_return: false, content_fields: [] });
+      expect(config).not.toHaveProperty("audience");
+    });
+
+    it("can be deleted when no one holds it, unlike the badge", () => {
+      renderDrawer(companionItem);
+      expect((screen.getByRole("button", { name: "Delete item" }) as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
 });

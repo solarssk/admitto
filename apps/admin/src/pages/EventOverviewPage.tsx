@@ -68,6 +68,7 @@ import {
 import { isValidEmailFormat } from "../utils/email.js";
 import { mailtoHref, telHref } from "../utils/contactLinks.js";
 import { assertPresent } from "../utils/assert-present.js";
+import { peopleOnSiteBreakdown } from "../utils/peopleOnSite.js";
 import { OverviewKpiTile } from "../overview/OverviewKpiTile.js";
 import { OverviewSkeleton } from "../overview/OverviewSkeleton.js";
 import { PanelLoadError } from "../settings/PanelLoadError.js";
@@ -353,6 +354,7 @@ function CheckInProgressCard({
 }>) {
   const total = overview.attendee_count;
   const admitted = Math.min(admittedCount, total);
+  const companions = overview.companions_admitted;
   const notYet = Math.max(total - admitted, 0);
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
   // --border-strong (~1.5:1 against white) rather than a --text-muted-based mix: a clearly lighter,
@@ -428,6 +430,22 @@ function CheckInProgressCard({
                 <span className="overview-glance__label">Wallet passes installed</span>
                 <span className="overview-glance__value">
                   {walletInstalled} <span className="overview-glance__aside">({walletPct}%)</span>
+                </span>
+              </span>
+            </div>
+          )}
+          {/* Only once a companion has been let in: an event without companions looks as it always did. The ring and the
+           * checked-in count stay on the guests (the heads); this adds the companions who came in with them. */}
+          {companions > 0 && (
+            <div className="overview-glance__tile overview-glance__tile--wide">
+              <span className="overview-glance__icon" aria-hidden="true">
+                <i className="ti ti-users" />
+              </span>
+              <span className="overview-glance__text">
+                <span className="overview-glance__label">People on site</span>
+                <span className="overview-glance__value">
+                  {admitted + companions}{" "}
+                  <span className="overview-glance__aside">({peopleOnSiteBreakdown(admitted, companions)})</span>
                 </span>
               </span>
             </div>

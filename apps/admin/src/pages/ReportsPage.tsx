@@ -33,6 +33,7 @@ import { failReportLoad } from "../hooks/useReportFetch.js";
 import { ReportsEventDaySkeleton } from "../reports/ReportsEventDaySkeleton.js";
 import { CustomFieldsReportsTab, MailReportsTab, WalletsReportsTab } from "../reports/ReportsTabs.js";
 import { calendarDateInZone, formatEventDateTime, formatEventTime } from "../utils/event-dates.js";
+import { peopleOnSiteBreakdown } from "../utils/peopleOnSite.js";
 import { handleExportRequestError } from "./handleExportRequestError.js";
 import "./reports-page.css";
 
@@ -1105,6 +1106,15 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
                     />
                   </Card>
                 </div>
+
+                {/* Only once a companion has been let in. The cards above stay on the guests (the heads); this one
+                 * sentence adds the companions who came in with them. */}
+                {data.summary.companions_admitted > 0 && (
+                  <p className="reports-people-on-site">
+                    People on site: {liveAdmitted + data.summary.companions_admitted} (
+                    {peopleOnSiteBreakdown(liveAdmitted, data.summary.companions_admitted)}).
+                  </p>
+                )}
 
                 <div className="reports-panels">
                   <Card
