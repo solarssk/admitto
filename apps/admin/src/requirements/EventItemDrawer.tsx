@@ -34,8 +34,6 @@ type FormState = {
   issue_on_checkin: boolean;
   icon: string | null;
   content_fields: string[];
-  /** Not editable here: kept so that a save does not drop it (the server replaces the whole config). */
-  audience: EventItemConfigDto["audience"];
 };
 
 /** Map API item row to editable drawer form state. */
@@ -50,25 +48,22 @@ function toForm(item: EventItemDto): FormState {
     issue_on_checkin: cfg?.issue_on_checkin !== false,
     icon: normalizeEventItemIconForForm(item.icon),
     content_fields: cfg?.content_fields ?? [],
-    audience: cfg?.audience,
   };
 }
 
 /** Build PATCH payload; `issue_on_checkin` is persisted only for the badge item.
  * content_fields is always included, even empty - omitting it when the operator unchecks
  * everything would leave the server unable to tell "clear it" apart from "don't touch it".
- * `audience` is sent back as it was read (the Companion item is only for guests with a companion): the server
- * replaces the whole config, so leaving it out would offer the item to every guest. */
-function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
+ * What the drawer does not edit goes back as it was read, the audience above all (the Companion item is only for
+ * guests with a companion): the server replaces the whole config, so leaving it out would offer the item to every guest. */
+function toConfig(form: FormState, item: EventItemDto): EventItemConfigDto {
   const config: EventItemConfigDto = {
+    ...item.config,
     requires_return: form.requires_return,
     content_fields: form.content_fields,
   };
-  if (itemKey === "badge") {
+  if (item.key === "badge") {
     config.issue_on_checkin = form.issue_on_checkin;
-  }
-  if (form.audience !== undefined) {
-    config.audience = form.audience;
   }
   return config;
 }
@@ -128,7 +123,7 @@ export function EventItemDrawer({
         description: form.description.trim() || null,
         enabled: form.enabled,
         icon: form.icon,
-        config: toConfig(form, item.key),
+        config: toConfig(form, item),
       });
       onUpdated();
       onClose();

@@ -381,7 +381,7 @@ describe("EventItemDrawer", () => {
       config: { audience: "with_companion", requires_return: false, issue_on_checkin: false },
     };
 
-    it("keeps its audience when something else is changed and saved: the server replaces the whole config", async () => {
+    it("keeps its audience, and the rest of its config, when something else is changed and saved: the server replaces the whole config", async () => {
       vi.mocked(updateEventItem).mockResolvedValueOnce(companionItem);
       renderDrawer(companionItem);
 
@@ -392,7 +392,10 @@ describe("EventItemDrawer", () => {
         expect(updateEventItem).toHaveBeenCalledWith(
           "evt-1",
           "item-companion",
-          expect.objectContaining({ label: "Plus one", config: { requires_return: false, content_fields: [], audience: "with_companion" } }),
+          expect.objectContaining({
+            label: "Plus one",
+            config: { audience: "with_companion", requires_return: false, issue_on_checkin: false, content_fields: [] },
+          }),
         );
       });
     });
@@ -409,7 +412,7 @@ describe("EventItemDrawer", () => {
         expect(updateEventItem).toHaveBeenCalledWith(
           "evt-1",
           "item-gift",
-          expect.objectContaining({ config: { requires_return: true, content_fields: [], audience: "all" } }),
+          expect.objectContaining({ config: { audience: "all", requires_return: true, content_fields: [] } }),
         );
       });
     });
@@ -425,6 +428,22 @@ describe("EventItemDrawer", () => {
       const config = vi.mocked(updateEventItem).mock.calls[0]![2].config;
       expect(config).toEqual({ requires_return: false, content_fields: [] });
       expect(config).not.toHaveProperty("audience");
+    });
+
+    it("sends what the drawer edits as the form has it, over what the item had", async () => {
+      vi.mocked(updateEventItem).mockResolvedValueOnce(companionItem);
+      renderDrawer(companionItem);
+
+      fireEvent.click(screen.getByRole("switch", { name: "Requires return" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(updateEventItem).toHaveBeenCalledWith(
+          "evt-1",
+          "item-companion",
+          expect.objectContaining({ config: expect.objectContaining({ audience: "with_companion", requires_return: true }) }),
+        );
+      });
     });
 
     it("can be deleted when no one holds it, unlike the badge", () => {
