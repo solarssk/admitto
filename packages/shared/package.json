@@ -52,7 +52,7 @@
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@vvo/tzdb": "^6.198.0",
+    "@vvo/tzdb": "^6.201.1",
     "ip-location-api": "5.0.2",
     "tzdata": "^1.0.50",
     "undici": "^8.11.2"
