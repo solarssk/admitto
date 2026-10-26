@@ -55,7 +55,7 @@
   },
   "devDependencies": {
     "@prisma/client": "^7.10.1",
-    "@types/node": "^24.19.1",
+    "@types/node": "^24.19.2",
     "@types/pdfkit": "^0.17.6",
     "@types/qrcode": "^1.5.5",
     "prisma": "^7.10.1",
