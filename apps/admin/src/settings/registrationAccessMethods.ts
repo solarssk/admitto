@@ -28,8 +28,8 @@ export function accessMethodsDirty(draft: AccessMethodsDraft, saved: AccessMetho
 
 /**
  * What to PUT, or null when no switch changed. The server replaces the whole list of ways in that are on, so the list
- * carries the ways this card does not switch and that are on in `saved` (`dto`, the last answer): saving must not turn
- * off what the card cannot show.
+ * also carries the ways this card has no switch for and that are on in `dto`, the last answer of the server: a save must
+ * not turn off what the card cannot show.
  */
 export function buildAccessMethodsSaveBody(
   draft: AccessMethodsDraft,
