@@ -520,8 +520,8 @@ describe("the companions of the body (D-E5)", () => {
 
   it("takes a companion with the name composed and trimmed, and the answers to the questions about a companion", () => {
     const answers = { badge: "Piotr", allergy: "Nuts", car: "true", plate: "WA 12345" };
-    expect(registrantOf(bring(withAnswers(answers, "  Zoé Kowalski  "))).companions).toEqual([
-      { name: "Zoé Kowalski", custom_data: answers },
+    expect(registrantOf(bring(withAnswers(answers, "  Zoe\u0301 Kowalski  "))).companions).toEqual([
+      { name: "Zo\u00e9 Kowalski", custom_data: answers },
     ]);
   });
 
@@ -551,8 +551,8 @@ describe("the companions of the body (D-E5)", () => {
     ["a web address", "www.evil.example"],
     ["a control character", "Piotr\u0000"],
     ["a line break", "Piotr\nKowalski"],
-    ["a bidirectional override", "Piotr‮Kowalski"],
-    ["a zero-width character", "Piotr​Kowalski"],
+    ["a bidirectional override", "Piotr\u202eKowalski"],
+    ["a zero-width character", "Piotr\u200bKowalski"],
   ])("refuses a name that is %s, with the one sentence of the name field and none of what was typed", (_label, name) => {
     const errors = errorsOf(bring([{ name, answers: { badge: "b" } }]));
     expect(errors).toEqual({ companion_name: SUBMIT_MESSAGES.companionName });
@@ -596,7 +596,7 @@ describe("the companions of the body (D-E5)", () => {
 
   it("refuses an answer that is not a text, and a text that is hostile, as it does the guest's own", () => {
     expect(Object.keys(errorsOf(bring(withAnswers({ badge: 7 }))))).toEqual(["companion_badge"]);
-    expect(Object.keys(errorsOf(bring(withAnswers({ badge: "b‮c" }))))).toEqual(["companion_badge"]);
+    expect(Object.keys(errorsOf(bring(withAnswers({ badge: "b\u202ec" }))))).toEqual(["companion_badge"]);
   });
 
   it("does not read a question that waits for another answer unless that answer is given, and then requires it only if it is required", () => {
