@@ -112,6 +112,7 @@ const ACTION_LABELS: Record<string, string> = {
   registration_access_methods_updated: "Guest registration access methods updated",
   registration_password_changed: "Guest registration password changed",
   registration_rejected: "Guest registration rejected",
+  registration_settings_changed: "Guest registration settings changed",
   registration_turnstile_cleared: "Guest registration Turnstile keys removed",
   registration_turnstile_updated: "Guest registration Turnstile keys updated",
   registrations_deleted: "Guest registrations deleted",

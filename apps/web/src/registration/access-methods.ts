@@ -17,6 +17,12 @@ import { resolveTurnstileKeys } from "./turnstile-settings.js";
 /** SystemSettings.key of the JSON array of enabled method names. */
 export const ACCESS_METHODS_SETTINGS_KEY = "registration_access_methods";
 
+/** The methods an event can choose in this release. The company sign-in (`sso`) comes with PR 118: until then an event
+ * cannot choose it, and one that somehow holds it is not ready (see ./readiness.ts). */
+export const SELECTABLE_ACCESS_METHODS = ["link", "password"] as const satisfies readonly RegistrationAccessMethod[];
+
+export type SelectableAccessMethod = (typeof SELECTABLE_ACCESS_METHODS)[number];
+
 type AccessMethodsDb = PrismaClient | Prisma.TransactionClient;
 
 /** What a method waits for when it is enabled but not available. */
