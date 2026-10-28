@@ -17,7 +17,8 @@ export function Segmented<T extends string>({
   onChange,
 }: Readonly<{
   options: ReadonlyArray<SegmentedOption<T>>;
-  value: T;
+  /** The option that is chosen, or `null` while none is (a choice that has not been made yet). */
+  value: T | null;
   ariaLabel: string;
   /** The id of the text that says more about the choice, such as why an option is off. */
   describedBy?: string;

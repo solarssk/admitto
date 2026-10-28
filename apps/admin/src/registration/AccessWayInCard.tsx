@@ -11,8 +11,7 @@ import type { AccessMethod } from "./accessSettings.js";
 import { EventPasswordDialog } from "./EventPasswordDialog.js";
 import "./registration-access.css";
 
-/** The way in is one of these, or not chosen yet (the value `""`, which no button carries). */
-const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod | "">> = [
+const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
   { value: "link", label: "Link" },
   { value: "password", label: "Password" },
 ];
@@ -121,9 +120,9 @@ export function AccessWayInCard({
           className="access-seg"
           ariaLabel="Way in"
           options={METHOD_OPTIONS}
-          value={method ?? ""}
+          value={method}
           disabled={disabled}
-          onChange={(next) => next !== "" && onMethodChange(next)}
+          onChange={onMethodChange}
         />
         {method === null ? (
           <p className="settings-card-intro">Choose how guests open the form. You can use one way in at a time.</p>
