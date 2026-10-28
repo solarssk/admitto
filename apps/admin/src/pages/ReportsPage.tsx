@@ -891,8 +891,11 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   // live check-in mid-session doesn't flash the whole page back to its skeleton state. Guarded against the page going
   // (and against a read that replaces the data): aborted via reconcileAbortRef (see cancelReconcile) and double-checked
   // against ac.signal.aborted before touching state, since an in-flight fetch can still resolve after it.
+  // Bounded, not a plain reset-on-every-call debounce (the call EventOverviewPage made): a pending timer is left alone rather than
+  // restarted, so a steady stream of signals (a queue at the door, a busy hand-out desk) still reconciles within ~3s of the *first*
+  // one instead of only after a quiet gap. It matters most for an item signal, which has no optimistic bump to fall back on meanwhile.
   const scheduleReconcile = useCallback(() => {
-    if (reconcileTimerRef.current != null) window.clearTimeout(reconcileTimerRef.current);
+    if (reconcileTimerRef.current != null) return;
     reconcileTimerRef.current = window.setTimeout(() => {
       reconcileTimerRef.current = null;
       reconcileAbortRef.current?.abort();

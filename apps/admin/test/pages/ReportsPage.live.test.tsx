@@ -339,6 +339,47 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     }
   });
 
+  it("reconciles within 3 seconds of the first signal while more keep coming: a steady stream of items does not postpone it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventReports
+        .mockResolvedValueOnce(reportFixture(5))
+        .mockResolvedValue(reportFixture(5, { summary: { ...reportFixture(5).summary, companions_admitted: 1 } }));
+      renderPage();
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      act(() => {
+        activityChangedHandler?.();
+      });
+      // One second is left to reach 3 seconds from the first signal. A timer restarted by every signal would still have two to go.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+
+      // Checked at once, not inside `waitFor`, which waits longer than the two seconds the restarted timer would still need.
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      await waitFor(() => {
+        expect(screen.getByText(/People on site: 6 \(5 guests and 1 companion\)\./)).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("deduplicates a repeated SSE delivery of the same admit instead of double-counting it", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
