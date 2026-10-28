@@ -14,7 +14,7 @@ import { esc } from "../ticket-page.js";
 import type { GuestFormIcon } from "@admitto/shared";
 
 /** The symbols of the page's own markup: the notices, the send button, the closed page, the screens of a confirmed address
- * (`check`, `hourglass`, `refresh`), the "use as written" row and the arrow of a choice. */
+ * (`check`, `hourglass`, `refresh`), the "use as written" row, the arrow of a choice and the lock of the password screen. */
 const PAGE_ICON_PATHS = {
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 9h.01M11 12h1v4h1"/>',
@@ -26,6 +26,7 @@ const PAGE_ICON_PATHS = {
   check: '<circle cx="12" cy="12" r="9"/><path d="M9 12l2 2l4-4"/>',
   hourglass: '<path d="M6 4h12M6 20h12"/><path d="M7 4v3a5 5 0 0 0 2 4l1 1l-1 1a5 5 0 0 0-2 4v3M17 4v3a5 5 0 0 1-2 4l-1 1l1 1a5 5 0 0 1 2 4v3"/>',
   refresh: '<path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><circle cx="12" cy="16" r="1"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
 } as const;
 
 /** One symbol for each icon a question can name. Twelve are the mockup's own; `phone`, `plane`, `train` and
