@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RegistrationStatus } from "@admitto/db/status";
 import { ApiError, fetchRegistrations } from "../api/client.js";
 import type { RegistrationListItemDto } from "../api/types.js";
 import { useListLoad } from "../hooks/useListLoad.js";
-import { orLoginRedirect } from "../identity/loginRedirect.js";
+import { redirectToLogin } from "../identity/loginRedirect.js";
 import { isPastTheEnd } from "../pages/users/list-changes.js";
 import { requestSearchText, type RequestAgeFilter, type RequestStatusFilter } from "./registrationRequests.js";
 
@@ -11,6 +12,13 @@ export const REQUEST_PAGE_SIZE_DEFAULT = 25;
 
 /** The search box waits this long after the last key before it asks the server. */
 const SEARCH_DEBOUNCE_MS = 300;
+
+/** The filter of a list as the server was asked for it: a part that is left out selects every request. What deleting by filter sends back. */
+export interface RequestQuery {
+  status?: RegistrationStatus;
+  olderThan?: string;
+  q?: string;
+}
 
 /** What one read of the request list answers. */
 export interface RequestsAnswer {
@@ -22,18 +30,29 @@ export interface RequestsAnswer {
   filtersActive: boolean;
   /** The page it was on is gone (no rows although there are some): not "No matches", the page steps back. */
   pastTheEnd: boolean;
+  /** The filter this answer was asked with, which `total` and `selectionDigest` are about. */
+  query: RequestQuery;
+  /**
+   * The name the server gave the requests the filter selects over all pages: deleting by filter sends it back with `total` as proof of
+   * what the staff member was shown. Null without a filter, for a filter that selects more than one deletion takes, and once the page was
+   * changed by an action (the next answer brings the new one).
+   */
+  selectionDigest: string | null;
 }
 
 /**
- * The requests of an event: its query (the state from the address, the age, the debounced search, the page and its size), and
- * the list that follows the loading standard (`useListLoad`: the first read, a changed query or page kept on screen while it
- * is on its way, 30 seconds at most, Retry; a 401 hands the browser to the login page). The page the viewer is on can be gone
- * when the next answer arrives (a smaller total): it steps back to the last one that exists.
+ * The requests of an event: its query (the state, the age, the debounced search, the page and its size), and the list that follows
+ * the loading standard (`useListLoad`: the first read, a changed query or page kept on screen while it is on its way, 30 seconds at
+ * most, Retry; a 401 on a read somebody waits for hands the browser to the login page, a tick of `poll` after an action never does).
+ * The page the viewer is on can be gone when the next answer arrives (a smaller total): it steps back to the last one that exists.
+ * `enabled` is false while the state to ask for is not known yet (the address says nothing and the numbers that decide it are still
+ * on their way): nothing is read, so that the list is read once, for the state it will show.
  */
 export function useRegistrationRequests(
   eventId: string,
   status: RequestStatusFilter,
   reportApiError: (status: number) => void,
+  { enabled = true }: { enabled?: boolean } = {},
 ) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(REQUEST_PAGE_SIZE_DEFAULT);
@@ -68,37 +87,41 @@ export function useRegistrationRequests(
   }, [searchInput]);
 
   // The connection state hears of every failed read when the answer is in (a 5xx says the server is unavailable, a 401 that the
-  // session ended); a 401 then hands the browser to the login page (`orLoginRedirect`), so no error or Retry flashes up first.
+  // session ended); a 401 then hands the browser to the login page, so no error or Retry flashes up first. A tick of `poll` (the
+  // read that follows an action, with nobody waiting for it) tells and hands over nothing: a missed one is not an error over rows that
+  // are on screen, and the next read somebody waits for does.
   const fetchPage = useMemo(
     () =>
-      orLoginRedirect(async (signal: AbortSignal): Promise<RequestsAnswer> => {
+      async (signal: AbortSignal, context?: { poll: boolean }): Promise<RequestsAnswer> => {
+        const query: RequestQuery = {
+          ...(status === "all" ? {} : { status }),
+          ...(ageFilter === "any" ? {} : { olderThan: ageFilter }),
+          ...(search === "" ? {} : { q: search }),
+        };
         try {
-          const data = await fetchRegistrations(
-            eventId,
-            {
-              page,
-              pageSize,
-              ...(status === "all" ? {} : { status }),
-              ...(ageFilter === "any" ? {} : { olderThan: ageFilter }),
-              ...(search === "" ? {} : { q: search }),
-            },
-            signal,
-          );
+          const data = await fetchRegistrations(eventId, { page, pageSize, ...query }, signal);
           return {
             items: data.items,
             total: data.total,
             page,
             filtersActive: status !== "all" || ageFilter !== "any" || search !== "",
             pastTheEnd: isPastTheEnd(data.items.length, data.total, page),
+            query,
+            selectionDigest: data.selection_digest,
           };
         } catch (err) {
+          if (context?.poll) throw err;
           if (err instanceof ApiError) reportApiError(err.status);
+          if (err instanceof ApiError && err.status === 401) {
+            redirectToLogin();
+            return new Promise<never>(() => {});
+          }
           throw err;
         }
-      }),
+      },
     [eventId, page, pageSize, status, ageFilter, search, reportApiError],
   );
-  const list = useListLoad({ fetcher: fetchPage, fallback: "Could not load the requests." });
+  const list = useListLoad({ fetcher: fetchPage, fallback: "Could not load the requests.", enabled });
 
   // The page the viewer is on can be gone when the next answer arrives (a smaller total): step back to the last one that
   // exists. An answer with no rows for a page the total says exists steps back one page, so the card never waits for ever.
@@ -124,6 +147,8 @@ export function useRegistrationRequests(
   return {
     list,
     answer,
+    /** Names the page the viewer is on and the query it is a page of: what a selection belongs to. */
+    queryKey: `${page}|${pageSize}|${status}|${ageFilter}|${search}`,
     page,
     setPage,
     pageSize,

@@ -33,15 +33,33 @@ export function isRequestStatus(value: string | null | undefined): value is Regi
   return value !== null && value !== undefined && (REGISTRATION_STATUS as readonly string[]).includes(value);
 }
 
-/** The state the address asks for (`?status=pending`); anything else, or nothing, is every state. */
-export function requestStatusFromSearch(searchParams: URLSearchParams): RequestStatusFilter {
+/**
+ * The state the address asks for (`?status=pending`, or `?status=all` for every state); null when it says nothing, or something
+ * that is not a state, and the tab opens on what it opens on (`defaultRequestStatus`).
+ */
+export function requestStatusFromSearch(searchParams: URLSearchParams): RequestStatusFilter | null {
   const raw = searchParams.get("status");
-  return isRequestStatus(raw) ? raw : "all";
+  if (raw === "all") return "all";
+  return isRequestStatus(raw) ? raw : null;
+}
+
+/**
+ * What the tab shows when the address does not say: the requests that wait for a decision, when the event decides them by hand and
+ * some do wait (D-B11: this is the work of the queue); every state otherwise. An event that accepts by itself has nothing to decide, and
+ * one whose numbers could not be read is shown whole.
+ */
+export function defaultRequestStatus(counts: RegistrationCountsDto | null): RequestStatusFilter {
+  return counts?.mode === "approval" && counts.needs_decision > 0 ? "pending" : "all";
+}
+
+/** How many requests the event has in all, in every state; null while the numbers are not known. */
+export function requestsTotal(counts: RegistrationCountsDto | null): number | null {
+  return counts ? REGISTRATION_STATUS.reduce((sum, status) => sum + counts.by_status[status], 0) : null;
 }
 
 /** The options of the status filter, each with how many requests are in that state once the counts are known. */
 export function requestStatusOptions(counts: RegistrationCountsDto | null): SearchableSelectOption[] {
-  const total = counts ? REGISTRATION_STATUS.reduce((sum, status) => sum + counts.by_status[status], 0) : null;
+  const total = requestsTotal(counts);
   return [
     { id: "all", label: withCount("All statuses", total), icon: "list" },
     ...STATUS_FILTER_ORDER.map(({ status, icon }) => ({
@@ -52,7 +70,8 @@ export function requestStatusOptions(counts: RegistrationCountsDto | null): Sear
   ];
 }
 
-function withCount(label: string, count: number | null): string {
+/** "Accepted (120)", or just the label while the number is not known. */
+export function withCount(label: string, count: number | null): string {
   return count === null ? label : `${label} (${count})`;
 }
 
@@ -80,6 +99,11 @@ export const REQUEST_AGE_SELECT_OPTIONS: SearchableSelectOption[] = [
 
 export function isRequestAge(value: string): value is RequestAgeFilter {
   return value === "any" || REGISTRATION_AGE_OPTIONS.some((option) => option.id === value);
+}
+
+/** What an age of the list is called ("90 days ago"), for a sentence that says what a filter selects. */
+export function requestAgeLabel(id: string): string {
+  return REGISTRATION_AGE_OPTIONS.find((option) => option.id === id)?.label ?? id;
 }
 
 /** The server reads at most this many words and characters of a search; more is a 400, not a longer search. */
