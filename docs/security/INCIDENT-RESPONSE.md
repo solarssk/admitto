@@ -106,6 +106,14 @@ Signs: registrations nobody expects, registration mail going to addresses nobody
 4. **Look at what is saved.** A registration that never confirms its address is deleted after 24 hours. Others stay until staff delete them.
 5. **A confirmation link that may have leaked.** A link proves one address for 24 hours. Opening it changes nothing, and only its button confirms. If a link reached the wrong person, delete that registration, and the link then finds nothing. A reverse proxy keeps the path of the link in its access log, so redact `/r/*/confirm/*` there.
 
+**Turn registration off for one event.** Open the event's Registration page, go to the Access tab and switch registration off. It is the same switch that turns registration on, and it is never refused, however much is missing. Use it when one event is abused and the others are not, or when you also need to stop the confirmations of step 1.
+
+- The form and every route under `/r/<event slug>` answer the one not-found page at once. A guest who is already sending the form is told the form is closed as soon as their request holds its locks. A registration that was saved a moment before stays.
+- A confirmation link stops working while registration is off. It works again if you turn registration back on before it expires, 24 hours after the registration. A registration that waits for its address is deleted when its link has expired, whether registration is on or off.
+- The registrations that exist stay as they are. Staff can still accept, reject and delete them in the Requests tab.
+- **The worker still sends the mail that is already queued.** It does not look at whether registration is on. It skips a mail only when its registration has changed since (for example it was rejected without a notice) or its confirmation link has expired. To stop mail to addresses nobody owns, delete those registrations in the Requests tab: their queued mail is deleted with them. Do it before the worker's next tick, and check the Health row **Registration mail queue**.
+- Turning registration back on runs the checks again, so an event that has lost something since (the Turnstile keys, a published text, the mail provider) is refused and the answer names what is missing.
+
 ---
 
 ## Rollback

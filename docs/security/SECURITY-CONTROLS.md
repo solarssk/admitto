@@ -285,7 +285,7 @@ An event can carry its own privacy notice, event terms and extra consents. An ev
 | Audit | Saving, publishing, withdrawing and deleting a text write an entry to the audit log (event, kind and key). The text is never written there. |
 | Reach | A published text is served whatever the event's registration setting is, and for an archived event too, so a guest can read again what they were told and accepted. A draft is never served. |
 | Tabs | When an event has two or more published texts, each page shows tabs to the others (title and link only, read in the same query as the text). A draft and the texts of another event never appear, and a page with a single text has no tabs. |
-| Gate | The registration settings, which come in a later change, must call the gate in the transaction that turns registration on: it answers 409 `legal_documents_missing` until the privacy notice, the terms and every extra consent the event asks for are published. Already today, a text that registration needs cannot be withdrawn or deleted while registration is on (409 `legal_document_in_use`). The gate and the withdrawal take one lock per event, so they cannot interleave. |
+| Gate | Turning registration on, and changing the way in or the consents of an event that has it on, is refused with 409 `registration_not_ready` and the blocker `legal_documents` until the privacy notice, the terms and every extra consent the event asks for are published (see [Registration settings and the gate](#registration-settings-and-the-gate)). A text that registration needs cannot be withdrawn or deleted while registration is on (409 `legal_document_in_use`). The check and the withdrawal take one lock per event, so they cannot interleave. |
 | Rate limit | The pages share the per-IP bucket of the registration form's page (300 / 60 s, see [Public and authentication](#public-and-authentication)). |
 
 A legal text holds no guest data and has no per-guest copy: a registration records only when its terms were accepted, not which text. What the text says about the organisation is what the organisation wrote. It is deleted with its event.
@@ -340,6 +340,42 @@ A guest who registers by the public link gets a mail with a link, and the regist
 Two things are different from the submit route, on purpose. There is no floor of time on the answers: only the holder of a valid link reaches the database, and what they are told is about their own registration. And the form's own conditions do not apply, as the row "What closes it" says.
 
 **What stays outside Admitto.** A reverse proxy or a CDN in front of the app logs the full path, and so holds the link for as long as it keeps its access log. The link is worth 24 hours at most, and only until it is used. Redact the path of `/r/*/confirm/*` in those logs, or keep them short. The mail provider's Sent Items holds the mail with the link, as it holds any other mail.
+
+---
+
+## Registration settings and the gate
+
+An organiser, not a guest, switches an event's registration on, so the staff routes that do it are as much a part of the public surface as the form: what they let through decides what a stranger can reach. `GET` and `PUT /api/admin/events/:eventId/registration/settings` read and change the mode, the way in, the switches of the form and the consents of one event.
+
+| Control | What it does |
+|---------|--------------|
+| Access | An admin of the event's organisation or a superadmin, checked on the server. An operator gets 403, and so does an admin of another organisation. A write is refused for an archived event (403 `event_archived`), also when the event is archived after the check, because the transaction looks again. A write has the cross-site check, and its body is capped at 4 KB (`400 request too large`). |
+| What can be sent | A mode (`automatic`, `approval` or off), one way in (`link` or `password`, or none), the switches (waiting list, check of the address, company, department), 0 or 1 companions and the keys of the extra consents. Any other key is a 400, so a password, a hash or the company sign-in cannot be sent here. A consent key that the event has not published is a 422 `consent_not_published`. |
+| The gate | Turning registration on, and changing the way in or the consents of an event that has it on, is judged by the readiness of the event. While anything is missing the answer is `409 {"error":"registration_not_ready","blockers":[...]}`, and nothing is saved. The blockers are fixed keys (the table below) and nothing else: no text of an organiser, no value, no name. Turning registration off is never refused, however much is missing, and neither are the other switches. |
+| One count | One function counts the readiness, for the screen that shows it (`GET`) and for the save that decides (`PUT`). The checks that concern the form use the rules of the public page itself (the ways in the system administrator enabled, the Turnstile keys, the published texts, the questions the page can draw, the end of the event), and a test holds the two together: an event that is ready opens its form, and one that lacks a check of the form does not. |
+| The password | The answer says whether a password is set, never what it is. The hash is not even read: a count asks whether it is there, so it cannot reach an answer, a log line or an audit entry, and neither can its length. When the way in moves away from the password, the stored password is cleared in the same transaction, so it does not come back when the event returns to the password. |
+| Locks | A save takes the lock of the event's questions and then the lock of its legal texts, and reads both under them. Two saves cannot interleave, a question cannot be saved that the form would not ask once registration is on, and a text that registration needs cannot be withdrawn between the check and the commit. It takes neither the capacity lock nor the registration queue (see "Taking locks" in `docs/dev/attendee-erasure.md`). |
+| Audit | A change writes `registration_settings_changed` to the central audit log: the event, the names of the settings that changed with their new values (the mode, the switches, the way in, the consent keys), and whether the password was cleared. A save that changes nothing writes nothing. |
+
+The checks, in the order of the answer. A check that does not apply is not in it.
+
+| Key | Met when |
+|-----|----------|
+| `access_method` | exactly one way in is chosen, `link` or `password` |
+| `access_method_enabled` | the system administrator has enabled that way in |
+| `bot_protection` | the Turnstile keys are saved |
+| `password` | the way in is the password and a password is set |
+| `legal_documents` | the privacy notice, the terms and every extra consent the event asks for are published |
+| `form_questions` | the form can draw every required question |
+| `required_fields` | no required question is missing from the form (an import can leave such a question behind) |
+| `mail_provider` | a mail provider resolves for the event, as it does for the worker |
+| `instance_url` | the instance has an address (the worker sends no registration mail without one) |
+| `event_not_archived` | the event is not archived |
+| `event_not_ended` | the event is not over |
+
+`mail_provider`, `instance_url` and `required_fields` do not close the form. It opens without them, and the registrations it takes then wait for a mail that cannot go.
+
+**Turning registration off** closes the form at once, and the confirmation links with it. It recalls nothing. A guest who is already on the way is told the form is closed once their request holds its locks, a registration that was saved a moment before stays, and the mail that is already queued still goes out, unless its registration changed or its link expired. See [The guest registration form is being abused](INCIDENT-RESPONSE.md#the-guest-registration-form-is-being-abused).
 
 ---
 
@@ -526,6 +562,7 @@ These are separate from rate limits.
 - **`POST /r/:slug/confirm/:token` (address confirmation):** at most 1 KB (`MAX_CONFIRM_BODY_BYTES`), `413 request too large`. The body is never read: the form of the page has no field. Order as for the submit: cross-site check, IP limiter, body cap.
 - **`PUT …/events/:eventId/registration/password` (event password):** at most 4 KB, `400 request too large`, after the cross-site check and the sign-in. The password itself is 8 to 128 characters.
 - **`PUT …/legal-documents/:ref` (legal text):** at most 512 KB (`MAX_LEGAL_BODY_BYTES`), `400 request too large`, after the cross-site check and the sign-in. The text itself is limited to 100 000 characters.
+- **`PUT …/registration/settings` (registration settings of an event):** at most 4 KB (`MAX_REGISTRATION_SETTINGS_BODY_BYTES`), `400 request too large`, after the cross-site check and the sign-in. The body is a handful of switches and at most ten short consent keys.
 - **Check-in POST routes:** the six routes are capped at 32 KB (`MAX_CHECKIN_BODY_BYTES`, in `parseScanBodyMiddleware`, after the session or token, the same-site check and the rate limit).
 - **`POST /api/ops/system-logs`:** at most 64 KB (`MAX_OPS_LOG_BODY_BYTES`, after the ops token check).
 - The check-in routes and `POST /api/ops/system-logs` both answer `413 request too large`.
