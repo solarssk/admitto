@@ -16,9 +16,8 @@ import { setEnabledAccessMethods } from "../../src/registration/access-methods.j
 import { READINESS_KEYS, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
-import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
+import { createStaffSession, removeStaff, setOrgMail, withoutInstanceUrl } from "../helpers/registration-settings-fixtures.js";
 import { PAST, eventSeeder, type EventSeed, type FieldSeed } from "../helpers/registration-submit-harness.js";
-import { sessionCookieFor } from "../helpers/session-cookie.js";
 
 /**
  * `GET` and `PUT /api/admin/events/:eventId/registration/settings` against a real database through the real app: who may
@@ -73,14 +72,7 @@ const auditOf = (eventId: string) =>
     orderBy: { created_at: "asc" },
   });
 
-async function setMail(on: boolean): Promise<void> {
-  await prisma.mailSettings.deleteMany({ where: { scope_type: "organization", scope_id: ORG } });
-  if (on) {
-    await prisma.mailSettings.create({
-      data: { scope_type: "organization", scope_id: ORG, provider: "export_only", from_address: "events@example.net" },
-    });
-  }
-}
+const setMail = (on: boolean) => setOrgMail(prisma, ORG, on);
 
 const addField = (eventId: string, data: FieldSeed) =>
   prisma.eventCustomField.create({ data: { event_id: eventId, type: "text", show_on_form: true, ...data } });
@@ -108,26 +100,10 @@ const BREAKERS: Breaker[] = [
 
 const actorOf = (operator: string) => ({ operator, ip: "203.0.113.7" });
 
-/** Runs `run` as an instance that has no address: none in the environment, none saved, and a production environment, which
- * has no address of its own to fall back to. The environment the worker reads is the process's, so that is what is changed. */
-async function withoutInstanceUrl<T>(run: (env: NodeJS.ProcessEnv) => Promise<T>): Promise<T> {
-  const saved = process.env.BASE_URL;
-  delete process.env.BASE_URL;
-  await prisma.systemSettings.deleteMany({ where: { key: "instance_url" } });
-  try {
-    return await run({ NODE_ENV: "production" });
-  } finally {
-    if (saved !== undefined) process.env.BASE_URL = saved;
-  }
-}
-
 async function wipe(): Promise<void> {
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: { in: [ORG, OTHER_ORG] } } });
-  await prisma.mailSettings.deleteMany({ where: { scope_type: "organization", scope_id: ORG } });
-  await prisma.roleAssignment.deleteMany({ where: { user: { email: { in: Object.values(EMAILS) } } } });
-  await prisma.session.deleteMany({ where: { user: { email: { in: Object.values(EMAILS) } } } });
-  await prisma.userMfaMethod.deleteMany({ where: { user: { email: { in: Object.values(EMAILS) } } } });
-  await prisma.user.deleteMany({ where: { email: { in: Object.values(EMAILS) } } });
+  await setMail(false);
+  await removeStaff(prisma, Object.values(EMAILS));
   await prisma.organization.deleteMany({ where: { id: OTHER_ORG } });
 }
 
@@ -139,24 +115,16 @@ beforeAll(async () => {
   await prisma.organization.create({ data: { id: OTHER_ORG, name: "Reg99a Other Org", slug: OTHER_ORG } });
   mainEvent = await addEvent("main");
 
-  const [admin, otherAdmin, operator, superadmin] = await Promise.all(
-    Object.values(EMAILS).map((email) => prisma.user.create({ data: { email } })),
-  );
-  await prisma.roleAssignment.createMany({
-    data: [
-      { user_id: admin!.id, role: "admin", scope_type: "organization", scope_id: ORG },
-      { user_id: otherAdmin!.id, role: "admin", scope_type: "organization", scope_id: OTHER_ORG },
-      { user_id: operator!.id, role: "operator", scope_type: "event", scope_id: mainEvent.id },
-      { user_id: superadmin!.id, role: "superadmin", scope_type: "instance", scope_id: null },
-    ],
-  });
-  for (const user of [admin!, otherAdmin!, superadmin!]) await enrollConfirmedTotp(prisma, user.id);
-  adminId = admin!.id;
-  superadminId = superadmin!.id;
-  cookies.admin = await sessionCookieFor(prisma, admin!.id);
-  cookies.otherAdmin = await sessionCookieFor(prisma, otherAdmin!.id);
-  cookies.operator = await sessionCookieFor(prisma, operator!.id);
-  cookies.superadmin = await sessionCookieFor(prisma, superadmin!.id);
+  const admin = await createStaffSession(prisma, EMAILS.admin, { role: "admin", organizationId: ORG });
+  const otherAdmin = await createStaffSession(prisma, EMAILS.otherAdmin, { role: "admin", organizationId: OTHER_ORG });
+  const operator = await createStaffSession(prisma, EMAILS.operator, { role: "operator", eventId: mainEvent.id });
+  const superadmin = await createStaffSession(prisma, EMAILS.superadmin, { role: "superadmin" });
+  adminId = admin.userId;
+  superadminId = superadmin.userId;
+  cookies.admin = admin.cookie;
+  cookies.otherAdmin = otherAdmin.cookie;
+  cookies.operator = operator.cookie;
+  cookies.superadmin = superadmin.cookie;
   app = buildTestApp({ prisma, checkinToken: "reg99a-routes-checkin-token-32-chars", adminDistRoot });
 });
 
@@ -499,8 +467,8 @@ describe("turning registration on", () => {
   it("is refused while the instance has no address the worker could send the links of, and says so when read", async () => {
     const event = await addEvent("gate-instance-url");
 
-    const read = await withoutInstanceUrl((env) => getEventRegistrationSettings(prisma, event.id, { env }));
-    const refused = await withoutInstanceUrl((env) =>
+    const read = await withoutInstanceUrl(prisma, (env) => getEventRegistrationSettings(prisma, event.id, { env }));
+    const refused = await withoutInstanceUrl(prisma, (env) =>
       updateEventRegistrationSettings(prisma, { eventId: event.id, patch: { mode: "automatic" }, actor: actorOf(adminId), env }),
     );
     const allowed = await updateEventRegistrationSettings(prisma, { eventId: event.id, patch: { mode: "automatic" }, actor: actorOf(adminId), env: {} });
@@ -526,6 +494,8 @@ describe("turning registration on", () => {
 
   it("judges a save that turns registration on and changes its way in together, by the way in it is given", async () => {
     const event = await addEvent("gate-together");
+    // The system administrator has enabled the link and not the password.
+    await setEnabledAccessMethods(prisma, ["link"]);
 
     const refused = await put(event.id, { mode: "automatic", access_methods: ["password"] });
     const allowed = await put(event.id, { mode: "automatic", access_methods: ["link"] });

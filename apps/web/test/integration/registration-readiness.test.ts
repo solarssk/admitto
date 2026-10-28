@@ -9,6 +9,7 @@ import { setEnabledAccessMethods } from "../../src/registration/access-methods.j
 import { resolveRegistration } from "../../src/registration/form-model.js";
 import { READINESS_KEYS, readinessBlockers, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
+import { setOrgMail, withoutInstanceUrl } from "../helpers/registration-settings-fixtures.js";
 import { PAST, eventSeeder, type EventSeed } from "../helpers/registration-submit-harness.js";
 
 /**
@@ -31,14 +32,7 @@ let prisma: PrismaClient;
 let seeder: ReturnType<typeof eventSeeder>;
 let counter = 0;
 
-async function setMail(on: boolean): Promise<void> {
-  await prisma.mailSettings.deleteMany({ where: { scope_type: "organization", scope_id: ORG } });
-  if (on) {
-    await prisma.mailSettings.create({
-      data: { scope_type: "organization", scope_id: ORG, provider: "export_only", from_address: "events@example.net" },
-    });
-  }
-}
+const setMail = (on: boolean) => setOrgMail(prisma, ORG, on);
 
 beforeAll(async () => {
   prisma = createTestPrismaClient();
@@ -54,7 +48,7 @@ beforeEach(async () => {
 afterAll(async () => {
   if (!prisma) return;
   await seeder.wipe();
-  await prisma.mailSettings.deleteMany({ where: { scope_type: "organization", scope_id: ORG } });
+  await setMail(false);
   await prisma.$disconnect();
 });
 
@@ -91,6 +85,7 @@ const ROWS: Row[] = [
   {
     name: "a password that the system administrator has not enabled, and nobody set",
     seed: { settings: { access_methods: ["password"] } },
+    system: () => setEnabledAccessMethods(prisma, ["link"]),
     page: "not_found",
     blockers: ["access_method_enabled", "password"],
   },
@@ -142,19 +137,11 @@ const ROWS: Row[] = [
   },
 ];
 
-/** Reads the readiness of the stored event as an instance without an address would, when the row says so. */
-async function readinessOf(eventId: string, noInstanceUrl: boolean) {
-  const saved = process.env.BASE_URL;
-  if (noInstanceUrl) {
-    delete process.env.BASE_URL;
-    await prisma.systemSettings.deleteMany({ where: { key: "instance_url" } });
-  }
-  try {
-    return await getEventRegistrationSettings(prisma, eventId, noInstanceUrl ? { env: { NODE_ENV: "production" } } : {});
-  } finally {
-    if (saved !== undefined) process.env.BASE_URL = saved;
-  }
-}
+/** Reads the readiness of the stored event, as an instance without an address would when the row says so. */
+const readinessOf = (eventId: string, noInstanceUrl: boolean) =>
+  noInstanceUrl
+    ? withoutInstanceUrl(prisma, (env) => getEventRegistrationSettings(prisma, eventId, { env }))
+    : getEventRegistrationSettings(prisma, eventId);
 
 describe("the readiness of an event and the page it is about", () => {
   it.each(ROWS)("$name", async (row) => {
