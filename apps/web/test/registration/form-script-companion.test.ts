@@ -306,7 +306,7 @@ describe("what the server says about a companion", () => {
     await sendWithCompanion(page);
     await until(() => expect(summary(page).hidden).toBe(false));
     expect(page.doc.getElementById("reg-error-text").textContent).toBe("Something went wrong. Check your details and try again.");
-    expect(page.doc.querySelectorAll(".has-error").length).toBe(0);
+    expect(page.doc.querySelectorAll(".has-error")).toHaveLength(0);
   });
 });
 
@@ -330,7 +330,7 @@ describe("what the page keeps of the companion", () => {
     expect(page.win.document.cookie).toBe("");
     expect(page.win.localStorage).toHaveLength(0);
     expect(page.win.sessionStorage).toHaveLength(0);
-    expect(page.win.history.length).toBe(1);
+    expect(page.win.history).toHaveLength(1);
     const [address, init] = page.fetchMock.mock.calls[0]!;
     expect(String(address)).not.toContain("?");
     expect(JSON.stringify([init!.headers, init!.method, init!.credentials])).not.toContain("Companionname");

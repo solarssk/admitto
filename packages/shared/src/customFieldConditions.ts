@@ -10,7 +10,7 @@ export type ConditionField = {
   options: readonly string[] | null | undefined;
   rules: EventCustomFieldRules | null | undefined;
   /** Whose answer the field asks for (`EventCustomField.applies_to`): the guest's own or the guest's companion's. Absent: the guest's. */
-  applies_to?: "guest" | "companion" | null | undefined;
+  applies_to?: "guest" | "companion" | null;
 };
 
 /** Whose answer a field asks for: absent means the guest's, as it does in the database. */

@@ -71,7 +71,7 @@ describe("the form page of an event that takes a companion", () => {
     const panel = panelOf(doc);
     expect(panel.hidden).toBe(true);
     const boxes = [...panel.querySelectorAll("[data-field]")] as Dom[];
-    expect(boxes.length).toBe(8);
+    expect(boxes).toHaveLength(8);
     for (const box of boxes) {
       expect(box.hidden, box.getAttribute("data-field")).toBe(true);
       const control = box.querySelector("[data-control]");
@@ -81,7 +81,7 @@ describe("the form page of an event that takes a companion", () => {
     // A picker's button is a control too, and it is as shut.
     for (const trigger of panel.querySelectorAll("[data-picker-trigger]") as Iterable<Dom>) expect(trigger.disabled).toBe(true);
     // What each says about being required is for the script to apply once the field is asked.
-    expect(boxes.filter((box) => box.hasAttribute("data-required")).length).toBe(7);
+    expect(boxes.filter((box) => box.hasAttribute("data-required"))).toHaveLength(7);
   });
 
   it("asks for the name in one box, 'Full name', required once asked, as long as the schema takes", () => {
@@ -99,7 +99,7 @@ describe("the form page of an event that takes a companion", () => {
     expect(box.querySelector("label .reg-req")).not.toBeNull();
     expect(panelOf(doc).contains(box)).toBe(true);
     // One box for the name: not two, as there are for the guest.
-    expect(panelOf(doc).querySelectorAll("[data-kind='name']").length).toBe(1);
+    expect(panelOf(doc).querySelectorAll("[data-kind='name']")).toHaveLength(1);
   });
 
   it("draws the questions about the companion in the panel, in their order, under ids and names of error that are theirs", () => {
@@ -198,7 +198,7 @@ describe.each(PAYLOADS)("organiser text %j in a question about the companion", (
         expect(attribute.name.startsWith("on") || ["autofocus", "srcdoc"].includes(attribute.name), `${el.tagName}[${attribute.name}]`).toBe(false);
       }
     }
-    expect(doc.querySelectorAll("script").length).toBe(2);
+    expect(doc.querySelectorAll("script")).toHaveLength(2);
     expect(doc.querySelector("iframe, object, embed, base, meta[http-equiv]")).toBeNull();
   });
 
