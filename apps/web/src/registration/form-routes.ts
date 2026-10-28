@@ -6,9 +6,10 @@
  * registration routes, byte for byte (see `respondRegistrationNotFound`), and its theme is not even
  * looked up. An event that is over answers with the closed page.
  *
- * Only the public link is built here. An event whose access method is the password or the company
- * sign-in answers the same 404 until their PRs (111, 118) make this page ask for them. The submit
- * route (`POST /r/:slug`, PR 95c) is the other half of the contract in ./form-contract.ts.
+ * The public link and the password of the event are built here. An event whose way in is the password
+ * asks for it first, on a screen of the page (see ./form-page.ts), and is the 404 while it has no password. An
+ * event whose access method is the company sign-in answers the same 404 until its PR (118) makes this page
+ * ask for it. The submit route (`POST /r/:slug`, PR 95c) is the other half of the contract in ./form-contract.ts.
  *
  * No cookie is read or set, and nothing the page shows depends on the query string.
  */
