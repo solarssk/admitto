@@ -437,6 +437,13 @@
   transition: width 0.4s ease;
 }
 
+/* One sentence under the figures of Event day, once a companion has been let in. */
+.reports-people-on-site {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
 .reports-section-title {
   font-size: var(--fs-h3);
   font-weight: 700;

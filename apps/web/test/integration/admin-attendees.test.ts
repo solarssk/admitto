@@ -780,6 +780,39 @@ describe("GET /api/admin/events/:eventId/attendees/:id", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("lists an item for guests with a companion only for an attendee who has a companion, and names no companion", async () => {
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_A,
+        key: "companion",
+        label: "Companion",
+        config: { audience: "with_companion", requires_return: false, issue_on_checkin: false },
+      },
+    });
+    await prisma.attendeeCompanion.create({ data: { attendee_id: ATT_A1, slot: 1, name: "Zzyzx Companion Name" } });
+    try {
+      const detailOf = async (id: string) => {
+        const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${id}`, { headers: { Cookie: adminCookie } });
+        expect(res.status).toBe(200);
+        return res.text();
+      };
+      const items = (text: string) => (JSON.parse(text) as { event_items: { key: string; state: string }[] }).event_items;
+
+      const withCompanion = await detailOf(ATT_A1);
+      // Not issued yet, and no state row made by reading: the summary reads, it does not write.
+      expect(items(withCompanion)).toEqual([
+        { key: "companion", label: "Companion", icon: null, state: "pending" },
+        expect.objectContaining({ key: "giftbag" }),
+      ]);
+      expect(withCompanion).not.toContain("Zzyzx Companion Name");
+      expect(items(await detailOf(ATT_A2)).map((item) => item.key)).toEqual(["giftbag"]);
+      expect(await prisma.attendeeItemState.count({ where: { attendee_id: { in: [ATT_A1, ATT_A2] }, event_item: { key: "companion" } } })).toBe(0);
+    } finally {
+      await prisma.attendeeCompanion.deleteMany({ where: { attendee_id: ATT_A1 } });
+      await prisma.eventItem.deleteMany({ where: { event_id: EVENT_A, key: "companion" } });
+    }
+  });
 });
 
 describe("the removed hard-delete routes", () => {

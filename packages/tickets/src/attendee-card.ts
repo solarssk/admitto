@@ -1,10 +1,11 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db/status";
 import { parseCustomData } from "./custom-data.js";
-import { buildItemDetail } from "./event-item-contents.js";
+import { buildItemDetail, prefixCompanionNames } from "./event-item-contents.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
 import { lockAttendeeRow } from "./attendee-lock.js";
 import { ensureAttendeeItemStates, operatorItemActions } from "./item-states.js";
+import { isCompanionAudience, itemAppliesToAttendee } from "./item-audience.js";
 import { isAdmittable } from "./admittable.js";
 import { activeAttendeeWhere } from "./event-seats.js";
 import type { AttendeeCardDto, EventItemConfig, LookupAttendeeResult } from "./types.js";
@@ -85,6 +86,26 @@ export async function lookupAttendees(
   });
 }
 
+/**
+ * The names of an attendee's companions, in slot order, read only when one of the items is for guests with a companion:
+ * the check-in card is where a companion is welcomed (D-E5), so an operator has to know whom. An event with no such
+ * item pays nothing for it.
+ */
+async function loadCompanionNames(db: DbClient, attendeeId: string, items: readonly { config: unknown }[]): Promise<string[]> {
+  if (!items.some((item) => isCompanionAudience(item.config as EventItemConfig | null))) return [];
+  const rows = await db.attendeeCompanion.findMany({
+    where: { attendee_id: attendeeId },
+    orderBy: { slot: "asc" },
+    select: { name: true },
+  });
+  return rows.map((row) => row.name);
+}
+
+/** What the card says beside an item: what its content fields say and, on an item for guests with a companion, the companion's name first. */
+function itemHint(config: EventItemConfig | null, contents: string | undefined, companionNames: readonly string[]): string | undefined {
+  return isCompanionAudience(config) ? prefixCompanionNames(contents, companionNames) : contents;
+}
+
 export async function getAttendeeCard(
   eventId: string,
   attendeeId: string,
@@ -119,10 +140,14 @@ export async function getAttendeeCard(
 
   await ensureAttendeeItemStates(attendeeId, eventId, prisma);
 
-  const eventItems = await prisma.eventItem.findMany({
+  const enabledItems = await prisma.eventItem.findMany({
     where: { event_id: eventId, enabled: true },
     orderBy: { key: "asc" },
   });
+  const companionNames = await loadCompanionNames(prisma, attendeeId, enabledItems);
+  const eventItems = enabledItems.filter((item) =>
+    itemAppliesToAttendee(item.config as EventItemConfig | null, companionNames.length > 0),
+  );
 
   const customFields = await loadEventCustomDataFields(prisma, eventId);
   const customFieldsByKey = new Map(customFields.map((f) => [f.source_field, f]));
@@ -173,14 +198,16 @@ export async function getAttendeeCard(
     admitted_at: attendee.admitted_at?.toISOString() ?? null,
     items: eventItems.map((item) => {
       const state = stateByItem.get(item.id) ?? "pending";
+      const config = item.config as EventItemConfig | null;
+      const contents = buildItemDetail(item.config, attendee.custom_data, customFieldsByKey);
       return {
         key: item.key,
         label: item.label,
         description: item.description ?? null,
         icon: item.icon ?? null,
         state,
-        actions: operatorItemActions(state, item.config as EventItemConfig | null),
-        detail: buildItemDetail(item.config, attendee.custom_data, customFieldsByKey),
+        actions: operatorItemActions(state, config),
+        detail: itemHint(config, contents, companionNames),
       };
     }),
     notes: notes.map((n) => ({

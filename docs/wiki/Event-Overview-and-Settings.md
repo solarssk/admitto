@@ -44,6 +44,7 @@ A key contact is checked when you save it:
 **What Check-in progress shows**
 
 - How many attendees have checked in.
+- **People on site** appears once a companion has been let in. It adds those companions to the attendees who have checked in, and says how many of each. The ring and the checked-in figure count attendees only.
 - The rest are **not yet arrived** while the event can still fill up, and **no-shows** once it is over. "Over" means after its end time when one is set in Event settings, otherwise at the end of its day.
 - Below it, **Last check-in** sits next to **Wallet passes installed** when the event uses wallets (a template and API key are saved, and Apple or Google is switched on). Without wallets, it sits next to **Busiest hour**.
 - **Wallet passes installed** counts attendees whose pass was confirmed on a device at any point. It does not drop if someone later removes the pass.
