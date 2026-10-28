@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import { Button, Card, Notice, useToast } from "@admitto/ui";
 import { ApiError, clearRegistrationPassword } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -76,6 +76,7 @@ export function AccessWayInCard({
   disabled,
   onMethodChange,
   onPasswordChanged,
+  onArchived,
 }: Readonly<{
   eventId: string;
   event: EventDto;
@@ -86,12 +87,20 @@ export function AccessWayInCard({
   disabled: boolean;
   onMethodChange: (method: AccessMethod) => void;
   onPasswordChanged: (isSet: boolean) => void;
+  /** A change of the password was refused because the event is archived: the page reads the event and the settings again. */
+  onArchived: () => void;
 }>) {
   const { addToast } = useToast();
   const [setOpen, setSetOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
+
+  /** Nothing is left to confirm or to type: the dialog is gone, the page reads the event again so that its controls lock, and a toast says why. */
+  function archived(message: string) {
+    onArchived();
+    addToast(message, "error");
+  }
 
   async function remove() {
     // The button of the confirmation is busy while the removal runs, so a second press never gets here.
@@ -109,7 +118,11 @@ export function AccessWayInCard({
         redirectToLogin();
         return;
       }
-      setRemoveError(operatorApiErrorMessage(err, "Could not remove the password."));
+      const message = operatorApiErrorMessage(err, "Could not remove the password.");
+      if (hasApiErrorCode(err, "event_archived")) {
+        setRemoveOpen(false);
+        archived(message);
+      } else setRemoveError(message);
     } finally {
       setRemoving(false);
     }
@@ -146,6 +159,7 @@ export function AccessWayInCard({
         eventId={eventId}
         hasPassword={passwordSet}
         onClose={() => setSetOpen(false)}
+        onArchived={archived}
         onSaved={() => {
           setSetOpen(false);
           addToast("Password saved.", "success");

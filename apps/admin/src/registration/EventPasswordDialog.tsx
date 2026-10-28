@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Button, Input, ModalBackdrop, Notice } from "@admitto/ui";
 import { REGISTRATION_PASSWORD_MAX, REGISTRATION_PASSWORD_MIN, registrationPasswordLength } from "@admitto/shared";
 import { ApiError, setRegistrationPassword } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
 import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
@@ -24,6 +24,7 @@ export function EventPasswordDialog({
   hasPassword,
   onClose,
   onSaved,
+  onArchived,
 }: Readonly<{
   open: boolean;
   eventId: string;
@@ -32,6 +33,8 @@ export function EventPasswordDialog({
   onClose: () => void;
   /** The password was saved. */
   onSaved: () => void;
+  /** The server refused because the event is archived (with the words for it): there is nothing to save, so the dialog closes itself. */
+  onArchived: (message: string) => void;
 }>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -73,7 +76,11 @@ export function EventPasswordDialog({
         redirectToLogin();
         return;
       }
-      setError(operatorApiErrorMessage(err, "Could not save the password."));
+      const message = operatorApiErrorMessage(err, "Could not save the password.");
+      if (hasApiErrorCode(err, "event_archived")) {
+        onClose();
+        onArchived(message);
+      } else setError(message);
     } finally {
       setSaving(false);
     }

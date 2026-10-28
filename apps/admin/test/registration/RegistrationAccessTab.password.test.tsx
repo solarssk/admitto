@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
 import { deferred, isOff } from "../test-utils.js";
-import { addToast, api } from "./accessApiMocks.js";
+import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import { settings } from "./accessData.js";
-import { radio, renderLoaded, resetApi, saveButton } from "./accessFixtures.js";
+import { radio, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 const goToLogin = vi.fn();
 
@@ -253,7 +253,7 @@ describe("RegistrationAccessTab: the event password", () => {
     expect(addToast).not.toHaveBeenCalled();
   });
 
-  it("says in the words of the app that the event is archived when the server refuses for that", async () => {
+  it("says in the words of the app that the event is archived when the server refuses for that, closes the dialog, and reads the event and the settings again", async () => {
     await renderLoaded(withoutPassword());
     api.setRegistrationPassword.mockRejectedValue(new ApiError(403, "event_archived", "event_archived"));
     const dialog = await openSetDialog();
@@ -261,7 +261,10 @@ describe("RegistrationAccessTab: the event password", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
 
-    await waitFor(() => expect(within(dialog).getByRole("alert").textContent).toBe("This event is archived."));
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("This event is archived.", "error"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(refreshEvent).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
   });
 
   it("hands the browser to the login page when the session ended", async () => {
@@ -399,6 +402,62 @@ describe("RegistrationAccessTab: removing the event password", () => {
     expect(screen.getByRole("button", { name: "Set password" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+  });
+
+  it("says that the event is archived when the removal is refused for that, closes the dialog, and reads the event and the settings again", async () => {
+    const dialog = await askToRemove();
+    api.clearRegistrationPassword.mockRejectedValue(new ApiError(403, "event_archived", "event_archived"));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove password" }));
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("This event is archived.", "error"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(refreshEvent).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows what the newest read says when an older one comes last: a password set and then removed is not put back", async () => {
+    await renderLoaded(withoutPassword());
+    const afterSet = deferred<RegistrationSettingsDto>();
+    const afterRemoval = deferred<RegistrationSettingsDto>();
+    api.fetchRegistrationSettings.mockReturnValueOnce(afterSet.promise).mockReturnValueOnce(afterRemoval.promise);
+    api.setRegistrationPassword.mockResolvedValue(undefined);
+    api.clearRegistrationPassword.mockResolvedValue(undefined);
+
+    const dialog = await openSetDialog();
+    type(dialog, PASSWORD);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(within(await removeDialog()).getByRole("button", { name: "Remove password" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(3));
+
+    await act(async () => afterRemoval.resolve(withoutPassword()));
+    await act(async () => afterSet.resolve(withPassword()));
+
+    expect(rowText()).toContain("No password is set.");
+  });
+
+  it("keeps the answer of a save when a read that started before it comes last", async () => {
+    await renderLoaded(withoutPassword());
+    const afterSet = deferred<RegistrationSettingsDto>();
+    api.fetchRegistrationSettings.mockReturnValueOnce(afterSet.promise);
+    api.setRegistrationPassword.mockResolvedValue(undefined);
+    const dialog = await openSetDialog();
+    type(dialog, PASSWORD);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(rowText()).toContain("A password is set.");
+
+    api.saveRegistrationSettings.mockResolvedValue(settings({ ...withPassword(), waitlist_enabled: false }));
+    fireEvent.click(toggle("Waiting list"));
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalled());
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Registration settings saved.", "success"));
+    await act(async () => afterSet.resolve(withoutPassword()));
+
+    expect(rowText()).toContain("A password is set.");
   });
 
   it("removes nothing when it is cancelled", async () => {

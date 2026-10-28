@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useToast } from "@admitto/ui";
 import { ApiError, fetchLegalDocuments, fetchRegistrationSettings, saveRegistrationSettings } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -40,6 +40,8 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<AccessProblem | null>(null);
   const [confirmOffOpen, setConfirmOffOpen] = useState(false);
+  // Which read of the settings is the newest: reads and changes can overtake each other, and only the newest may be applied.
+  const newestRead = useRef(0);
 
   const patch = settingsPatch(draft, base);
   const dirty = Object.keys(patch).length > 0;
@@ -57,13 +59,23 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
 
   /** Reads the settings and the texts again, quietly: the checklist and the list of consents learn what changed, and the form does not move. */
   async function refresh() {
+    // A password set and then removed, or a save, can start a read while an older one is still on its way: the older answer, if it
+    // comes last, must not put back what the newer change took away, and neither may a slow read of the texts hold an old answer back.
+    const mine = ++newestRead.current;
     try {
       const [latest, texts] = await Promise.all([fetchRegistrationSettings(eventId), fetchLegalDocuments(eventId)]);
+      if (mine !== newestRead.current) return;
       setServer(latest);
       setLegalItems(texts.items);
     } catch {
       // What the screen shows stays as it is, and so does the error that sent us here.
     }
+  }
+
+  /** A change was refused because the event is archived: the event is read again, so that the controls lock, and so are the settings, so that the checklist is true when it is restored. */
+  function eventArchived() {
+    void refreshEvent?.();
+    void refresh();
   }
 
   function fail(err: unknown) {
@@ -74,7 +86,7 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     // These answers say that what the screen shows is out of date (the event lost something, a text was withdrawn, the event was
     // archived): read it again, and let the answer be the truth.
     if (hasApiErrorCode(err, "registration_not_ready") || hasApiErrorCode(err, "consent_not_published")) void refresh();
-    if (hasApiErrorCode(err, "event_archived")) void refreshEvent?.();
+    if (hasApiErrorCode(err, "event_archived")) eventArchived();
     // Only a 409 `registration_not_ready` carries `blockers`: the keys of the checks that are not met, which the screen words itself.
     const blockers = err instanceof ApiError ? err.blockers : undefined;
     if (blockers && blockers.length > 0) {
@@ -94,6 +106,8 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
       const answer = await saveRegistrationSettings(eventId, patch);
       const next = draftFromSettings(answer);
       addToast(savedMessage(patch, base), "success");
+      // A read that started before this answer is older than it.
+      newestRead.current += 1;
       setServer(answer);
       setBase(next);
       setDraft(next);
@@ -125,5 +139,5 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     void refresh();
   }
 
-  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, submit: () => void submit(), cancelTurnOff, passwordChanged };
+  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, submit: () => void submit(), cancelTurnOff, passwordChanged, eventArchived };
 }

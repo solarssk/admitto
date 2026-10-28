@@ -500,6 +500,8 @@ describe("RegistrationAccessTab: other refusals", () => {
 
     expect((await screen.findByRole("alert")).textContent).toBe("This event is archived.");
     expect(refreshEvent).toHaveBeenCalledTimes(1);
+    // The settings are read again as well, so that the checklist is true when the event is restored.
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
   });
 
   it("says that it could not save when the server failed, never with the server's own words, and keeps the form to try again", async () => {

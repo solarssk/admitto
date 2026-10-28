@@ -100,6 +100,7 @@ export function RegistrationAccessForm({
         disabled={archived || saving}
         onMethodChange={(method) => form.edit({ method })}
         onPasswordChanged={form.passwordChanged}
+        onArchived={form.eventArchived}
       />
       <AccessFormCard draft={draft} legalItems={form.legalItems} disabled={archived || saving} onChange={form.edit} />
       <AccessQuestionsCard fields={server.public_fields} />
