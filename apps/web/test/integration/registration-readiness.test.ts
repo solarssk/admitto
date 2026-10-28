@@ -1,6 +1,3 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
@@ -24,9 +21,6 @@ import { PAST, eventSeeder, type EventSeed } from "../helpers/registration-submi
  */
 const ORG = "org-reg99a-readiness";
 const NOT_ABOUT_THE_FORM: readonly RegistrationReadinessKey[] = ["mail_provider", "instance_url", "required_fields"];
-
-/** The marker of PR 111: its module is what lets the page open for the password. */
-const PASSWORD_WAY_IN_IS_BUILT = existsSync(join(dirname(fileURLToPath(import.meta.url)), "../../src/registration/event-password.ts"));
 
 let prisma: PrismaClient;
 let seeder: ReturnType<typeof eventSeeder>;
@@ -62,8 +56,6 @@ type Row = {
   noInstanceUrl?: boolean;
   page: "open" | "not_found" | "closed";
   blockers: RegistrationReadinessKey[];
-  /** The row needs the password way in of PR 111 to be in the code to be true. */
-  needsPassword?: boolean;
 };
 
 const bothWays = () => setEnabledAccessMethods(prisma, ["link", "password"]);
@@ -96,7 +88,13 @@ const ROWS: Row[] = [
     system: bothWays,
     page: "open",
     blockers: [],
-    needsPassword: true,
+  },
+  {
+    name: "a password nobody set, on an event that is over: as good as off, and not closed",
+    seed: { date: PAST, settings: { access_methods: ["password"] } },
+    system: bothWays,
+    page: "not_found",
+    blockers: ["password", "event_not_ended"],
   },
   { name: "no privacy notice", seed: { legal: { privacy: false } }, page: "not_found", blockers: ["legal_documents"] },
   { name: "terms that are only a draft", seed: { legal: { terms: false, draftTerms: true } }, page: "not_found", blockers: ["legal_documents"] },
@@ -145,7 +143,6 @@ const readinessOf = (eventId: string, noInstanceUrl: boolean) =>
 
 describe("the readiness of an event and the page it is about", () => {
   it.each(ROWS)("$name", async (row) => {
-    if (row.needsPassword && !PASSWORD_WAY_IN_IS_BUILT) return;
     counter += 1;
     const slug = `reg99a-ready-${counter}`;
     await row.system?.();
