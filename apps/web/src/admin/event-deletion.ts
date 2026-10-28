@@ -38,6 +38,7 @@ import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import {
   BADGE_ITEM_KEY,
+  COMPANION_ITEM_KEY,
   STANDARD_TICKET_TYPE_KEY,
   lockAttendeeJobQueue,
   lockRegistrationQueue,
@@ -70,7 +71,7 @@ export type EventDeletionBlocker =
 /** Zero-cost-to-compute signals of retained event content, used by the deletability guard. */
 export type EventActivitySignals = {
   attendeeCount: number;
-  nonBadgeItemCount: number;
+  customItemCount: number;
   nonStandardTicketTypeCount: number;
   contactCount: number;
   resourceCount: number;
@@ -84,14 +85,16 @@ export async function countEventActivitySignals(
 ): Promise<EventActivitySignals> {
   const [
     attendeeCount,
-    nonBadgeItemCount,
+    customItemCount,
     nonStandardTicketTypeCount,
     contactCount,
     resourceCount,
     eventMailTemplateCount,
   ] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
-    db.eventItem.count({ where: { event_id: eventId, key: { not: BADGE_ITEM_KEY } } }),
+    // The badge and the companion item are made by Admitto itself (the companion one by the first admission that saves a
+    // companion), not by the organiser, so they are not retained content: an event whose attendees are gone is deletable.
+    db.eventItem.count({ where: { event_id: eventId, key: { notIn: [BADGE_ITEM_KEY, COMPANION_ITEM_KEY] } } }),
     db.ticketType.count({ where: { event_id: eventId, key: { not: STANDARD_TICKET_TYPE_KEY } } }),
     db.eventContact.count({ where: { event_id: eventId } }),
     db.eventResource.count({ where: { event_id: eventId } }),
@@ -108,7 +111,7 @@ export async function countEventActivitySignals(
   ]);
   return {
     attendeeCount,
-    nonBadgeItemCount,
+    customItemCount,
     nonStandardTicketTypeCount,
     contactCount,
     resourceCount,
@@ -128,7 +131,7 @@ export function listEventDeletionBlockers(
 ): EventDeletionBlocker[] {
   const blockers: EventDeletionBlocker[] = [];
   if (signals.attendeeCount > 0) blockers.push("attendees");
-  if (signals.nonBadgeItemCount > 0) blockers.push("custom_items");
+  if (signals.customItemCount > 0) blockers.push("custom_items");
   if (signals.nonStandardTicketTypeCount > 0) blockers.push("custom_ticket_types");
   if (signals.contactCount > 0) blockers.push("contacts");
   if (signals.resourceCount > 0) blockers.push("resources");

@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import { Prisma } from "@admitto/db/client";
 import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db/status";
+import { COMPANION_ITEM_KEY } from "./event-items.js";
 
 type SeatsDb = PrismaClient | Prisma.TransactionClient;
 
@@ -24,6 +25,26 @@ export function countActiveAttendees(db: SeatsDb, eventId: string): Promise<numb
 export function countActiveAdmittedAttendees(db: SeatsDb, eventId: string): Promise<number> {
   return db.attendee.count({
     where: { ...activeAttendeeWhere(eventId), admitted_at: { not: null } },
+  });
+}
+
+/**
+ * Companions let in: the "companion" item (COMPANION_ITEM_KEY) issued, to a guest who is active, is admitted and still has
+ * a companion row. With the admitted heads they are the people on site (D-E5); the heads stay what the check-in progress
+ * and the "Checked in" figures count.
+ *
+ * A companion the staff removed leaves its issued state behind, but the guest has no companion any more, so it is not
+ * counted; an attendee who was cancelled or revoked is not active (the rule of activeAttendeeWhere); and a guest whose
+ * check-in was undone is not on site, so neither is the companion who came with them. An erased guest who was admitted
+ * counts like any other: their companion row stays, with a placeholder name.
+ */
+export function countCompanionsIssued(db: SeatsDb, eventId: string): Promise<number> {
+  return db.attendeeItemState.count({
+    where: {
+      state: "issued",
+      event_item: { event_id: eventId, key: COMPANION_ITEM_KEY },
+      attendee: { ...activeAttendeeWhere(eventId), admitted_at: { not: null }, companions: { some: {} } },
+    },
   });
 }
 

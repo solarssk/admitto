@@ -3,7 +3,7 @@ import type { PrismaClient } from "@admitto/db";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { enabledWalletPlatforms } from "@admitto/shared";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
-import { activeAttendeeWhere } from "@admitto/tickets";
+import { activeAttendeeWhere, countCompanionsIssued } from "@admitto/tickets";
 import {
   countActiveAdmittedAttendees,
   countActiveAttendees,
@@ -49,6 +49,8 @@ export interface EventOverviewResponse {
   /** Seats the event holds, which is what its limit is compared with; `attendee_count` stays the number of heads. */
   seats_in_use: number;
   admitted_count: number;
+  /** Companions let in with their guests (countCompanionsIssued); the people on site are `admitted_count` plus this. */
+  companions_admitted: number;
   email_sent: number;
   email_failed: number;
   email_bounced: number;
@@ -420,6 +422,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     activeAttendeeCount,
     seatsInUse,
     activeAdmittedCount,
+    companionsAdmitted,
     deliveryStats,
     bouncedAttendeeCount,
     requirementsCount,
@@ -434,6 +437,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     countActiveAttendees(db, eventId),
     countSeatsInUse(db, eventId),
     countActiveAdmittedAttendees(db, eventId),
+    countCompanionsIssued(db, eventId),
     db.emailDelivery.groupBy({
       by: ["status"],
       where: { event_id: eventId },
@@ -523,6 +527,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     attendee_count: activeAttendeeCount,
     seats_in_use: seatsInUse,
     admitted_count: activeAdmittedCount,
+    companions_admitted: companionsAdmitted,
     email_sent: emailSent,
     email_failed: emailFailed,
     email_bounced: emailBounced,
