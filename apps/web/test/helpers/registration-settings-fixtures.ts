@@ -2,7 +2,7 @@
  * What the tests of the registration settings of an event share: a staff user with one role and a session, a mail provider for
  * an organisation, and an instance that has no address. Every address and name here is synthetic.
  */
-import type { PrismaClient } from "@admitto/db";
+import type { Prisma, PrismaClient } from "@admitto/db";
 import { enrollConfirmedTotp } from "./enroll-confirmed-totp.js";
 import { sessionCookieFor } from "./session-cookie.js";
 
@@ -63,4 +63,45 @@ export async function withoutInstanceUrl<T>(prisma: PrismaClient, run: (env: Nod
   } finally {
     if (saved !== undefined) process.env.BASE_URL = saved;
   }
+}
+
+/** One call to a method of a model: its name and the arguments it was given. */
+export type ModelCall = { method: string; args: unknown };
+
+/**
+ * The client, with a note of every call to the methods of one model, made on the client itself and inside its transactions.
+ * A test that says "this code never reads that column" reads the note. Everything is passed through unchanged.
+ */
+export function recordModelCalls(db: PrismaClient, model: string): { client: PrismaClient; calls: ModelCall[] } {
+  const calls: ModelCall[] = [];
+  const wrapModel = (delegate: object): object =>
+    new Proxy(delegate, {
+      get(target, key, receiver) {
+        const value: unknown = Reflect.get(target, key, receiver);
+        if (typeof key !== "string" || typeof value !== "function") return value;
+        return (...args: unknown[]): unknown => {
+          calls.push({ method: key, args: args[0] });
+          return Reflect.apply(value, target, args);
+        };
+      },
+    });
+  const wrapOwner = <T extends object>(owner: T): T =>
+    new Proxy(owner, {
+      get(target, key, receiver) {
+        const value: unknown = Reflect.get(target, key, receiver);
+        return key === model && typeof value === "object" && value !== null ? wrapModel(value) : value;
+      },
+    });
+  const client = new Proxy(db, {
+    get(target, key, receiver) {
+      const value: unknown = Reflect.get(target, key, receiver);
+      if (key === model && typeof value === "object" && value !== null) return wrapModel(value);
+      if (key !== "$transaction" || typeof value !== "function") return value;
+      return (run: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) => {
+        const wrapped = (tx: Prisma.TransactionClient) => run(wrapOwner(tx));
+        return Reflect.apply(value, target, options === undefined ? [wrapped] : [wrapped, options]);
+      };
+    },
+  });
+  return { client, calls };
 }

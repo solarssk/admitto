@@ -1,9 +1,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { acquireEventCapacityLock, lockRegistrationQueue } from "@admitto/tickets";
+import { acquireEventCustomFieldsLock } from "../../src/admin/event-custom-fields-routes.js";
 import { updateEventRegistrationSettings } from "../../src/admin/event-registration-settings.js";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
@@ -253,6 +254,29 @@ describe("a save and a writer of the event's texts or questions", () => {
     expect(answer.status).toBe(422);
     expect(await answer.json()).toEqual({ error: "required_field_not_on_form" });
     expect(await prisma.eventCustomField.count({ where: { event_id: event.id } })).toBe(0);
+  });
+});
+
+describe("a save that waits for a lock", () => {
+  it("judges the end of the event by the clock read once it holds its locks, not by the one of the moment it was asked", async () => {
+    // The event's day is 2099-05-14 in Warsaw: it is over from the night after.
+    const event = await addEvent("clock");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2099-05-14T08:00:00Z"));
+      const holding = holdLock(event.id, acquireEventCustomFieldsLock);
+      await holding.started;
+      const enabling = updateEventRegistrationSettings(prisma, { eventId: event.id, patch: { mode: "automatic" }, actor: actor() });
+      await sleep(200);
+
+      vi.setSystemTime(new Date("2099-05-15T08:00:00Z"));
+      await holding.release();
+
+      expect(await enabling).toEqual({ kind: "not_ready", blockers: ["event_not_ended"] });
+      expect((await settingsRow(event.id))?.mode).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

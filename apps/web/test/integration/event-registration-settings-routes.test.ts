@@ -16,7 +16,13 @@ import { setEnabledAccessMethods } from "../../src/registration/access-methods.j
 import { READINESS_KEYS, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
-import { createStaffSession, removeStaff, setOrgMail, withoutInstanceUrl } from "../helpers/registration-settings-fixtures.js";
+import {
+  createStaffSession,
+  recordModelCalls,
+  removeStaff,
+  setOrgMail,
+  withoutInstanceUrl,
+} from "../helpers/registration-settings-fixtures.js";
 import { PAST, eventSeeder, type EventSeed, type FieldSeed } from "../helpers/registration-submit-harness.js";
 
 /**
@@ -337,6 +343,31 @@ describe("reading the settings", () => {
     expect(text).not.toContain(hash);
     expect(text).not.toContain("argon2");
     expect(text).not.toContain("test-password");
+  });
+
+  it("never loads the hash into the process: every read of the row names its columns and the hash is not one, and the count is all that asks", async () => {
+    const hash = await hashPassword("test-password");
+    const event = await addEvent("hash-unread", { settings: { access_methods: ["password"], password_hash: hash } });
+    const recording = recordModelCalls(prisma, "eventRegistrationSettings");
+
+    await getEventRegistrationSettings(recording.client, event.id);
+    await updateEventRegistrationSettings(recording.client, {
+      eventId: event.id,
+      patch: { waitlist_enabled: false, access_methods: ["link"] },
+      actor: actorOf(adminId),
+    });
+
+    const reads = recording.calls.filter((call) => call.method.startsWith("find"));
+    expect(reads.length).toBeGreaterThanOrEqual(2);
+    for (const read of reads) {
+      const select = (read.args as { select?: Record<string, boolean> }).select;
+      expect(select, `${read.method} without a select would load every column`).toBeDefined();
+      expect(select).not.toHaveProperty("password_hash");
+    }
+    // The only question put to the database about the hash is whether it is there.
+    const asked = recording.calls.filter((call) => call.method === "count");
+    expect(asked.length).toBeGreaterThanOrEqual(2);
+    for (const call of asked) expect(JSON.stringify(call.args)).toContain('"password_hash":{"not":null}');
   });
 
   it("is the same answer for an admin and for a superadmin", async () => {
