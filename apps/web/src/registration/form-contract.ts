@@ -14,7 +14,8 @@
  *   about who is on the list.
  * - `400` or `422` with `{ errors: { <field>: <message> } }`: the page shows each message under its
  *   field, focuses the first one and keeps what the guest typed. The fields are named by
- *   {@link RegistrationSubmitErrorKey} and {@link customDataErrorKey}. A message is shown as text.
+ *   {@link RegistrationSubmitErrorKey}, {@link customDataErrorKey} and {@link companionAnswerErrorKey}. A message is
+ *   shown as text.
  *   For the answer to a long text, a date, a date and time or a phone number only the key counts: the
  *   page says a sentence of its own for it (the field carries it as `data-invalid`) and ignores the
  *   message, so nothing the server sends for those fields reaches the page.
@@ -53,8 +54,22 @@ export interface RegistrationSubmitBody {
   terms: boolean;
   /** Keys (`LegalDocument.key`) of the extra consents the guest ticked. */
   consents: string[];
+  /** The guest the registrant brings (D-E5). Only when the event takes one (`max_companions` above 0) and the guest ticked
+   * "I am bringing a guest"; left out otherwise. A body that has it for an event that takes none is refused as a body the
+   * page did not send (400), the answer to any key the contract does not have, so the answer does not tell a stranger the
+   * setting; more of them than the event takes is a 422 under {@link ERROR_KEY_COMPANIONS}. The server judges every piece. */
+  companions?: RegistrationSubmitCompanion[];
   /** The Cloudflare Turnstile token. Single use. */
   challenge: string;
+}
+
+/** One companion of the body: the name as typed, trimmed, and the answers to the event's questions about a companion, by the
+ * field's `source_field`, in the same form as `custom_data` (a question not answered is not in the object, and the object is
+ * left out when there is none). A key that is not a question about a companion that is on the form is ignored, without an error:
+ * the guest's own questions, an unknown key, `__proto__`. */
+export interface RegistrationSubmitCompanion {
+  name: string;
+  answers?: Record<string, string>;
 }
 
 /** `200` answer. */
@@ -75,7 +90,9 @@ export type RegistrationSubmitErrorKey =
   | "company"
   | "department"
   | "terms"
-  | "challenge";
+  | "challenge"
+  | "companions"
+  | "companion_name";
 
 export const ERROR_KEY_FIRST_NAME: RegistrationSubmitErrorKey = "first_name";
 export const ERROR_KEY_LAST_NAME: RegistrationSubmitErrorKey = "last_name";
@@ -84,9 +101,20 @@ export const ERROR_KEY_COMPANY: RegistrationSubmitErrorKey = "company";
 export const ERROR_KEY_DEPARTMENT: RegistrationSubmitErrorKey = "department";
 export const ERROR_KEY_TERMS: RegistrationSubmitErrorKey = "terms";
 export const ERROR_KEY_CHALLENGE: RegistrationSubmitErrorKey = "challenge";
+/** The row "I am bringing a guest": a refusal of the number of companions, as a whole. */
+export const ERROR_KEY_COMPANIONS: RegistrationSubmitErrorKey = "companions";
+/** The one name field of the companion. */
+export const ERROR_KEY_COMPANION_NAME: RegistrationSubmitErrorKey = "companion_name";
 
 /** The name of a question's error in `errors`. The prefix keeps a question called `terms` or `email`
  * apart from the fixed field of that name. */
 export function customDataErrorKey(sourceField: string): string {
   return `custom_data.${sourceField}`;
+}
+
+/** The name of the error of a question about the companion. `name`, `email` and the other fixed columns cannot be a question's
+ * key (`isReservedCustomDataSourceField`), so no question can take the place of {@link ERROR_KEY_COMPANION_NAME}, and the
+ * prefix keeps these apart from the guest's own questions (`custom_data.<key>`), which may have the same key. */
+export function companionAnswerErrorKey(sourceField: string): string {
+  return `companion_${sourceField}`;
 }

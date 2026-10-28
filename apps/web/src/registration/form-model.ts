@@ -20,6 +20,7 @@ import {
   type ShowWhen,
 } from "@admitto/shared";
 import {
+  allowedCompanions,
   formatDate,
   formatEventHoursRange,
   loadRegistrantFormFields,
@@ -91,6 +92,16 @@ export interface FormEvent {
   timezone: string;
 }
 
+/** The part of the form for a guest's companion (D-E5): the choice "I am bringing a guest", the companion's name and the
+ * event's questions about a companion. Only an event that takes companions has it. */
+export interface CompanionSection {
+  /** How many companions a guest may bring: `allowedCompanions(max_companions)`, 1 or more. The page asks for one. */
+  max: number;
+  /** The questions about the companion that are on the form (`applies_to = "companion"`, `show_on_form`), by the same rules as
+   * the guest's own: their conditions refer to each other and never to a question about the guest. */
+  questions: FormQuestion[];
+}
+
 export interface RegistrationFormModel {
   event: FormEvent;
   mode: "approval" | "automatic";
@@ -99,6 +110,8 @@ export interface RegistrationFormModel {
   askCompany: boolean;
   askDepartment: boolean;
   questions: FormQuestion[];
+  /** Null: the event takes no companion, and the page and the route behave as they did before companions existed. */
+  companion: CompanionSection | null;
   privacyPath: string;
   termsPath: string;
   consents: FormConsent[];
@@ -141,7 +154,15 @@ const EVENT_SELECT = {
   organization: { select: { logo_url: true, header_image_url: true } },
   location_details: { select: { venue_name: true, formatted_address: true, address_components: true } },
   registration_settings: {
-    select: { mode: true, access_methods: true, verify_email: true, ask_company: true, ask_department: true, consent_keys: true },
+    select: {
+      mode: true,
+      access_methods: true,
+      verify_email: true,
+      ask_company: true,
+      ask_department: true,
+      consent_keys: true,
+      max_companions: true,
+    },
   },
 } as const;
 
@@ -218,9 +239,9 @@ function toQuestion(field: RegistrantFormField, type: FormQuestionType): FormQue
   };
 }
 
-/** The questions to draw, in the organiser's order, or null when a required one cannot be drawn. A form nobody
- * can submit is worse than a closed one: a required question of a type the page does not know or a choice with
- * no choices fails every submission on the server.
+/** The questions to draw for `appliesTo` (the guest's own, or the companion's), in the organiser's order, or null when a
+ * required one cannot be drawn. A form nobody can submit is worse than a closed one: a required question of a type the page
+ * does not know or a choice with no choices fails every submission on the server.
  *
  * A question with a condition (`rules.show_when`) is asked only when the question it names has that answer, so
  * the page can ask it only when that question is on the form, is a Yes/No or a choice, and is itself always
@@ -228,10 +249,10 @@ function toQuestion(field: RegistrantFormField, type: FormQuestionType): FormQue
  * nothing can meet (a question that is not there, or an answer it cannot have, such as an option that was
  * removed) is left out: it is never asked, so it is never required and never closes the form. A required
  * question the page cannot draw closes the form only when a guest could meet its condition and then be stuck. */
-function drawQuestions(fields: readonly RegistrantFormField[]): FormQuestion[] | null {
+function drawQuestions(fields: readonly RegistrantFormField[], appliesTo: "guest" | "companion"): FormQuestion[] | null {
   const drawable: FormQuestion[] = [];
   const stuck: RegistrantFormField[] = [];
-  for (const field of pickRegistrantFormFields(fields)) {
+  for (const field of pickRegistrantFormFields(fields, appliesTo)) {
     const type = drawableType(field);
     if (type !== null) drawable.push(toQuestion(field, type));
     else if (field.required) stuck.push(field);
@@ -254,6 +275,19 @@ function legalPaths(slug: string, legal: RequiredLegalDocuments): { privacy: str
   };
 }
 
+/**
+ * The section for a companion, or null when the event offers none: it takes none (`max_companions` is 0), or a question
+ * about the companion that is required cannot be drawn. The second is not a reason to close the form, as it is for the
+ * guest's own questions: a guest can register without a companion, so the part that nobody could complete is left out
+ * and the rest stays open. The route reads the same model, so a companion that the page does not offer is a body it refuses.
+ */
+function drawCompanion(fields: readonly RegistrantFormField[], maxCompanions: number): CompanionSection | null {
+  const max = allowedCompanions(maxCompanions);
+  if (max === 0) return null;
+  const questions = drawQuestions(fields, "companion");
+  return questions ? { max, questions } : null;
+}
+
 /** The form of an event that is not over, or `not_found` when something it needs is not in place. */
 async function loadOpenForm(
   db: PrismaClient,
@@ -271,7 +305,7 @@ async function loadOpenForm(
   ]);
   const link = availability.find((method) => method.method === "link");
   const paths = legalPaths(row.slug, legal);
-  const questions = drawQuestions(fields);
+  const questions = drawQuestions(fields, "guest");
   if (!link?.available || keys.state !== "ready" || !paths || !questions) return NOT_FOUND;
   return {
     kind: "open",
@@ -284,6 +318,7 @@ async function loadOpenForm(
       askCompany: settings.ask_company,
       askDepartment: settings.ask_department,
       questions,
+      companion: drawCompanion(fields, settings.max_companions),
       privacyPath: paths.privacy,
       termsPath: paths.terms,
       consents: paths.consents,

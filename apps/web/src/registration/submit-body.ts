@@ -17,14 +17,18 @@ import {
   registrantNameSchema,
   type RegistrantFormField,
   type RegistrantSubmission,
+  type RegistrationCompanion,
 } from "@admitto/tickets";
 import {
+  ERROR_KEY_COMPANIONS,
+  ERROR_KEY_COMPANION_NAME,
   ERROR_KEY_COMPANY,
   ERROR_KEY_DEPARTMENT,
   ERROR_KEY_EMAIL,
   ERROR_KEY_FIRST_NAME,
   ERROR_KEY_LAST_NAME,
   ERROR_KEY_TERMS,
+  companionAnswerErrorKey,
   customDataErrorKey,
   type RegistrationSubmitBody,
 } from "./form-contract.js";
@@ -41,6 +45,7 @@ const BODY_KEYS: Readonly<Record<keyof RegistrationSubmitBody, true>> = {
   custom_data: true,
   terms: true,
   consents: true,
+  companions: true,
   challenge: true,
 };
 
@@ -81,6 +86,7 @@ export function readEnvelope(raw: unknown): SubmissionEnvelope | null {
     custom_data: customData,
     terms: ownValue(raw, "terms"),
     consents: ownValue(raw, "consents"),
+    companions: ownValue(raw, "companions"),
     challenge: ownValue(raw, "challenge"),
   };
 }
@@ -95,6 +101,8 @@ export const SUBMIT_MESSAGES = {
   terms: "Accept the event terms to continue.",
   challenge: "The security check did not pass. Try again.",
   answerMissing: "Answer this question.",
+  companionName: "Enter your guest's full name, up to 100 characters and without links.",
+  tooManyCompanions: "This event does not take that many guests.",
 } as const;
 
 /** The sentence for an answer that is there but is not accepted, by the type of the question. */
@@ -117,11 +125,20 @@ export function invalidAnswerMessage(field: RegistrantFormField): string {
 const isEmptyAnswer = (raw: unknown): boolean =>
   raw === undefined || raw === null || (typeof raw === "string" && raw.trim() === "");
 
+/** Whose answers a set of questions asks for, and the name of the error of a refused one: the guest's own, or a companion's. */
+type AnswerSet = { appliesTo: "guest" | "companion"; errorKey: (sourceField: string) => string };
+const GUEST_ANSWERS: AnswerSet = { appliesTo: "guest", errorKey: customDataErrorKey };
+const COMPANION_ANSWERS: AnswerSet = { appliesTo: "companion", errorKey: companionAnswerErrorKey };
+
 /** Whether the boundary refuses this set of questions with these answers. Anything but its own refusal is a bug of
  * ours and is let through to the caller. */
-function boundaryRefuses(fields: readonly RegistrantFormField[], answers: Record<string, unknown>): boolean {
+function boundaryRefuses(
+  fields: readonly RegistrantFormField[],
+  answers: Record<string, unknown>,
+  appliesTo: AnswerSet["appliesTo"],
+): boolean {
   try {
-    buildRegistrantCustomData(fields, answers);
+    buildRegistrantCustomData(fields, answers, appliesTo);
     return false;
   } catch (error) {
     if (error instanceof RegistrantInputError) return true;
@@ -153,8 +170,9 @@ function answersTo(input: Record<string, unknown> | undefined, keys: readonly st
 function refusedAnswers(
   fields: readonly RegistrantFormField[],
   input: Record<string, unknown> | undefined,
+  appliesTo: AnswerSet["appliesTo"],
 ): Map<string, string> {
-  const onForm = pickRegistrantFormFields(fields);
+  const onForm = pickRegistrantFormFields(fields, appliesTo);
   const byKey = new Map(onForm.map((field) => [field.source_field, field]));
   const refused = new Map<string, string>();
   const refuse = (field: RegistrantFormField) => {
@@ -162,13 +180,13 @@ function refusedAnswers(
     refused.set(field.source_field, isEmptyAnswer(raw) ? SUBMIT_MESSAGES.answerMissing : invalidAnswerMessage(field));
   };
   for (const field of onForm) {
-    if (!field.rules?.show_when && boundaryRefuses([field], answersTo(input, [field.source_field]))) refuse(field);
+    if (!field.rules?.show_when && boundaryRefuses([field], answersTo(input, [field.source_field]), appliesTo)) refuse(field);
   }
   for (const field of onForm) {
     const controller = byKey.get(field.rules?.show_when?.field ?? "");
     if (!controller || refused.has(controller.source_field)) continue;
     const keys = [controller.source_field, field.source_field];
-    if (boundaryRefuses([controller, field], answersTo(input, keys))) refuse(field);
+    if (boundaryRefuses([controller, field], answersTo(input, keys), appliesTo)) refuse(field);
   }
   return refused;
 }
@@ -180,20 +198,25 @@ type AnswersCheck =
   | { kind: "refused"; errors: Map<string, string> }
   | { kind: "malformed" };
 
-/** The answers to the organiser's questions. Only the questions on the form are read, and a question that is not
- * asked (`rules.show_when`) is not read at all, however the answers to the others are: see buildRegistrantCustomData. */
-function checkAnswers(fields: readonly RegistrantFormField[], customData: Record<string, unknown> | null | undefined): AnswersCheck {
-  const input = customData ?? undefined;
+/** The answers to the organiser's questions of `who` (the guest's, or a companion's). Only the questions on the form are
+ * read, and a question that is not asked (`rules.show_when`) is not read at all, however the answers to the others are:
+ * see buildRegistrantCustomData. */
+function checkAnswers(
+  fields: readonly RegistrantFormField[],
+  answers: Record<string, unknown> | null | undefined,
+  who: AnswerSet,
+): AnswersCheck {
+  const input = answers ?? undefined;
   try {
-    return { kind: "ok", answers: buildRegistrantCustomData(fields, input) };
+    return { kind: "ok", answers: buildRegistrantCustomData(fields, input, who.appliesTo) };
   } catch (error) {
     if (!(error instanceof RegistrantInputError)) throw error;
   }
-  const refused = refusedAnswers(fields, input);
+  const refused = refusedAnswers(fields, input, who.appliesTo);
   if (refused.size === 0) return { kind: "malformed" };
   return {
     kind: "refused",
-    errors: new Map([...refused].map(([key, message]) => [customDataErrorKey(key), message])),
+    errors: new Map([...refused].map(([key, message]) => [who.errorKey(key), message])),
   };
 }
 
