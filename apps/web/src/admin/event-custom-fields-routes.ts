@@ -201,6 +201,8 @@ type CustomFieldRow = {
   display_order: number | null;
   options: Prisma.JsonValue;
   rules: Prisma.JsonValue;
+  /** Whose answer the question asks for; not part of the DTO until the field editor can set it. */
+  applies_to: string;
   created_at: Date;
 };
 
