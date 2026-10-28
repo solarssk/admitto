@@ -23,7 +23,7 @@ import type { BrandingTheme } from "@admitto/auth";
 import { renderAdmittoFaviconLink } from "../favicon.js";
 import { TURNSTILE_ORIGIN } from "../registration-page-security.js";
 import { esc } from "../ticket-page.js";
-import { renderAgreement, renderPasswordField, renderPersonalFields, renderQuestions } from "./form-fields.js";
+import { renderAgreement, renderCompanion, renderPasswordField, renderPersonalFields, renderQuestions } from "./form-fields.js";
 import { icon, renderIconSprite } from "./form-icons.js";
 import type { ClosedFormModel, FormContact, FormEvent, RegistrationFormModel } from "./form-model.js";
 import { renderFormScript } from "./form-script.js";
@@ -146,7 +146,7 @@ export function renderRegistrationFormPage(model: RegistrationFormModel, options
   const gate = behindPassword(model);
   const form = `<form class="reg-form" id="reg-form" method="post" action="/r/${esc(model.event.slug)}" novalidate data-hide-when-done${gate}>
       <p class="reg-legend"><span class="reg-req" aria-hidden="true">*</span> Required</p>
-      ${renderPersonalFields(model)}${renderQuestions(model.questions, { timeZone: model.event.timezone })}${renderAgreement(model)}
+      ${renderPersonalFields(model)}${renderQuestions(model.questions, { timeZone: model.event.timezone })}${renderCompanion(model)}${renderAgreement(model)}
     </form>`;
   const content = [
     renderHeader(model.event),
