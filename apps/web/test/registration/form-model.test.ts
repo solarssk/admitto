@@ -44,6 +44,7 @@ const row = {
     ask_company: false,
     ask_department: false,
     consent_keys: [],
+    max_companions: 0,
   },
 };
 
@@ -325,6 +326,100 @@ describe("loadRegistrationPage, and the questions it draws", () => {
     it("does not draw an optional question it cannot draw, under a condition or not", async () => {
       expect(await keysOf([parking, field({ source_field: "later", type: unknownType, rules: { show_when: when } })])).toEqual(["parking"]);
     });
+  });
+});
+
+describe("loadRegistrationPage, and the section for a guest's companion", () => {
+  const field = (overrides: Partial<RegistrantFormField> & Pick<RegistrantFormField, "source_field">): RegistrantFormField => ({
+    label: overrides.source_field,
+    show_on_form: true,
+    ...overrides,
+  });
+  /** The page of an event that takes `maxCompanions` companions and has `fields`. */
+  async function pageOf(maxCompanions: number, fields: RegistrantFormField[] = []) {
+    vi.mocked(loadRegistrantFormFields).mockResolvedValueOnce(fields);
+    const withSettings = { event: { findUnique: vi.fn(async () => ({ ...row, registration_settings: { ...row.registration_settings, max_companions: maxCompanions } })) } };
+    return loadRegistrationPage(withSettings as unknown as PrismaClient, "northwind-summit", NOW);
+  }
+  const formOf = async (maxCompanions: number, fields: RegistrantFormField[] = []) => {
+    const state = await pageOf(maxCompanions, fields);
+    if (state.kind !== "open") throw new Error(`the form is ${state.kind}`);
+    return state.form;
+  };
+
+  it("is not there for an event that takes no companion, and the page is what it was", async () => {
+    expect((await formOf(0, [field({ source_field: "badge", applies_to: "companion" })])).companion).toBeNull();
+  });
+
+  it("is there, with the questions about the companion that are on the form, for an event that takes one", async () => {
+    const form = await formOf(1, [
+      field({ source_field: "diet", type: "select", options: ["Vegan"] }),
+      field({ source_field: "badge", label: "Badge name", required: true, applies_to: "companion" }),
+      field({ source_field: "hidden_one", show_on_form: false, applies_to: "companion" }),
+    ]);
+    expect(form.companion?.max).toBe(1);
+    expect(form.companion?.questions.map((q) => [q.key, q.label, q.required])).toEqual([["badge", "Badge name", true]]);
+    // The two sets are apart: the guest's own questions hold none of the companion's.
+    expect(form.questions.map((q) => q.key)).toEqual(["diet"]);
+  });
+
+  it.each([2, 5, 1000])("never takes more than the application allows: %i in the settings is one on the page", async (setting) => {
+    expect((await formOf(setting)).companion?.max).toBe(1);
+  });
+
+  it("is there with no questions when the organiser asked none about the companion", async () => {
+    expect((await formOf(1)).companion).toEqual({ max: 1, questions: [] });
+  });
+
+  it("draws the questions about the companion by the rules of the guest's: types, conditions and rules", async () => {
+    const form = await formOf(1, [
+      field({ source_field: "needs_car", type: "boolean", applies_to: "companion" }),
+      field({ source_field: "plate", rules: { show_when: { field: "needs_car", value: true }, max_length: 8 }, applies_to: "companion" }),
+      field({ source_field: "notes", type: "long_text", applies_to: "companion" }),
+    ]);
+    expect(form.companion?.questions.map((q) => [q.key, q.type, q.showWhen])).toEqual([
+      ["needs_car", "boolean", null],
+      ["plate", "text", { field: "needs_car", value: true }],
+      ["notes", "long_text", null],
+    ]);
+  });
+
+  it("leaves out a question about the companion that waits for a question about the guest: no panel of the companion holds its controller", async () => {
+    const form = await formOf(1, [
+      field({ source_field: "parking", type: "boolean" }),
+      field({ source_field: "plate", required: true, rules: { show_when: { field: "parking", value: true } }, applies_to: "companion" }),
+      field({ source_field: "badge", applies_to: "companion" }),
+    ]);
+    expect(form.companion?.questions.map((q) => q.key)).toEqual(["badge"]);
+  });
+
+  it("offers no section, and keeps the form open, when a required question about the companion cannot be drawn", async () => {
+    const unknownType = "multi_select" as unknown as RegistrantFormField["type"];
+    const state = await pageOf(1, [
+      field({ source_field: "diet", required: true }),
+      field({ source_field: "later", type: unknownType, required: true, applies_to: "companion" }),
+    ]);
+    expect(state.kind).toBe("open");
+    if (state.kind === "open") {
+      expect(state.form.companion).toBeNull();
+      expect(state.form.questions.map((q) => q.key)).toEqual(["diet"]);
+    }
+  });
+
+  it("still closes the form for a required question about the guest that cannot be drawn, whatever the companion's questions are", async () => {
+    const unknownType = "multi_select" as unknown as RegistrantFormField["type"];
+    expect(await pageOf(1, [field({ source_field: "later", type: unknownType, required: true })])).toEqual({ kind: "not_found" });
+  });
+
+  it("is handed to the route with the form, so that the page and the route judge the same section", async () => {
+    vi.mocked(loadRegistrantFormFields).mockResolvedValueOnce([field({ source_field: "badge", applies_to: "companion" })]);
+    const withSettings = { event: { findUnique: vi.fn(async () => ({ ...row, registration_settings: { ...row.registration_settings, max_companions: 1 } })) } };
+    const state = await resolveRegistration(withSettings as unknown as PrismaClient, "northwind-summit", NOW);
+    expect(state.kind).toBe("open");
+    if (state.kind === "open") {
+      expect(state.form.companion?.questions.map((q) => q.key)).toEqual(["badge"]);
+      expect(state.fields.map((f) => f.source_field)).toEqual(["badge"]);
+    }
   });
 });
 
