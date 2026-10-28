@@ -103,8 +103,10 @@ import type {
   RegistrationDetailDto,
   RegistrationListDto,
   RegistrationListParams,
+  RegistrationSettingsDto,
   RejectRegistrationsDto,
   RetryRegistrationMailsDto,
+  SaveRegistrationSettingsBody,
   NotificationSettingsResponse,
   SaveNotificationSettingsBody,
   NotificationSettingsTestResponse,
@@ -222,6 +224,8 @@ export class ApiError extends Error {
     public readonly field?: string,
     public readonly details?: ZodFlattenedDetails,
     public readonly seats?: NotEnoughSeatsMeta,
+    /** The keys of what registration still needs, from a 409 `registration_not_ready`. */
+    public readonly blockers?: readonly string[],
   ) {
     super(message);
     this.name = "ApiError";
@@ -240,6 +244,7 @@ type ApiErrorBody = {
   projected?: number;
   free?: unknown;
   needed?: unknown;
+  blockers?: unknown;
 };
 
 /** Coerce an API error JSON field to a trimmed string when present. */
@@ -285,6 +290,12 @@ function seatsFromBody(body: ApiErrorBody): NotEnoughSeatsMeta | undefined {
   return free === undefined || needed === undefined ? undefined : { free, needed };
 }
 
+/** The keys of a 409 `registration_not_ready` body: the strings that are in `blockers`, or none when it is not a list of them. */
+function blockersFromBody(body: ApiErrorBody): readonly string[] | undefined {
+  if (apiErrorCodeFromBody(body) !== "registration_not_ready" || !Array.isArray(body.blockers)) return undefined;
+  return body.blockers.filter((key): key is string => typeof key === "string");
+}
+
 async function parseJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;
@@ -293,6 +304,7 @@ async function parseJson<T>(res: Response): Promise<T> {
     let field: string | undefined;
     let details: ZodFlattenedDetails | undefined;
     let seats: NotEnoughSeatsMeta | undefined;
+    let blockers: readonly string[] | undefined;
     try {
       const body = (await res.json()) as ApiErrorBody;
       message = messageFromApiErrorBody(body) ?? message;
@@ -301,12 +313,18 @@ async function parseJson<T>(res: Response): Promise<T> {
       field = stringField(body.field);
       details = body.details && typeof body.details === "object" ? body.details : undefined;
       seats = seatsFromBody(body);
+      blockers = blockersFromBody(body);
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, message, code, eventFull, field, details, seats);
+    throw new ApiError(res.status, message, code, eventFull, field, details, seats, blockers);
   }
   return (await res.json()) as T;
+}
+
+/** A call that answers 204 with no body when it works: a failure is read like any other, and nothing is read from a success. */
+async function parseNoContent(res: Response): Promise<void> {
+  if (!res.ok) await parseJson<never>(res);
 }
 
 function jsonPostInit(body: unknown): RequestInit {
@@ -2671,6 +2689,36 @@ export async function deleteRegistrationsByFilter(eventId: string, body: DeleteR
     jsonPostInit({ status: body.status, older_than: body.olderThan, q: body.q, expected: body.expected, selection_digest: body.selectionDigest }),
   );
   return parseJson<DeleteRegistrationsDto>(res);
+}
+
+function eventRegistrationUrl(eventId: string, part: "settings" | "password"): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/registration/${part}`;
+}
+
+/** How guests may register for an event, with whether it is ready for registration to be on. 403 for someone who does not manage the event. */
+export async function fetchRegistrationSettings(eventId: string, signal?: AbortSignal): Promise<RegistrationSettingsDto> {
+  const res = await fetch(eventRegistrationUrl(eventId, "settings"), { credentials: "same-origin", signal });
+  return parseJson<RegistrationSettingsDto>(res);
+}
+
+/**
+ * Saves the settings that `patch` holds and no others, and answers like the read. 409 `registration_not_ready` (with the `blockers`) when
+ * the change turns registration on, or changes the way in or the consents of an event that has it on, and the event is not ready;
+ * 422 `consent_not_published` for a consent the event has not published; 403 `event_archived` on an archived event.
+ */
+export async function saveRegistrationSettings(eventId: string, patch: SaveRegistrationSettingsBody): Promise<RegistrationSettingsDto> {
+  const res = await fetch(eventRegistrationUrl(eventId, "settings"), jsonPutInit(patch));
+  return parseJson<RegistrationSettingsDto>(res);
+}
+
+/** Sets the password of the event, or changes it. It goes in the body of the request only, and is never read back. 400 `registration_password_length`. */
+export async function setRegistrationPassword(eventId: string, password: string): Promise<void> {
+  await parseNoContent(await fetch(eventRegistrationUrl(eventId, "password"), jsonPutInit({ password })));
+}
+
+/** Removes the password: guests cannot open the form until a new one is set. */
+export async function clearRegistrationPassword(eventId: string): Promise<void> {
+  await parseNoContent(await fetch(eventRegistrationUrl(eventId, "password"), jsonDeleteInit()));
 }
 
 /** Probe weather provider from a draft (no persist). */

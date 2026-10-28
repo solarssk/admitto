@@ -1,27 +1,23 @@
 import { useParams, useSearchParams } from "react-router";
-import { EmptyState, PageHeader, Tabs } from "@admitto/ui";
+import { PageHeader, Tabs } from "@admitto/ui";
 import type { RegistrationCountsDto } from "../api/types.js";
 import type { ListLoad } from "../hooks/useListLoad.js";
+import { RegistrationAccessTab } from "../registration/RegistrationAccessTab.js";
 import { RegistrationFieldsTab } from "../registration/RegistrationFieldsTab.js";
 import { RegistrationLegalTab } from "../registration/RegistrationLegalTab.js";
 import { RegistrationRequestsTab } from "../registration/RegistrationRequestsTab.js";
 import { registrationTabFromSearch, registrationTabItems, type RegistrationTab } from "../registration/registrationTabs.js";
 import { useRegistrationCounts } from "../registration/useRegistrationCounts.js";
 
-/** What each tab that is not built yet will hold. The PR that builds a tab takes its entry out and puts the tab's content in. */
-const TAB_PLACEHOLDERS: Record<Exclude<RegistrationTab["id"], "requests" | "fields" | "legal">, string> = {
-  access: "The registration mode and the ways guests can sign up will be set here.",
-};
-
-/** The content of a tab: what is built, or what the tab will hold. */
+/** The content of a tab. */
 function TabPanel({ id, counts }: Readonly<{ id: RegistrationTab["id"]; counts: ListLoad<RegistrationCountsDto> }>) {
   if (id === "requests") return <RegistrationRequestsTab counts={counts} />;
   if (id === "fields") return <RegistrationFieldsTab />;
-  if (id === "legal") return <RegistrationLegalTab />;
-  return <EmptyState title={TAB_PLACEHOLDERS[id]} />;
+  if (id === "access") return <RegistrationAccessTab />;
+  return <RegistrationLegalTab />;
 }
 
-/** How people get into the event: their requests, the questions they answer and the way in. Not in the menu yet. */
+/** How people get into the event: their requests, the questions they answer, the way in and the legal texts they read. */
 export function RegistrationPage() {
   const { eventId } = useParams();
   // One event, one page: another `:eventId` is a fresh page with its own numbers, never the previous event's.

@@ -11,6 +11,7 @@ export function Segmented<T extends string>({
   options,
   value,
   ariaLabel,
+  describedBy,
   disabled,
   className,
   onChange,
@@ -18,6 +19,8 @@ export function Segmented<T extends string>({
   options: ReadonlyArray<SegmentedOption<T>>;
   value: T;
   ariaLabel: string;
+  /** The id of the text that says more about the choice, such as why an option is off. */
+  describedBy?: string;
   disabled?: boolean;
   className?: string;
   onChange: (value: T) => void;
@@ -27,6 +30,7 @@ export function Segmented<T extends string>({
       className={className ? `seg-control ${className}` : "seg-control"}
       role="radiogroup"
       aria-label={ariaLabel}
+      aria-describedby={describedBy}
     >
       {options.map((opt) => {
         const active = opt.value === value;

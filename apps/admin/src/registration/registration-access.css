@@ -1,0 +1,98 @@
+/* The Access tab of the Registration page. Its cards are the settings cards of the app (.settings-sections, .settings-row), and its
+ * checklist rows wear the icon and the text of the Overview's setup checklist (.overview-check__*). Only what those do not give is here. */
+
+/* A segmented control in a card's column: it keeps its own width and takes no margin of its own, the column's gap spaces it. */
+.access-seg {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-bottom: 0;
+}
+
+/* The password row sits inside a card that spaces its parts with a gap: no rule under it and no padding of its own. */
+.access-password {
+  padding: 0;
+  border-bottom: 0;
+}
+
+/* The extra consents are a field after the switches: a rule above it tells the two groups apart. */
+.access-consents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* The checklist: one row for each check, the icon, the heading with its sentence, and what to do about it. */
+.access-checklist,
+.access-questions,
+.access-missing,
+.access-consequences {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.access-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+
+.access-check:first-child {
+  padding-top: 0;
+}
+
+.access-check:last-child {
+  padding-bottom: 0;
+}
+
+.access-check + .access-check {
+  border-top: 1px solid var(--border);
+}
+
+.access-check__remedy {
+  font-size: var(--fs-xs);
+}
+
+/* What a refused save says is missing: the message, then a list that names each check and what to do. */
+.access-problem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.access-missing,
+.access-consequences {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: var(--space-5);
+  list-style: disc;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.access-consequences {
+  margin-bottom: var(--space-3);
+}
+
+/* The questions of the form: the label, and whether the question is required. */
+.access-question {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.access-question + .access-question {
+  border-top: 1px solid var(--border);
+}
+
+.access-question__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
