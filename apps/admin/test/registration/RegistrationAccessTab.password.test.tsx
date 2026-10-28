@@ -332,6 +332,27 @@ describe("RegistrationAccessTab: the event password", () => {
   });
 });
 
+describe("RegistrationAccessTab: a read that brings what somebody else changed", () => {
+  it("does not make it the person's: the next save writes only what the person changed", async () => {
+    await renderLoaded(withoutPassword());
+    api.setRegistrationPassword.mockResolvedValue(undefined);
+    // The read after the password finds that somebody turned the question about the company on, meanwhile.
+    api.fetchRegistrationSettings.mockResolvedValue({ ...withPassword(), ask_company: true });
+    fireEvent.click(screen.getByRole("switch", { name: "Waiting list" }));
+    const dialog = await openSetDialog();
+    type(dialog, PASSWORD);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    api.saveRegistrationSettings.mockResolvedValue(settings({ waitlist_enabled: false, ask_company: true }));
+
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledTimes(1));
+    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { waitlist_enabled: false });
+  });
+});
+
 describe("RegistrationAccessTab: removing the event password", () => {
   const removeDialog = () => screen.findByRole("dialog", { name: "Remove the event password?" });
 

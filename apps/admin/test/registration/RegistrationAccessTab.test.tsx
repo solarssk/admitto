@@ -343,6 +343,8 @@ describe("RegistrationAccessTab: the checklist", () => {
 
     fireEvent.click(legal);
     expect(router.state.location.search).toBe("?tab=legal");
+    // A tab of the page replaces the entry of the history, as the tab strip does: Back leaves the page, not the tab.
+    expect(router.state.historyAction).toBe("REPLACE");
   });
 
   it("does not send a check that is put right on this tab anywhere", async () => {
