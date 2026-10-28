@@ -53,6 +53,8 @@ export const CODE_MESSAGES: Record<string, string> = {
   cannot_revoke_current: "You cannot revoke your current session.",
   cannot_revoke_own_session: "You cannot revoke your current session.",
   challenge_expired: "This passkey/security key setup request expired. Start again.",
+  consent_not_published:
+    "One of the extra consents you chose is not published for this event. Publish its text first, or leave it out.",
   content_field_in_use: "This field is already shown on another item. Uncheck it there first.",
   delivery_not_created: "Could not create the delivery.",
   delivery_not_found: "Delivery not found.",
@@ -139,6 +141,8 @@ export const CODE_MESSAGES: Record<string, string> = {
   password_too_common: "This password is too common or predictable. Choose a different one.",
   registration_count_changed:
     "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
+  registration_not_ready:
+    "Registration needs something that is not set up yet. Set up what the list marks as missing, then try again.",
   registration_password_length: `The event password needs ${REGISTRATION_PASSWORD_MIN} to ${REGISTRATION_PASSWORD_MAX} characters.`,
   registration_selection_changed:
     "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
