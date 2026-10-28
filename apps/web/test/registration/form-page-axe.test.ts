@@ -136,6 +136,52 @@ describe("axe-core finds nothing to report", () => {
   });
 });
 
+describe("axe-core finds nothing to report on the password screen of an event whose way in is the password", () => {
+  const html = renderRegistrationFormPage(formModel({ needsPassword: true, questions: [] }), { nonce: NONCE });
+  const type = (window: ReturnType<typeof open>, value: string) => {
+    window.document.getElementById("f-password").value = value;
+  };
+  const goOn = (window: ReturnType<typeof open>) => window.document.getElementById("reg-password-continue").click();
+
+  it("as the server writes it, with the form behind it", async () => {
+    expect(await violations(open(html))).toEqual([]);
+  });
+
+  it("with the page script running, and the field marked as an error because Continue was pressed with nothing typed", async () => {
+    const window = running(html);
+    goOn(window);
+    expect(window.document.querySelector("[data-password-field]").classList.contains("has-error")).toBe(true);
+    expect(window.document.getElementById("f-password").getAttribute("aria-invalid")).toBe("true");
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("on the form, once a password is typed and Continue is pressed", async () => {
+    const window = running(html);
+    type(window, "test-password");
+    goOn(window);
+    expect(window.document.getElementById("reg-password").hidden).toBe(true);
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("back on the screen, after the server turned the password away, with the sentence under the field and the form out of sight", async () => {
+    const window = running(html, { status: 403, body: { error: "access_denied" } });
+    type(window, "wrong-password");
+    goOn(window);
+    window.document.getElementById("f-first_name").value = "Anna";
+    window.document.getElementById("f-last_name").value = "Kowalska";
+    window.document.getElementById("f-email").value = "anna.kowalska@contoso.example";
+    window.document.getElementById("f-terms").checked = true;
+    window.admittoTurnstileDone("token");
+    window.document.getElementById("reg-submit").click();
+    await vi.waitFor(() => expect(window.document.getElementById("reg-password").hidden).toBe(false), { timeout: 4000, interval: 10 });
+    expect(window.document.querySelector("[data-password-field] [data-msg-text]").textContent).toBe(
+      "That password did not work. Check it and try again.",
+    );
+    expect(window.document.activeElement).toBe(window.document.getElementById("f-password"));
+    expect(await violations(window)).toEqual([]);
+  });
+});
+
 describe("axe-core finds nothing to report on the form with icons, panels and suggestions", { timeout: 30_000 }, () => {
   const html = renderRegistrationFormPage(panelModel(), { nonce: NONCE });
   const change = (window: ReturnType<typeof open>, id: string, set: (el: Dom) => void) => {

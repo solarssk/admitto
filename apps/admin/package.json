@@ -28,7 +28,7 @@
     "@codemirror/lint": "^6.9.7",
     "@floating-ui/dom": "^1.8.0",
     "@simplewebauthn/browser": "^14.0.0",
-    "@tabler/icons-webfont": "3.48.0",
+    "@tabler/icons-webfont": "3.49.0",
     "@tiptap/core": "^3.32.0",
     "@tiptap/extension-bold": "^3.32.0",
     "@tiptap/extension-document": "^3.32.0",
@@ -67,6 +67,6 @@
     "@vitejs/plugin-react": "^6.1.2",
     "jsdom": "^30.1.3",
     "typescript": "^7.0.2",
-    "vite": "8.3.4"
+    "vite": "8.3.5"
   }
 }
