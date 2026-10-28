@@ -48,6 +48,7 @@ let prisma: PrismaClient;
 let app: ReturnType<typeof buildTestApp>;
 let seeder: ReturnType<typeof eventSeeder>;
 let adminId = "";
+let otherAdminId = "";
 let superadminId = "";
 let mainEvent: { id: string; slug: string };
 const cookies = { admin: "", otherAdmin: "", operator: "", superadmin: "" };
@@ -126,6 +127,7 @@ beforeAll(async () => {
   const operator = await createStaffSession(prisma, EMAILS.operator, { role: "operator", eventId: mainEvent.id });
   const superadmin = await createStaffSession(prisma, EMAILS.superadmin, { role: "superadmin" });
   adminId = admin.userId;
+  otherAdminId = otherAdmin.userId;
   superadminId = superadmin.userId;
   cookies.admin = admin.cookie;
   cookies.otherAdmin = otherAdmin.cookie;
@@ -216,21 +218,34 @@ describe("who may use the settings routes", () => {
     expect(await auditOf(event.id)).toHaveLength(0);
   });
 
-  it("refuses an event that was archived after the guard looked, as the guard does", async () => {
-    // The handler on a bare router, without the archived-event guard of the app: the transaction's own check answers.
-    const event = await addEvent("archived-late", { archived: true });
+  /** The handler on a bare router, without the guard of the app and its staff gate, as the signed-in user `userId`. */
+  const bareSave = (userId: string, eventId: string) => {
     const bare = new Hono();
     bare.use("*", async (c, next) => {
-      c.set("auth", { userId: superadminId, sessionId: "session-reg99a" });
+      c.set("auth", { userId, sessionId: "session-reg99a" });
       await next();
     });
     bare.put("/events/:eventId/settings", (c) => handlePutEventRegistrationSettings(c, prisma));
-
-    const res = await bare.request(`/events/${event.id}/settings`, {
+    return bare.request(`/events/${eventId}/settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ waitlist_enabled: false }),
     });
+  };
+
+  it("checks the role in the handler as well, so it is safe wherever it is mounted", async () => {
+    const res = await bareSave(otherAdminId, mainEvent.id);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "forbidden" });
+    expect((await settingsRow(mainEvent.id))?.waitlist_enabled).toBe(true);
+  });
+
+  it("refuses an event that was archived after the guard looked, as the guard does", async () => {
+    // Without the archived-event guard of the app, the transaction's own check answers.
+    const event = await addEvent("archived-late", { archived: true });
+
+    const res = await bareSave(superadminId, event.id);
 
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ code: "event_archived" });

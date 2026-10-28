@@ -280,6 +280,22 @@ describe("a save that waits for a lock", () => {
   });
 });
 
+describe("a save and the deletion of its event", () => {
+  it("answers that the event is not there, and writes nothing, when the event is deleted after the save has read it", async () => {
+    const event = await addEvent("deleted");
+    const first = pausingClient(prisma, "eventRegistrationSettings", "findUnique");
+    const saving = updateEventRegistrationSettings(first.client, { eventId: event.id, patch: { waitlist_enabled: false }, actor: actor() });
+    await first.reached;
+
+    await prisma.event.delete({ where: { id: event.id } });
+    first.release();
+
+    expect(await saving).toEqual({ kind: "not_found" });
+    expect(await settingsRow(event.id)).toBeNull();
+    expect(await auditCount(event.id)).toBe(0);
+  });
+});
+
 describe("a save and the writers of registrations", () => {
   it.each([
     ["an import, which holds the capacity lock", acquireEventCapacityLock],
