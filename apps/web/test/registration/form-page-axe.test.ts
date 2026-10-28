@@ -240,3 +240,62 @@ describe("axe-core finds nothing to report on the form with icons, panels and su
     expect(await violations(window)).toEqual([]);
   });
 });
+
+describe("axe-core finds nothing to report on the part of the form for a guest's companion", () => {
+  const companion = {
+    max: 1,
+    questions: [
+      question({ key: "badge", label: "Badge name", type: "text", required: true, icon: "user-plus" }),
+      question({ key: "diet", label: "Diet", type: "select", options: ["Vegan", "None"], required: true }),
+      question({ key: "car", label: "Needs parking", type: "boolean", icon: "car" }),
+      question({ key: "plate", label: "Plate", type: "text", required: true, showWhen: { field: "car", value: true } }),
+      question({ key: "notes", label: "Notes", type: "long_text" }),
+    ],
+  };
+  const html = renderRegistrationFormPage(formModel({ companion }), { nonce: NONCE });
+  const tick = (window: ReturnType<typeof open>, id: string) => {
+    const el = window.document.getElementById(id);
+    el.checked = true;
+    el.dispatchEvent(new window.Event("change", { bubbles: true }));
+  };
+
+  it("with the row not ticked, as the server writes it", async () => {
+    expect(await violations(open(html))).toEqual([]);
+  });
+
+  it("with the row ticked and the panel open, with the script running", async () => {
+    const window = running(html);
+    tick(window, "f-companion");
+    expect(window.document.getElementById("f-companion-panel").hidden).toBe(false);
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the panel open and a question under a condition showing", async () => {
+    const window = running(html);
+    tick(window, "f-companion");
+    tick(window, "f-c2");
+    expect(window.document.querySelector("[data-field='companion_plate']").hidden).toBe(false);
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the companion's fields left empty and marked as errors", async () => {
+    const window = running(html);
+    fillValid(window);
+    tick(window, "f-companion");
+    window.document.getElementById("reg-submit").click();
+    expect(window.document.querySelectorAll("#f-companion-panel .has-error").length).toBeGreaterThanOrEqual(3);
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the row marked as an error, for a refusal of the number of guests", async () => {
+    const window = running(html, { status: 422, body: { errors: { companions: "This event does not take that many guests." } } });
+    fillValid(window);
+    tick(window, "f-companion");
+    (window.document.getElementById("f-companion_name") as Dom).value = "Piotr";
+    (window.document.getElementById("f-c0") as Dom).value = "Piotr";
+    (window.document.getElementById("f-c1") as Dom).value = "Vegan";
+    window.document.getElementById("reg-submit").click();
+    await vi.waitFor(() => expect(window.document.querySelector("[data-field='companions']").classList.contains("has-error")).toBe(true), { timeout: 4000 });
+    expect(await violations(window)).toEqual([]);
+  });
+});
