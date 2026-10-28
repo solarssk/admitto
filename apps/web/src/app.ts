@@ -282,6 +282,11 @@ import {
   handleRejectEventRegistrations,
   handleRetryEventRegistrationMails,
 } from "./admin/registration-decisions-routes.js";
+import {
+  MAX_REGISTRATION_SETTINGS_BODY_BYTES,
+  handleGetEventRegistrationSettings,
+  handlePutEventRegistrationSettings,
+} from "./admin/event-registration-settings-routes.js";
 import { MAX_LEGAL_BODY_BYTES } from "./legal/legal-documents.js";
 import { loadPublishedLegalPage, respondLegalPage } from "./legal/legal-page.js";
 import { respondRegistrationNotFound } from "./registration-page-security.js";
@@ -897,6 +902,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const legalDocumentBodyLimit = bodyLimit({
     maxSize: MAX_LEGAL_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const registrationSettingsBodyLimit = bodyLimit({
+    maxSize: MAX_REGISTRATION_SETTINGS_BODY_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const templateTestSendBodyLimit = bodyLimit({
@@ -2142,6 +2151,19 @@ export function createApp(options: CreateAppOptions = {}) {
     bulkAttendeeIdsBodyLimit,
     adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleRetryEventRegistrationMails(c, db)),
+  );
+  // The registration settings of an event with the readiness of the event (99a): read by an admin of the event, and saved
+  // with the chain of the other settings of an event and a small body cap. Turning registration on, or changing its way in
+  // or its consents while it is on, waits for the event to be ready; turning it off never does.
+  app.get("/api/admin/events/:eventId/registration/settings", staffAdminGate, (c) =>
+    handleGetEventRegistrationSettings(c, db),
+  );
+  app.put(
+    "/api/admin/events/:eventId/registration/settings",
+    jsonPostCsrf,
+    staffAdminGate,
+    registrationSettingsBodyLimit,
+    guardArchivedEvent((c) => handlePutEventRegistrationSettings(c, db)),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
