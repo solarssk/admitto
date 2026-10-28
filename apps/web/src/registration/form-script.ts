@@ -25,7 +25,14 @@
  *   what the guest typed in it is kept, so it is there again when the question comes back;
  * - gives a text box that has suggestions (`data-combo`) a list under it: it filters the rows the server wrote by
  *   what is typed, marks the match, and picks with the mouse, a tap or the keys. It is an ARIA combobox with a
- *   listbox. A pick writes the text of the suggestion into the box, and any other text stays as it was typed.
+ *   listbox. A pick writes the text of the suggestion into the box, and any other text stays as it was typed;
+ * - runs the password screen of an event whose way in is the password (`#reg-password`). "Continue" looks only that
+ *   something is typed (a space counts, nothing is trimmed), keeps it in the variable `password`, and shows what the
+ *   server wrote hidden (`data-after-password`): the server judges the password once, with the form, and there is no
+ *   request that only asks. The password is sent in the body of the form and goes nowhere else: not into an address,
+ *   a cookie or storage, and not into the page, where only its own box holds it. The answer `403 access_denied` turns
+ *   the guest back to the screen, with the sentence under the field and the focus in it, and the form keeps what was
+ *   typed in it. The security check starts again after this answer, as it does after every other.
  *
  * Nothing the guest typed is put in an address, and the page has no cookie.
  */
@@ -56,6 +63,12 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
   });
   var challenge = form.querySelector('[data-kind="challenge"]');
   var captcha = form.querySelector(".cf-turnstile");
+  var gate = document.getElementById("reg-password");
+  var gateBox = gate ? gate.querySelector("[data-password-field]") : null;
+  var gateInput = gate ? document.getElementById("f-password") : null;
+  var gateGo = gate ? document.getElementById("reg-password-continue") : null;
+  var behindGate = Array.prototype.slice.call(document.querySelectorAll("[data-after-password]"));
+  var password = null;
   var sendLabel = label.textContent;
   var EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   var TIMEOUT_MS = 30000;
@@ -66,7 +79,9 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     failed: "Something went wrong. Check your details and try again.",
     noCheck: "The security check did not load. Reload the page. If it keeps failing, allow challenges.cloudflare.com.",
     oneField: "1 field needs your attention. It is marked in red.",
-    manyFields: " fields need your attention. They are marked in red."
+    manyFields: " fields need your attention. They are marked in red.",
+    noPassword: "Enter the event password.",
+    badPassword: "That password did not work. Check it and try again."
   };
   var token = "";
   var busy = false;
@@ -248,6 +263,7 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
       .filter(function (box) { return box.checked; })
       .map(function (box) { return box.getAttribute("data-consent"); });
     body.challenge = token;
+    if (password !== null) body.password = password;
     return body;
   }
 
@@ -276,9 +292,42 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     doneTitle.focus();
   }
 
+  // Shows the password screen and hides what is behind it, or the other way round.
+  function showGate(on) {
+    gate.hidden = !on;
+    behindGate.forEach(function (part) { part.hidden = on; });
+  }
+
+  // "Continue": only that something is typed. A space is a character of a password, so nothing is trimmed.
+  function goOn() {
+    if (gateInput.value === "") {
+      setError(gateBox, TEXT.noPassword);
+      gateInput.focus();
+      return;
+    }
+    clearError(gateBox);
+    password = gateInput.value;
+    showGate(false);
+    var first = form.querySelector("[data-control]");
+    if (first && first.focus) first.focus();
+  }
+
+  // The server turned the password away: back to the screen, the sentence under the field, the focus in the field. What the
+  // guest typed in the form stays where it is. The box keeps the password that was tried, to be corrected.
+  function turnBack() {
+    password = null;
+    showGate(true);
+    setError(gateBox, TEXT.badPassword);
+    gateInput.focus();
+  }
+
   function fail(status, data) {
     resetChallenge();
     setBusy(false);
+    if (status === 403 && gate && data && data.error === "access_denied") {
+      turnBack();
+      return;
+    }
     var invalid = status === 400 || status === 422;
     if (invalid && data && data.errors && typeof data.errors === "object" && showServerErrors(data.errors)) return;
     // 0 is no answer at all: the request failed or ran out of time.
@@ -597,6 +646,16 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
   }
   restore();
   window.addEventListener("pageshow", restore);
+  if (gate) {
+    gateGo.addEventListener("click", goOn);
+    gateInput.addEventListener("keydown", function (event) {
+      if (event.key !== "Enter" || event.isComposing) return;
+      event.preventDefault();
+      goOn();
+    });
+    gateInput.addEventListener("input", function () { clearError(gateBox); });
+    gateGo.disabled = false;
+  }
   submit.disabled = false;
 })();
 `;

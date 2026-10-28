@@ -7,6 +7,8 @@ import {
   RATE_POLICIES,
   checkRegistrationEventRateLimit,
   checkRegistrationMailRecipientRateLimit,
+  checkRegistrationPasswordEventRateLimit,
+  checkRegistrationPasswordRateLimit,
   rateLimit,
 } from "../src/rate-limit/policies.js";
 import { applyRateLimitOverrides } from "../src/rate-limit/overrides.js";
@@ -90,13 +92,10 @@ describe("registration per-IP policies", () => {
     expect([...keys]).toEqual(["registration:submit:ip:203.0.113.10"]);
   });
 
-  it("is silent when exceeded for page, submit and confirm, but audits the password limit", async () => {
-    for (const name of ["registration:page", "registration:submit", "registration:confirm"] as const) {
+  it("is silent when exceeded, for the password budget too: a limiter's line would carry the address of the client", async () => {
+    for (const name of ["registration:page", "registration:submit", "registration:confirm", "registration:password"] as const) {
       expect(RATE_POLICIES[name].checks[0]).not.toHaveProperty("logOnExceeded");
     }
-    expect(RATE_POLICIES["registration:password"].checks[0]).toMatchObject({
-      logOnExceeded: { scope: "registration", keyHint: "password" },
-    });
 
     const store = new InMemoryRateLimitStore();
     const app = new Hono();
@@ -104,25 +103,28 @@ describe("registration per-IP policies", () => {
     app.post("/pw", rateLimit(store, "registration:password"), (c) => c.body(null, 200));
 
     for (let i = 0; i < SUBMIT_MAX + 5; i++) await app.request("/quiet", { method: "POST" });
-    expect(querySystemLogs({ source: "security" })).toHaveLength(0);
-
     const passwordMax = RATE_POLICIES["registration:password"].checks[0]!.max;
-    for (let i = 0; i < passwordMax + 1; i++) await app.request("/pw", { method: "POST" });
-    const entries = querySystemLogs({ source: "security" });
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.message).toBe("auth.rate_limit.exceeded");
+    for (let i = 0; i < passwordMax + 5; i++) await app.request("/pw", { method: "POST" });
+    expect(querySystemLogs({ source: "security" })).toHaveLength(0);
   });
 
   it("can be retuned with RATE_LIMIT_OVERRIDES, like the other limits", () => {
     const policies = structuredClone({
       "registration:submit": { checks: RATE_POLICIES["registration:submit"].checks.map(({ windowMs, max }) => ({ windowMs, max })) },
+      "registration:password": { checks: RATE_POLICIES["registration:password"].checks.map(({ windowMs, max }) => ({ windowMs, max })) },
     });
-    const inline = structuredClone({ "registration:event": { ...INLINE_RATE_LIMITS["registration:event"] } });
+    const inline = structuredClone({
+      "registration:event": { ...INLINE_RATE_LIMITS["registration:event"] },
+      "registration:password-event": { ...INLINE_RATE_LIMITS["registration:password-event"] },
+    });
     applyRateLimitOverrides(policies, inline, {
-      RATE_LIMIT_OVERRIDES: '{"registration:submit":{"max":30},"registration:event":{"max":50}}',
+      RATE_LIMIT_OVERRIDES:
+        '{"registration:submit":{"max":30},"registration:event":{"max":50},"registration:password":{"max":12},"registration:password-event":{"max":40}}',
     });
     expect(policies["registration:submit"].checks[0]?.max).toBe(30);
     expect(inline["registration:event"].max).toBe(50);
+    expect(policies["registration:password"].checks[0]?.max).toBe(12);
+    expect(inline["registration:password-event"].max).toBe(40);
   });
 });
 
@@ -228,5 +230,61 @@ describe("Redis unreachable (127.0.0.1:1)", () => {
     expect((await app.request("/r/evt", { method: "POST", headers: sameOrigin, body: "{}" })).status).toBe(429);
 
     await store.disconnect();
+  });
+});
+
+describe("the budgets of the tries at an event password (inline, after the bot challenge)", () => {
+  /** The check as the route makes it: from a request of a client, whose address the app resolves. */
+  function makePasswordApp(store: RateLimitStore) {
+    const app = new Hono();
+    app.post("/try", async (c) => c.json({ allowed: await checkRegistrationPasswordRateLimit(store, c) }));
+    return app;
+  }
+  const tryFrom = async (app: Hono, address: string) => {
+    peer.address = address;
+    return ((await (await app.request("/try", { method: "POST" })).json()) as { allowed: boolean }).allowed;
+  };
+
+  it("allows 30 tries in 15 minutes for a client, the right ones and the wrong ones alike, and refuses the 31st", async () => {
+    const { max, windowMs } = RATE_POLICIES["registration:password"].checks[0]!;
+    expect([max, windowMs]).toEqual([30, 15 * 60_000]);
+    const app = makePasswordApp(new InMemoryRateLimitStore());
+
+    for (let i = 0; i < 30; i += 1) expect(await tryFrom(app, "203.0.113.10"), `try ${i + 1}`).toBe(true); // NOSONAR - counts requests in order
+    expect(await tryFrom(app, "203.0.113.10")).toBe(false);
+  });
+
+  it("gives every office its own tries, and an IPv6 network is one office: its /64", async () => {
+    const app = makePasswordApp(new InMemoryRateLimitStore());
+    for (let i = 0; i < 30; i += 1) await tryFrom(app, "203.0.113.10"); // NOSONAR - counts requests in order
+
+    expect(await tryFrom(app, "203.0.113.10")).toBe(false);
+    expect(await tryFrom(app, "203.0.113.11")).toBe(true);
+    for (let i = 0; i < 30; i += 1) await tryFrom(app, `2001:db8:1:2:${i.toString(16)}::1`); // NOSONAR - counts requests in order
+    expect(await tryFrom(app, "2001:db8:1:2:ffff::9")).toBe(false);
+    expect(await tryFrom(app, "2001:db8:1:3::1")).toBe(true);
+  });
+
+  it("keys the tries of a client by its address and by nothing a guest typed, and is silent when they are spent", async () => {
+    const store = new InMemoryRateLimitStore();
+    const hit = vi.spyOn(store, "hit");
+    const app = makePasswordApp(store);
+    for (let i = 0; i < 31; i += 1) await tryFrom(app, "203.0.113.10"); // NOSONAR - counts requests in order
+
+    expect(new Set(hit.mock.calls.map(([key]) => key))).toEqual(new Set(["registration:password:ip:203.0.113.10"]));
+    expect(querySystemLogs()).toEqual([]);
+  });
+
+  it("allows 120 tries a minute for one event from everybody, keyed by the id of the event, and gives each event its own", async () => {
+    const store = new InMemoryRateLimitStore();
+    const hit = vi.spyOn(store, "hit");
+    const { max, windowMs } = INLINE_RATE_LIMITS["registration:password-event"];
+    expect([max, windowMs]).toEqual([120, 60_000]);
+
+    for (let i = 0; i < max; i += 1) expect(await checkRegistrationPasswordEventRateLimit(store, "evt-a")).toBe(true); // NOSONAR - counts requests in order
+    expect(await checkRegistrationPasswordEventRateLimit(store, "evt-a")).toBe(false);
+    expect(await checkRegistrationPasswordEventRateLimit(store, "evt-b")).toBe(true);
+    expect(hit.mock.calls[0]?.[0]).toBe("registration:password-event:evt-a");
+    expect(querySystemLogs()).toEqual([]);
   });
 });

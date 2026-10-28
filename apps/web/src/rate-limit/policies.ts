@@ -104,6 +104,11 @@ export const INLINE_RATE_LIMITS = {
    * found (so the key is a real event id, never a caller-chosen slug) and after the bot
    * challenge has passed, so a bot without a valid token cannot spend it. */
   "registration:event": { windowMs: 60_000, max: 600 },
+  /** Tries at the shared password of one event, from every address together. Each try is a hash (argon2id: memory and
+   * CPU), so this is the brake on the work a stranger can make the server do for one event. Checked by the handler like
+   * `registration:event`: after the bot challenge, with the id of the event, and for an event whose way in is the
+   * password only. Silent here; the handler writes its own line (without any address). */
+  "registration:password-event": { windowMs: 60_000, max: 120 },
   /** Mails to one address (HMAC of the lowercased address), instance-wide, across all events.
    * Gates only the queueing of a registration mail; the response to the registrant is unchanged. */
   "registration:mail-recipient": { windowMs: 24 * 3_600_000, max: 3 },
@@ -868,10 +873,13 @@ export const RATE_POLICIES = {
   "registration:page": ipScopedPolicy("registration:page", "registration", 300, 60_000, false),
   "registration:submit": ipScopedPolicy("registration:submit", "registration", 120, 60_000, false),
   "registration:confirm": ipScopedPolicy("registration:confirm", "registration", 120, 60_000, false),
-  /** Shared event password: guessing it is the one anonymous attempt worth an audit entry. */
-  "registration:password": ipScopedPolicy("registration:password", "registration", 10, 15 * 60_000, {
-    keyHint: "password",
-  }),
+  /** Tries at the shared password of an event, per client address (IPv6 as its /64). Every try that reaches the check is
+   * counted, the right ones too: the store can only count hits, and the people of one company sit behind one address,
+   * so 30 in 15 minutes is what lets a department register while it gives a guesser at most 30 tries from one address in
+   * that time. Used inline by `POST /r/:slug` (see `checkRegistrationPasswordRateLimit`), after the bot challenge, so a
+   * bot that has no token spends nothing of the budget of somebody else's office. Silent here: the handler writes its
+   * own line, because a line of the limiter would carry the address of the client. */
+  "registration:password": ipScopedPolicy("registration:password", "registration", 30, 15 * 60_000, false),
 } as const satisfies Record<string, RatePolicy>;
 
 // Operator overrides (RATE_LIMIT_OVERRIDES) are applied once, here, before any middleware reads a
@@ -1102,6 +1110,22 @@ export async function checkRegistrationEventResendRateLimit(
 ): Promise<boolean> {
   const { windowMs } = INLINE_RATE_LIMITS["registration:mail-event"];
   return (await store.hit(`registration:mail-event-resend:${eventId}`, windowMs, cap)).allowed;
+}
+
+/** Tries at the password of an event from one client address (inline, not middleware): see the policy
+ * `registration:password`. Call it only after the bot challenge has passed. False when the budget of that address is
+ * spent. Silent: the caller writes the line for the operator. */
+export async function checkRegistrationPasswordRateLimit(store: RateLimitStore, c: Context): Promise<boolean> {
+  const check = RATE_POLICIES["registration:password"].checks[0]!;
+  return (await store.hit(check.keyOf(c), check.windowMs, check.max)).allowed;
+}
+
+/** Tries at the password of one event from every address (inline, not middleware). Keyed by the id of the event, never by
+ * the slug of the address, and call it only after the bot challenge has passed and after the budget of the client
+ * address, so one client who is out of tries cannot spend the budget the others share. False when it is spent. */
+export async function checkRegistrationPasswordEventRateLimit(store: RateLimitStore, eventId: string): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["registration:password-event"];
+  return (await store.hit(`registration:password-event:${eventId}`, windowMs, max)).allowed;
 }
 
 /** Instance-wide budget of registration mails to one address (inline, not middleware). The

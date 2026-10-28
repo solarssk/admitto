@@ -92,7 +92,7 @@ export function eventSeeder(prisma: PrismaClient, orgId: string) {
   async function setSystemKeys(on: boolean): Promise<void> {
     if (on) {
       await patchTurnstileSettings(prisma, { siteKey: SITE_KEY, secretKey: "secret-key-for-tests" });
-      await setEnabledAccessMethods(prisma, ["link"]);
+      await setEnabledAccessMethods(prisma, ["link", "password"]);
     } else {
       await prisma.systemSettings.deleteMany({ where: { key: { in: [TURNSTILE_SETTINGS_KEY, ACCESS_METHODS_SETTINGS_KEY] } } });
     }
