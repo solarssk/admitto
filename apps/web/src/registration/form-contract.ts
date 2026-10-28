@@ -131,8 +131,8 @@ export function customDataErrorKey(sourceField: string): string {
 }
 
 /** The name of the error of a question about the companion. `name`, `email` and the other fixed columns cannot be a question's
- * key (`isReservedCustomDataSourceField`), so no question can take the place of {@link ERROR_KEY_COMPANION_NAME}, and the
- * prefix keeps these apart from the guest's own questions (`custom_data.<key>`), which may have the same key. */
+ * key (`isReservedCustomDataSourceField`), so no question can take the place of {@link ERROR_KEY_COMPANION_NAME}; the guest's
+ * own questions are named `custom_data.<key>`, so the name says whose answer was refused. */
 export function companionAnswerErrorKey(sourceField: string): string {
   return `companion_${sourceField}`;
 }

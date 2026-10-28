@@ -117,7 +117,7 @@ describe("the form page of an event that takes a companion", () => {
     expect(doc.getElementById("f-c0").closest("[data-field]").querySelector("label").textContent).toBe("Badge name");
   });
 
-  it("keeps the guest's questions and the companion's apart when they have one key, and every id once", () => {
+  it("keeps the guest's questions and the companion's apart, even for a key that both would have (an event has each key once), and every id once", () => {
     const doc = pageOf([question({ key: "size", label: "Shirt size of the guest", type: "select", options: ["S", "M"] })], {
       questions: [question({ key: "size", label: "Your shirt size", type: "select", options: ["S", "M"] })],
     });

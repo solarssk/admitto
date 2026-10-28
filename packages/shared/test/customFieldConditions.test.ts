@@ -130,6 +130,38 @@ describe("findShowWhenProblem: the condition of the field itself", () => {
   });
 });
 
+describe("findShowWhenProblem: whose answer a field asks for", () => {
+  const companionParking = field("parking", "boolean", { applies_to: "companion" });
+  const companionDay = field("day", "select", { options: ["Day 1", "Both"], applies_to: "companion" });
+
+  it("refuses a question about the guest that waits for a question about their companion", () => {
+    expect(findShowWhenProblem(field("plate", "text", { rules: whenParking }), [companionParking])).toBe("invalid_show_when");
+    expect(findShowWhenProblem(field("plate", "text", { rules: whenParking, applies_to: "guest" }), [companionParking])).toBe("invalid_show_when");
+  });
+
+  it("refuses a question about the companion that waits for a question about the guest, and for one that has no recipient written", () => {
+    const plate = field("plate", "text", { rules: whenParking, applies_to: "companion" });
+    expect(findShowWhenProblem(plate, [parking])).toBe("invalid_show_when");
+    expect(findShowWhenProblem(plate, [field("parking", "boolean", { applies_to: "guest" })])).toBe("invalid_show_when");
+    expect(findShowWhenProblem(plate, [field("parking", "boolean", { applies_to: null })])).toBe("invalid_show_when");
+  });
+
+  it("accepts a question about the companion that waits for another question about the companion, by the rules of any other condition", () => {
+    const plate = field("plate", "text", { rules: whenParking, applies_to: "companion" });
+    expect(findShowWhenProblem(plate, [companionParking])).toBeNull();
+    expect(findShowWhenProblem(field("badge", "text", { rules: whenBoth, applies_to: "companion" }), [companionDay])).toBeNull();
+    // The rules are the same: the answer must be one the question can have, and a condition has no chain.
+    expect(findShowWhenProblem(field("badge", "text", { rules: { show_when: { field: "day", value: "Never" } }, applies_to: "companion" }), [companionDay])).toBe("invalid_show_when");
+    expect(findShowWhenProblem(plate, [{ ...companionParking, rules: whenBoth }, companionDay])).toBe("invalid_show_when");
+  });
+
+  it("takes a field with no recipient written as the guest's, as the database does", () => {
+    expect(findShowWhenProblem(field("plate", "text", { rules: whenParking, applies_to: undefined }), [parking])).toBeNull();
+    expect(findShowWhenProblem(field("plate", "text", { rules: whenParking, applies_to: null }), [parking])).toBeNull();
+    expect(findShowWhenProblem(field("plate", "text", { rules: whenParking }), [field("parking", "boolean", { applies_to: "guest" })])).toBeNull();
+  });
+});
+
 describe("findShowWhenProblem: the form", () => {
   const dependent = (on: boolean) => field("plate", "text", { show_on_form: on, rules: whenParking });
   const controller = (on: boolean) => field("parking", "boolean", { show_on_form: on });

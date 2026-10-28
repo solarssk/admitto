@@ -36,10 +36,9 @@
  *
  * - gives the guest's companion (D-E5) a part of the form of its own, when the event takes one. The box
  *   `data-companion-toggle` ("I am bringing a guest") opens the panel `data-companion-panel`. While it is not ticked, every
- *   field in the panel is hidden, disabled and not required, so it is neither checked nor sent. The answers to the companion's
- *   questions are kept apart from the guest's (`askedCompanion`): a question about the companion may have the key of one
- *   about the guest, and a condition refers only to the questions of its own panel. What is sent is
- *   `companions: [{ name, answers }]`, read from the fields of the panel. The companion is kept nowhere else.
+ *   field in the panel is hidden, disabled and not required, so it is neither checked nor sent. The questions of the panel
+ *   are kept apart from the guest's own (`askedCompanion`), and a condition refers only to the questions of its own panel.
+ *   What is sent is `companions: [{ name, answers }]`, read from the fields of the panel. The companion is kept nowhere else.
  *
  * Nothing the guest typed is put in an address, and the page has no cookie.
  */

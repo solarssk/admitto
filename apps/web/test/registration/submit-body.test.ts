@@ -617,7 +617,7 @@ describe("the companions of the body (D-E5)", () => {
     expect(Object.keys(errorsOf(bring(withAnswers({ badge: "b", car: "maybe", plate: "WA 1" }))))).toEqual(["companion_car"]);
   });
 
-  it("judges the guest's answers and the companion's apart when a key is the same: each is judged by its own question", () => {
+  it("judges the guest's answers and the companion's apart, each by its own question, even for a key that both would have (an event has each key once)", () => {
     const both = takes({
       fields: [
         field({ source_field: "size", type: "select", options: ["S", "M"] }),

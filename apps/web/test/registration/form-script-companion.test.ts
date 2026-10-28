@@ -89,7 +89,7 @@ describe("the panel of the guest's companion", () => {
     expect(control(page, "companion_name").disabled).toBe(false);
   });
 
-  it("asks the questions that wait for an answer about the companion by that answer, and not by the guest's answer with the same key", () => {
+  it("asks the questions that wait for an answer about the companion by that answer, and not by the guest's answer under the same key (an event has each key once: the page does not rely on it)", () => {
     const page = boot([question({ key: "car", label: "Do you drive?", type: "boolean" })]);
     bring(page);
     tickBox(page, "f-q0");
@@ -141,7 +141,7 @@ describe("sending a form with a companion", () => {
     expect(sentBody(page).companions).toEqual([{ name: "Piotr" }]);
   });
 
-  it("keeps the answers of one key apart when the guest and the companion are asked the same", async () => {
+  it("keeps the answers apart by the panel they are in, even for a key that both would have (an event has each key once)", async () => {
     const page = boot([question({ key: "size", label: "Your size", type: "select", options: ["S", "M"] })], [
       question({ key: "size", label: "Their size", type: "select", options: ["XL", "XXL"] }),
     ]);
