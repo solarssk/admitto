@@ -19,7 +19,7 @@ const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod | "">> = [
 
 const METHOD_HINTS: Readonly<Record<AccessMethod, string>> = {
   link: "Anyone who has the link can ask to join. A bot check protects the form.",
-  password: "Guests must enter the event password before they can ask to join. A bot check protects the form too.",
+  password: "Guests must type the event password to open the form. A bot check protects it too.",
 };
 
 /** The shared password of the event: whether one is set, and the buttons to set, change or remove it. It never shows the password. */

@@ -68,7 +68,7 @@ describe("RegistrationAccessTab: the first read", () => {
 
     const held = placeholder() as HTMLElement;
     expect(held.classList.contains("at-loading-hold")).toBe(true);
-    for (const title of ["Guest registration", "Setup checklist", "Way in", "Form"]) expect(within(held).getByText(title)).toBeTruthy();
+    for (const title of ["Guest registration", "Setup checklist", "Way in", "Form", "Your questions on the form"]) expect(within(held).getByText(title)).toBeTruthy();
     // The shapes are decoration; nothing claims that there is nothing yet.
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("radiogroup")).toBeNull();
@@ -233,7 +233,7 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(screen.queryByText("Event password")).toBeNull();
 
     fireEvent.click(radio("Password"));
-    expect(screen.getByText("Guests must enter the event password before they can ask to join. A bot check protects the form too.")).toBeTruthy();
+    expect(screen.getByText("Guests must type the event password to open the form. A bot check protects it too.")).toBeTruthy();
     expect(screen.getByText("Event password")).toBeTruthy();
   });
 

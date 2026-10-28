@@ -16,7 +16,7 @@ const TOGGLES: ReadonlyArray<{ key: ToggleKey; title: string; text: string }> = 
   {
     key: "verify_email",
     title: "Confirm email addresses",
-    text: "Guests confirm their address with a link in an email, which works for 24 hours. A request that is not confirmed is deleted after that.",
+    text: "Guests confirm their address with a link that works for 24 hours. A request that is not confirmed by then is deleted.",
   },
   { key: "ask_company", title: "Ask for the company", text: "Adds a company question to the form." },
   { key: "ask_department", title: "Ask for the department", text: "Adds a department question to the form." },

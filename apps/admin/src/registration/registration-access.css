@@ -57,11 +57,16 @@
   font-size: var(--fs-xs);
 }
 
-/* What a refused save says is missing: the message, then a list that names each check and what to do. */
+/* What a refused save says is missing: the message, then a list that names each check and what to do. A message stands alone, so its
+ * lines are balanced (a lone last word is the fault that readability.md names). */
 .access-problem {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.access-balanced .at-notice__body {
+  text-wrap: balance;
 }
 
 .access-missing,

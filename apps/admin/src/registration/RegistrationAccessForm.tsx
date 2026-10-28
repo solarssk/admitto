@@ -19,14 +19,16 @@ import "./registration-access.css";
 function ProblemMessage({ eventId, problem }: Readonly<{ eventId: string; problem: AccessProblem }>) {
   if (problem.kind === "message") {
     return (
-      <Notice variant="error" role="alert">
+      <Notice variant="error" role="alert" className="access-balanced">
         {problem.text}
       </Notice>
     );
   }
   return (
     <div role="alert" className="access-problem">
-      <Notice variant="error">This change needs something that is not set up yet.</Notice>
+      <Notice variant="error" className="access-balanced">
+        This change needs something that is not set up yet.
+      </Notice>
       <MissingChecks eventId={eventId} keys={problem.blockers} />
     </div>
   );

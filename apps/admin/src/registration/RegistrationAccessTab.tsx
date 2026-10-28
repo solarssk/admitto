@@ -13,12 +13,14 @@ import { RegistrationAccessForm } from "./RegistrationAccessForm.js";
 
 const ACCESS_HINT = "Whether guests can register for this event, how they get in, and what the form asks them.";
 
-/** The cards of the tab as its placeholder draws them: the real titles, over rows of about the height of the real ones. */
+/** The cards of the tab as its placeholder draws them: the real titles, over rows that make each card about as tall as the real one
+ * at 1280px (272, 731 for ten checks, 177, 553 and 256 for three questions, measured in Chrome on an event that is ready). */
 const ACCESS_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
-  { id: "mode", title: "Guest registration", intro: 2, rows: 2, rowHeight: 40 },
-  { id: "checklist", title: "Setup checklist", rows: 4, rowHeight: 52 },
+  { id: "mode", title: "Guest registration", intro: 1, rows: 2, rowHeight: 60 },
+  { id: "checklist", title: "Setup checklist", rows: 10, rowHeight: 46 },
   { id: "way-in", title: "Way in", intro: 1, rows: 1, rowHeight: 40 },
-  { id: "form", title: "Form", rows: 5, rowHeight: 64 },
+  { id: "form", title: "Form", rows: 6, rowHeight: 64 },
+  { id: "questions", title: "Your questions on the form", rows: 2, rowHeight: 40 },
 ];
 
 /** One event, one tab: a different `:eventId` is a fresh tab (its own read and its own draft), never the previous one's. */
