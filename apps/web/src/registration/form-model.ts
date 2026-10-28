@@ -261,7 +261,7 @@ function toQuestion(field: RegistrantFormField, type: FormQuestionType): FormQue
  * nothing can meet (a question that is not there, or an answer it cannot have, such as an option that was
  * removed) is left out: it is never asked, so it is never required and never closes the form. A required
  * question the page cannot draw closes the form only when a guest could meet its condition and then be stuck. */
-function drawQuestions(fields: readonly RegistrantFormField[], appliesTo: "guest" | "companion"): FormQuestion[] | null {
+function drawQuestions(fields: readonly RegistrantFormField[], appliesTo: "guest" | "companion" = "guest"): FormQuestion[] | null {
   const drawable: FormQuestion[] = [];
   const stuck: RegistrantFormField[] = [];
   for (const field of pickRegistrantFormFields(fields, appliesTo)) {
