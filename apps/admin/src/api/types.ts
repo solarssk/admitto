@@ -681,6 +681,8 @@ export interface EventItemConfigDto {
   content_fields?: string[];
   requires_return?: boolean;
   issue_on_checkin?: boolean;
+  /** Who is offered the item: every attendee (`all`, also when absent) or only the guests who bring a companion. */
+  audience?: "all" | "with_companion";
 }
 
 export interface EventItemDto {
@@ -2326,6 +2328,8 @@ export interface EventOverviewDto {
   /** Seats the event holds, which is what its limit is compared with; `attendee_count` is the number of heads. */
   seats_in_use: number;
   admitted_count: number;
+  /** Companions let in with their guests; the people on site are `admitted_count` plus this. */
+  companions_admitted: number;
   email_sent: number;
   email_failed: number;
   email_bounced: number;
@@ -2357,6 +2361,8 @@ export interface EventReportsResponse {
     admission_rate_pct: number;
     peak_hour: string | null;
     peak_hour_count: number;
+    /** Companions let in with their guests; the people on site are `admitted` plus this. */
+    companions_admitted: number;
   };
   by_hour: Array<{ hour: string; count: number }>;
   /** One row per configured ticket type (catalog order), plus a trailing `key: null` "(none)"

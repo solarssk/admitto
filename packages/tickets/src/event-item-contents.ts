@@ -55,3 +55,14 @@ export function buildItemDetail(
   }
   return parts.length > 0 ? parts.join(DETAIL_SEPARATOR) : undefined;
 }
+
+/**
+ * An item for guests with a companion starts its hint with the companion's name, ahead of what its content fields say:
+ * the operator has to know whom they welcome. The name is for the check-in card the operator looks at, and not for a log,
+ * an error or an audit entry.
+ */
+export function prefixCompanionNames(detail: string | undefined, names: readonly string[]): string | undefined {
+  const parts = names.length > 0 ? [names.join(", ")] : [];
+  if (detail) parts.push(detail);
+  return parts.length > 0 ? parts.join(DETAIL_SEPARATOR) : undefined;
+}

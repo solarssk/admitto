@@ -135,6 +135,7 @@ const overviewFixture = (
   attendee_count: 50,
   seats_in_use: 50,
   admitted_count: admitted,
+  companions_admitted: 0,
   email_sent: 40,
   email_failed: 0,
   email_bounced: 0,
@@ -869,6 +870,77 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     await screen.findByText("Busiest hour");
     expect(screen.queryByText("Wallet passes installed")).toBeNull();
+  });
+
+  describe("People on site (the companions let in with their guests)", () => {
+    /** The tile's label and its whole text, once the page is loaded. */
+    const peopleOnSiteTile = () => screen.queryByText("People on site")?.closest(".overview-glance__tile") as HTMLElement | null;
+
+    it("is not there while no companion has been let in: the card looks as it always did", async () => {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, companions_admitted: 0 }));
+
+      renderPage();
+
+      await screen.findByText("Last check-in");
+      expect(screen.queryByText("People on site")).toBeNull();
+      expect(document.querySelectorAll(".overview-glance__tile")).toHaveLength(2);
+    });
+
+    it("is not there either when the response does not carry the number at all (a stale apps/web dev process)", async () => {
+      const stale = overviewFixture(5);
+      delete (stale as Partial<EventOverviewDto>).companions_admitted;
+      fetchEventOverview.mockResolvedValue(stale);
+
+      renderPage();
+
+      await screen.findByText("Last check-in");
+      expect(screen.queryByText("People on site")).toBeNull();
+    });
+
+    it("adds the companions to the guests, and says how many of each, on a tile of its own", async () => {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, companions_admitted: 2 }));
+
+      renderPage();
+
+      await screen.findByText("People on site");
+      expect(peopleOnSiteTile()!.textContent).toBe("People on site7 (5 guests and 2 companions)");
+      // The tile adds to the two facts under the figure; it does not replace either.
+      expect(screen.getByText("Last check-in")).toBeTruthy();
+      expect(screen.getByText("Busiest hour")).toBeTruthy();
+      expect(peopleOnSiteTile()!.classList.contains("overview-glance__tile--wide")).toBe(true);
+    });
+
+    it("keeps the checked-in figure, the percentage and the arrivals still to come on the guests", async () => {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, companions_admitted: 2 }));
+
+      renderPage();
+
+      await screen.findByText("People on site");
+      expect(admittedLegendValue()).toBe("5");
+      // 45 of the 50 guests are still to come (or never did), whatever the day: companions do not shrink it.
+      expect(screen.getByText(/^45 (not yet arrived|no-shows)$/)).toBeTruthy();
+      expect(document.querySelector(".overview-ring__pct")!.textContent).toBe("10%");
+      expect(screen.getByRole("img", { name: "10% of attendees checked in" })).toBeTruthy();
+    });
+
+    it("says 'guest' and 'companion' for one of each", async () => {
+      fetchEventOverview.mockResolvedValue(overviewFixture(1, { attendee_count: 50, companions_admitted: 1 }));
+
+      renderPage();
+
+      await screen.findByText("People on site");
+      expect(peopleOnSiteTile()!.textContent).toBe("People on site2 (1 guest and 1 companion)");
+    });
+
+    it("counts the guests who just checked in, before the next read of the overview", async () => {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, companions_admitted: 2 }));
+      renderPage();
+      await screen.findByText("People on site");
+
+      act(() => streamHandler?.(liveEvent));
+
+      await waitFor(() => expect(peopleOnSiteTile()!.textContent).toBe("People on site8 (6 guests and 2 companions)"));
+    });
   });
 
   it("shows Setup checklist progress as 'N of M done' with an accessible progress bar, and no separate status notice", async () => {

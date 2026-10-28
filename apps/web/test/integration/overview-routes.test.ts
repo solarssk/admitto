@@ -27,6 +27,7 @@ const EVENT_WALLET = "evt-overview-wallet";
 const EVENT_WALLET_OFF = "evt-overview-wallet-off";
 const EVENT_WALLET_NO_GOOGLE_APPLE = "evt-overview-wallet-samsung-only";
 const EVENT_WALLET_BLANK = "evt-overview-wallet-blank";
+const EVENT_COMPANIONS = "evt-overview-companions";
 
 const EMAIL_SUPER = "overview-super@example.com";
 const EMAIL_ADMIN = "overview-admin@example.com";
@@ -79,6 +80,7 @@ async function seed(client: PrismaClient) {
     EVENT_WALLET_OFF,
     EVENT_WALLET_NO_GOOGLE_APPLE,
     EVENT_WALLET_BLANK,
+    EVENT_COMPANIONS,
   ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -224,6 +226,14 @@ async function seed(client: PrismaClient) {
         organization_id: ORG_OV,
         wallet_template_id: "",
         wallet_api_key_enc: "",
+      },
+      {
+        id: EVENT_COMPANIONS,
+        title: "Overview Companions Event",
+        slug: "overview-companions",
+        date: new Date("2027-09-01T12:00:00.000Z"),
+        timezone: "UTC",
+        organization_id: ORG_OV,
       },
     ],
   });
@@ -1146,5 +1156,70 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     // Length 10 (not 11) confirms the 23:00 ALREADY_CHECKED_IN noise row was excluded - a VALID-only
     // check-in there would otherwise sort first, ahead of the 11:00 entry asserted above.
     expect(body.recent_activity).toHaveLength(10);
+  });
+});
+
+describe("companions_admitted (the companions let in with their guests)", () => {
+  const overviewFor = async (eventId: string) => {
+    const res = await app.request(`/api/admin/events/${eventId}/overview`, { headers: { Cookie: adminCookie } });
+    expect(res.status).toBe(200);
+    return (await res.json()) as EventOverviewResponse;
+  };
+
+  /** An attendee of the companions event, with a companion and the state of the companion item when `state` is given. */
+  async function guest(
+    label: string,
+    options: { admitted?: boolean; status?: string; companion?: boolean; state?: string; itemId: string },
+  ) {
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: `att-overview-companions-${label}`,
+        event_id: EVENT_COMPANIONS,
+        email: `overview-companions-${label}@example.com`,
+        name: `Guest ${label}`,
+        status: options.status ?? "registered",
+        admitted_at: options.admitted === false ? null : new Date("2027-09-01T12:30:00.000Z"),
+      },
+    });
+    if (options.companion !== false) {
+      await prisma.attendeeCompanion.create({ data: { attendee_id: attendee.id, slot: 1, name: `Companion of ${label}` } });
+    }
+    if (options.state) {
+      await prisma.attendeeItemState.create({ data: { attendee_id: attendee.id, event_item_id: options.itemId, state: options.state } });
+    }
+    return attendee;
+  }
+
+  it("is 0 when the event has no companions, and so is it for an event that has a companion item and nobody let in", async () => {
+    expect((await overviewFor(EVENT_MAIN)).companions_admitted).toBe(0);
+    expect((await overviewFor(EVENT_EMPTY)).companions_admitted).toBe(0);
+    expect((await overviewFor(EVENT_COMPANIONS)).companions_admitted).toBe(0);
+  });
+
+  it("counts the companions issued to admitted guests who are active, and leaves the heads and the seats as they are", async () => {
+    const item = await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_COMPANIONS,
+        key: "companion",
+        label: "Companion",
+        config: { audience: "with_companion", requires_return: false, issue_on_checkin: false },
+      },
+    });
+    await guest("in", { state: "issued", itemId: item.id });
+    await guest("waiting", { state: "pending", itemId: item.id });
+    await guest("not-admitted", { admitted: false, state: "issued", itemId: item.id });
+    await guest("cancelled", { status: "cancelled", state: "issued", itemId: item.id });
+    await guest("alone", { companion: false, itemId: item.id });
+    await guest("removed", { companion: false, state: "issued", itemId: item.id });
+
+    const body = await overviewFor(EVENT_COMPANIONS);
+
+    expect(body.companions_admitted).toBe(1);
+    // The guests: the four admitted and active (in, waiting, alone, removed), as before; the seats add the two companions
+    // of guests who are active.
+    expect(body.admitted_count).toBe(4);
+    expect(body.attendee_count).toBe(5);
+    expect(body.seats_in_use).toBe(await countSeatsInUse(prisma, EVENT_COMPANIONS));
+    expect(body.seats_in_use).toBe(5 + 3);
   });
 });
