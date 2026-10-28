@@ -5,12 +5,14 @@ import { accessMethodsDto } from "../settings/accessMethodsFixtures.js";
 
 /** A fetch that answers once with `body` and `status`. */
 function stubFetch(status: number, body: unknown) {
-  const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => ({
-    ok: status >= 200 && status < 300,
-    status,
-    statusText: "",
-    json: async () => body,
-  }));
+  const fetchMock = vi.fn((_input: string | URL, _init?: RequestInit) =>
+    Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: "",
+      json: () => Promise.resolve(body),
+    }),
+  );
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }

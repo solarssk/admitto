@@ -11,7 +11,7 @@ import { makeOrgAdminAssignment, makeSuperadminAssignment } from "../test-utils.
 let assignments: RoleAssignment[] = [];
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments, setupComplete: true, refresh: async () => {} }),
+  useAuth: () => ({ assignments, setupComplete: true, refresh: () => Promise.resolve() }),
 }));
 
 // The shells and the picker are not what this file is about; the guards, the routes and the panel are real.

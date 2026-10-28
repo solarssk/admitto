@@ -93,7 +93,7 @@ beforeEach(() => {
   mockFetch.mockResolvedValue(sampleResponse());
   mockFetchTurnstile.mockResolvedValue(sampleTurnstile());
   mockFetchAccess.mockResolvedValue(accessMethodsDto());
-  mockSaveAccess.mockImplementation(async (body) => accessMethodsDto(body.methods));
+  mockSaveAccess.mockImplementation((body) => Promise.resolve(accessMethodsDto(body.methods)));
   mockSaveTurnstile.mockImplementation(async (body) => ({
     site_key: body.site_key === undefined ? null : body.site_key,
     secret_set: body.secret_key !== null && body.secret_key !== undefined,
@@ -1198,10 +1198,11 @@ describe("ExternalServicesPanel, ways in card", () => {
     expect(keysWarning()).toBeNull();
   });
 
-  it("does not warn when the Turnstile keys are ready, or when no way is on", async () => {
+  it("does not warn when the Turnstile keys are ready, whatever way is on", async () => {
     mockFetchTurnstile.mockResolvedValue(READY_TURNSTILE);
     await renderLoaded();
     fireEvent.click(wayIn("Link"));
+    fireEvent.click(wayIn("Password"));
     expect(keysWarning()).toBeNull();
   });
 
