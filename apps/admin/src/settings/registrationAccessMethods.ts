@@ -11,7 +11,7 @@ export type SwitchedAccessMethod = (typeof SWITCHED_ACCESS_METHODS)[number];
 export type AccessMethodsDraft = Record<SwitchedAccessMethod, boolean>;
 
 function isSwitched(method: RegistrationAccessMethod): method is SwitchedAccessMethod {
-  return SWITCHED_ACCESS_METHODS.some((switched) => switched === method);
+  return (SWITCHED_ACCESS_METHODS as readonly RegistrationAccessMethod[]).includes(method);
 }
 
 function isEnabled(dto: RegistrationAccessMethodsDto, method: RegistrationAccessMethod): boolean {
