@@ -191,7 +191,21 @@ export {
   isReservedCustomDataSourceField,
   filterCustomDataAttributeFields,
 } from "./custom-data-reserved.js";
-export { BADGE_ITEM_KEY, ensureBadgeEventItem, isBadgeItemUsable } from "./event-items.js";
+export {
+  BADGE_ITEM_KEY,
+  COMPANION_ITEM_KEY,
+  ensureBadgeEventItem,
+  ensureCompanionEventItem,
+  isBadgeItemUsable,
+} from "./event-items.js";
+export {
+  attendeeIdsWithCompanion,
+  EVENT_ITEM_AUDIENCES,
+  filterItemsForAttendee,
+  isCompanionAudience,
+  itemAppliesToAttendee,
+} from "./item-audience.js";
+export type { EventItemAudience } from "./item-audience.js";
 export {
   ensureStandardTicketType,
   loadEventTicketTypes,
@@ -394,6 +408,7 @@ export {
   activeAttendeeWhere,
   countActiveAdmittedAttendees,
   countActiveAttendees,
+  countCompanionsIssued,
   countSeatsInUse,
   countSeatsOfAttendee,
 } from "./event-seats.js";

@@ -7564,6 +7564,11 @@ output.mail-field-hint {
   border-radius: var(--radius-lg);
 }
 
+/* The People on site tile (shown once a companion has been let in) takes the whole row under the two facts. */
+.overview-glance__tile--wide {
+  grid-column: 1 / -1;
+}
+
 .overview-glance__icon {
   display: inline-flex;
   align-items: center;
