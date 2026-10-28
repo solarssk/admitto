@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Write, publish and copy the texts that guests read before they register for an event: the privacy notice, the event terms and any extra consents. You do this on the **Legal** tab of the event's **Registration** page. That page is not in the event menu yet, so the tab cannot be reached from the menu.
+Write, publish and copy the texts that guests read before they register for an event: the privacy notice, the event terms and any extra consents. You do this on the **Legal** tab of the event's **Registration** page, which is in the event menu.
 
 ## Before you start
 
@@ -30,6 +30,7 @@ Write, publish and copy the texts that guests read before they register for an e
 2. Enter a key, such as `photo-consent`. It is part of the page address and cannot be changed later.
 3. Enter the checkbox label. Guests read it next to the checkbox.
 4. Write the text, select **Save**, then **Publish**.
+5. To make the form ask for the consent, choose it under **Extra consents** on the **Access** tab. See [Registration Access](Registration-Access).
 
 **Copy the texts of another event**
 

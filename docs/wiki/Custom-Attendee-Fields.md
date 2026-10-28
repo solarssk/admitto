@@ -73,7 +73,7 @@ Text, long text and phone fields can limit what an answer looks like. Open **For
 
 **Add suggested questions** gives an event a ready set of questions about parking, travel and accommodation. You press it yourself. Admitto never adds these questions on its own: a new event has no custom fields until you add them.
 
-The button is on the **Fields** tab of the event's **Registration** page, next to **Add field**. That page is not in the event menu yet, so the button cannot be reached from the menu.
+The button is on the **Fields** tab of the event's **Registration** page, next to **Add field**. The page is in the event menu.
 
 | Question | The guest answers | Notes |
 |---|---|---|

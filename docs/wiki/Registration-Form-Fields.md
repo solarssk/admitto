@@ -6,7 +6,7 @@
 
 Know what a guest sees and can enter for each kind of question on the registration form, and how the rules of a field show up there. The questions on the form are the custom attendee fields of the event that are switched on for the form.
 
-Guests cannot open the form yet. It opens for an event only when registration is turned on for it. Until then, every address answers "not found".
+The form opens for an event only when registration is turned on for it, on the **Access** tab. Until then, every address answers "not found". See [Registration Access](Registration-Access).
 
 ## Before you start
 
