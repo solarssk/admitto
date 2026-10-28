@@ -40,6 +40,7 @@ const { MockApiError } = vi.hoisted(() => {
 });
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
+let activityChangedHandler: (() => void) | null = null;
 // The event id the page last subscribed to the live stream with (undefined = it did not subscribe).
 let streamEventId: string | undefined;
 let mockArchivedAt: string | null = null;
@@ -82,9 +83,10 @@ vi.mock("react-router", async (importOriginal) => {
 });
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: (eventId: string | undefined, onCheckin: (event: StreamCheckinEvent) => void) => {
+  useEventStream: (eventId: string | undefined, onCheckin: (event: StreamCheckinEvent) => void, onActivityChanged?: () => void) => {
     streamEventId = eventId;
     streamHandler = onCheckin;
+    activityChangedHandler = onActivityChanged ?? null;
     return { connected: true, status: "connected" };
   },
 }));
@@ -229,6 +231,7 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   streamHandler = null;
+  activityChangedHandler = null;
 });
 
 describe("ReportsPage — live SSE updates (ADR 0014)", () => {
@@ -298,6 +301,38 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
       await waitFor(() => {
         expect(fetchEventReports).toHaveBeenCalledTimes(2);
         expect(admittedValue()).toBe("7");
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reconciles from the server when an item is issued, returned or revoked: the companions on site change with no check-in to bump anything", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventReports
+        .mockResolvedValueOnce(reportFixture(5))
+        .mockResolvedValue(reportFixture(5, { summary: { ...reportFixture(5).summary, companions_admitted: 1 } }));
+      renderPage();
+
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+      expect(screen.queryByText(/People on site/)).toBeNull();
+      expect(activityChangedHandler).not.toBeNull();
+
+      act(() => {
+        activityChangedHandler?.();
+      });
+      // Nothing is bumped on the spot: an item is no check-in. The numbers are the server's once the debounce is over.
+      expect(admittedValue()).toBe("5");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      await waitFor(() => {
+        expect(fetchEventReports).toHaveBeenCalledTimes(2);
+        expect(screen.getByText(/People on site: 6 \(5 guests and 1 companion\)\./)).toBeTruthy();
       });
     } finally {
       vi.useRealTimers();

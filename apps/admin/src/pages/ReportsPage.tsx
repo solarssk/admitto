@@ -924,7 +924,8 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   );
 
   // An archived event takes no check-ins and the stream answers it with a 403, which the hook would retry before giving up.
-  useEventStream(isEventArchived(event) ? undefined : eventId, handleLiveCheckin);
+  // An item issued, returned or revoked changes the companions on site with no check-in to bump anything, so it asks for the reconcile too.
+  useEventStream(isEventArchived(event) ? undefined : eventId, handleLiveCheckin, scheduleReconcile);
 
   // A pending reconcile timer or in-flight reconcile fetch must not outlive the page: this page is one event's (an in-SPA
   // switch to another event renders a new instance), so a stale reconcile can never overwrite the next event's data.
