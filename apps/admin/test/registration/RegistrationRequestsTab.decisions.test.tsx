@@ -813,6 +813,26 @@ describe("a decision never stops the work", () => {
     expect(openIds()).toEqual(["r2", "r3"]);
   });
 
+  it("drops the read that an earlier decision started when the next one has gone through: the request that was decided does not come back", async () => {
+    const server = new FakeServer(three());
+    renderTab({ search: QUEUE });
+    await loaded();
+    // The read after the first decision is slow, and saw the queue as it was before the second one.
+    const slowRead = deferred<ReturnType<FakeServer["page"]>>();
+    api.fetchRegistrations.mockImplementationOnce(() => slowRead.promise);
+
+    await decide(["Ann Kowalska"], "Accept", "Accept this request?");
+    await waitFor(() => expect(openIds()).toEqual(["r2", "r3"]));
+    const queueBeforeTheSecond = server.page({ page: 1, pageSize: 25, status: "pending" });
+
+    await decide(["Bo Lee"], "Accept", "Accept this request?");
+    await waitFor(() => expect(openIds()).toEqual(["r3"]));
+    await waitFor(() => expect(api.fetchRegistrations).toHaveBeenCalledTimes(3));
+
+    await act(async () => slowRead.resolve(queueBeforeTheSecond));
+    expect(openIds()).toEqual(["r3"]);
+  });
+
   it("says nothing, and does not go to the login page, when the read that follows a decision fails: the change that was confirmed stays", async () => {
     new FakeServer(three());
     renderTab({ search: QUEUE });

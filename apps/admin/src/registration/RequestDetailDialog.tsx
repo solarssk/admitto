@@ -35,8 +35,10 @@ export interface RequestDetailDialogProps {
   suspended: boolean;
   busy: BusyDecision;
   onClose: () => void;
-  onAsk: (kind: "accept" | "reject" | "delete") => void;
-  onRetryMail: (id: string) => void;
+  /** `record` is the request as this window knows it (its state and companions as read), which the list's row may no longer be. */
+  onAsk: (kind: "accept" | "reject" | "delete", record: RegistrationListItemDto) => void;
+  /** `setError` is where a failure is said: in this window, beside the button. */
+  onRetryMail: (id: string, setError: (message: string | null) => void) => void;
 }
 
 function UtcTime({ iso }: Readonly<{ iso: string }>) {
@@ -231,12 +233,15 @@ function MailsSection({
   eventId,
   event,
   busy,
+  retryError,
   onRetry,
 }: Readonly<{
   detail: RegistrationDetailDto;
   eventId: string;
   event: ArchivedGuardEvent;
   busy: boolean;
+  /** Why the email could not be sent again, when it could not. */
+  retryError: string | null;
   onRetry: () => void;
 }>) {
   return (
@@ -260,6 +265,11 @@ function MailsSection({
           ))}
         </ol>
       )}
+      {retryError ? (
+        <Notice variant="error" role="alert">
+          {retryError}
+        </Notice>
+      ) : null}
     </div>
   );
 }
@@ -276,6 +286,7 @@ function MailsSection({
  */
 export function RequestDetailDialog({ eventId, event, row, lookups, suspended, busy, onClose, onAsk, onRetryMail }: Readonly<RequestDetailDialogProps>) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const panel = usePanelLoad({
@@ -291,7 +302,9 @@ export function RequestDetailDialog({ eventId, event, row, lookups, suspended, b
   useOverscrollBounceGuard(scrollRef);
 
   const detail = loaded?.detail ?? null;
-  const status = detail?.status ?? row.status;
+  // The row is as old as the list: the guest may have confirmed the address, or somebody may have decided, since it was read.
+  const current: RegistrationListItemDto = detail ? { ...row, status: detail.status, companions_count: detail.companions.length } : row;
+  const { status } = current;
   const name = requestGuestName(row);
   const attendeeId = detail?.attendee_id ?? null;
 
@@ -335,19 +348,23 @@ export function RequestDetailDialog({ eventId, event, row, lookups, suspended, b
                   eventId={eventId}
                   event={event}
                   busy={busy === "retry"}
-                  onRetry={() => onRetryMail(row.id)}
+                  retryError={retryError}
+                  onRetry={() => {
+                    setRetryError(null);
+                    onRetryMail(row.id, setRetryError);
+                  }}
                 />
               </>
             )}
           </div>
           <div className="delivery-modal__footer request-detail__footer">
-            <Button type="button" variant="ghost" className="request-detail__delete" icon={<i className="ti ti-trash" aria-hidden="true" />} onClick={() => onAsk("delete")}>
+            <Button type="button" variant="ghost" className="request-detail__delete" icon={<i className="ti ti-trash" aria-hidden="true" />} onClick={() => onAsk("delete", current)}>
               Delete
             </Button>
             {canReject({ status }) ? (
               <ArchivedGuard event={event} reasonId="request-detail-reject-reason">
                 {(guard) => (
-                  <Button type="button" variant="secondary" icon={<i className="ti ti-x" aria-hidden="true" />} {...guard} onClick={() => onAsk("reject")}>
+                  <Button type="button" variant="secondary" icon={<i className="ti ti-x" aria-hidden="true" />} {...guard} onClick={() => onAsk("reject", current)}>
                     Reject
                   </Button>
                 )}
@@ -356,7 +373,7 @@ export function RequestDetailDialog({ eventId, event, row, lookups, suspended, b
             {canAccept({ status }) ? (
               <ArchivedGuard event={event} reasonId="request-detail-accept-reason">
                 {(guard) => (
-                  <Button type="button" icon={<i className="ti ti-check" aria-hidden="true" />} {...guard} onClick={() => onAsk("accept")}>
+                  <Button type="button" icon={<i className="ti ti-check" aria-hidden="true" />} {...guard} onClick={() => onAsk("accept", current)}>
                     Accept
                   </Button>
                 )}

@@ -73,6 +73,9 @@ interface Applied {
 
 const idsOf = (rows: readonly RegistrationListItemDto[]): string[] => rows.map((row) => row.id);
 
+/** A read that follows an action takes over from one that is on its way: that one was started before the action, and would bring back what it changed. */
+const AFTER_ACTION = { supersede: true } as const;
+
 async function runAccept(eventId: string, rows: readonly RegistrationListItemDto[]): Promise<Applied> {
   const { results } = await acceptRegistrations(eventId, idsOf(selectionActions(rows).accept));
   return {
@@ -195,8 +198,8 @@ export function useRegistrationDecisions({
         const { pending: count, attendeeIds } = applied.wallet;
         openWallet(count, () => bulkEraseAttendees(eventId, attendeeIds));
       }
-      void poll();
-      void pollCounts();
+      void poll(undefined, AFTER_ACTION);
+      void pollCounts(undefined, AFTER_ACTION);
       if (applied.seatsChanged) void refreshEventRef.current?.();
     },
     [addToast, eventId, openWallet, poll, pollCounts, update],
@@ -254,15 +257,18 @@ export function useRegistrationDecisions({
     [addToast, close, perform, pending, reload, reportApiError, settle],
   );
 
-  /** Sends again the last email of `ids`; `acted` is every request that was asked (the selection, of which only some have an email to send again). */
+  /**
+   * Sends again the last email of `ids`; `acted` is every request that was asked (the selection, of which only some have an email to
+   * send again). A failure is a toast, unless `setError` is given: the window of a request, which says it beside the button.
+   */
   const retryMail = useCallback(
-    async (ids: readonly string[], acted: readonly string[] = ids) => {
+    async (ids: readonly string[], acted: readonly string[] = ids, setError?: (message: string | null) => void) => {
       setBusy("retry");
       try {
         const { results } = await retryRegistrationMails(eventId, [...ids]);
         settle({ change: retryChange(results), acted: new Set(acted), toast: retryToast(results), seatsChanged: false, wallet: null });
       } catch (err) {
-        reportBulkActionError(err, { reportApiError, addToast, apiErrorFallback: FAILED.retry, genericFallback: FAILED.retry });
+        reportBulkActionError(err, { reportApiError, setError, addToast, apiErrorFallback: FAILED.retry, genericFallback: FAILED.retry });
       } finally {
         setBusy(null);
       }

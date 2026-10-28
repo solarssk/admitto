@@ -440,6 +440,31 @@ describe("the emails of a request", () => {
     expect(await screen.findByText("1 email will be sent again.")).toBeTruthy();
   });
 
+  it("says in the window, beside the button, that the email could not be sent again, keeps the window, and says it no more once the button is pressed again", async () => {
+    new FakeServer([named("r1", "Ann", "Kowalska", { last_mail: FAILED_MAIL })]);
+    api.fetchRegistration.mockResolvedValue(detail("r1", { mails: [mailRow("m1", { status: "failed", retryable: false, can_retry: true })] }));
+    api.retryRegistrationMails.mockRejectedValueOnce(new ApiError(500, "boom", "internal_error"));
+    renderTab({ search: EVERY_STATE });
+    await loaded();
+    const box = await openRequest("r1", "Ann Kowalska");
+    const again = await within(box).findByRole("button", { name: "Send again" });
+
+    fireEvent.click(again);
+
+    const failure = "Something went wrong. Try again. If it keeps happening, check System logs.";
+    expect((await within(box).findByRole("alert")).textContent).toBe(failure);
+    // Said once, in the window: not as a toast as well.
+    expect(screen.getAllByText(failure)).toHaveLength(1);
+    expect(screen.getByRole("dialog", { name: "Ann Kowalska" })).toBe(box);
+
+    const reply = deferred<RetryRegistrationMailsDto>();
+    api.retryRegistrationMails.mockReturnValueOnce(reply.promise);
+    fireEvent.click(again);
+    expect(within(box).queryByRole("alert")).toBeNull();
+    await act(async () => reply.resolve({ results: [{ id: "r1", outcome: "retried" }] }));
+    expect(await screen.findByText("1 email will be sent again.")).toBeTruthy();
+  });
+
   it("offers it for the last email only, and only when that one can be sent again", async () => {
     api.fetchRegistration.mockResolvedValue(
       detail("r1", {
@@ -572,6 +597,38 @@ describe("the decisions of the window", () => {
 
     await waitFor(() => expect(within(box).queryByRole("button", { name: "Accept" })).toBeNull());
     expect(within(box).getByRole("link", { name: "Open attendee" }).getAttribute("href")).toBe("/admin/events/evt-1/attendees/at-1");
+  });
+
+  it("confirms the request as it was read, not as the list said: a guest who confirmed the address meanwhile is accepted, with the seat of the person they bring", async () => {
+    new FakeServer([named("r1", "Ann", "Kowalska", { status: "awaiting_email" })]);
+    api.fetchRegistration.mockResolvedValue(detail("r1", { status: "pending", companions: [{ name: "Cy Park", custom_data: null }] }));
+    api.acceptRegistrations.mockResolvedValue({ results: [{ id: "r1", outcome: "accepted", attendee_id: "at-1" }] });
+    renderTab({ search: EVERY_STATE });
+    await loaded();
+    const box = await openRequest("r1", "Ann Kowalska");
+    await within(box).findByText("Request");
+
+    press(box, "Accept");
+
+    const confirm = await screen.findByRole("dialog", { name: "Accept this request?" });
+    expect(confirm.textContent).toContain("They take 2 seats, counting the people they bring.");
+    press(confirm, "Accept");
+    expect(await screen.findByText("1 request accepted.")).toBeTruthy();
+    expect(api.acceptRegistrations).toHaveBeenCalledWith("evt-1", ["r1"]);
+  });
+
+  it("warns that deleting erases the attendee when the request was accepted meanwhile, though the list still shows it waiting", async () => {
+    new FakeServer([named("r1", "Ann", "Kowalska", { status: "pending" })]);
+    api.fetchRegistration.mockResolvedValue(detail("r1", { status: "accepted", attendee_id: "at-1" }));
+    renderTab({ search: EVERY_STATE });
+    await loaded();
+    const box = await openRequest("r1", "Ann Kowalska");
+    await within(box).findByText("Request");
+
+    press(box, "Delete");
+
+    const confirm = await screen.findByRole("dialog", { name: "Delete this request?" });
+    expect(confirm.textContent).toContain("This request is accepted, so the guest is an attendee. Deleting it also erases the attendee.");
   });
 
   it("accepts from the window: the confirmation opens over it, and when it is done both are gone, the keyboard is on the next request and a toast says what happened", async () => {

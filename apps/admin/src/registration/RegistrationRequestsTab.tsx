@@ -224,8 +224,8 @@ function RegistrationRequestsBody({ eventId, counts }: Readonly<{ eventId: strin
           suspended={decisions.pending !== null}
           busy={decisions.busy}
           onClose={detail.close}
-          onAsk={(kind) => decisions.ask(kind, [openRow])}
-          onRetryMail={(id) => void decisions.retryMail([id])}
+          onAsk={(kind, record) => decisions.ask(kind, [record])}
+          onRetryMail={(id, setError) => void decisions.retryMail([id], undefined, setError)}
         />
       ) : null}
       <RequestDecisionDialogs
