@@ -8,7 +8,7 @@ import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-
 import { advanceTimers, deferred, getTooltipText, hangUntilAborted, isOff } from "../test-utils.js";
 import { addToast, api } from "./accessApiMocks.js";
 import { archivedEvent, checks, event, legalAnswer, settings, texts } from "./accessData.js";
-import { renderAccess, resetApi } from "./accessFixtures.js";
+import { accessPanel, card, loaded, radio, renderAccess, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 const goToLogin = vi.fn();
 
@@ -31,23 +31,8 @@ vi.mock("@admitto/ui", async (importOriginal) => {
   return { ...(await importOriginal<typeof import("@admitto/ui")>()), useToast: () => ({ addToast: toast }) };
 });
 
-const accessPanel = () => screen.getByRole("tabpanel", { name: "Access" });
 const placeholder = () => screen.queryByRole("status", { name: "Loading registration settings" });
-const radio = (name: string) => screen.getByRole("radio", { name });
-const toggle = (name: string) => screen.getByRole("switch", { name }) as HTMLInputElement;
-const card = (title: string) => screen.getByText(title, { selector: ".at-card__title" }).closest(".at-card") as HTMLElement;
 const checklistRows = () => Array.from(card("Setup checklist").querySelectorAll("li.access-check"));
-
-/** Waits until the form is on screen: the placeholder draws the titles of the cards too, so a title alone is not the answer. */
-async function loaded() {
-  await screen.findByRole("radiogroup", { name: "Registration mode" });
-}
-
-async function renderLoaded(saved: RegistrationSettingsDto = settings(), { withEvent = event } = {}) {
-  api.fetchRegistrationSettings.mockResolvedValue(saved);
-  renderAccess({ withEvent });
-  await loaded();
-}
 
 beforeEach(() => {
   resetApi();
@@ -216,7 +201,7 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(toggle("Ask for the department").checked).toBe(false);
     expect(toggle("Guests can bring one person").checked).toBe(true);
     expect(screen.getByRole("button", { name: "Extra consents, Photos and video" })).toBeTruthy();
-    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
+    expect(isOff(saveButton())).toBe(true);
     expect(screen.queryByText("Unsaved changes")).toBeNull();
   });
 
@@ -239,7 +224,7 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(radio("Link").getAttribute("aria-checked")).toBe("false");
     expect(radio("Password").getAttribute("aria-checked")).toBe("false");
     expect(screen.getByText("Choose how guests open the form. You can use one way in at a time.")).toBeTruthy();
-    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
+    expect(isOff(saveButton())).toBe(true);
   });
 
   it("says what each way in does, and shows the password row only for the password", async () => {
@@ -343,12 +328,10 @@ describe("RegistrationAccessTab: the checklist", () => {
   });
 
   it("sends a missing check to the tab that puts it right, and a superadmin's to the superadmin", async () => {
-    const { router } = (() => {
-      api.fetchRegistrationSettings.mockResolvedValue(
-        settings({ readiness: checks("legal_documents", "form_questions", "required_fields", "bot_protection", "mail_provider", "instance_url", "access_method_enabled", "event_not_ended") }),
-      );
-      return renderAccess();
-    })();
+    api.fetchRegistrationSettings.mockResolvedValue(
+      settings({ readiness: checks("legal_documents", "form_questions", "required_fields", "bot_protection", "mail_provider", "instance_url", "access_method_enabled", "event_not_ended") }),
+    );
+    const { router } = renderAccess();
     await loaded();
     const checklist = within(card("Setup checklist"));
 
