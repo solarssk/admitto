@@ -1496,7 +1496,8 @@ export interface RegistrationMailBriefDto {
 }
 
 /** One guest's request to join an event (`GET /api/admin/events/:eventId/registrations`). Without the answers and the companions. */
-export interface RegistrationListItemDto {
+/** What a request says of its guest and where it stands: the head the list and the full record have in common. */
+export interface RegistrationHeadDto {
   id: string;
   first_name: string;
   last_name: string;
@@ -1505,6 +1506,9 @@ export interface RegistrationListItemDto {
   department: string | null;
   status: RegistrationStatus;
   created_at: string;
+}
+
+export interface RegistrationListItemDto extends RegistrationHeadDto {
   /** The people the guest brings; each takes a seat. */
   companions_count: number;
   /** The mail queued last for this request; null when none was queued. */
@@ -1562,18 +1566,10 @@ export interface RegistrationCompanionDto {
 }
 
 /** GET /api/admin/events/:eventId/registrations/:id: one request in full. */
-export interface RegistrationDetailDto {
-  id: string;
-  status: RegistrationStatus;
-  email: string;
-  first_name: string;
-  last_name: string;
-  company: string | null;
-  department: string | null;
+export interface RegistrationDetailDto extends RegistrationHeadDto {
   /** The answers as they were stored, by the key of the field they answer. */
   custom_data: Record<string, unknown> | null;
   companions: RegistrationCompanionDto[];
-  created_at: string;
   email_verified_at: string | null;
   /** Set while the request waits for the guest to confirm the address. */
   confirm_expires_at: string | null;
