@@ -35,6 +35,7 @@ export function EventPasswordDialog({
 }>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState("");
   const [shown, setShown] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,11 +43,13 @@ export function EventPasswordDialog({
 
   useModalFocusTrap(panelRef, open, saving ? ignore : onClose);
 
-  // A password that was typed is not kept: not after the dialog closes, and not for the next time it opens.
+  // A password that was typed is not kept: not after the dialog closes, and not for the next time it opens. The field has the focus
+  // when it opens (the focus trap puts it on the first control, which is the button that shows the password, so this comes after it).
   useEffect(() => {
     setValue("");
     setShown(false);
     setError(null);
+    if (open) fieldRef.current?.focus();
   }, [open]);
 
   if (!open) return null;
@@ -88,6 +91,7 @@ export function EventPasswordDialog({
             Guests enter this password before they see the form. You cannot read it again after you save it, so keep a copy to share with them.
           </p>
           <Input
+            ref={fieldRef}
             label="Password"
             type={shown ? "text" : "password"}
             {...NO_AUTOFILL_PROPS}
@@ -98,7 +102,6 @@ export function EventPasswordDialog({
             icon={<i className={`ti ti-${shown ? "eye-off" : "eye"}`} />}
             iconLabel={shown ? "Hide the password" : "Show the password"}
             onIconClick={() => setShown((current) => !current)}
-            autoFocus
             onChange={(event) => {
               setValue(event.target.value);
               setError(null);
