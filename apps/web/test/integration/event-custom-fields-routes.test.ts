@@ -1893,6 +1893,57 @@ describe("a condition between fields, on PATCH", () => {
   });
 });
 
+describe("a condition between a question about the guest and one about their companion", () => {
+  beforeEach(resetFormFixtures);
+
+  /** A question about the companion, made in the database: the field editor cannot ask for one yet. */
+  const makeCompanionField = (source_field: string, type = "boolean") =>
+    prisma.eventCustomField.create({ data: { event_id: EVENT_CF_ORDER, source_field, label: source_field, type, show_on_form: true, applies_to: "companion" } });
+  const whenPet = { show_when: { field: "pet", value: true } };
+
+  it("refuses a question about the guest that is shown by a question about the companion, on create, with 422, and stores nothing", async () => {
+    await makeCompanionField("pet");
+
+    expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "leash", show_on_form: true, rules: whenPet }))).toEqual([422, "invalid_show_when"]);
+
+    expect(await prisma.eventCustomField.findMany({ where: { event_id: EVENT_CF_ORDER, applies_to: "guest" } })).toEqual([]);
+  });
+
+  it("refuses it on PATCH, and changes nothing", async () => {
+    await makeCompanionField("pet");
+    const leash = await makeField(EVENT_CF_ORDER, { source_field: "leash", show_on_form: true });
+    const before = await stored(leash.id);
+
+    expect(await refusal(await patchField(EVENT_CF_ORDER, leash.id, { rules: whenPet }))).toEqual([422, "invalid_show_when"]);
+    expect(await stored(leash.id)).toEqual(before);
+  });
+
+  it("refuses a question about the companion that is shown by a question about the guest, on PATCH, with 422, and changes nothing", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean", show_on_form: true });
+    const plate = await makeCompanionField("plate", "text");
+    const before = await stored(plate.id);
+
+    expect(await refusal(await patchField(EVENT_CF_ORDER, plate.id, { rules: whenParking }))).toEqual([422, "invalid_show_when"]);
+    expect(await stored(plate.id)).toEqual(before);
+  });
+
+  it("keeps a condition between two questions about the companion, by the rules of any other: it is saved, and an answer it cannot have is refused", async () => {
+    await makeCompanionField("pet");
+    const leash = await makeCompanionField("leash", "text");
+
+    expect((await readField(await patchField(EVENT_CF_ORDER, leash.id, { rules: whenPet }))).rules).toEqual(whenPet);
+    expect((await stored(leash.id)).rules).toEqual(whenPet);
+    expect(await refusal(await patchField(EVENT_CF_ORDER, leash.id, { rules: { show_when: { field: "pet", value: "Yes" } } }))).toEqual([422, "invalid_show_when"]);
+  });
+
+  it("still keeps a condition between two questions about the guest, as before", async () => {
+    await makeCompanionField("pet");
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean", show_on_form: true });
+    const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate", show_on_form: true, rules: whenParking });
+    expect(plate.rules).toEqual(whenParking);
+  });
+});
+
 describe("deleting a field that others are shown by", () => {
   beforeEach(resetFormFixtures);
 
