@@ -439,6 +439,8 @@ export function ExternalServicesPanel() {
     );
   }
 
+  // Every part has its answer once the panel is ready; these checks only narrow the types for the code below.
+  /* v8 ignore if */
   if (!data || !weatherDraft || !mapsDraft || !turnstile || !turnstileDraft || !accessMethods || !accessDraft) return null;
 
   // Narrowed locals: nested handlers do not keep the null-check narrowing on state.
