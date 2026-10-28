@@ -21,7 +21,7 @@ const field = (overrides: Partial<RegistrantFormField> & Pick<RegistrantFormFiel
 });
 
 function rules(overrides: Partial<SubmissionRules> = {}): SubmissionRules {
-  return { askCompany: true, askDepartment: true, fields: [], consentKeys: ["photos", "newsletter"], now: NOW, ...overrides };
+  return { askCompany: true, askDepartment: true, fields: [], consentKeys: ["photos", "newsletter"], companionMax: 0, now: NOW, ...overrides };
 }
 
 const envelopeOf = (overrides: Record<string, unknown> = {}): SubmissionEnvelope => {
