@@ -883,6 +883,23 @@ describe("what a save leaves behind", () => {
     expect(await auditOf(event.id)).toHaveLength(1);
   });
 
+  it("lets an error it does not know rise, and writes nothing", async () => {
+    const event = await addEvent("unknown-error");
+    const failing = new Proxy(prisma, {
+      get(target, key, receiver) {
+        if (key === "$transaction") return () => Promise.reject(new Error("the database went away"));
+        return Reflect.get(target, key, receiver);
+      },
+    });
+
+    await expect(
+      updateEventRegistrationSettings(failing, { eventId: event.id, patch: { waitlist_enabled: false }, actor: actorOf(adminId) }),
+    ).rejects.toThrow("the database went away");
+
+    expect((await settingsRow(event.id))?.waitlist_enabled).toBe(true);
+    expect(await auditOf(event.id)).toHaveLength(0);
+  });
+
   it("makes no row for an event that has none, when the save changes nothing from the defaults", async () => {
     const event = await addEvent("no-row-noop", { settings: null });
 
