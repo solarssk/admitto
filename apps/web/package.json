@@ -41,7 +41,7 @@
     "@hono/node-server": "^2.1.1",
     "@prisma/client": "^7.10.1",
     "@simplewebauthn/server": "^14.0.3",
-    "@tabler/icons-webfont": "3.48.0",
+    "@tabler/icons-webfont": "3.49.0",
     "dejavu-fonts-ttf": "^2.37.3",
     "exceljs": "^4.4.0",
     "geo-tz": "^8.1.8",
@@ -55,7 +55,7 @@
   },
   "devDependencies": {
     "@testcontainers/redis": "^12.2.0",
-    "@types/node": "^24.19.1",
+    "@types/node": "^24.19.2",
     "@types/pdfkit": "^0.17.6",
     "@types/sanitize-html": "^2.16.2",
     "axe-core": "^4.13.0",
