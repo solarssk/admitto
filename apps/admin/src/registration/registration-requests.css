@@ -1,6 +1,6 @@
-/* The Requests tab of the Registration page: a card with the Attendees list's toolbar (attendees.css, which the toolbar
-   imports), the requests as a table or as cards, and the pager. The toolbar, the table headings and the busy and dimmed states
-   are the ones the other lists use; what is here is the shape of a request. */
+/* The Requests tab of the Registration page: a card with the Attendees list's toolbar and bulk bar (attendees.css, which both
+   import), the queue line, the requests as a table or as cards, and the pager. The toolbar, the bulk bar, the table headings,
+   the checkboxes and the busy and dimmed states are the ones the other lists use; what is here is the shape of a request. */
 
 .registration-requests {
   display: flex;
@@ -19,17 +19,33 @@
 
 /* The guest is what a person reads first and the column that holds the longest text (an address), so it asks for its room before the others do. The
    last email keeps the room for the longest name of a mail ("Address confirmation") on one line, so that a row stays two lines tall. */
-.registration-requests__table thead th:first-child {
+.registration-requests__table thead th:nth-child(2) {
   width: 32%;
 }
 
-.registration-requests__table thead th:nth-child(4) {
+.registration-requests__table thead th:nth-child(5) {
   min-width: 9.5rem;
+}
+
+/* A company and a department read badly in a column narrower than this (a department as long as "Finance & Accounting (EMEA)" breaks into
+   three lines of one or two words). The guest column, whose address can break at any dot, gives way to it when the table is narrow. */
+.registration-requests__table thead th:nth-child(3) {
+  min-width: 12rem;
 }
 
 /* Cells top-aligned: a long name or address makes a tall row, and its badges stay level with the name instead of the middle of it. */
 .registration-requests__table tbody td {
   vertical-align: top;
+}
+
+/* The guest as the button that opens the request: the same two lines (the attendees' row button resets the rest), and a ring when the keyboard is on it. */
+.registration-requests__open {
+  border-radius: var(--radius-sm);
+}
+
+.registration-requests__open:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--border-focus);
 }
 
 /* The guest. A name or an address is read in full, so it wraps (and breaks inside a word only when it does not fit) instead of being cut. */
@@ -66,6 +82,12 @@
   flex-direction: column;
   gap: 2px;
   overflow-wrap: anywhere;
+}
+
+/* A company and a department are short names that stand alone in their cell, so they are balanced: a name that takes two lines does not
+   end on "(EMEA)" alone. */
+.registration-requests__company > span {
+  text-wrap: balance;
 }
 
 .registration-requests__department,
@@ -117,6 +139,47 @@
   border-bottom: 0;
 }
 
+.registration-requests__card--selected {
+  background: var(--primary-tint);
+}
+
+/* A selected row or card is tinted, and the muted grey of the address, the department and the name of the email is under 4.5:1 on that
+   tint (axe, serious). While it is selected they take the secondary grey, which is not. */
+.attendees-table-v2__row--selected .registration-requests__email,
+.attendees-table-v2__row--selected .registration-requests__department,
+.attendees-table-v2__row--selected .registration-requests__mail-kind,
+.attendees-table-v2__row--selected .registration-requests__none,
+.registration-requests__card--selected .registration-requests__email,
+.registration-requests__card--selected .registration-requests__affiliation,
+.registration-requests__card--selected .registration-requests__mail-kind,
+.registration-requests__card--selected .registration-requests__card-label,
+.registration-requests__card--selected .registration-requests__none {
+  color: var(--text-secondary);
+}
+
+/* The checkbox beside the guest, and the lines under the name indented to start under it (the Attendees cards' rhythm). */
+.registration-requests__card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.registration-requests__card-cb {
+  padding-top: 3px;
+}
+
+.registration-requests__card-open {
+  flex: 1;
+  min-width: 0;
+}
+
+.registration-requests__card-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: 1.75rem;
+}
+
 .registration-requests__card-facts,
 .registration-requests__card-mail {
   display: flex;
@@ -147,4 +210,41 @@
 /* PaginationFooter assumes a padded card body; this card has none, so the table can reach its edges. */
 .registration-requests__footer {
   padding: 0 var(--space-4) var(--space-4);
+}
+
+/* The line under the toolbar: the shortcut to the queue on the left, and deleting what a filter selects on the right. They share the
+   line while they fit and the second goes under the first on a phone. */
+.registration-requests__queue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The toggle's own bottom margin is for standing alone above other content. */
+.registration-requests__queue .seg-control {
+  margin-bottom: 0;
+}
+
+/* Deleting is the one thing on the line that cannot be undone. It is not the work of the queue, so it stays quiet until it is pointed at
+   or reached with the keyboard, and then says what it is in the colour of an error. */
+.registration-requests__delete-matching {
+  color: var(--text-secondary);
+}
+
+.registration-requests__delete-matching:hover:not(:disabled, [aria-disabled="true"]),
+.registration-requests__delete-matching:focus-visible {
+  color: var(--status-error);
+  background: var(--status-error-tint);
+}
+
+/* What a confirmation adds under its message: the seats an acceptance takes, the requests it leaves out, what a checkbox does. */
+.registration-requests__dialog-note {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-secondary);
 }

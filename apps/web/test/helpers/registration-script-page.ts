@@ -1,7 +1,7 @@
 import { JSDOM } from "jsdom";
 import { vi } from "vitest";
 import { renderRegistrationFormPage } from "../../src/registration/form-page.js";
-import type { FormQuestion } from "../../src/registration/form-model.js";
+import type { FormQuestion, RegistrationFormModel } from "../../src/registration/form-model.js";
 import { REGISTRATION_FORM_SCRIPT } from "../../src/registration/form-script.js";
 import { formModel, type Dom } from "./registration-form-fixtures.js";
 
@@ -24,13 +24,14 @@ function stubFetch() {
  * The form page of `questions` (the fixed fields and one consent come with the fixture) in a window of its own, with
  * its real script run, a fetch that records, and a fake Turnstile. `edit` can change the page's HTML first, to build a
  * page the server would not write (a condition that names no question, say). `before` runs on the document before the
- * script does, the way a browser restores what a guest had ticked.
+ * script does, the way a browser restores what a guest had ticked. `model` changes the form's model, to ask for the password
+ * of the event, say.
  */
 export function bootPage(
   questions: readonly FormQuestion[],
-  options: { edit?: (html: string) => string; before?: (doc: Dom) => void } = {},
+  options: { edit?: (html: string) => string; before?: (doc: Dom) => void; model?: Partial<RegistrationFormModel> } = {},
 ) {
-  const html = renderRegistrationFormPage(formModel({ questions: [...questions] }), { nonce: NONCE });
+  const html = renderRegistrationFormPage(formModel({ questions: [...questions], ...options.model }), { nonce: NONCE });
   const dom = new JSDOM(options.edit ? options.edit(html) : html, { runScripts: "outside-only", pretendToBeVisual: true, url: PAGE_URL });
   const win = dom.window;
   const fetchMock = stubFetch();

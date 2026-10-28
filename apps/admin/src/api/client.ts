@@ -96,9 +96,15 @@ import type {
   LegalDocumentsListResponse,
   LegalDocumentWithContentDto,
   SaveLegalDocumentBody,
+  AcceptRegistrationsDto,
+  DeleteRegistrationsByFilterBody,
+  DeleteRegistrationsDto,
   RegistrationCountsDto,
+  RegistrationDetailDto,
   RegistrationListDto,
   RegistrationListParams,
+  RejectRegistrationsDto,
+  RetryRegistrationMailsDto,
   NotificationSettingsResponse,
   SaveNotificationSettingsBody,
   NotificationSettingsTestResponse,
@@ -196,11 +202,17 @@ export type ZodFlattenedDetails = {
   fieldErrors?: Record<string, unknown>;
 };
 
+/** What a 409 `not_enough_seats` says: the seats that are free and the seats the guests need (a companion takes one too). People are not seats. */
+export type NotEnoughSeatsMeta = {
+  free: number;
+  needed: number;
+};
+
 /** Thrown when an admin API request fails; may include structured `event_full` metadata on 409,
  * a `field` slug on 400s where the server identified which field caused the error (see
- * docs/dev/error-and-notice-copy.md rule 2), or `details` (a Zod `.flatten()` payload) on some
+ * docs/dev/error-and-notice-copy.md rule 2), `details` (a Zod `.flatten()` payload) on some
  * 400s carrying per-field validation reasons that would otherwise be computed server-side and
- * then discarded. */
+ * then discarded, or the free and needed `seats` of a 409 `not_enough_seats`. */
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -209,6 +221,7 @@ export class ApiError extends Error {
     public readonly eventFull?: EventFullMeta,
     public readonly field?: string,
     public readonly details?: ZodFlattenedDetails,
+    public readonly seats?: NotEnoughSeatsMeta,
   ) {
     super(message);
     this.name = "ApiError";
@@ -225,6 +238,8 @@ type ApiErrorBody = {
   current?: number;
   incoming?: number;
   projected?: number;
+  free?: unknown;
+  needed?: unknown;
 };
 
 /** Coerce an API error JSON field to a trimmed string when present. */
@@ -257,6 +272,19 @@ function eventFullFromBody(body: ApiErrorBody): EventFullMeta | undefined {
   };
 }
 
+/** A whole number of seats from an API error body field; anything else (missing, negative, fractional, text) is not one. */
+function seatCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+/** Parse the seats of a 409 `not_enough_seats` body: both numbers, or none (a half answer says nothing worth showing). */
+function seatsFromBody(body: ApiErrorBody): NotEnoughSeatsMeta | undefined {
+  if (apiErrorCodeFromBody(body) !== "not_enough_seats") return undefined;
+  const free = seatCount(body.free);
+  const needed = seatCount(body.needed);
+  return free === undefined || needed === undefined ? undefined : { free, needed };
+}
+
 async function parseJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;
@@ -264,6 +292,7 @@ async function parseJson<T>(res: Response): Promise<T> {
     let eventFull: EventFullMeta | undefined;
     let field: string | undefined;
     let details: ZodFlattenedDetails | undefined;
+    let seats: NotEnoughSeatsMeta | undefined;
     try {
       const body = (await res.json()) as ApiErrorBody;
       message = messageFromApiErrorBody(body) ?? message;
@@ -271,10 +300,11 @@ async function parseJson<T>(res: Response): Promise<T> {
       eventFull = eventFullFromBody(body);
       field = stringField(body.field);
       details = body.details && typeof body.details === "object" ? body.details : undefined;
+      seats = seatsFromBody(body);
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, message, code, eventFull, field, details);
+    throw new ApiError(res.status, message, code, eventFull, field, details, seats);
   }
   return (await res.json()) as T;
 }
@@ -2594,6 +2624,53 @@ export async function fetchRegistrations(
 export async function fetchRegistrationCounts(eventId: string, signal?: AbortSignal): Promise<RegistrationCountsDto> {
   const res = await fetch(registrationsUrl(eventId, "/counts"), { credentials: "same-origin", signal });
   return parseJson<RegistrationCountsDto>(res);
+}
+
+/** One request in full: its answers, consents, companions and the history of the emails it was sent. 404 for a request of another event or one that is gone. */
+export async function fetchRegistration(eventId: string, id: string, signal?: AbortSignal): Promise<RegistrationDetailDto> {
+  const res = await fetch(registrationsUrl(eventId, `/${encodeURIComponent(id)}`), { credentials: "same-origin", signal });
+  return parseJson<RegistrationDetailDto>(res);
+}
+
+/**
+ * Accepts requests (up to 500): each becomes an attendee with a ticket. One answer per id. 409 `not_enough_seats` (with `seats`: the
+ * free seats and the seats the guests need) when they do not all fit, and then nobody is accepted. 403 `event_archived` on an archived event.
+ */
+export async function acceptRegistrations(eventId: string, ids: string[]): Promise<AcceptRegistrationsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/accept"), jsonPostInit({ ids }));
+  return parseJson<AcceptRegistrationsDto>(res);
+}
+
+/** Rejects requests (up to 500). The guests are emailed only with `notify`. 403 `event_archived` on an archived event. */
+export async function rejectRegistrations(eventId: string, ids: string[], notify: boolean): Promise<RejectRegistrationsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/reject"), jsonPostInit({ ids, notify }));
+  return parseJson<RejectRegistrationsDto>(res);
+}
+
+/** Sends again the last email of each request whose email failed for good (up to 500). 403 `event_archived` on an archived event. */
+export async function retryRegistrationMails(eventId: string, ids: string[]): Promise<RetryRegistrationMailsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/retry-mail"), jsonPostInit({ ids }));
+  return parseJson<RetryRegistrationMailsDto>(res);
+}
+
+/** Deletes requests (up to 500) in any state. An accepted one erases its attendee too. An archived event can be cleared. Irreversible. */
+export async function deleteRegistrations(eventId: string, ids: string[]): Promise<DeleteRegistrationsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/delete"), jsonPostInit({ ids }));
+  return parseJson<DeleteRegistrationsDto>(res);
+}
+
+/**
+ * Deletes everything a filter of the list selects, when it is still exactly what the list showed: 409 `registration_count_changed` or
+ * `registration_selection_changed` (nothing is deleted) when it is not, 422 `too_many_registrations` or `too_many_accepted` above the caps.
+ * The filter is the list's own (at least one of state, age and search), with its `total` and its `selection_digest`. Irreversible.
+ */
+export async function deleteRegistrationsByFilter(eventId: string, body: DeleteRegistrationsByFilterBody): Promise<DeleteRegistrationsDto> {
+  // A part of the filter that is not set is left out of the JSON, as `undefined` always is.
+  const res = await fetch(
+    registrationsUrl(eventId, "/delete-by-filter"),
+    jsonPostInit({ status: body.status, older_than: body.olderThan, q: body.q, expected: body.expected, selection_digest: body.selectionDigest }),
+  );
+  return parseJson<DeleteRegistrationsDto>(res);
 }
 
 /** Probe weather provider from a draft (no persist). */

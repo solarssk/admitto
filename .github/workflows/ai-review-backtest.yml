@@ -112,7 +112,7 @@ jobs:
 
       - name: Review the diff
         id: review
-        uses: anthropics/claude-code-action@374f254f5efaf968abfe15d399fd90972e8138b9  # v1.0.251
+        uses: anthropics/claude-code-action@16f9f71ab9c490faf367f94dd294897edc25be33  # v1.0.261
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ github.token }}

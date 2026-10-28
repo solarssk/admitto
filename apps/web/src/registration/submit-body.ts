@@ -47,11 +47,13 @@ const BODY_KEYS: Readonly<Record<keyof RegistrationSubmitBody, true>> = {
   consents: true,
   companions: true,
   challenge: true,
+  password: true,
 };
 
 /** The body as it came, key by key. Nothing is judged yet: a value of the wrong type is the problem of its field.
  * Only `custom_data` has a shape already, because `readEnvelope` refuses a body whose `custom_data` is anything but an
- * object or nothing. */
+ * object or nothing. `password` is read for every event and judged for only one whose way in is the password
+ * (./submit-route.ts): the field checks below never look at it. */
 export type SubmissionEnvelope = {
   readonly [K in Exclude<keyof RegistrationSubmitBody, "custom_data">]: unknown;
 } & { readonly custom_data: Record<string, unknown> | null | undefined };
@@ -88,6 +90,7 @@ export function readEnvelope(raw: unknown): SubmissionEnvelope | null {
     consents: ownValue(raw, "consents"),
     companions: ownValue(raw, "companions"),
     challenge: ownValue(raw, "challenge"),
+    password: ownValue(raw, "password"),
   };
 }
 

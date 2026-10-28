@@ -7,6 +7,10 @@
  * an event that has registration off, is archived, offers another way in, or is not ready. The
  * exception is an event that is over: its form says "Registration is closed".
  *
+ * Two ways in are built: the public link and the shared password of the event (D-C1, D-C3). An event whose way in is the
+ * password is open only while it has a password: without one it is as good as off, the same 404. The hash of the
+ * password is read with the event for the submit route and stays out of the model of the page.
+ *
  * Checks run from the cheapest, and the ones that can only fail for an event that does not exist or has
  * no registration come first, so a guess at a slug costs one lookup of the event.
  */
@@ -118,6 +122,9 @@ export interface RegistrationFormModel {
   contact: FormContact | null;
   /** The public Turnstile key; the page has no widget without one, and then it is not served. */
   turnstileSiteKey: string;
+  /** Whether the way in is the event's password: the page then asks for it first and keeps the form behind it. Only that:
+   * the hash of the password is never part of what the page is built from. */
+  needsPassword: boolean;
 }
 
 export interface ClosedFormModel {
@@ -130,13 +137,17 @@ export type RegistrationPageState =
   | { kind: "closed"; page: ClosedFormModel }
   | { kind: "open"; form: RegistrationFormModel };
 
+/** How a guest gets to the form (D-C1). An event whose way in is the password is open only while it has one, so a hash is
+ * part of the type of that way and cannot be missing. */
+export type GuestAccess = { method: "link" } | { method: "password"; passwordHash: string };
+
 /** {@link RegistrationPageState} with what the submit route (`POST /r/:slug`) needs besides the form: the id of the
- * event and the questions as they are stored. The submit route and the page decide from the same read, so a form that
- * is not shown cannot be submitted. */
+ * event, the questions as they are stored and the way in with the hash of the password. The submit route and the page
+ * decide from the same read, so a form that is not shown cannot be submitted. */
 export type ResolvedRegistration =
   | { kind: "not_found" }
   | { kind: "closed"; page: ClosedFormModel }
-  | { kind: "open"; form: RegistrationFormModel; eventId: string; fields: readonly RegistrantFormField[] };
+  | { kind: "open"; form: RegistrationFormModel; eventId: string; fields: readonly RegistrantFormField[]; access: GuestAccess };
 
 const NOT_FOUND: ResolvedRegistration = { kind: "not_found" };
 
@@ -157,6 +168,7 @@ const EVENT_SELECT = {
     select: {
       mode: true,
       access_methods: true,
+      password_hash: true,
       verify_email: true,
       ask_company: true,
       ask_department: true,
@@ -288,6 +300,15 @@ function drawCompanion(fields: readonly RegistrantFormField[], maxCompanions: nu
   return questions ? { max, questions } : null;
 }
 
+/** The way in the event offers: the one method of `access_methods` (one in this release, D-C1) when it is a way built
+ * here, with what it needs. Null for any other, and for the password when the event has none: as good as off. */
+function accessOf(settings: SettingsRow): GuestAccess | null {
+  if (settings.access_methods.length !== 1) return null;
+  const method = settings.access_methods[0];
+  if (method === "link") return { method };
+  return method === "password" && settings.password_hash ? { method, passwordHash: settings.password_hash } : null;
+}
+
 /** The form of an event that is not over, or `not_found` when something it needs is not in place. */
 async function loadOpenForm(
   db: PrismaClient,
@@ -295,6 +316,7 @@ async function loadOpenForm(
   settings: SettingsRow,
   mode: RegistrationFormModel["mode"],
   event: FormEvent,
+  access: GuestAccess,
 ): Promise<ResolvedRegistration> {
   const [availability, keys, legal, fields, contact] = await Promise.all([
     resolveAccessMethodAvailability(db),
@@ -303,14 +325,15 @@ async function loadOpenForm(
     loadRegistrantFormFields(db, row.id),
     loadContact(db, row.id),
   ]);
-  const link = availability.find((method) => method.method === "link");
+  const way = availability.find((entry) => entry.method === access.method);
   const paths = legalPaths(row.slug, legal);
   const questions = drawQuestions(fields, "guest");
-  if (!link?.available || keys.state !== "ready" || !paths || !questions) return NOT_FOUND;
+  if (!way?.available || keys.state !== "ready" || !paths || !questions) return NOT_FOUND;
   return {
     kind: "open",
     eventId: row.id,
     fields,
+    access,
     form: {
       event,
       mode,
@@ -324,6 +347,7 @@ async function loadOpenForm(
       consents: paths.consents,
       contact,
       turnstileSiteKey: keys.siteKey,
+      needsPassword: access.method === "password",
     },
   };
 }
@@ -361,10 +385,10 @@ function isOver(row: EventRow, now: Date): boolean {
 /**
  * The state of the registration page of the event named by `slug` at `now`.
  *
- * - Not an event, archived, registration off, or an access method other than the public link (the
- *   password and the company sign-in come with their own PRs): `not_found`.
+ * - Not an event, archived, registration off, an access method other than the public link and the password (the
+ *   company sign-in comes with its own PR), or the password with none set: `not_found`.
  * - Over (see `eventEndsAtUtc`): `closed`, as long as it had registration on.
- * - Otherwise `open`, provided the link is available (the Turnstile keys are saved and the system
+ * - Otherwise `open`, provided the event's way in is available (the Turnstile keys are saved and the system
  *   administrator allowed it), every text the event's registration needs is published and every
  *   required question can be drawn; else `not_found`, as if registration were off.
  */
@@ -372,12 +396,14 @@ export async function resolveRegistration(db: PrismaClient, slug: string, now: D
   const live = await findLiveEvent(db, slug);
   if (!live) return NOT_FOUND;
   const { row, settings, mode } = live;
-  // `access_methods` holds exactly one method in this release (D-C1); only the link is built here.
-  if (settings.access_methods.length !== 1 || settings.access_methods[0] !== "link") return NOT_FOUND;
+  // `access_methods` holds exactly one method in this release (D-C1); the link and the password are built here. An event
+  // whose way in is the password and that has none is as good as off, over or not.
+  const access = accessOf(settings);
+  if (!access) return NOT_FOUND;
 
   const event = toFormEvent(row);
   if (isOver(row, now)) return { kind: "closed", page: { event, contact: await loadContact(db, row.id) } };
-  return loadOpenForm(db, row, settings, mode, event);
+  return loadOpenForm(db, row, settings, mode, event, access);
 }
 
 /** What the pages of the link that confirms an address (`/r/:slug/confirm/:token`) need to know about the event. */

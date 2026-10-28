@@ -116,6 +116,9 @@ export const REGISTRATION_PAGE_CSS = `
 .reg-center p b { color: var(--text-primary); font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
 .reg-center form { display: grid; width: 100%; justify-items: center; }
 .reg-center .at-btn { width: 100%; max-width: 320px; }
+/* The field of the password screen: as wide as the button under it, and set from the left whatever the screen centres. Its sentence for a wrong password takes two lines at that width, so the slot under it keeps two, and the button does not move when the sentence comes. */
+.reg-center .at-field { width: 100%; max-width: 320px; text-align: left; }
+.reg-center .reg-slot { min-height: 2rem; }
 .reg-facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-sunken); font-size: var(--fs-sm); color: var(--text-secondary); }
 .reg-facts span { display: inline-flex; align-items: center; gap: 6px; }
 .reg-facts .ic { color: var(--text-muted); font-size: 15px; }

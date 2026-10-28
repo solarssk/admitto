@@ -33,6 +33,7 @@ export function formModel(overrides: Partial<RegistrationFormModel> = {}): Regis
     consents: [{ key: "photos", title: "Photos in the newsletter", path: "/legal/northwind-summit/consent-photos" }],
     contact: { name: "Anna Kowalska", email: "events@northwind.example" },
     turnstileSiteKey: "1x00000000000000000000AA",
+    needsPassword: false,
     ...overrides,
   };
 }

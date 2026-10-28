@@ -1,4 +1,5 @@
-import { Badge, Button, EmptyState, Skeleton, StatusBadge } from "@admitto/ui";
+import type { ReactNode } from "react";
+import { Badge, Button, Checkbox, EmptyState, Skeleton, StatusBadge } from "@admitto/ui";
 import type { RegistrationListItemDto, RegistrationMailBriefDto } from "../api/types.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 import { SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
@@ -8,6 +9,7 @@ import {
   requestMailKind,
   requestMailTone,
 } from "./registrationRequests.js";
+import type { RequestSelection } from "./useRequestSelection.js";
 import "./registration-requests.css";
 
 /** Rows a placeholder draws when it does not know how many the list will have. Cards are taller, so fewer of them fill a screen, and the note that says the wait is long, under them, stays in view on a phone. */
@@ -33,7 +35,7 @@ function RequestMail({ mail }: Readonly<{ mail: RegistrationMailBriefDto | null 
 }
 
 /** An address that may wrap after its "@" and its dots, so a long one breaks where it reads well and not in the middle of "com". */
-function BreakableAddress({ address }: Readonly<{ address: string }>) {
+export function BreakableAddress({ address }: Readonly<{ address: string }>) {
   const parts = address.split(/(?<=[@.])/u);
   let offset = 0;
   const nodes = parts.flatMap((part, index) => {
@@ -65,6 +67,27 @@ function RequestGuest({ row }: Readonly<{ row: RegistrationListItemDto }>) {
   );
 }
 
+/** What a click on a request does: opens it in full. The button is the one way to it with a keyboard, and the element the focus comes back to. */
+export type OpenRequest = (row: RegistrationListItemDto, opener: HTMLElement) => void;
+
+/** The guest as the button that opens the request. `data-request-open` is how the tab finds the row the keyboard goes to when a request leaves the page. */
+function OpenRequestButton({ row, onOpen, className }: Readonly<{ row: RegistrationListItemDto; onOpen: OpenRequest; className?: string }>) {
+  return (
+    <button
+      type="button"
+      className={["attendees-row-btn", "registration-requests__open", className].filter(Boolean).join(" ")}
+      data-request-open={row.id}
+      aria-haspopup="dialog"
+      onClick={(event) => onOpen(row, event.currentTarget)}
+    >
+      <RequestGuest row={row} />
+    </button>
+  );
+}
+
+/** What a screen reader says of the checkbox of a request: the guest's name. */
+const selectLabel = (row: RegistrationListItemDto): string => `Select ${requestGuestName(row)}`;
+
 function RequestCompany({ row }: Readonly<{ row: RegistrationListItemDto }>) {
   return (
     <div className="registration-requests__company">
@@ -83,11 +106,21 @@ function RequestStatus({ status }: Readonly<{ status: RegistrationListItemDto["s
   return <StatusBadge status={`registration_${status}`} />;
 }
 
-function RequestTableRow({ row }: Readonly<{ row: RegistrationListItemDto }>) {
+interface RowProps {
+  row: RegistrationListItemDto;
+  selected: boolean;
+  onToggle: () => void;
+  onOpen: OpenRequest;
+}
+
+function RequestTableRow({ row, selected, onToggle, onOpen }: Readonly<RowProps>) {
   return (
-    <tr>
+    <tr className={selected ? "attendees-table-v2__row attendees-table-v2__row--selected" : "attendees-table-v2__row"}>
       <td>
-        <RequestGuest row={row} />
+        <Checkbox checked={selected} onChange={onToggle} aria-label={selectLabel(row)} />
+      </td>
+      <td>
+        <OpenRequestButton row={row} onOpen={onOpen} />
       </td>
       <td>
         <RequestCompany row={row} />
@@ -106,19 +139,26 @@ function RequestTableRow({ row }: Readonly<{ row: RegistrationListItemDto }>) {
 }
 
 /** A request as a card, for a screen too narrow for the table. */
-function RequestCard({ row }: Readonly<{ row: RegistrationListItemDto }>) {
+function RequestCard({ row, selected, onToggle, onOpen }: Readonly<RowProps>) {
   const affiliation = [row.company, row.department].filter(Boolean).join(" · ");
   return (
-    <li className="registration-requests__card">
-      <RequestGuest row={row} />
-      {affiliation ? <span className="registration-requests__affiliation">{affiliation}</span> : null}
-      <div className="registration-requests__card-facts">
-        <RequestStatus status={row.status} />
-        <RequestTime iso={row.created_at} />
+    <li className={selected ? "registration-requests__card registration-requests__card--selected" : "registration-requests__card"}>
+      <div className="registration-requests__card-top">
+        <span className="registration-requests__card-cb">
+          <Checkbox checked={selected} onChange={onToggle} aria-label={selectLabel(row)} />
+        </span>
+        <OpenRequestButton row={row} onOpen={onOpen} className="registration-requests__card-open" />
       </div>
-      <div className="registration-requests__card-mail">
-        <span className="registration-requests__card-label">Last email</span>
-        <RequestMail mail={row.last_mail} />
+      <div className="registration-requests__card-detail">
+        {affiliation ? <span className="registration-requests__affiliation">{affiliation}</span> : null}
+        <div className="registration-requests__card-facts">
+          <RequestStatus status={row.status} />
+          <RequestTime iso={row.created_at} />
+        </div>
+        <div className="registration-requests__card-mail">
+          <span className="registration-requests__card-label">Last email</span>
+          <RequestMail mail={row.last_mail} />
+        </div>
       </div>
     </li>
   );
@@ -126,10 +166,13 @@ function RequestCard({ row }: Readonly<{ row: RegistrationListItemDto }>) {
 
 const COLUMNS = ["Guest", "Company", "Status", "Last email", "Registered"] as const;
 
-/** The heading row of the table, which its placeholder draws too. */
-function ColumnHeads() {
+/** The heading row of the table, which its placeholder draws too: the first column holds the checkbox that selects the page. */
+function ColumnHeads({ selectAll }: Readonly<{ selectAll?: ReactNode }>) {
   return (
     <tr>
+      <th scope="col" className="attendees-table-v2__checkbox-col">
+        {selectAll}
+      </th>
       {COLUMNS.map((column) => (
         <th key={column} scope="col">
           {column}
@@ -139,29 +182,44 @@ function ColumnHeads() {
   );
 }
 
-/** The requests of one page: a table on a wide screen, cards on a narrow one. */
+/** The requests of one page: a table on a wide screen, cards on a narrow one, each with a checkbox for the bulk bar and a button that opens it. */
 export function RequestsRows({
   items,
   isDesktop,
-}: Readonly<{ items: readonly RegistrationListItemDto[]; isDesktop: boolean }>) {
+  selection,
+  onOpen,
+}: Readonly<{ items: readonly RegistrationListItemDto[]; isDesktop: boolean; selection: RequestSelection; onOpen: OpenRequest }>) {
+  const rowProps = (row: RegistrationListItemDto): RowProps => ({
+    row,
+    selected: selection.isSelected(row.id),
+    onToggle: () => selection.toggle(row.id),
+    onOpen,
+  });
   if (!isDesktop) {
     return (
-      <ul className="registration-requests__cards" aria-label="Requests">
-        {items.map((row) => (
-          <RequestCard key={row.id} row={row} />
-        ))}
-      </ul>
+      <div className="registration-requests__cards-wrap">
+        <div className="attendees-cards__selectall">
+          <Checkbox label="Select all" checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <ul className="registration-requests__cards" aria-label="Requests">
+          {items.map((row) => (
+            <RequestCard key={row.id} {...rowProps(row)} />
+          ))}
+        </ul>
+      </div>
     );
   }
   return (
     <div className="registration-requests__table-wrap">
       <table className="table registration-requests__table" aria-label="Requests">
         <thead>
-          <ColumnHeads />
+          <ColumnHeads
+            selectAll={<Checkbox checked={selection.allSelected} onChange={selection.toggleAll} aria-label="Select all" />}
+          />
         </thead>
         <tbody>
           {items.map((row) => (
-            <RequestTableRow key={row.id} row={row} />
+            <RequestTableRow key={row.id} {...rowProps(row)} />
           ))}
         </tbody>
       </table>
@@ -169,18 +227,37 @@ export function RequestsRows({
   );
 }
 
-/** What an empty page says: nothing has been sent yet, or the search and filters select nothing (with the way out). */
+/**
+ * What an empty page says: nothing has been sent yet, the queue is clear (the only filter is "waiting for a decision": the work
+ * is done), or the search and filters select nothing (with the way out).
+ */
+export type RequestsEmptyKind = "none" | "queue" | "filtered";
+
 export function RequestsEmpty({
-  filtered,
+  kind,
   onClearFilters,
   onClearFocus,
 }: Readonly<{
-  filtered: boolean;
+  kind: RequestsEmptyKind;
   onClearFilters: () => void;
   /** The button that clears the filters has the focus: it will be gone when the list comes back, and the focus has to be handed on. */
   onClearFocus: () => void;
 }>) {
-  if (filtered) {
+  if (kind === "queue") {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-circle-check" aria-hidden="true" />}
+        title="Nothing is waiting for a decision"
+        description="Requests that need a decision are listed here."
+        action={
+          <Button type="button" variant="secondary" onFocus={onClearFocus} onClick={onClearFilters}>
+            Show all requests
+          </Button>
+        }
+      />
+    );
+  }
+  if (kind === "filtered") {
     return (
       <EmptyState
         icon={<i className="ti ti-search-off" aria-hidden="true" />}
@@ -230,7 +307,7 @@ export function RequestsSkeleton({
             <tbody>
               {Array.from({ length: SKELETON_ROWS }, (_, row) => (
                 <tr key={row}>
-                  <td colSpan={COLUMNS.length}>
+                  <td colSpan={COLUMNS.length + 1}>
                     <Skeleton variant="rect" height={TABLE_ROW_HEIGHT - TABLE_ROW_CHROME} />
                   </td>
                 </tr>
@@ -239,12 +316,17 @@ export function RequestsSkeleton({
           </table>
         </div>
       ) : (
-        <div className="registration-requests__cards" aria-hidden="true">
-          {Array.from({ length: SKELETON_CARDS }, (_, row) => (
-            <div className="registration-requests__card" key={row}>
-              <Skeleton variant="rect" height={CARD_HEIGHT - CARD_CHROME} />
-            </div>
-          ))}
+        <div className="registration-requests__cards-wrap" aria-hidden="true">
+          <div className="attendees-cards__selectall">
+            <Skeleton variant="rect" width={88} height={16} />
+          </div>
+          <div className="registration-requests__cards">
+            {Array.from({ length: SKELETON_CARDS }, (_, row) => (
+              <div className="registration-requests__card" key={row}>
+                <Skeleton variant="rect" height={CARD_HEIGHT - CARD_CHROME} />
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {status}
