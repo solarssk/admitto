@@ -262,6 +262,7 @@ import type {
   AttendeeStatus,
   EmailDeliveryStatus,
   LegalDocumentKind,
+  RegistrationAccessMethod,
   RegistrationMailTemplateName,
   RegistrationMode,
   RegistrationStatus,
@@ -1433,6 +1434,30 @@ export interface RegistrationTurnstileDto {
 export interface SaveRegistrationTurnstileBody {
   site_key?: string | null;
   secret_key?: string | null;
+}
+
+/** What a way in waits for when it is on but cannot be used: the Turnstile keys (`link`, `password`) or an enabled sign-in
+ * provider (`sso`). */
+export type RegistrationAccessMethodBlocker = "bot_protection" | "identity_provider";
+
+/** One way in to the guest registration form, as the superadmin has set it. `enabled` is the switch; `available` is whether
+ * a guest can use it right now (`enabled` and not `blocked_by` anything). */
+export interface RegistrationAccessMethodDto {
+  method: RegistrationAccessMethod;
+  enabled: boolean;
+  available: boolean;
+  blocked_by: RegistrationAccessMethodBlocker | null;
+}
+
+/** GET and PUT /api/admin/registration/access-methods: every way in, in the server's order (`link`, `password`, `sso`),
+ * whether or not it is enabled. Superadmin only. */
+export interface RegistrationAccessMethodsDto {
+  methods: RegistrationAccessMethodDto[];
+}
+
+/** PUT: the whole list of enabled ways in. A way left out is turned off, `[]` turns all off. */
+export interface SaveRegistrationAccessMethodsBody {
+  methods: RegistrationAccessMethod[];
 }
 
 /** One legal text of an event (`/api/admin/events/:eventId/legal-documents`): the privacy notice, the event

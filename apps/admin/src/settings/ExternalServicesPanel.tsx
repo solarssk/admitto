@@ -17,8 +17,10 @@ import {
 } from "@admitto/ui";
 import {
   fetchExternalServices,
+  fetchRegistrationAccessMethods,
   fetchRegistrationTurnstile,
   saveMapsSettings,
+  saveRegistrationAccessMethods,
   saveRegistrationTurnstile,
   saveWeatherSettings,
   testWeatherConnection,
@@ -26,6 +28,7 @@ import {
 } from "../api/client.js";
 import type {
   ExternalServicesResponse,
+  RegistrationAccessMethodsDto,
   RegistrationTurnstileDto,
   WeatherProviderId,
 } from "../api/types.js";
@@ -34,7 +37,14 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { NO_AUTOFILL_PROPS, SettingsFooter } from "./mailTransportFormParts.js";
 import { PanelLoadError } from "./PanelLoadError.js";
+import { RegistrationAccessMethodsCard } from "./RegistrationAccessMethodsCard.js";
 import { RegistrationTurnstileCard } from "./RegistrationTurnstileCard.js";
+import {
+  accessMethodsDirty,
+  accessMethodsDraftFrom,
+  buildAccessMethodsSaveBody,
+  type AccessMethodsDraft,
+} from "./registrationAccessMethods.js";
 import {
   buildTurnstileSaveBody,
   turnstileDirty,
@@ -44,11 +54,12 @@ import {
 } from "./registrationTurnstile.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 
-/** The cards of the panel, for its placeholder: Weather, Maps and Guest registration, each with an intro and fields. */
+/** The cards of the panel, for its placeholder: Weather, Maps, Guest registration and Ways in, each with an intro and fields or rows. */
 const EXTERNAL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "weather", title: "Weather", intro: true, fields: 1, rows: 1, rowHeight: 24 },
   { id: "maps", title: "Maps", intro: true, fields: 4, controlHeight: 62 },
   { id: "registration", title: "Guest registration", intro: true, fields: 2, columns: 2, controlHeight: 82, rows: 1, rowHeight: 36 },
+  { id: "ways-in", title: "Ways in", intro: 2, rows: 2, rowHeight: 58 },
 ];
 
 const WEATHER_CARD_HINT =
@@ -174,14 +185,19 @@ function mapsDirty(draft: MapsDraft, saved: MapsDraft): boolean {
   );
 }
 
-/** True when any of the three cards differs from what was last saved or loaded. */
-function externalServicesDirty(
-  drafts: { weather: WeatherDraft | null; maps: MapsDraft | null; turnstile: TurnstileDraft | null },
-  saved: { weather: WeatherDraft | null; maps: MapsDraft | null; turnstile: TurnstileDraft | null },
-): boolean {
+interface ExternalServicesDrafts {
+  weather: WeatherDraft | null;
+  maps: MapsDraft | null;
+  turnstile: TurnstileDraft | null;
+  access: AccessMethodsDraft | null;
+}
+
+/** True when any of the four cards differs from what was last saved or loaded. */
+function externalServicesDirty(drafts: ExternalServicesDrafts, saved: ExternalServicesDrafts): boolean {
   if (!drafts.weather || !saved.weather || !drafts.maps || !saved.maps) return false;
   if (weatherDirty(drafts.weather, saved.weather) || mapsDirty(drafts.maps, saved.maps)) return true;
-  return drafts.turnstile !== null && saved.turnstile !== null && turnstileDirty(drafts.turnstile, saved.turnstile);
+  if (drafts.turnstile !== null && saved.turnstile !== null && turnstileDirty(drafts.turnstile, saved.turnstile)) return true;
+  return drafts.access !== null && saved.access !== null && accessMethodsDirty(drafts.access, saved.access);
 }
 
 function apiKeyPlaceholder(required: boolean, configured: boolean): string {
@@ -263,6 +279,7 @@ function buildWeatherSaveBody(draft: WeatherDraft): {
 type SettledSave = PromiseSettledResult<ExternalServicesResponse["weather"] | null>;
 type SettledMapsSave = PromiseSettledResult<ExternalServicesResponse["maps"] | null>;
 type SettledTurnstileSave = PromiseSettledResult<RegistrationTurnstileDto | null>;
+type SettledAccessSave = PromiseSettledResult<RegistrationAccessMethodsDto | null>;
 
 function toastExternalServicesSaveResult(
   addToast: (message: string, variant: "success" | "error" | "info") => void,
@@ -270,9 +287,11 @@ function toastExternalServicesSaveResult(
     saveWeather: boolean;
     saveMaps: boolean;
     saveTurnstile: boolean;
+    saveAccess: boolean;
     weatherResult: SettledSave;
     mapsResult: SettledMapsSave;
     turnstileResult: SettledTurnstileSave;
+    accessResult: SettledAccessSave;
   },
 ): void {
   const failures: string[] = [];
@@ -290,6 +309,9 @@ function toastExternalServicesSaveResult(
     failures.push(
       operatorApiErrorMessage(opts.turnstileResult.reason, "Failed to save guest registration settings."),
     );
+  }
+  if (opts.saveAccess && opts.accessResult.status === "rejected") {
+    failures.push(operatorApiErrorMessage(opts.accessResult.reason, "Failed to save the registration ways in."));
   }
   if (failures.length === 0) {
     addToast("External services saved.", "success");
@@ -325,29 +347,37 @@ export function ExternalServicesPanel() {
   const [turnstile, setTurnstile] = useState<RegistrationTurnstileDto | null>(null);
   const [turnstileDraft, setTurnstileDraft] = useState<TurnstileDraft | null>(null);
   const turnstileSavedRef = useRef<TurnstileDraft | null>(null);
+  const [accessMethods, setAccessMethods] = useState<RegistrationAccessMethodsDto | null>(null);
+  const [accessDraft, setAccessDraft] = useState<AccessMethodsDraft | null>(null);
+  const accessSavedRef = useRef<AccessMethodsDraft | null>(null);
   const [weatherTesting, setWeatherTesting] = useState(false);
   const [mapsTesting, setMapsTesting] = useState(false);
 
   const panel = usePanelLoad({
     fetch: async (signal) => {
-      const [services, registration] = await Promise.all([
+      const [services, registration, ways] = await Promise.all([
         fetchExternalServices(signal),
         fetchRegistrationTurnstile(signal),
+        fetchRegistrationAccessMethods(signal),
       ]);
-      return { services, registration };
+      return { services, registration, ways };
     },
-    apply: ({ services, registration }) => {
+    apply: ({ services, registration, ways }) => {
       setData(services);
       const w = weatherDraftFrom(services.weather);
       const m = mapsDraftFrom(services.maps);
       const t = turnstileDraftFrom(registration);
+      const a = accessMethodsDraftFrom(ways);
       setWeatherDraft(w);
       setMapsDraft(m);
       setTurnstile(registration);
       setTurnstileDraft(t);
+      setAccessMethods(ways);
+      setAccessDraft(a);
       weatherSavedRef.current = w;
       mapsSavedRef.current = m;
       turnstileSavedRef.current = t;
+      accessSavedRef.current = a;
       setValidationErrors([]);
     },
     fallback: "Could not load external services.",
@@ -356,14 +386,15 @@ export function ExternalServicesPanel() {
   const hasUnsavedChanges = useMemo(
     () =>
       externalServicesDirty(
-        { weather: weatherDraft, maps: mapsDraft, turnstile: turnstileDraft },
+        { weather: weatherDraft, maps: mapsDraft, turnstile: turnstileDraft, access: accessDraft },
         {
           weather: weatherSavedRef.current,
           maps: mapsSavedRef.current,
           turnstile: turnstileSavedRef.current,
+          access: accessSavedRef.current,
         },
       ),
-    [weatherDraft, mapsDraft, turnstileDraft],
+    [weatherDraft, mapsDraft, turnstileDraft, accessDraft],
   );
 
   const showOpenMeteoFields = weatherDraft?.provider === "openmeteo";
@@ -408,17 +439,20 @@ export function ExternalServicesPanel() {
     );
   }
 
-  if (!data || !weatherDraft || !mapsDraft || !turnstile || !turnstileDraft) return null;
+  if (!data || !weatherDraft || !mapsDraft || !turnstile || !turnstileDraft || !accessMethods || !accessDraft) return null;
 
   // Narrowed locals: nested handlers do not keep the null-check narrowing on state.
   const weather = weatherDraft;
   const maps = mapsDraft;
   const registration = turnstileDraft;
+  const access = accessDraft;
+  const accessAnswer = accessMethods;
 
   function handleReset() {
     setWeatherDraft({ ...weatherSavedRef.current! });
     setMapsDraft({ ...mapsSavedRef.current! });
     setTurnstileDraft({ ...turnstileSavedRef.current! });
+    setAccessDraft({ ...accessSavedRef.current! });
     setValidationErrors([]);
   }
 
@@ -480,6 +514,8 @@ export function ExternalServicesPanel() {
     const saveMaps = mapsDirty(maps, savedMaps);
     const turnstileBody = buildTurnstileSaveBody(registration, turnstileSavedRef.current!);
     const saveTurnstile = turnstileBody !== null;
+    const accessBody = buildAccessMethodsSaveBody(access, accessSavedRef.current!, accessAnswer);
+    const saveAccess = accessBody !== null;
     const errors = [
       ...collectSaveValidationErrors({
         apiKeyMissing,
@@ -508,10 +544,11 @@ export function ExternalServicesPanel() {
         geocodingBaseUrl: maps.geocodingBaseUrl.trim(),
       };
 
-      const [weatherResult, mapsResult, turnstileResult] = await Promise.allSettled([
+      const [weatherResult, mapsResult, turnstileResult, accessResult] = await Promise.allSettled([
         saveWeather ? saveWeatherSettings(weatherBody) : Promise.resolve(null),
         saveMaps ? saveMapsSettings(mapsBody) : Promise.resolve(null),
         saveTurnstile ? saveRegistrationTurnstile(turnstileBody) : Promise.resolve(null),
+        saveAccess ? saveRegistrationAccessMethods(accessBody) : Promise.resolve(null),
       ]);
 
       if (weatherResult.status === "fulfilled" && weatherResult.value) {
@@ -532,14 +569,22 @@ export function ExternalServicesPanel() {
         setTurnstileDraft(t);
         turnstileSavedRef.current = t;
       }
+      if (accessResult.status === "fulfilled" && accessResult.value) {
+        const a = accessMethodsDraftFrom(accessResult.value);
+        setAccessMethods(accessResult.value);
+        setAccessDraft(a);
+        accessSavedRef.current = a;
+      }
 
       toastExternalServicesSaveResult(addToast, {
         saveWeather,
         saveMaps,
         saveTurnstile,
+        saveAccess,
         weatherResult,
         mapsResult,
         turnstileResult,
+        accessResult,
       });
     } finally {
       setSaving(false);
@@ -818,6 +863,8 @@ export function ExternalServicesPanel() {
       </Card>
 
       <RegistrationTurnstileCard dto={turnstile} draft={registration} onChange={setTurnstileDraft} />
+
+      <RegistrationAccessMethodsCard draft={access} keys={turnstile.status} onChange={setAccessDraft} />
 
       <SettingsFooter
         validationErrors={validationErrors}
