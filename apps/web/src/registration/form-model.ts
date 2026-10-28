@@ -246,8 +246,10 @@ function toQuestion(field: RegistrantFormField, type: FormQuestionType): FormQue
  * asked. The server guarantees that, and the page does not rely on it. A question with a condition that
  * nothing can meet (a question that is not there, or an answer it cannot have, such as an option that was
  * removed) is left out: it is never asked, so it is never required and never closes the form. A required
- * question the page cannot draw closes the form only when a guest could meet its condition and then be stuck. */
-function drawQuestions(fields: readonly RegistrantFormField[]): FormQuestion[] | null {
+ * question the page cannot draw closes the form only when a guest could meet its condition and then be stuck.
+ *
+ * Exported for the readiness of an event (./readiness.ts), which must judge the questions as the page does. */
+export function drawQuestions(fields: readonly RegistrantFormField[]): FormQuestion[] | null {
   const drawable: FormQuestion[] = [];
   const stuck: RegistrantFormField[] = [];
   for (const field of pickRegistrantFormFields(fields)) {
@@ -343,8 +345,12 @@ async function findLiveEvent(
   return { row, settings, mode };
 }
 
-/** Whether the event is over at `now` (D-B10): its form closes with it, and so does the confirmation of an address. */
-function isOver(row: EventRow, now: Date): boolean {
+/** The columns of an event that say when it ends. */
+export type EventEndColumns = Pick<EventRow, "date" | "event_hours_start" | "event_hours_end" | "timezone">;
+
+/** Whether the event is over at `now` (D-B10): its form closes with it, and so does the confirmation of an address.
+ * Exported for the readiness of an event (./readiness.ts): an event that is over cannot have its form opened. */
+export function isOver(row: EventEndColumns, now: Date): boolean {
   const end = eventEndsAtUtc({
     date: row.date,
     eventHoursStart: row.event_hours_start,

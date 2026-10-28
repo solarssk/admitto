@@ -31,6 +31,7 @@ import {
   countAttendeesByCustomFieldValue,
   requireEventId,
 } from "./admin-helpers.js";
+import { isRequiredFieldOffForm } from "../registration/field-on-form.js";
 
 /** Thrown when the per-event cap is still exceeded on the transaction-scoped recheck (two
  * concurrent creates could otherwise both pass the earlier, non-transactional count check before
@@ -242,14 +243,15 @@ async function eventAcceptsRegistrations(db: FieldDb, eventId: string): Promise<
  * for an event that takes registrations, and only when the save itself changes `required` or
  * `show_on_form` (`previous` null = a new field): a field that already was in that state, e.g. one
  * the import made Required before the form existed, can still be renamed or retyped. The
- * enable-registration gate checks those. */
+ * readiness of the event, which the save of its registration settings asks before registration is
+ * turned on, checks those (registration/readiness.ts, `required_fields`). */
 async function assertRequiredFieldStaysOnForm(
   db: FieldDb,
   eventId: string,
   next: FormFlags,
   previous: FormFlags | null,
 ): Promise<void> {
-  if (!next.required || next.show_on_form) return;
+  if (!isRequiredFieldOffForm(next)) return;
   if (previous?.required === next.required && previous.show_on_form === next.show_on_form) return;
   if (await eventAcceptsRegistrations(db, eventId)) throw new RequiredFieldNotOnFormError();
 }
