@@ -16,6 +16,16 @@ import {
  */
 export const MAX_COMPANION_SLOTS = 1;
 
+/**
+ * How many companions a guest may bring to an event whose settings say `maxCompanions`
+ * (`EventRegistrationSettings.max_companions`, 0 when the event takes none): that number, never below zero and never more
+ * than the application allows (MAX_COMPANION_SLOTS). THE reading of that column, for the page that offers the section,
+ * the route that judges the body and the placement that judges it again under the locks, so the three agree.
+ */
+export function allowedCompanions(maxCompanions: number): number {
+  return Math.min(Math.max(maxCompanions, 0), MAX_COMPANION_SLOTS);
+}
+
 /** A companion as a registration keeps it (`Registration.companions` is a list of these): the name, and the answers to the companion questions. */
 export type RegistrationCompanion = {
   name: string;

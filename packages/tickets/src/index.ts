@@ -13,6 +13,7 @@ export { issueTicket, issueTicketsForEvent } from "./issue.js";
 export { isAttendeeGone, lockAttendeeRow, lockAttendeesForUpdate, lockLiveAttendees } from "./attendee-lock.js";
 export {
   MAX_COMPANION_SLOTS,
+  allowedCompanions,
   readRegistrationCompanions,
   removeAttendeeCompanion,
   writeAttendeeCompanion,
