@@ -11,7 +11,7 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { countSeatsInUse } from "@admitto/tickets";
 import { SUBMIT_MESSAGES } from "../../src/registration/submit-body.js";
-import { documentOf } from "../helpers/registration-form-fixtures.js";
+import { documentOf, type Dom } from "../helpers/registration-form-fixtures.js";
 import {
   SelectiveStore,
   eventSeeder,
@@ -386,7 +386,7 @@ describe("the page and the route agree on the section of a companion", () => {
 
     expect(hasSection(doc)).toBe(true);
     expect(doc.querySelector("#f-companion").closest("label").textContent).toContain("I am bringing a guest");
-    expect([...doc.querySelectorAll("#f-companion-panel [data-field]")].map((el: Element) => el.getAttribute("data-field"))).toEqual([
+    expect([...doc.querySelectorAll("#f-companion-panel [data-field]")].map((el: Dom) => el.getAttribute("data-field"))).toEqual([
       "companion_name",
       "companion_badge",
       "companion_allergy",

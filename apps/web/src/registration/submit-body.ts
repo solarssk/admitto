@@ -311,12 +311,32 @@ function readCompanionEntry(raw: unknown): CompanionEntry | null {
 type CompanionsCheck = { kind: "ok"; companions: RegistrationCompanion[] } | { kind: "malformed" };
 
 /**
+ * One companion of the body: the name goes through the schema of a registrant's name before it can reach
+ * `Registration.companions`, and the answers through the boundary for a companion, so that only the questions about a companion
+ * that are on the form are read, whatever else the object holds (a question about the guest, an unknown key, `__proto__`). A
+ * refusal goes to `errors` and the companion is not stored (null); `"malformed"` is a refusal that no single field is to blame for.
+ */
+function judgeCompanion(
+  entry: CompanionEntry,
+  fields: readonly RegistrantFormField[],
+  errors: Map<string, string>,
+): RegistrationCompanion | null | "malformed" {
+  const name = registrantNameSchema.safeParse(entry.name);
+  if (!name.success) errors.set(ERROR_KEY_COMPANION_NAME, SUBMIT_MESSAGES.companionName);
+  const answers = checkAnswers(fields, entry.answers, COMPANION_ANSWERS);
+  if (answers.kind === "malformed") return "malformed";
+  if (answers.kind === "refused") {
+    for (const [key, message] of answers.errors) errors.set(key, message);
+    return null;
+  }
+  return name.success ? { name: name.data, custom_data: answers.answers ?? null } : null;
+}
+
+/**
  * The companions the guest brings (D-E5). Absent is none. A body that has the key for an event that takes none is not one the
  * page sent, whatever it holds, and is refused as any other shape the page does not send; more than the event takes is a
- * refusal of its own, with a sentence. The name goes through the schema of a registrant's name before it can reach
- * `Registration.companions`, and the answers through the boundary for a companion: only the questions about a companion that
- * are on the form are read, whatever else the object holds (a question about the guest, an unknown key, `__proto__`).
- * Every refusal goes to `errors`, so that the guest sees all that is wrong at once.
+ * refusal of its own, with a sentence, before any entry is read. Every refusal goes to `errors`, so that the guest sees all
+ * that is wrong at once.
  */
 function checkCompanions(raw: unknown, rules: SubmissionRules, errors: Map<string, string>): CompanionsCheck {
   if (raw === undefined || raw === null) return { kind: "ok", companions: [] };
@@ -329,15 +349,9 @@ function checkCompanions(raw: unknown, rules: SubmissionRules, errors: Map<strin
   for (const item of raw as unknown[]) {
     const entry = readCompanionEntry(item);
     if (entry === null) return { kind: "malformed" };
-    const name = registrantNameSchema.safeParse(entry.name);
-    if (!name.success) errors.set(ERROR_KEY_COMPANION_NAME, SUBMIT_MESSAGES.companionName);
-    const answers = checkAnswers(rules.fields, entry.answers, COMPANION_ANSWERS);
-    if (answers.kind === "malformed") return { kind: "malformed" };
-    if (answers.kind === "refused") {
-      for (const [key, message] of answers.errors) errors.set(key, message);
-    } else if (name.success) {
-      companions.push({ name: name.data, custom_data: answers.answers ?? null });
-    }
+    const judged = judgeCompanion(entry, rules.fields, errors);
+    if (judged === "malformed") return { kind: "malformed" };
+    if (judged !== null) companions.push(judged);
   }
   return { kind: "ok", companions };
 }
