@@ -85,6 +85,8 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
   }
 
   async function submit() {
+    // Only the confirmation of turning off calls this, and its button is busy while the save runs.
+    /* v8 ignore if */
     if (saving) return;
     setSaving(true);
     setProblem(null);
@@ -104,6 +106,8 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
   }
 
   function save() {
+    // The Save button is off while nothing has changed and busy while a save runs, so a click never gets here then.
+    /* v8 ignore if */
     if (saving || !dirty) return;
     // Turning registration off closes the form for every guest at once: say what it does first.
     if (patch.mode === null) setConfirmOffOpen(true);

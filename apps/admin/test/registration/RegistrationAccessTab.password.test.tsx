@@ -211,6 +211,22 @@ describe("RegistrationAccessTab: the event password", () => {
     }
   });
 
+  it("is sent once when Enter is pressed again while it is being saved", async () => {
+    await renderLoaded(withoutPassword());
+    const answer = deferred<void>();
+    api.setRegistrationPassword.mockReturnValue(answer.promise);
+    const dialog = await openSetDialog();
+    type(dialog, "a long enough password");
+    const form = dialog.querySelector("form") as HTMLFormElement;
+
+    fireEvent.submit(form);
+    await waitFor(() => expect(api.setRegistrationPassword).toHaveBeenCalledTimes(1));
+    fireEvent.submit(form);
+
+    expect(api.setRegistrationPassword).toHaveBeenCalledTimes(1);
+    await act(async () => answer.resolve());
+  });
+
   it("takes the message away when the person types again", async () => {
     await renderLoaded(withoutPassword());
     const dialog = await openSetDialog();

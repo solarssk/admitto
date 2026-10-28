@@ -94,6 +94,8 @@ export function AccessWayInCard({
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   async function remove() {
+    // The button of the confirmation is busy while the removal runs, so a second press never gets here.
+    /* v8 ignore if */
     if (removing) return;
     setRemoving(true);
     setRemoveError(null);

@@ -211,6 +211,18 @@ describe("RegistrationAccessTab: what a save sends", () => {
     expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
   });
 
+  it("says it could not save, in its own words and beside the buttons, when nothing answered", async () => {
+    await renderLoaded();
+    api.saveRegistrationSettings.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    fireEvent.click(toggle("Waiting list"));
+    await save();
+
+    await waitFor(() => expect(reasonText()).toContain("Could not save the registration settings."));
+    expect(reasonText()).not.toContain("Failed to fetch");
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("saved"), "success");
+  });
+
   it("works while the save runs: the button is busy and keeps its focus, the controls are off, and a second click sends nothing", async () => {
     await renderLoaded();
     const answer = deferred<RegistrationSettingsDto>();
