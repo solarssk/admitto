@@ -831,6 +831,8 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const seenCheckinsRef = useRef(new Map<string, number>());
   const reconcileTimerRef = useRef<number | null>(null);
   const reconcileAbortRef = useRef<AbortController | null>(null);
+  // A signal fell due while a reconcile was still on its way: one more follows when that one has ended.
+  const reconcileQueuedRef = useRef(false);
   // Mirrors optimisticAdmittedDelta so scheduleReconcile's setTimeout callback (a stable
   // useCallback that can't depend on the latest delta without losing its identity) can read the
   // delta as of when its fetch actually starts, not when it was scheduled.
@@ -862,7 +864,9 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
       window.clearTimeout(reconcileTimerRef.current);
       reconcileTimerRef.current = null;
     }
+    reconcileQueuedRef.current = false;
     reconcileAbortRef.current?.abort();
+    reconcileAbortRef.current = null;
   }, []);
 
   // The first read of Event day (and its Retry): nothing is drawn for the first 200ms and a placeholder after that,
@@ -894,11 +898,17 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   // Bounded, not a plain reset-on-every-call debounce (the call EventOverviewPage made): a pending timer is left alone rather than
   // restarted, so a steady stream of signals (a queue at the door, a busy hand-out desk) still reconciles within ~3s of the *first*
   // one instead of only after a quiet gap. It matters most for an item signal, which has no optimistic bump to fall back on meanwhile.
+  // One read at a time, and a read on its way is never cancelled by the next signal: with a server that takes longer than the
+  // timer and a signal every second, each read would be cancelled before it ended and the page would never be reconciled. A
+  // signal that falls due meanwhile waits for it, and one more read follows (after the timer again, so reads are spaced out).
   const scheduleReconcile = useCallback(() => {
     if (reconcileTimerRef.current != null) return;
     reconcileTimerRef.current = window.setTimeout(() => {
       reconcileTimerRef.current = null;
-      reconcileAbortRef.current?.abort();
+      if (reconcileAbortRef.current) {
+        reconcileQueuedRef.current = true;
+        return;
+      }
       const ac = new AbortController();
       reconcileAbortRef.current = ac;
       const deltaAtFetchStart = deltaRef.current;
@@ -912,6 +922,15 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
         })
         .catch(() => {
           /* keep the optimistic count until the next live event or a manual retry */
+        })
+        .finally(() => {
+          // A read that was cancelled (a first read or Retry of the page, or the page going) has been forgotten by `cancelReconcile`.
+          if (reconcileAbortRef.current !== ac) return;
+          reconcileAbortRef.current = null;
+          if (reconcileQueuedRef.current) {
+            reconcileQueuedRef.current = false;
+            scheduleReconcile();
+          }
         });
     }, 3000);
   }, [eventId]);

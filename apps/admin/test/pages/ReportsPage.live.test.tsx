@@ -380,6 +380,93 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     }
   });
 
+  it("lets a reconcile that is on its way finish while more signals fall due, and reads once more after it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const withCompanions = (companions: number) => reportFixture(5, { summary: { ...reportFixture(5).summary, companions_admitted: companions } });
+      const slow = deferred<EventReportsResponse>();
+      fetchEventReports.mockResolvedValueOnce(reportFixture(5)).mockReturnValueOnce(slow.promise).mockResolvedValue(withCompanions(2));
+      renderPage();
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      // The read is on its way and the server is slow.
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      const onItsWay = fetchEventReports.mock.calls[1]?.[1] as AbortSignal;
+
+      // More activity, and its timer falls due while that read has still not answered: it neither starts another nor cancels this one.
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      expect(onItsWay.aborted).toBe(false);
+
+      await act(async () => slow.resolve(withCompanions(1)));
+      await waitFor(() => {
+        expect(screen.getByText(/People on site: 6 \(5 guests and 1 companion\)\./)).toBeTruthy();
+      });
+
+      // The signal that had to wait gets its read, after the timer.
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      expect(fetchEventReports).toHaveBeenCalledTimes(3);
+      await waitFor(() => {
+        expect(screen.getByText(/People on site: 7 \(5 guests and 2 companions\)\./)).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels the reconcile that is on its way when the page is left, and starts no other after it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const slow = deferred<EventReportsResponse>();
+      fetchEventReports.mockResolvedValueOnce(reportFixture(5)).mockReturnValueOnce(slow.promise).mockResolvedValue(reportFixture(5));
+      renderPage();
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      const onItsWay = fetchEventReports.mock.calls[1]?.[1] as AbortSignal;
+      // A signal waits for that read, and the page is left before the read answers.
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      cleanup();
+      expect(onItsWay.aborted).toBe(true);
+      await act(async () => slow.resolve(reportFixture(5)));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6_000);
+      });
+
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("deduplicates a repeated SSE delivery of the same admit instead of double-counting it", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
