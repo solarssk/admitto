@@ -12,6 +12,7 @@ Guests cannot open the form yet. It opens for an event only when registration is
 
 - Create the fields on the **Fields** tab of the event's **Registration** page, and switch **On the form** on for each question a guest should answer. See [Custom Attendee Fields](Custom-Attendee-Fields).
 - First name, last name and email are always asked. Company and department are asked only when the event is set up to ask for them.
+- When the event takes a companion, the form also asks for the companion's name and for your questions about a companion. See [A guest's companion](#a-guests-companion).
 - The limits and the format rules of every type are in the [Validation Reference](Validation-Reference). This page shows what a guest meets.
 
 ## What a guest sees
@@ -106,6 +107,30 @@ For a long text, a date, a date and time and a phone number, the form uses its o
 
 What the guest typed stays in the form, so the guest can correct it.
 
+## A guest's companion
+
+When the event takes a companion, the form has one more part after the questions, called **Your guest**. A guest who ticks **I am bringing a guest** opens a panel with:
+
+| What | What the guest can enter |
+|---|---|
+| Full name | One box, required once the guest brings someone. Up to 100 characters, with no link and no email address |
+| Your questions about a companion | The questions of the event that are about the companion and are on the form. They look and work like the guest's own questions, in the order of the fields |
+
+- An event takes one companion at most.
+- The companion takes a place of their own, so a guest with a companion needs two places. When only one is free, the registration goes on the waiting list. When the event has no waiting list, the guest is told that the event is full. A guest who comes alone is not affected.
+- The panel stays closed until the guest ticks the row. What is closed is not checked and not sent. A guest who unticks the row sends no companion, and what they typed stays in the boxes in case they tick it again.
+- A question about the companion can wait for another answer about the same companion. A question about the guest cannot wait for a question about the companion, and the other way round.
+- What the guest typed about the companion is kept only in the registration, and is deleted with it.
+
+What the guest reads when something about the companion is not accepted:
+
+| Under | Message |
+|---|---|
+| The name, when empty | `Enter your guest's full name.` |
+| The name, when refused | `Enter your guest's full name, up to 100 characters and without links.` |
+| A question about the companion | The same sentences as for a question about the guest |
+| The row **I am bringing a guest** | `This event does not take that many guests.` |
+
 ## When a guest sends the form
 
 The guest sees `Check your inbox` with the address they typed. The page says the same whether the address is new or already registered, so nobody can use the form to find out who is on the list. A second form for an address that is registered changes nothing: the answers already saved are not replaced.
@@ -113,7 +138,7 @@ The guest sees `Check your inbox` with the address they typed. The page says the
 What Admitto does, in this order:
 
 1. It checks the security check on the page. If it fails, the guest sees a message under the check and can try again.
-2. It checks every answer and shows what is wrong under each box. The guest has to accept the event terms.
+2. It checks every answer, the companion's included, and shows what is wrong under each box. The guest has to accept the event terms.
 3. It saves the registration, with the time the terms were accepted and the extra consents that were ticked.
 4. It queues the mail for the registration. The mail is sent a little later, not while the guest waits.
 
@@ -137,6 +162,7 @@ A guest who sends the form twice at the same moment is registered once. An addre
 | A question never appears under the tick box or the list it waits for | The question it waits for must be on the form, and must be a Yes / No or a Single choice field. For a list, the condition must name an option that exists, written exactly |
 | A field has suggestions, but the guest sees no list | Suggestions fit Text fields only. Check that the field is a Text field, and that its own condition is met |
 | A field has an icon, but the guest sees none | A Single choice, a Long text and a required Yes / No have no place for an icon |
+| The form has no part for a companion | Only an event that takes a companion shows it. A required question about the companion that the form cannot show (for example a required single choice with no options) also leaves the part out. The rest of the form stays open |
 | A guest registered but got no mail | Admitto sends at most 3 registration mails a day to one address, and a daily number of mails for one event (1000, or 3 per seat if that is more). Over the limit the registration is saved without its mail. Ask the administrator of the system to raise the limit |
 
 ## Related pages
