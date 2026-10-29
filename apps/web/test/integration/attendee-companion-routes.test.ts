@@ -334,9 +334,9 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id/companion", () => {
   });
 
   it.each([
-    ["an operator", () => cookies.operator, 403],
-    ["an administrator of another organisation", () => cookies.otherOrgAdmin, 403],
-    ["nobody signed in", () => null, 401],
+    ["an operator", (): string => cookies.operator, 403],
+    ["an administrator of another organisation", (): string => cookies.otherOrgAdmin, 403],
+    ["nobody signed in", (): null => null, 401],
   ] as const)("refuses %s, and changes nothing", async (_who, cookie, status) => {
     const guest = await guestWithCompanion();
     const before = await companionOf(guest.id);
@@ -609,9 +609,9 @@ describe("DELETE /api/admin/events/:eventId/attendees/:id/companion", () => {
   });
 
   it.each([
-    ["an operator", () => cookies.operator, 403],
-    ["an administrator of another organisation", () => cookies.otherOrgAdmin, 403],
-    ["nobody signed in", () => null, 401],
+    ["an operator", (): string => cookies.operator, 403],
+    ["an administrator of another organisation", (): string => cookies.otherOrgAdmin, 403],
+    ["nobody signed in", (): null => null, 401],
   ] as const)("refuses %s, and removes nothing", async (_who, cookie, status) => {
     const guest = await guestWithCompanion();
 
