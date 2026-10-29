@@ -59,7 +59,7 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - The secret key is stored encrypted and is never shown again. Use **Set**, **Change** or **Clear** on it, then Save once for the whole tab.
 - In Cloudflare, add the address of this instance to the hostnames of the widget.
 - Cloudflare sees each visitor's IP address and browser details when the form opens. Name it in your privacy notice. See [SUBPROCESSORS.md](https://github.com/solarssk/admitto/blob/main/docs/security/SUBPROCESSORS.md).
-- Guest registration itself is not available yet. The card only stores the keys that it will need.
+- An administrator turns registration on for each event, on the **Access** tab of its **Registration** page. See [Registration Access](Registration-Access).
 
 **Support contact and Test connection**
 
