@@ -2265,6 +2265,9 @@ export function AttendeeDetailPage() {
   /** The server answered a change of the guest's companion with the attendee as it is now. A read that started before the change is
    * older than this answer and must not put back the companion it took away or corrected, so it is dropped (`loadSeqRef`). */
   function handleCompanionChanged(next: AttendeeDetailDto, target: { eventId: string; attendeeId: string }) {
+    // The card, and the hook that calls this, go with the attendee they were made for (an answer after they are gone never gets here),
+    // so this only guards the moment between the route changing and the card going.
+    /* v8 ignore if */
     if (!isStillSelected(target)) return;
     loadSeqRef.current += 1;
     // A removal takes the card, and the button the keyboard was on, away: the focus goes to the tab that is open.

@@ -5,7 +5,7 @@ import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { attendeeFieldAttrs } from "../utils/no-autofill.js";
-import { companionAnswerEntries, companionFormChanged, companionFormFrom, type CompanionFormState } from "./companionForm.js";
+import { answerFor, companionAnswerEntries, companionFormChanged, companionFormFrom, type CompanionFormState } from "./companionForm.js";
 import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
 import { isLongAnswer, shownCustomFields, type CustomDataFieldDef } from "./customData.js";
 import { useCompanionActions, type CompanionActionsInput } from "./useCompanionActions.js";
@@ -89,7 +89,7 @@ function CompanionEditDialog({
               key={field.source_field}
               field={field}
               eventTimeZone={event.timezone}
-              value={form.answers[field.source_field] ?? ""}
+              value={answerFor(form.answers, field.source_field)}
               disabled={saving}
               onChange={(next) => setForm({ ...form, answers: { ...form.answers, [field.source_field]: next } })}
             />

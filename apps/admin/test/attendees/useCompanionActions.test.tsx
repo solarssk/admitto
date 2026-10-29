@@ -44,6 +44,87 @@ function setup(overrides: Partial<CompanionActionsInput> = {}) {
   return { input, hook: renderHook(() => useCompanionActions(input)) };
 }
 
+describe("a request that is answered after the card is gone", () => {
+  const pendingSave = (hook: ReturnType<typeof setup>["hook"]) => {
+    let done!: Promise<void>;
+    act(() => {
+      done = hook.result.current.edit.save(FORM);
+    });
+    return done;
+  };
+  const pendingRemoval = (hook: ReturnType<typeof setup>["hook"]) => {
+    let done!: Promise<void>;
+    act(() => {
+      done = hook.result.current.removal.confirm();
+    });
+    return done;
+  };
+
+  it("applies nothing of a save that worked, and says nothing", async () => {
+    const answer = deferred<AttendeeDetailDto>();
+    updateAttendeeCompanion.mockReturnValueOnce(answer.promise);
+    const { input, hook } = setup();
+    const done = pendingSave(hook);
+    hook.unmount();
+
+    await act(async () => {
+      answer.resolve(DETAIL);
+      await done;
+    });
+
+    expect(input.onChanged).not.toHaveBeenCalled();
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("says nothing of a save that failed", async () => {
+    const answer = deferred<AttendeeDetailDto>();
+    updateAttendeeCompanion.mockReturnValueOnce(answer.promise);
+    const { input, hook } = setup();
+    const done = pendingSave(hook);
+    hook.unmount();
+
+    await act(async () => {
+      answer.reject(new ApiError(409, "attendee_erased"));
+      await done;
+    });
+
+    expect(input.onOutOfDate).not.toHaveBeenCalled();
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("applies nothing of a removal that worked, and says nothing", async () => {
+    const answer = deferred<AttendeeDetailDto>();
+    removeAttendeeCompanion.mockReturnValueOnce(answer.promise);
+    const { input, hook } = setup();
+    const done = pendingRemoval(hook);
+    hook.unmount();
+
+    await act(async () => {
+      answer.resolve(DETAIL);
+      await done;
+    });
+
+    expect(input.onChanged).not.toHaveBeenCalled();
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("says nothing of a removal that failed", async () => {
+    const answer = deferred<AttendeeDetailDto>();
+    removeAttendeeCompanion.mockReturnValueOnce(answer.promise);
+    const { input, hook } = setup();
+    const done = pendingRemoval(hook);
+    hook.unmount();
+
+    await act(async () => {
+      answer.reject(new ApiError(404, "companion_not_found"));
+      await done;
+    });
+
+    expect(input.onOutOfDate).not.toHaveBeenCalled();
+    expect(addToast).not.toHaveBeenCalled();
+  });
+});
+
 describe("a request that finds the page out of date", () => {
   it.each([
     ["attendee_erased", 409],

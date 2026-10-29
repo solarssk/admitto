@@ -8,6 +8,11 @@ export interface CompanionFormState {
   answers: Record<string, string>;
 }
 
+/** What the form holds for a question: empty until it is answered. */
+export function answerFor(answers: Readonly<Record<string, string>>, sourceField: string): string {
+  return answers[sourceField] ?? "";
+}
+
 /** The form of the companion as the page has it: every question about the companion has a box, empty until it is answered. */
 export function companionFormFrom(companion: AttendeeCompanionDto, fields: readonly CustomDataFieldDef[]): CompanionFormState {
   const answers: Record<string, string> = {};
@@ -20,7 +25,7 @@ export function companionFormFrom(companion: AttendeeCompanionDto, fields: reado
 export function companionFormChanged(form: CompanionFormState, base: CompanionFormState, fields: readonly CustomDataFieldDef[]): boolean {
   return (
     form.name !== base.name ||
-    shownCustomFields(fields, form.answers).some((field) => (form.answers[field.source_field] ?? "") !== (base.answers[field.source_field] ?? ""))
+    shownCustomFields(fields, form.answers).some((field) => answerFor(form.answers, field.source_field) !== answerFor(base.answers, field.source_field))
   );
 }
 

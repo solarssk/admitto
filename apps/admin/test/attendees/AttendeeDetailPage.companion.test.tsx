@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router";
 import { ApiError } from "../../src/api/client.js";
 import type { AttendeeCompanionDto, EventCustomFieldDto } from "../../src/api/types.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
@@ -407,6 +407,34 @@ describe("the Edit dialog", () => {
     fireEvent.click(editButton());
 
     expect(alerts()).toEqual([]);
+  });
+
+  it("does not put the answer of a save on the page of another attendee that was opened meanwhile", async () => {
+    const pending = deferred<ReturnType<typeof detailOf>>();
+    updateAttendeeCompanion.mockReturnValueOnce(pending.promise);
+    mockLoad(COMPANION);
+    // The other guest brings someone too, so the card (and the request in flight) stays on the page when it opens.
+    mockLoad({ slot: 1, name: "Bob Companion", custom_data: null }, { detail: { id: "att-2", name: "Bob Beta" } });
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees/:attendeeId", element: <AttendeeDetailPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees/att-1"] },
+    );
+    renderWithToast(<RouterProvider router={router} />);
+    await pageLoaded();
+    fireEvent.click(editButton());
+    typeName("Anna Companion");
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(updateAttendeeCompanion).toHaveBeenCalled());
+
+    await act(async () => router.navigate("/admin/events/evt-1/attendees/att-2"));
+    await screen.findByRole("heading", { name: "Bob Beta" });
+    await act(() => Promise.resolve(pending.resolve(detailOf({ slot: 1, name: "Anna Companion", custom_data: null }))));
+
+    expect(screen.getByRole("heading", { name: "Bob Beta" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Anna" })).toBeNull();
+    // The companion on the page is Bob's own, not the one the answer was about.
+    expect(within(card()).getByText("Bob Companion")).toBeTruthy();
+    expect(within(card()).queryByText("Anna Companion")).toBeNull();
   });
 
   it("keeps the dialog's busy and error state to its own attendee: an answer that comes after the page left is not applied", async () => {

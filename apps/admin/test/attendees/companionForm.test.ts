@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { companionAnswerEntries, companionBody, companionFormChanged, companionFormFrom, companionProblem } from "../../src/attendees/companionForm.js";
+import { answerFor, companionAnswerEntries, companionBody, companionFormChanged, companionFormFrom, companionProblem } from "../../src/attendees/companionForm.js";
 import { answerField } from "./answerTypeFixtures.js";
 
 /** The form of a guest's companion, apart from the dialog that draws it: what it starts from, what counts as an edit, what is wrong with it
@@ -31,6 +31,19 @@ describe("companionAnswerEntries", () => {
   it("leaves out an answer that is empty, and has no entries for a companion with no answers", () => {
     expect(companionAnswerEntries({ slot: 1, name: "P", custom_data: { diet: "  " } }, FIELDS, "Europe/Warsaw")).toEqual([]);
     expect(companionAnswerEntries({ slot: 1, name: "P", custom_data: null }, FIELDS, "Europe/Warsaw")).toEqual([]);
+  });
+});
+
+describe("answerFor", () => {
+  it("is the answer that is held, and empty for a question nobody has answered", () => {
+    expect(answerFor({ diet: "Veg" }, "diet")).toBe("Veg");
+    expect(answerFor({}, "diet")).toBe("");
+  });
+
+  it("makes a form with a box missing equal to one whose box is empty, so that it is not an edit", () => {
+    const fields = [answerField("diet", "Diet", "text", { applies_to: "companion" })];
+    expect(companionFormChanged({ name: "A", answers: {} }, { name: "A", answers: { diet: "" } }, fields)).toBe(false);
+    expect(companionFormChanged({ name: "A", answers: { diet: "Veg" } }, { name: "A", answers: {} }, fields)).toBe(true);
   });
 });
 

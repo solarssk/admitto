@@ -102,6 +102,26 @@ describe("useWalletCustomFields", () => {
     await waitFor(() => expect(result.current).toEqual([makeField({ source_field: "b_field" })]));
   });
 
+  it("drops the answer of the event it was asked for when the event has changed meanwhile", async () => {
+    let resolveA: (items: EventCustomFieldDto[]) => void = () => {};
+    vi.mocked(fetchEventCustomFields).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveA = resolve;
+      }),
+    );
+    vi.mocked(fetchEventCustomFields).mockResolvedValueOnce([makeField({ source_field: "b_field" })]);
+    const { result, rerender } = renderHook(
+      ({ eventId }: { eventId: string }) => useWalletCustomFields(eventId, WALLET_TAB),
+      { initialProps: { eventId: "evt-A" } },
+    );
+    rerender({ eventId: "evt-B" });
+    await waitFor(() => expect(result.current).toEqual([makeField({ source_field: "b_field" })]));
+
+    await act(async () => resolveA([makeField({ source_field: "a_field" })]));
+
+    expect(result.current).toEqual([makeField({ source_field: "b_field" })]);
+  });
+
   it("leaves the result undefined when the fetch fails (preview-only, no error surfaced)", async () => {
     vi.mocked(fetchEventCustomFields).mockRejectedValueOnce(new Error("network down"));
     const { result } = renderHook(() => useWalletCustomFields("evt-1", WALLET_TAB));
