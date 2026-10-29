@@ -54,7 +54,7 @@ describe("a request that finds the page out of date", () => {
     act(() => hook.result.current.edit.show());
     expect(hook.result.current.edit.open).toBe(true);
 
-    await act(async () => hook.result.current.edit.save(FORM));
+    await act(() => hook.result.current.edit.save(FORM));
 
     expect(hook.result.current.edit.open).toBe(false);
     expect(hook.result.current.removal.open).toBe(false);
@@ -71,7 +71,7 @@ describe("a request that finds the page out of date", () => {
     const { input, hook } = setup();
     act(() => hook.result.current.removal.show());
 
-    await act(async () => hook.result.current.removal.confirm());
+    await act(() => hook.result.current.removal.confirm());
 
     expect(hook.result.current.removal.open).toBe(false);
     expect(input.onOutOfDate).toHaveBeenCalledTimes(1);
@@ -94,7 +94,7 @@ describe("a request that is on its way", () => {
     act(() => hook.result.current.edit.cancel());
     expect(hook.result.current.edit.open).toBe(true);
 
-    await act(async () => pending.resolve(DETAIL));
+    await act(() => Promise.resolve(pending.resolve(DETAIL)));
     expect(hook.result.current.edit.open).toBe(false);
     act(() => hook.result.current.edit.show());
     act(() => hook.result.current.edit.cancel());
@@ -114,7 +114,7 @@ describe("a request that is on its way", () => {
     act(() => hook.result.current.removal.cancel());
     expect(hook.result.current.removal.open).toBe(true);
 
-    await act(async () => pending.resolve(DETAIL));
+    await act(() => Promise.resolve(pending.resolve(DETAIL)));
     expect(hook.result.current.removal.open).toBe(false);
     act(() => hook.result.current.removal.show());
     act(() => hook.result.current.removal.cancel());
@@ -125,7 +125,7 @@ describe("a request that is on its way", () => {
     updateAttendeeCompanion.mockResolvedValueOnce(DETAIL);
     const { input, hook } = setup({ eventId: "evt-9", attendeeId: "att-9" });
 
-    await act(async () => hook.result.current.edit.save(FORM));
+    await act(() => hook.result.current.edit.save(FORM));
 
     expect(input.onChanged).toHaveBeenCalledWith(DETAIL, { eventId: "evt-9", attendeeId: "att-9" });
   });

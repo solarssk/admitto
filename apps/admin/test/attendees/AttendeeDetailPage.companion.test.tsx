@@ -376,7 +376,7 @@ describe("the Edit dialog", () => {
     fireEvent.submit(nameBox().closest("form")!);
     expect(updateAttendeeCompanion).toHaveBeenCalledTimes(1);
 
-    await act(async () => pending.resolve(detailOf({ slot: 1, name: "Anna Companion", custom_data: null })));
+    await act(() => Promise.resolve(pending.resolve(detailOf({ slot: 1, name: "Anna Companion", custom_data: null }))));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit companion" })).toBeNull());
   });
 
@@ -421,7 +421,7 @@ describe("the Edit dialog", () => {
     await waitFor(() => expect(updateAttendeeCompanion).toHaveBeenCalled());
     cleanup();
 
-    await act(async () => pending.resolve(detailOf({ slot: 1, name: "Anna Companion", custom_data: null })));
+    await act(() => Promise.resolve(pending.resolve(detailOf({ slot: 1, name: "Anna Companion", custom_data: null }))));
 
     expect(addToast).not.toHaveBeenCalled();
   });
@@ -520,7 +520,7 @@ describe("the Remove confirmation", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: REMOVE_TITLE })).not.toBeNull();
 
-    await act(async () => pending.resolve(detailOf(null)));
+    await act(() => Promise.resolve(pending.resolve(detailOf(null))));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: REMOVE_TITLE })).toBeNull());
   });
 });
@@ -588,8 +588,9 @@ describe("a read that started before a change", () => {
     fireEvent.click(saveButton());
     await waitFor(() => expect(within(card()).getByText("Anna Companion")).toBeTruthy());
 
-    await act(async () => {
+    await act(() => {
       olderRead.resolve({ detail: detailOf(COMPANION, { ...manyNotes, notes_page: 2 }), attributeFields: [], companionFields: FIELDS, itemsWarning: null });
+      return Promise.resolve();
     });
 
     expect(within(card()).getByText("Anna Companion")).toBeTruthy();

@@ -39,7 +39,7 @@ const EVENT = [parking, plate, pet, badge, notes];
 
 async function openEditor(field: EventCustomFieldDto | null, fields: readonly EventCustomFieldDto[] = EVENT, showOnForm = false) {
   renderWithToast(<EventCustomFieldModal eventId="evt-1" field={field} fields={fields} showOnForm={showOnForm} onClose={vi.fn()} onSaved={vi.fn()} />);
-  await act(async () => {});
+  await act(() => Promise.resolve());
 }
 
 const recipients = () => screen.getByRole("group", { name: "Applies to" });
@@ -84,14 +84,14 @@ describe("EventCustomFieldModal: Applies to", { timeout: 30_000 }, () => {
     typeLabel("Badge name");
     fireEvent.click(recipientButton("Companion"));
     fireEvent.click(saveButton());
-    await act(async () => {});
+    await act(() => Promise.resolve());
     expect(api.create.mock.calls[0]![1]).toMatchObject({ source_field: "badge_name", applies_to: "companion", show_on_form: true });
     cleanup();
 
     await openEditor(null, [], true);
     typeLabel("Shirt");
     fireEvent.click(saveButton());
-    await act(async () => {});
+    await act(() => Promise.resolve());
     expect(api.create.mock.calls[1]![1]).not.toHaveProperty("applies_to");
   });
 
@@ -110,7 +110,7 @@ describe("EventCustomFieldModal: Applies to", { timeout: 30_000 }, () => {
 
     fireEvent.click(recipientButton("Companion"));
     fireEvent.click(saveButton());
-    await act(async () => {});
+    await act(() => Promise.resolve());
     expect(api.update.mock.calls[0]![2]).toMatchObject({ applies_to: "companion" });
   });
 
@@ -120,18 +120,18 @@ describe("EventCustomFieldModal: Applies to", { timeout: 30_000 }, () => {
     await openEditor(notes);
     fireEvent.click(recipientButton("Companion"));
     fireEvent.click(saveButton());
-    await act(async () => {});
+    await act(() => Promise.resolve());
 
     expect((recipientButton("Guest") as HTMLButtonElement).disabled).toBe(true);
     expect((recipientButton("Companion") as HTMLButtonElement).disabled).toBe(true);
-    await act(async () => finish());
+    await act(() => Promise.resolve(finish()));
   });
 
   it("sends no move for a save of something else, whichever recipient the question has", async () => {
     await openEditor(badge);
     typeLabel("Badge");
     fireEvent.click(saveButton());
-    await act(async () => {});
+    await act(() => Promise.resolve());
     expect(api.update.mock.calls[0]![2]).not.toHaveProperty("applies_to");
   });
 
