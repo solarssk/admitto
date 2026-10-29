@@ -866,7 +866,7 @@ export function ExternalServicesPanel() {
 
       <RegistrationTurnstileCard dto={turnstile} draft={registration} onChange={setTurnstileDraft} />
 
-      <RegistrationAccessMethodsCard draft={access} keys={turnstile.status} onChange={setAccessDraft} />
+      <RegistrationAccessMethodsCard draft={access} keys={turnstile.status} disabled={saving} onChange={setAccessDraft} />
 
       <SettingsFooter
         validationErrors={validationErrors}

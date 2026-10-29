@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExternalServicesPanel } from "../../src/settings/ExternalServicesPanel.js";
-import { advanceTimers, hangUntilAborted, renderWithToastAndRouter, isOff } from "../test-utils.js";
+import { advanceTimers, deferred, hangUntilAborted, renderWithToastAndRouter, isOff } from "../test-utils.js";
 import { describePanelLoading } from "./panel-loading.js";
 import type { ExternalServicesResponse, RegistrationTurnstileDto } from "../../src/api/types.js";
 import { accessMethodsDto } from "./accessMethodsFixtures.js";
@@ -1132,6 +1132,23 @@ describe("ExternalServicesPanel, ways in card", () => {
     await waitFor(() => expect(isOff(save())).toBe(true));
     expect(wayIn("Link").checked).toBe(true);
     expect(screen.queryByText("Unsaved changes")).toBeNull();
+  });
+
+  it("keeps the switches off while the save is on its way, so that its answer cannot replace an edit made meanwhile", async () => {
+    await renderLoaded();
+    const answer = deferred<ReturnType<typeof accessMethodsDto>>();
+    mockSaveAccess.mockReturnValueOnce(answer.promise);
+    fireEvent.click(wayIn("Link"));
+
+    fireEvent.click(save());
+
+    await waitFor(() => expect(mockSaveAccess).toHaveBeenCalledTimes(1));
+    expect(wayIn("Link").disabled).toBe(true);
+    expect(wayIn("Password").disabled).toBe(true);
+    await act(async () => answer.resolve(accessMethodsDto(["link"])));
+    await waitFor(() => expect(wayIn("Link").disabled).toBe(false));
+    expect(wayIn("Password").disabled).toBe(false);
+    expect(wayIn("Link").checked).toBe(true);
   });
 
   it("sends both ways, and the other one alone when one of two is turned off", async () => {

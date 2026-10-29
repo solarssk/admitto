@@ -25,10 +25,13 @@ const METHODS: Readonly<Record<SwitchedAccessMethod, { name: string; text: strin
 export function RegistrationAccessMethodsCard({
   draft,
   keys,
+  disabled,
   onChange,
 }: Readonly<{
   draft: AccessMethodsDraft;
   keys: RegistrationTurnstileStatus;
+  /** The Save of the page is on its way: the switches are off, so that its answer cannot replace an edit made meanwhile. */
+  disabled: boolean;
   onChange: (next: AccessMethodsDraft) => void;
 }>) {
   const anyOn = SWITCHED_ACCESS_METHODS.some((method) => draft[method]);
@@ -50,6 +53,7 @@ export function RegistrationAccessMethodsCard({
                   aria-describedby={`external-access-${method}-text`}
                   label={draft[method] ? "On" : "Off"}
                   checked={draft[method]}
+                  disabled={disabled}
                   onChange={(e) => onChange({ ...draft, [method]: e.target.checked })}
                 />
               </div>
