@@ -1068,6 +1068,10 @@ function AttendeeOverviewTab({
           </div>
         </Card>
 
+        {/* Right after the profile: the person the guest brings is part of who is coming, and the card should not sit below an empty
+            "Additional information" on a phone. */}
+        {companionCard}
+
         <Card title="Additional information">
           {customDataEntries.length === 0 ? (
             <EmptyState
@@ -1086,8 +1090,6 @@ function AttendeeOverviewTab({
             </div>
           )}
         </Card>
-
-        {companionCard}
 
         {/* Deliberately not walletPlatforms.any (Apple/Google only, see its own doc comment) -
             unlike the pass-lifecycle menu items further up this file (real actions on a real

@@ -5,10 +5,9 @@ import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { attendeeFieldAttrs } from "../utils/no-autofill.js";
-import { humanizeFieldKey } from "./attendeeTimeline.js";
-import { companionFormChanged, companionFormFrom, type CompanionFormState } from "./companionForm.js";
+import { companionAnswerEntries, companionFormChanged, companionFormFrom, type CompanionFormState } from "./companionForm.js";
 import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
-import { allCustomDataEntries, isLongAnswer, shownCustomFields, type CustomDataFieldDef } from "./customData.js";
+import { isLongAnswer, shownCustomFields, type CustomDataFieldDef } from "./customData.js";
 import { useCompanionActions, type CompanionActionsInput } from "./useCompanionActions.js";
 import "./attendees.css";
 import "./attendee-fields-grid.css";
@@ -24,6 +23,10 @@ export interface CompanionCardProps extends Pick<CompanionActionsInput, "eventId
 }
 
 const FIELDS_NOT_LOADED = "The questions about the companion could not be loaded. Reload the page to edit.";
+
+/** A label longer than this is read above its answer, from the left: beside a long answer, a long question leaves the answer a column of a
+ * few letters on a phone. */
+const LONG_LABEL_CHARS = 30;
 
 /** The dialog that corrects the name and the answers of the guest's companion. Mounted when it opens, so that it starts from the companion as
  * the page has it and what was typed is gone when it closes. */
@@ -117,7 +120,7 @@ function CompanionEditDialog({
  */
 export function CompanionCard({ event, companion, fields, fieldsLoaded, ...actionInput }: Readonly<CompanionCardProps>) {
   const actions = useCompanionActions({ ...actionInput, fields });
-  const answers = allCustomDataEntries(companion.custom_data, [...fields], humanizeFieldKey, event.timezone);
+  const answers = companionAnswerEntries(companion, fields, event.timezone);
   return (
     <>
       <Card
@@ -147,7 +150,7 @@ export function CompanionCard({ event, companion, fields, fieldsLoaded, ...actio
             <span>{companion.name}</span>
           </div>
           {answers.map(([key, label, value]) => (
-            <div className={`attendee-detail-row${isLongAnswer(value) ? " attendee-detail-row--long" : ""}`} key={key}>
+            <div className={`attendee-detail-row${isLongAnswer(value) || label.length > LONG_LABEL_CHARS ? " attendee-detail-row--long" : ""}`} key={key}>
               <span>{label}</span>
               <span>{value}</span>
             </div>

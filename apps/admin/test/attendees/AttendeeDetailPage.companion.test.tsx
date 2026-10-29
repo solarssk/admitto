@@ -155,6 +155,27 @@ describe("the companion card", () => {
     expect(removeButton().disabled).toBe(false);
   });
 
+  it("lists the answers in the order of the event's questions, whatever order the database holds them in", async () => {
+    mockLoad({ slot: 1, name: "Piotr Companion", custom_data: { plate: "WA 12345", diet: "vegan" } });
+    renderPage();
+    await pageLoaded();
+
+    const labels = Array.from(card().querySelectorAll(".attendee-detail-row > span:first-child")).map((cell) => cell.textContent);
+    expect(labels).toEqual(["Name", "Diet", "Plate"]);
+  });
+
+  it("reads the answer to a question with a long label under it, and the answer to a short one beside it", async () => {
+    const longQuestion = answerField("long_question", "Registration number of the companion's car", "text", { applies_to: "companion" });
+    mockLoad({ slot: 1, name: "Piotr Companion", custom_data: { long_question: "WA 12345", diet: "vegan" } }, { fields: [longQuestion, ...FIELDS] });
+    renderPage();
+    await pageLoaded();
+
+    const rowOf = (label: string) => within(card()).getByText(label).closest(".attendee-detail-row")!;
+    expect(rowOf("Registration number of the companion's car").classList.contains("attendee-detail-row--long")).toBe(true);
+    expect(rowOf("Diet").classList.contains("attendee-detail-row--long")).toBe(false);
+    expect(rowOf("Name").classList.contains("attendee-detail-row--long")).toBe(false);
+  });
+
   it("names an answer whose question is gone by its key, and reads a long one under its label", async () => {
     mockLoad({ slot: 1, name: "Piotr Companion", custom_data: { gone_question: "kept", plate: "x".repeat(80) } });
     renderPage();

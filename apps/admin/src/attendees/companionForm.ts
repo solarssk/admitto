@@ -1,5 +1,6 @@
 import type { AttendeeCompanionDto } from "../api/types.js";
-import { shownCustomFields, validateCustomFieldsForm, type CustomDataFieldDef } from "./customData.js";
+import { humanizeFieldKey } from "./attendeeTimeline.js";
+import { allCustomDataEntries, shownCustomFields, validateCustomFieldsForm, type CustomDataFieldDef } from "./customData.js";
 
 /** What the Edit dialog of a guest's companion holds while it is open: the name, and the answers as typed, by the key of the question. */
 export interface CompanionFormState {
@@ -21,6 +22,22 @@ export function companionFormChanged(form: CompanionFormState, base: CompanionFo
     form.name !== base.name ||
     shownCustomFields(fields, form.answers).some((field) => (form.answers[field.source_field] ?? "") !== (base.answers[field.source_field] ?? ""))
   );
+}
+
+/**
+ * The answers of the companion as rows of the card: the label of the question, and the answer as it is read. In the order of the event's
+ * questions, which is the order of the dialog and of the registration form, and not the order the database keeps the answers in. An answer
+ * whose question is gone is shown by its key, made readable, after the others.
+ */
+export function companionAnswerEntries(
+  companion: AttendeeCompanionDto,
+  fields: readonly CustomDataFieldDef[],
+  eventTimeZone: string,
+): Array<[string, string, string]> {
+  const rank = new Map(fields.map((field, index) => [field.source_field, index]));
+  const entries = allCustomDataEntries(companion.custom_data, [...fields], humanizeFieldKey, eventTimeZone);
+  entries.sort(([a], [b]) => (rank.get(a) ?? fields.length) - (rank.get(b) ?? fields.length));
+  return entries;
 }
 
 /** What is wrong with the form before it is sent, in a sentence, or null: the name has to be there, and the answers have to be what

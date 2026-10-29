@@ -92,7 +92,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
 
 A guest can bring one companion when the event allows it (see [A guest's companion](Registration-Form-Fields#a-guests-companion)). The companion is a person of their own, with a name and answers to your questions about a companion. Use this when something about them is wrong, or when the guest comes alone after all.
 
-1. Open the attendee. A guest who has a companion has a **Companion** card on the **Overview** tab, under **Additional information**. It shows the companion's name and answers.
+1. Open the attendee. A guest who has a companion has a **Companion** card on the **Overview** tab, under **Profile**. It shows the companion's name and answers.
 2. To correct them, select **Edit** on the card, change the name or an answer, and select **Save**. The **Edit** in the page header is for the attendee's own profile and does not touch the companion.
 3. To take the person out, select **Remove** on the card and confirm. It cannot be undone.
 

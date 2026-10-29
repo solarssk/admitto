@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { companionBody, companionFormChanged, companionFormFrom, companionProblem } from "../../src/attendees/companionForm.js";
+import { companionAnswerEntries, companionBody, companionFormChanged, companionFormFrom, companionProblem } from "../../src/attendees/companionForm.js";
 import { answerField } from "./answerTypeFixtures.js";
 
 /** The form of a guest's companion, apart from the dialog that draws it: what it starts from, what counts as an edit, what is wrong with it
@@ -11,6 +11,28 @@ const leash = answerField("leash", "Leash", "text", { applies_to: "companion", r
 const FIELDS = [diet, plate, pet, leash];
 
 const companion = { slot: 1, name: "Piotr Companion", custom_data: { diet: "vegan", plate: "WA 123" } };
+
+describe("companionAnswerEntries", () => {
+  it("lists the answers under the words of their questions, in the order of the event's questions and not of the answers", () => {
+    const entries = companionAnswerEntries({ slot: 1, name: "P", custom_data: { leash: "short", plate: "WA 123", diet: "vegan", pet: "true" } }, FIELDS, "Europe/Warsaw");
+    expect(entries).toEqual([
+      ["diet", "Diet", "vegan"],
+      ["plate", "Plate", "WA 123"],
+      ["pet", "Pet", "Yes"],
+      ["leash", "Leash", "short"],
+    ]);
+  });
+
+  it("puts an answer whose question is gone last, by its key made readable, and keeps the order of those", () => {
+    const entries = companionAnswerEntries({ slot: 1, name: "P", custom_data: { gone_b: "b", diet: "vegan", gone_a: "a" } }, FIELDS, "Europe/Warsaw");
+    expect(entries.map(([key, label]) => [key, label])).toEqual([["diet", "Diet"], ["gone_b", "Gone b"], ["gone_a", "Gone a"]]);
+  });
+
+  it("leaves out an answer that is empty, and has no entries for a companion with no answers", () => {
+    expect(companionAnswerEntries({ slot: 1, name: "P", custom_data: { diet: "  " } }, FIELDS, "Europe/Warsaw")).toEqual([]);
+    expect(companionAnswerEntries({ slot: 1, name: "P", custom_data: null }, FIELDS, "Europe/Warsaw")).toEqual([]);
+  });
+});
 
 describe("companionFormFrom", () => {
   it("holds the name and a box for every question: the answer, or empty", () => {
