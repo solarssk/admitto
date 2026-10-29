@@ -34,8 +34,10 @@ vi.mock("../../src/registration/RegistrationLegalTab.js", () => ({
   RegistrationLegalTab: () => <p>The legal texts of the event</p>,
 }));
 
-/** The tabs that have nothing to show yet: a plain empty state that says what will be there. */
-const TABS_TO_BUILD = [["access", "Access", "The registration mode and the ways guests can sign up will be set here."]] as const;
+// The Access tab reads and saves the registration settings: RegistrationAccessTab.test.tsx has it. The page is tested around it.
+vi.mock("../../src/registration/RegistrationAccessTab.js", () => ({
+  RegistrationAccessTab: () => <p>The access settings of the event</p>,
+}));
 
 /** Shows the query string of the address, so a test can read what a click wrote to it. */
 function SearchProbe() {
@@ -112,21 +114,12 @@ describe("RegistrationPage", () => {
     expect(screen.getByRole("tabpanel").getAttribute("aria-label")).toBe(label);
   });
 
-  it.each(TABS_TO_BUILD)("shows the %s tab as a plain empty state that says what will be there", (id, label, sentence) => {
-    renderAt(`?tab=${id}`);
-
-    const panel = screen.getByRole("tabpanel", { name: label });
-    expect(within(panel).getByRole("status").textContent).toBe(sentence);
-    // A tab that has nothing to show yet is an empty list, not a failed load.
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
-  });
-
   it.each([
     ["requests", "Requests", "The requests of the event"],
     ["fields", "Fields", "The attendee fields card"],
+    ["access", "Access", "The access settings of the event"],
     ["legal", "Legal", "The legal texts of the event"],
-  ])("shows the content of the %s tab, labelled %s, and nothing of the placeholders", (id, label, content) => {
+  ])("shows the content of the %s tab, labelled %s, and nothing of the others", (id, label, content) => {
     renderAt(`?tab=${id}`);
 
     const panel = screen.getByRole("tabpanel", { name: label });
