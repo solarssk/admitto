@@ -15,6 +15,8 @@ export interface ReadinessCopy {
 }
 
 const ASK_A_SUPERADMIN = { text: "Ask a superadmin to set it up." } as const;
+/** The ways in of the whole instance are turned on by a superadmin, on a card of their own. */
+const ASK_FOR_THE_WAY_IN = { text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." } as const;
 
 /**
  * The words of every check the server reports (`READINESS_KEYS` in `apps/web/src/registration/readiness.ts`; a test holds the two
@@ -31,7 +33,7 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     title: "Way in allowed",
     met: "This way in is allowed on this instance.",
     missing: "This way in is not allowed on this instance.",
-    remedy: ASK_A_SUPERADMIN,
+    remedy: ASK_FOR_THE_WAY_IN,
   },
   bot_protection: {
     title: "Bot protection",

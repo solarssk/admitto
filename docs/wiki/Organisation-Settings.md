@@ -21,7 +21,7 @@ Open **Organisation settings**. Save one area at a time and verify the visible r
 | **General** | Instance behaviour and base configuration shown by the panel, including **Support contact** (used in the User-Agent for Nominatim and MET Norway requests) |
 | **Branding** | Organisation name, logo, colour palette and fonts |
 | **Mail** | The organisation-wide mail transport |
-| **External services** | Weather and Maps connections, and the Cloudflare Turnstile keys for guest registration |
+| **External services** | Weather and Maps connections, the Cloudflare Turnstile keys for guest registration, and the ways in to its form |
 | **Notifications** | Security alerts to admin staff |
 | **Security** | MFA, session policy, passkey sign-in, trusted script origins |
 | **Archiving** | Retention and completed-event controls. Switch between Active and Archived lists (paginated). Each row can show who created and who last archived the event, and when |
@@ -60,6 +60,14 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - In Cloudflare, add the address of this instance to the hostnames of the widget.
 - Cloudflare sees each visitor's IP address and browser details when the form opens. Name it in your privacy notice. See [SUBPROCESSORS.md](https://github.com/solarssk/admitto/blob/main/docs/security/SUBPROCESSORS.md).
 - An administrator turns registration on for each event, on the **Access** tab of its **Registration** page. See [Registration Access](Registration-Access).
+
+**Ways in**
+
+- Turn **Link** or **Password** on to let organisers choose it for their events. An organiser picks one way in for each event, on the **Access** tab of its **Registration** page.
+- A way that is off cannot be chosen. Turning one off closes the form of every event that uses it, at once: guests see a page that is not found.
+- Nothing is deleted when you turn a way off. Turn it on again and those forms open again.
+- A way that is on opens a form only while the Turnstile keys are ready. The card warns you when they are not.
+- Save once for the whole tab. The change is recorded in **Logs**, on the **Audit** view, as "Guest registration access methods updated".
 
 **Support contact and Test connection**
 

@@ -42,6 +42,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add an admin API for the registration settings of an event; it refuses to turn registration on until the event is ready ([#1823](https://github.com/solarssk/admitto/pull/1823))
 - Add a guest's companion: it takes a seat, is marked in at check-in, and counts as "People on site" on the Overview and in Reports; guests cannot bring one yet ([#1808](https://github.com/solarssk/admitto/pull/1808))
 - Add a Registration menu entry and its Access tab: turn guest registration on or off, choose the way in and password, and copy the guest link ([#1825](https://github.com/solarssk/admitto/pull/1825))
+- Add a Ways in card to Organisation settings > External services, where a superadmin turns the link and the password on so events can use them ([#1826](https://github.com/solarssk/admitto/pull/1826))
 
 ### Changed
 

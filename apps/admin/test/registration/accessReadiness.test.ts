@@ -31,9 +31,11 @@ describe("the words of the checks", () => {
   it("send what a superadmin sets up to the superadmin, and what the organiser can put right to where they do it", () => {
     const remedy = (key: keyof typeof READINESS_COPY) => READINESS_COPY[key].remedy;
 
-    for (const key of ["access_method_enabled", "bot_protection", "mail_provider", "instance_url"] as const) {
+    for (const key of ["bot_protection", "mail_provider", "instance_url"] as const) {
       expect(remedy(key), key).toEqual({ text: "Ask a superadmin to set it up." });
     }
+    // A way in is turned on at one place, and the organiser is told which.
+    expect(remedy("access_method_enabled")).toEqual({ text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." });
     expect(remedy("legal_documents")?.link).toBe("legal");
     expect(remedy("form_questions")?.link).toBe("fields");
     expect(remedy("required_fields")?.link).toBe("fields");
