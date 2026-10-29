@@ -614,7 +614,19 @@ function patchFieldFailure(c: Context, err: unknown): Response {
   if (err instanceof InvalidFieldRulesError) return invalidFieldRulesResponse(c);
   if (err instanceof ShowWhenError) return showWhenProblemResponse(c, err.problem);
   if (err instanceof FieldGoneError) return c.json({ error: "forbidden" }, 403);
+  if (err instanceof FieldInUseError) return c.json({ error: "field_in_use" }, 409);
   throw err;
+}
+
+/** Whether an item of the event shows the question through `config.content_fields`. Read under the custom fields lock. */
+async function itemsShowField(tx: Prisma.TransactionClient, eventId: string, sourceField: string): Promise<boolean> {
+  const items = await tx.eventItem.findMany({ where: { event_id: eventId }, select: { config: true } });
+  return items.some((item) => {
+    const config = item.config;
+    if (!config || typeof config !== "object" || Array.isArray(config)) return false;
+    const fields = (config as { content_fields?: unknown }).content_fields;
+    return Array.isArray(fields) && fields.includes(sourceField);
+  });
 }
 
 /** PATCH /api/admin/events/:eventId/custom-fields/:fieldId */
@@ -657,6 +669,10 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
       const current = await loadCustomFieldInEvent(tx, eventId, fieldId);
       if (!current) throw new FieldGoneError();
       assertRulesFitType(current, parsed.data);
+      // An item shows the answers of the guest (`content_fields` names questions about the guest): a question it shows is not moved to the companion.
+      if (parsed.data.applies_to === "companion" && current.applies_to !== "companion" && (await itemsShowField(tx, eventId, current.source_field))) {
+        throw new FieldInUseError();
+      }
       if (patchTouchesConditions(parsed.data)) {
         await assertConditionsHold(tx, eventId, patchedConditionField(current, parsed.data));
       }
@@ -789,7 +805,7 @@ export async function handleGetEventCustomFieldOptionUsage(c: Context, db: Prism
     return c.json({ error: "not_a_select_field" }, 400);
   }
 
-  const counts = await countAttendeesByCustomFieldValue(db, eventId, existing.source_field);
+  const counts = await countAttendeesByCustomFieldValue(db, eventId, existing.source_field, existing.applies_to === "companion" ? "companion" : "guest");
   return c.json({ counts: Object.fromEntries(counts) });
 }
 
@@ -819,17 +835,7 @@ export async function handleDeleteEventCustomField(c: Context, db: PrismaClient)
       // (Postgres default isolation is READ COMMITTED, not Serializable).
       await acquireEventCustomFieldsLock(tx, eventId);
 
-      const items = await tx.eventItem.findMany({
-        where: { event_id: eventId },
-        select: { config: true },
-      });
-      const inUse = items.some((item) => {
-        const config = item.config;
-        if (!config || typeof config !== "object" || Array.isArray(config)) return false;
-        const fields = (config as { content_fields?: unknown }).content_fields;
-        return Array.isArray(fields) && fields.includes(existing.source_field);
-      });
-      if (inUse) {
+      if (await itemsShowField(tx, eventId, existing.source_field)) {
         throw new FieldInUseError();
       }
       // A field that other fields are shown by is not deleted: their condition would name nothing.

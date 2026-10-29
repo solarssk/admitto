@@ -617,6 +617,31 @@ describe("GET /api/admin/events/:eventId/custom-fields/:fieldId/option-usage", (
     expect(body.counts.L).toBeUndefined();
   });
 
+  it("counts the answers of the companions for a question about the companion, and not the answers of the guests", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF, source_field: "usage_meal", label: "Meal", type: "select", options: ["Meat", "Veg", "Fish"], applies_to: "companion" },
+    });
+    const guests = await Promise.all(
+      ["usage-c1", "usage-c2", "usage-c3"].map((email) =>
+        prisma.attendee.create({ data: { event_id: EVENT_CF, email: `${email}@example.com`, name: email, custom_data: { usage_meal: "Fish" } } }),
+      ),
+    );
+    await prisma.attendeeCompanion.createMany({
+      data: [
+        { attendee_id: guests[0]!.id, slot: 1, name: "Companion One", custom_data: { usage_meal: "Veg" } },
+        { attendee_id: guests[1]!.id, slot: 1, name: "Companion Two", custom_data: { usage_meal: "Veg" } },
+        { attendee_id: guests[2]!.id, slot: 1, name: "Companion Three", custom_data: { usage_meal: "Meat" } },
+      ],
+    });
+    // A companion of another event answering the same key is not counted.
+    const elsewhere = await prisma.attendee.create({ data: { event_id: EVENT_CF_OTHER, email: "usage-c-other@example.com", name: "Elsewhere" } });
+    await prisma.attendeeCompanion.create({ data: { attendee_id: elsewhere.id, slot: 1, name: "Elsewhere Companion", custom_data: { usage_meal: "Meat" } } });
+
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields/${created.id}/option-usage`, { headers: { Cookie: adminCookie } });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { counts: Record<string, number> }).counts).toEqual({ Veg: 2, Meat: 1 });
+  });
+
   it("never counts an attendee from a different event", async () => {
     const created = await prisma.eventCustomField.create({
       data: {
@@ -1986,6 +2011,36 @@ describe("whose answer a question asks for", () => {
     expect((await stored(field.id)).applies_to).toBe("companion");
     expect(await recipientOf(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "guest" }))).toBe("guest");
     expect((await stored(field.id)).applies_to).toBe("guest");
+  });
+
+  it("refuses to move a question that an item shows to the companion, with 409 field_in_use, and lets it move once no item shows it", async () => {
+    const field = await makeField(EVENT_CF_ORDER, { source_field: "badge_name" });
+    await prisma.eventItem.upsert({
+      where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } },
+      create: { event_id: EVENT_CF_ORDER, key: "badge_item", label: "Badge", config: { content_fields: ["badge_name"] } },
+      update: { config: { content_fields: ["badge_name"] } },
+    });
+
+    expect(await refusal(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "companion" }))).toEqual([409, "field_in_use"]);
+    expect((await stored(field.id)).applies_to).toBe("guest");
+
+    await prisma.eventItem.update({ where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } }, data: { config: { content_fields: [] } } });
+    expect(await recipientOf(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "companion" }))).toBe("companion");
+    await prisma.eventItem.delete({ where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } } });
+  });
+
+  it("does not look at the items when the recipient stays the same, or when a question moves back to the guest", async () => {
+    const field = await makeField(EVENT_CF_ORDER, { source_field: "badge_name" });
+    await prisma.eventItem.upsert({
+      where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } },
+      create: { event_id: EVENT_CF_ORDER, key: "badge_item", label: "Badge", config: { content_fields: ["badge_name"] } },
+      update: { config: { content_fields: ["badge_name"] } },
+    });
+
+    expect(await recipientOf(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "guest", label: "Badge name" }))).toBe("guest");
+    await prisma.eventCustomField.update({ where: { id: field.id }, data: { applies_to: "companion" } });
+    expect(await recipientOf(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "guest" }))).toBe("guest");
+    await prisma.eventItem.delete({ where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } } });
   });
 
   it("changes nothing else when only the recipient is sent, and keeps the recipient when the same one is sent again", async () => {
