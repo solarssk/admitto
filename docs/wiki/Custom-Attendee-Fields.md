@@ -17,12 +17,13 @@ Decide which information is necessary for this event. Choose a stable field name
 3. Enter a clear **Display label**.
 4. Review the generated field ID. It is the source field used by imports and references.
 5. Add an optional description when operators need context.
-6. Choose the type of answer: **Text**, **Long text**, **Date**, **Date and time**, **Phone**, **Single choice** or **Yes / No**. See [Types of answer](#types-of-answer).
-7. For a Single choice field, select **+ Add option** for each value attendees can choose, and drag a row's handle (or, with it focused, use the up/down arrow keys) to reorder the list.
-8. For a Text, Long text or Phone field, you can limit the answer under **Format rules**. See [Format rules](#format-rules).
-9. Under **Registration form**, you can give the question an icon, show it only for a certain answer to another question, and, for a Text field, offer suggestions. See [Icon, condition and suggestions](#icon-condition-and-suggestions).
-10. Mark the field **Required** only when every attendee must have a valid value.
-11. Create the field and test it with a synthetic attendee or dry-run import.
+6. Under **Applies to**, choose **Guest** for a question about the guest, or **Companion** for a question about the person the guest brings. See [Questions about a companion](#questions-about-a-companion).
+7. Choose the type of answer: **Text**, **Long text**, **Date**, **Date and time**, **Phone**, **Single choice** or **Yes / No**. See [Types of answer](#types-of-answer).
+8. For a Single choice field, select **+ Add option** for each value attendees can choose, and drag a row's handle (or, with it focused, use the up/down arrow keys) to reorder the list.
+9. For a Text, Long text or Phone field, you can limit the answer under **Format rules**. See [Format rules](#format-rules).
+10. Under **Registration form**, you can give the question an icon, show it only for a certain answer to another question, and, for a Text field, offer suggestions. See [Icon, condition and suggestions](#icon-condition-and-suggestions).
+11. Mark the field **Required** only when every attendee must have a valid value.
+12. Create the field and test it with a synthetic attendee or dry-run import.
 
 ## Expected result
 
@@ -101,6 +102,24 @@ What the window does when something is in the way:
 | The event's own **parking** field is not a Yes / No question on the registration form | **Not added** on the registration number, with the reason | The other questions are added. Fix the field and press the button again |
 | The questions would take the event over 20 fields | **Would be added** on each question, and a warning that says how many fields to delete | Nothing is added. Delete fields, or add the questions you want one at a time with **Add field** |
 
+### Questions about a companion
+
+When an event lets a guest bring a companion (the setting on the **Access** tab of the **Registration** page), you can ask questions about that person. Under **Applies to**, choose **Companion** instead of **Guest**. The field list marks such a question with a **Companion** badge under its name.
+
+| | A question about the guest | A question about the companion |
+|---|---|---|
+| Asked | On the registration form, of the guest | In the companion's part of the form, only when the guest brings someone |
+| The answer is kept | With the attendee | With the companion |
+| Used in | The attendee form, imports, exports, filters, reports and wallet passes | The companion's card on the attendee's page, and the request window |
+| Can wait for | A Yes / No or Single choice question about the guest | A Yes / No or Single choice question about the companion |
+
+- A question never waits for a question about the other person. The list under **Show only when** holds only the questions about the same person.
+- A question about the companion follows the other rules of a field: a **Required** one must be on the registration form, and it counts toward the limit of 20 fields.
+- You can move an existing question to the other person. Answers already given are not moved: they stay with the person who gave them, and the question is not asked of the other any more. Use this only before guests have answered.
+- You cannot move a question that other questions are shown for, or a question that is shown for an answer to a question about the other person. The editor says why and keeps **Save** off.
+- A question about the companion cannot be used as a hint on an event item, because a hint shows the attendee's own answer.
+- An Administrator corrects the answers on the attendee's page. See [Correct or remove a guest's companion](Managing-Attendees#correct-or-remove-a-guests-companion).
+
 ### Icon, condition and suggestions
 
 Under **Registration form** in the field editor, every field can have an icon and a condition. A Text field can also have suggestions. All three are optional, and none of them changes what an answer may be.
@@ -115,7 +134,7 @@ The icons are Parking, Car, Food, Accessibility, Accommodation, Extra guest, Gro
 
 To set **Show only when**:
 
-1. Choose the other question. The list holds the Yes / No and Single choice questions of the event that have no condition of their own.
+1. Choose the other question. The list holds the Yes / No and Single choice questions of the event that are about the same person and have no condition of their own.
 2. Choose the answer. For a Yes / No question it is **Yes**. For a Single choice question, choose one of its options.
 
 - The registration form draws an icon next to an optional Yes / No question and next to a one-line answer (Text, Date, Date and time, Phone). A Single choice, a Long text and a Required Yes / No question show none. You can still save an icon for them, and the editor says so under the icons.
@@ -129,7 +148,7 @@ To set **Show only when**:
 
 A Yes / No or Single choice question can have other questions that wait for one of its answers. For such a question:
 
-- You cannot change its type, and you cannot remove or rename an option that a question is shown for.
+- You cannot change its type, move it to the other person (**Applies to**), or remove or rename an option that a question is shown for.
 - You cannot delete it.
 - Before you save, the editor names those questions and the answer each waits for, and keeps **Save** off. The **Delete** dialog says the same and keeps **Delete** off.
 - To go on, open the other question and set **Show only when** to **No condition**, or undo your change.
@@ -195,6 +214,7 @@ A phone number is saved as a + and its digits. A number saved earlier in another
 | **An import value is invalid** | Use the field ID as the column and match the selected type or option |
 | **The field cannot be deleted** | Remove its use from event items first, and change or remove the condition of any field that is shown only for an answer to it |
 | **A Required field cannot be saved because of the registration form** | The event accepts registrations, and a guest cannot answer a field that is not on the form. Put the field on the form, or clear **Required** |
+| **The editor says a change can't be saved when you move a question to the other person** | Other questions are shown for an answer to it, or it is shown for an answer to a question about the other person. Open those questions and set **Show only when** to **No condition**, or undo the move |
 | **The editor says a change can't be saved because other questions are shown for an answer to this field** | Open each of those questions and set **Show only when** to **No condition**, or undo the change. The same applies to deleting the field |
 | **The editor says a question shows no icon** | The registration form draws an icon only next to an optional Yes / No question and next to a one-line answer. For a Single choice, a Long text or a Required Yes / No question the icon stays saved and is not drawn. Choose **No icon**, or change the type or **Required** |
 | **Add suggested questions says a question is not added** | The registration number waits for a Yes / No question with the ID `parking` that is on the registration form. The event has a field with that ID that is something else, or is off the form. Change that field, or add the question by hand |

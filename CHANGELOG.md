@@ -40,10 +40,11 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add sending a failed guest email again from the Requests tab, for any failed email except the ticket ([#1807](https://github.com/solarssk/admitto/pull/1807))
 - Add Delete all matching to the Requests tab, which deletes up to 500 requests a filter selects and refuses if the list changed meanwhile ([#1807](https://github.com/solarssk/admitto/pull/1807))
 - Add an admin API for the registration settings of an event; it refuses to turn registration on until the event is ready ([#1823](https://github.com/solarssk/admitto/pull/1823))
-- Add a guest's companion: it takes a seat, is marked in at check-in, and counts as "People on site" on the Overview and in Reports; guests cannot bring one yet ([#1808](https://github.com/solarssk/admitto/pull/1808))
+- Add a guest's companion: it takes a seat, is marked in at check-in, and counts as "People on site" on the Overview and in Reports ([#1808](https://github.com/solarssk/admitto/pull/1808))
 - Add a Registration menu entry and its Access tab: turn guest registration on or off, choose the way in and password, and copy the guest link ([#1825](https://github.com/solarssk/admitto/pull/1825))
 - Add a Ways in card to Organisation settings > External services, where a superadmin turns the link and the password on so events can use them ([#1826](https://github.com/solarssk/admitto/pull/1826))
 - Let a guest bring one companion on the registration form, with a seat of their own counted against the event's capacity ([#1824](https://github.com/solarssk/admitto/pull/1824))
+- Let an Administrator correct or remove a guest's companion on the attendee's page, and mark a question as about the guest or the companion
 
 ### Changed
 

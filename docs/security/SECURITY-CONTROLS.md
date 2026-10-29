@@ -381,6 +381,22 @@ The checks, in the order of the answer. A check that does not apply is not in it
 
 ---
 
+## A guest's companion (staff)
+
+An Administrator corrects or removes the person a guest brought: `PATCH` and `DELETE /api/admin/events/:eventId/attendees/:id/companion`. The companion is a third party who never gave Admitto anything, so what these routes accept, log and answer is kept narrow.
+
+| Control | What it does |
+|---------|--------------|
+| Access | An admin of the event's organisation or a superadmin, checked on the server: by the archived-event wrapper, and again when the handler loads the attendee. An operator gets 403, and so does an admin of another organisation. Both routes have the cross-site check. An archived event answers 403 `event_archived` (unlike an erasure, a companion is not changed after the event is archived). |
+| What can be sent | `PATCH` takes `{ name, custom_data }` and no other key (400 `validation_failed`); `DELETE` takes no body. The name and the answers go through the boundary the registration form uses (`registrantNameSchema`, `buildRegistrantCustomData` for the companion's questions), so a link or an address as a name, an answer that is not text or too long, an invisible or bidirectional character, a question about the guest, an unknown key and `__proto__` are refused or left out in the same way. A refusal is a fixed code that holds none of the input. |
+| Who is refused | An attendee who was erased (409 `attendee_erased`), an id that is no attendee of the event (403), a guest who has no companion (404 `companion_not_found`). A route never adds a companion, because a companion takes a seat, and seats are taken under the capacity lock by an admission. |
+| Locks | An edit takes the attendee's row lock before it reads or writes anything of the attendee, and leaves the registration as the guest sent it. A removal also clears the guest's registration copy, so it takes the registration queue first and the attendee's row second (the order in `docs/dev/attendee-erasure.md`, "Taking locks: one order"). Against an erasure, the removal of the attendee and the deletion of the registration, each side first, the second finds the work of the first whole and nothing of the companion is left. |
+| Removal | The companion's name and answers are deleted from the companion table and from `Registration.companions`, in one transaction with the audit entries, so a failure of an entry undoes the removal. The place is free again. |
+| Audit | `attendee_companion_updated` and `attendee_companion_removed`, in the attendee's activity log and the central audit log: the event, the attendee's id, the slot and, for a removal, `seats_freed: 1`. Never the name or an answer, also when a request fails. |
+| Rate limit | The budget of editing the attendee (`admin:attendee-patch`): 20 a minute per user and attendee. |
+
+---
+
 ## Optional hardening (customer choice)
 
 Organizations with stricter policies often add controls **outside** the application:
@@ -520,6 +536,7 @@ Notes on the rows above:
 | event-wide wallet jobs (Push updates, Refresh status, Void active passes, Remove inactive passes) | user + event | 10 / 10 min | event admin |
 | polling a background job's status (`…/import/jobs/:jobId`, `…/wallet-push`, `…/wallet-message`, `…/wallet-refresh-status`, `…/wallet-cleanup/jobs/:jobId`) | user + event | 120 / 60 s per route | event admin |
 | `PATCH …/attendees/:id` | user + attendee | 20 / 60 s | event admin |
+| `PATCH` and `DELETE …/attendees/:id/companion` | user + attendee (the bucket of `PATCH …/attendees/:id`) | 20 / 60 s | event admin |
 | `POST …/attendees/:id/resend` | user + attendee; and per user | 5 / 60 s; 30 / h | event admin |
 | bulk resend / bulk send (real sends; dry-run exempt) | user | 3 / 10 min | event admin |
 | `POST …/wallet-message/send` (real send; dry-run exempt) | user + event | 10 / 10 min | event admin |
