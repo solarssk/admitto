@@ -183,6 +183,7 @@ type CallInit = {
 function call(method: "PATCH" | "DELETE", attendeeId: string, init: CallInit = {}): Promise<Response> {
   const origin = init.origin === undefined ? "http://localhost" : init.origin;
   const cookie = init.cookie === undefined ? cookies.admin : init.cookie;
+  const sentBody = "body" in init ? init.body : { name: "New Name", custom_data: { diet: "vegan" } };
   return Promise.resolve(
     app.request(`/api/admin/events/${init.eventId ?? EVENT_ID}/attendees/${attendeeId}/companion`, {
       method,
@@ -191,7 +192,7 @@ function call(method: "PATCH" | "DELETE", attendeeId: string, init: CallInit = {
         ...(origin ? { Origin: origin } : {}),
         ...(method === "PATCH" ? { "Content-Type": "application/json" } : {}),
       },
-      ...(method === "PATCH" ? { body: init.rawBody ?? JSON.stringify("body" in init ? init.body : { name: "New Name", custom_data: { diet: "vegan" } }) } : {}),
+      ...(method === "PATCH" ? { body: init.rawBody ?? JSON.stringify(sentBody) } : {}),
     }),
   );
 }
