@@ -313,7 +313,7 @@ describe("the Edit dialog", () => {
     await waitFor(() => expect(alerts()).toEqual(["The name or an answer was not accepted. A name cannot be a link or an address, and an answer has to be what its question takes."]));
     expect(nameBox().value).toBe("someone@example.com");
     expect(saveButton().getAttribute("aria-busy")).not.toBe("true");
-    expect(screen.queryByRole("dialog", { name: "Edit companion" })).not.toBeNull();
+    expect(screen.getByRole("dialog", { name: "Edit companion" })).toBeTruthy();
     expect(addToast).not.toHaveBeenCalled();
   });
 
@@ -370,7 +370,7 @@ describe("the Edit dialog", () => {
     await waitFor(() => expect(saveButton().getAttribute("aria-disabled")).toBe("true"));
     expect((within(dialog()).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "Edit companion" })).not.toBeNull();
+    expect(screen.getByRole("dialog", { name: "Edit companion" })).toBeTruthy();
     fireEvent.click(saveButton());
     // Enter in a box submits the form without going through the button.
     fireEvent.submit(nameBox().closest("form")!);
@@ -540,7 +540,7 @@ describe("the Remove confirmation", () => {
 
     const confirmation = await screen.findByRole("dialog", { name: REMOVE_TITLE });
     await waitFor(() => expect(within(confirmation).getByText("Could not remove the companion. Try again.")).toBeTruthy());
-    expect(screen.queryByText("Companion", { selector: ".at-card__title" })).not.toBeNull();
+    expect(screen.getByText("Companion", { selector: ".at-card__title" })).toBeTruthy();
     expect(addToast).not.toHaveBeenCalled();
   });
 
@@ -586,7 +586,7 @@ describe("the Remove confirmation", () => {
     fireEvent.click(confirmRemove());
     await waitFor(() => expect(confirmRemove().getAttribute("aria-disabled") ?? String((confirmRemove() as HTMLButtonElement).disabled)).toBe("true"));
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: REMOVE_TITLE })).not.toBeNull();
+    expect(screen.getByRole("dialog", { name: REMOVE_TITLE })).toBeTruthy();
 
     await act(() => Promise.resolve(pending.resolve(detailOf(null))));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: REMOVE_TITLE })).toBeNull());
@@ -620,7 +620,7 @@ describe("an archived event", () => {
     fireEvent.click(saveButton());
     await waitFor(() => expect(alerts()).toEqual(["This event is archived."]));
 
-    expect(screen.queryByRole("dialog", { name: "Edit companion" })).not.toBeNull();
+    expect(screen.getByRole("dialog", { name: "Edit companion" })).toBeTruthy();
   });
 });
 
