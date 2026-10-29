@@ -146,6 +146,16 @@ describe("findShowWhenProblem: whose answer a field asks for", () => {
     expect(findShowWhenProblem(plate, [field("parking", "boolean", { applies_to: null })])).toBe("invalid_show_when");
   });
 
+  it("refuses to save a question that others wait for when they are about the other recipient, from either side", () => {
+    const guestDependent = field("plate", "text", { rules: whenParking });
+    const companionDependent = field("plate", "text", { rules: whenParking, applies_to: "companion" });
+    // The dependent was written to the database with a recipient other than the controller's: saving the controller refuses it.
+    expect(findShowWhenProblem(companionParking, [guestDependent])).toBe("field_controls_others");
+    expect(findShowWhenProblem(parking, [companionDependent])).toBe("field_controls_others");
+    expect(findShowWhenProblem(companionParking, [companionDependent])).toBeNull();
+    expect(findShowWhenProblem(parking, [guestDependent])).toBeNull();
+  });
+
   it("accepts a question about the companion that waits for another question about the companion, by the rules of any other condition", () => {
     const plate = field("plate", "text", { rules: whenParking, applies_to: "companion" });
     expect(findShowWhenProblem(plate, [companionParking])).toBeNull();

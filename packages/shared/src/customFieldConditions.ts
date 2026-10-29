@@ -67,7 +67,7 @@ function ownConditionProblem(field: ConditionField, others: readonly ConditionFi
 function dependentsProblem(field: ConditionField, others: readonly ConditionField[]): ShowWhenProblem | null {
   for (const dependent of dependentsOf(field.source_field, others)) {
     const condition = dependent.rules?.show_when;
-    if (condition && !acceptsCondition(field, condition)) return "field_controls_others";
+    if (condition && (recipientOf(dependent) !== recipientOf(field) || !acceptsCondition(field, condition))) return "field_controls_others";
     if (dependent.show_on_form && !field.show_on_form) return "show_when_not_on_form";
   }
   return null;

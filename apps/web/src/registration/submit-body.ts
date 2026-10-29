@@ -339,8 +339,11 @@ function judgeCompanion(
  * that is wrong at once.
  */
 function checkCompanions(raw: unknown, rules: SubmissionRules, errors: Map<string, string>): CompanionsCheck {
-  if (raw === undefined || raw === null) return { kind: "ok", companions: [] };
-  if (rules.companionMax === 0 || !Array.isArray(raw)) return { kind: "malformed" };
+  if (raw === undefined) return { kind: "ok", companions: [] };
+  // The page never sends the key for an event that takes none, not even as null: it is a shape the page did not send.
+  if (rules.companionMax === 0) return { kind: "malformed" };
+  if (raw === null) return { kind: "ok", companions: [] };
+  if (!Array.isArray(raw)) return { kind: "malformed" };
   if (raw.length > rules.companionMax) {
     errors.set(ERROR_KEY_COMPANIONS, SUBMIT_MESSAGES.tooManyCompanions);
     return { kind: "ok", companions: [] };

@@ -478,10 +478,13 @@ describe("the companions of the body (D-E5)", () => {
   });
 
   it.each([0, 1])("takes none from a body that has none, whatever the event takes (%i): no required question about a companion is asked", (max) => {
-    for (const body of [undefined, null]) {
-      const registrant = registrantOf(bring(body, { companionMax: max }));
-      expect(registrant).not.toHaveProperty("companions");
-    }
+    const registrant = registrantOf(bring(undefined, { companionMax: max }));
+    expect(registrant).not.toHaveProperty("companions");
+  });
+
+  it("takes `companions: null` as none only for an event that takes companions: for one that takes none the key is not one the page sends", () => {
+    expect(registrantOf(bring(null, { companionMax: 1 }))).not.toHaveProperty("companions");
+    expect(bring(null, { companionMax: 0 }).kind).toBe("malformed");
   });
 
   it.each([[[]], [[{ name: "Piotr" }]], ["Piotr"], [{}], [1], [true]])(
