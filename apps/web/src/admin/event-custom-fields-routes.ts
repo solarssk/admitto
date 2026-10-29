@@ -202,6 +202,8 @@ type CustomFieldRow = {
   display_order: number | null;
   options: Prisma.JsonValue;
   rules: Prisma.JsonValue;
+  /** Whose answer the question asks for; not part of the DTO until the field editor can set it. */
+  applies_to: string;
   created_at: Date;
 };
 
@@ -273,7 +275,7 @@ function showWhenProblemResponse(c: Context, problem: ShowWhenProblem): Response
 }
 
 /** The columns of a field row that the checks of conditions between fields read. */
-const CONDITION_COLUMNS = { source_field: true, type: true, show_on_form: true, options: true, rules: true } as const;
+const CONDITION_COLUMNS = { source_field: true, type: true, show_on_form: true, options: true, rules: true, applies_to: true } as const;
 
 type ConditionRow = {
   source_field: string;
@@ -281,6 +283,7 @@ type ConditionRow = {
   show_on_form: boolean;
   options: Prisma.JsonValue;
   rules: Prisma.JsonValue;
+  applies_to: string;
 };
 
 function toConditionField(row: ConditionRow): ConditionField {
@@ -290,6 +293,7 @@ function toConditionField(row: ConditionRow): ConditionField {
     show_on_form: row.show_on_form,
     options: Array.isArray(row.options) ? row.options.filter((o): o is string => typeof o === "string") : null,
     rules: readStoredFieldRules(row.rules) ?? null,
+    applies_to: row.applies_to === "companion" ? "companion" : "guest",
   };
 }
 
@@ -306,7 +310,8 @@ async function assertConditionsHold(tx: Prisma.TransactionClient, eventId: strin
   if (problem) throw new ShowWhenError(problem);
 }
 
-/** A new field as the checks of conditions read it. */
+/** A new field as the checks of conditions read it. The API makes a question about the guest; one about a companion is
+ * made in the database until the field editor can ask for it. */
 function newConditionField(input: z.infer<typeof createFieldSchema>): ConditionField {
   return {
     source_field: input.source_field,
@@ -314,6 +319,7 @@ function newConditionField(input: z.infer<typeof createFieldSchema>): ConditionF
     show_on_form: input.show_on_form ?? false,
     options: input.options ?? null,
     rules: input.rules ?? null,
+    applies_to: "guest",
   };
 }
 

@@ -9,11 +9,20 @@ export type ConditionField = {
   /** The options of a select field. */
   options: readonly string[] | null | undefined;
   rules: EventCustomFieldRules | null | undefined;
+  /** Whose answer the field asks for (`EventCustomField.applies_to`): the guest's own or the guest's companion's. Absent: the guest's. */
+  applies_to?: "guest" | "companion" | null;
 };
+
+/** Whose answer a field asks for: absent means the guest's, as it does in the database. */
+function recipientOf(field: ConditionField): "guest" | "companion" {
+  return field.applies_to === "companion" ? "companion" : "guest";
+}
 
 /** Why a save would break the conditions between the fields of an event: the code the admin API answers with.
  * - `invalid_show_when`: the condition is not one that can be kept. It names the field itself, a field the event
- *   does not have, one that is neither yes/no nor select, one that has a condition of its own, or an answer that field
+ *   does not have, one that is neither yes/no nor select, one that has a condition of its own, one that asks for the
+ *   answer of someone else (a question about the guest cannot wait for a question about their companion, nor the other
+ *   way round: the two are answered by different people and sent in different parts of the form), or an answer that field
  *   cannot have; or the field has a condition and other fields depend on it. Together these leave no chain and no cycle.
  * - `show_when_not_on_form`: a question with a condition would be on the form while the question it depends on
  *   is not, so a guest could never trigger it. This is checked both ways, for the dependent and for the one it depends on.
@@ -48,6 +57,7 @@ function ownConditionProblem(field: ConditionField, others: readonly ConditionFi
   if (!condition) return null;
   const controller = others.find((other) => other.source_field === condition.field);
   if (!controller) return "invalid_show_when";
+  if (recipientOf(controller) !== recipientOf(field)) return "invalid_show_when";
   if (!acceptsCondition(controller, condition) || controller.rules?.show_when) return "invalid_show_when";
   // Another field that depends on this one would make a chain of two conditions.
   if (controlsOtherFields(field.source_field, others)) return "invalid_show_when";
@@ -57,7 +67,7 @@ function ownConditionProblem(field: ConditionField, others: readonly ConditionFi
 function dependentsProblem(field: ConditionField, others: readonly ConditionField[]): ShowWhenProblem | null {
   for (const dependent of dependentsOf(field.source_field, others)) {
     const condition = dependent.rules?.show_when;
-    if (condition && !acceptsCondition(field, condition)) return "field_controls_others";
+    if (condition && (recipientOf(dependent) !== recipientOf(field) || !acceptsCondition(field, condition))) return "field_controls_others";
     if (dependent.show_on_form && !field.show_on_form) return "show_when_not_on_form";
   }
   return null;

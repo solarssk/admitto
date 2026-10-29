@@ -17,16 +17,21 @@ import {
   registrantNameSchema,
   type RegistrantFormField,
   type RegistrantSubmission,
+  type RegistrationCompanion,
 } from "@admitto/tickets";
 import {
+  ERROR_KEY_COMPANIONS,
+  ERROR_KEY_COMPANION_NAME,
   ERROR_KEY_COMPANY,
   ERROR_KEY_DEPARTMENT,
   ERROR_KEY_EMAIL,
   ERROR_KEY_FIRST_NAME,
   ERROR_KEY_LAST_NAME,
   ERROR_KEY_TERMS,
+  companionAnswerErrorKey,
   customDataErrorKey,
   type RegistrationSubmitBody,
+  type RegistrationSubmitCompanion,
 } from "./form-contract.js";
 
 /** The keys of the body, and no others: a key the page does not send makes the whole body malformed. Naming every
@@ -41,6 +46,7 @@ const BODY_KEYS: Readonly<Record<keyof RegistrationSubmitBody, true>> = {
   custom_data: true,
   terms: true,
   consents: true,
+  companions: true,
   challenge: true,
   password: true,
 };
@@ -83,6 +89,7 @@ export function readEnvelope(raw: unknown): SubmissionEnvelope | null {
     custom_data: customData,
     terms: ownValue(raw, "terms"),
     consents: ownValue(raw, "consents"),
+    companions: ownValue(raw, "companions"),
     challenge: ownValue(raw, "challenge"),
     password: ownValue(raw, "password"),
   };
@@ -98,6 +105,8 @@ export const SUBMIT_MESSAGES = {
   terms: "Accept the event terms to continue.",
   challenge: "The security check did not pass. Try again.",
   answerMissing: "Answer this question.",
+  companionName: "Enter your guest's full name, up to 100 characters and without links.",
+  tooManyCompanions: "This event does not take that many guests.",
 } as const;
 
 /** The sentence for an answer that is there but is not accepted, by the type of the question. */
@@ -120,11 +129,20 @@ export function invalidAnswerMessage(field: RegistrantFormField): string {
 const isEmptyAnswer = (raw: unknown): boolean =>
   raw === undefined || raw === null || (typeof raw === "string" && raw.trim() === "");
 
+/** Whose answers a set of questions asks for, and the name of the error of a refused one: the guest's own, or a companion's. */
+type AnswerSet = { appliesTo: "guest" | "companion"; errorKey: (sourceField: string) => string };
+const GUEST_ANSWERS: AnswerSet = { appliesTo: "guest", errorKey: customDataErrorKey };
+const COMPANION_ANSWERS: AnswerSet = { appliesTo: "companion", errorKey: companionAnswerErrorKey };
+
 /** Whether the boundary refuses this set of questions with these answers. Anything but its own refusal is a bug of
  * ours and is let through to the caller. */
-function boundaryRefuses(fields: readonly RegistrantFormField[], answers: Record<string, unknown>): boolean {
+function boundaryRefuses(
+  fields: readonly RegistrantFormField[],
+  answers: Record<string, unknown>,
+  appliesTo: AnswerSet["appliesTo"],
+): boolean {
   try {
-    buildRegistrantCustomData(fields, answers);
+    buildRegistrantCustomData(fields, answers, appliesTo);
     return false;
   } catch (error) {
     if (error instanceof RegistrantInputError) return true;
@@ -156,8 +174,9 @@ function answersTo(input: Record<string, unknown> | undefined, keys: readonly st
 function refusedAnswers(
   fields: readonly RegistrantFormField[],
   input: Record<string, unknown> | undefined,
+  appliesTo: AnswerSet["appliesTo"],
 ): Map<string, string> {
-  const onForm = pickRegistrantFormFields(fields);
+  const onForm = pickRegistrantFormFields(fields, appliesTo);
   const byKey = new Map(onForm.map((field) => [field.source_field, field]));
   const refused = new Map<string, string>();
   const refuse = (field: RegistrantFormField) => {
@@ -165,13 +184,13 @@ function refusedAnswers(
     refused.set(field.source_field, isEmptyAnswer(raw) ? SUBMIT_MESSAGES.answerMissing : invalidAnswerMessage(field));
   };
   for (const field of onForm) {
-    if (!field.rules?.show_when && boundaryRefuses([field], answersTo(input, [field.source_field]))) refuse(field);
+    if (!field.rules?.show_when && boundaryRefuses([field], answersTo(input, [field.source_field]), appliesTo)) refuse(field);
   }
   for (const field of onForm) {
     const controller = byKey.get(field.rules?.show_when?.field ?? "");
     if (!controller || refused.has(controller.source_field)) continue;
     const keys = [controller.source_field, field.source_field];
-    if (boundaryRefuses([controller, field], answersTo(input, keys))) refuse(field);
+    if (boundaryRefuses([controller, field], answersTo(input, keys), appliesTo)) refuse(field);
   }
   return refused;
 }
@@ -183,20 +202,25 @@ type AnswersCheck =
   | { kind: "refused"; errors: Map<string, string> }
   | { kind: "malformed" };
 
-/** The answers to the organiser's questions. Only the questions on the form are read, and a question that is not
- * asked (`rules.show_when`) is not read at all, however the answers to the others are: see buildRegistrantCustomData. */
-function checkAnswers(fields: readonly RegistrantFormField[], customData: Record<string, unknown> | null | undefined): AnswersCheck {
-  const input = customData ?? undefined;
+/** The answers to the organiser's questions of `who` (the guest's, or a companion's). Only the questions on the form are
+ * read, and a question that is not asked (`rules.show_when`) is not read at all, however the answers to the others are:
+ * see buildRegistrantCustomData. */
+function checkAnswers(
+  fields: readonly RegistrantFormField[],
+  answers: Record<string, unknown> | null | undefined,
+  who: AnswerSet,
+): AnswersCheck {
+  const input = answers ?? undefined;
   try {
-    return { kind: "ok", answers: buildRegistrantCustomData(fields, input) };
+    return { kind: "ok", answers: buildRegistrantCustomData(fields, input, who.appliesTo) };
   } catch (error) {
     if (!(error instanceof RegistrantInputError)) throw error;
   }
-  const refused = refusedAnswers(fields, input);
+  const refused = refusedAnswers(fields, input, who.appliesTo);
   if (refused.size === 0) return { kind: "malformed" };
   return {
     kind: "refused",
-    errors: new Map([...refused].map(([key, message]) => [customDataErrorKey(key), message])),
+    errors: new Map([...refused].map(([key, message]) => [who.errorKey(key), message])),
   };
 }
 
@@ -264,6 +288,77 @@ export function checkConsents(raw: unknown, allowedKeys: readonly string[]): str
   return [...ticked];
 }
 
+/** The keys of one companion in the body, and no others: as for the body (see BODY_KEYS), a key the page does not send makes
+ * the whole body malformed. */
+const COMPANION_KEYS: Readonly<Record<keyof RegistrationSubmitCompanion, true>> = { name: true, answers: true };
+
+/** One companion as it came, key by key. The name is not judged yet: a value of the wrong type is the problem of the field. */
+type CompanionEntry = { name: unknown; answers: Record<string, unknown> | undefined };
+
+/** The companion, or null when it is not one the page could have sent: not an object, an object with a key the contract does
+ * not have, or answers that are neither an object nor absent. */
+function readCompanionEntry(raw: unknown): CompanionEntry | null {
+  if (!isPlainRecord(raw)) return null;
+  for (const key of Object.keys(raw)) {
+    if (!Object.hasOwn(COMPANION_KEYS, key)) return null;
+  }
+  const answers = ownValue(raw, "answers");
+  if (answers !== undefined && answers !== null && !isPlainRecord(answers)) return null;
+  return { name: ownValue(raw, "name"), answers: answers ?? undefined };
+}
+
+/** What the companions of the body came to: the ones to store, or a body the page did not send. */
+type CompanionsCheck = { kind: "ok"; companions: RegistrationCompanion[] } | { kind: "malformed" };
+
+/**
+ * One companion of the body: the name goes through the schema of a registrant's name before it can reach
+ * `Registration.companions`, and the answers through the boundary for a companion, so that only the questions about a companion
+ * that are on the form are read, whatever else the object holds (a question about the guest, an unknown key, `__proto__`). A
+ * refusal goes to `errors` and the companion is not stored (null); `"malformed"` is a refusal that no single field is to blame for.
+ */
+function judgeCompanion(
+  entry: CompanionEntry,
+  fields: readonly RegistrantFormField[],
+  errors: Map<string, string>,
+): RegistrationCompanion | null | "malformed" {
+  const name = registrantNameSchema.safeParse(entry.name);
+  if (!name.success) errors.set(ERROR_KEY_COMPANION_NAME, SUBMIT_MESSAGES.companionName);
+  const answers = checkAnswers(fields, entry.answers, COMPANION_ANSWERS);
+  if (answers.kind === "malformed") return "malformed";
+  if (answers.kind === "refused") {
+    for (const [key, message] of answers.errors) errors.set(key, message);
+    return null;
+  }
+  return name.success ? { name: name.data, custom_data: answers.answers ?? null } : null;
+}
+
+/**
+ * The companions the guest brings (D-E5). Absent is none. A body that has the key for an event that takes none is not one the
+ * page sent, whatever it holds, and is refused as any other shape the page does not send; more than the event takes is a
+ * refusal of its own, with a sentence, before any entry is read. Every refusal goes to `errors`, so that the guest sees all
+ * that is wrong at once.
+ */
+function checkCompanions(raw: unknown, rules: SubmissionRules, errors: Map<string, string>): CompanionsCheck {
+  if (raw === undefined) return { kind: "ok", companions: [] };
+  // The page never sends the key for an event that takes none, not even as null: it is a shape the page did not send.
+  if (rules.companionMax === 0) return { kind: "malformed" };
+  if (raw === null) return { kind: "ok", companions: [] };
+  if (!Array.isArray(raw)) return { kind: "malformed" };
+  if (raw.length > rules.companionMax) {
+    errors.set(ERROR_KEY_COMPANIONS, SUBMIT_MESSAGES.tooManyCompanions);
+    return { kind: "ok", companions: [] };
+  }
+  const companions: RegistrationCompanion[] = [];
+  for (const item of raw as unknown[]) {
+    const entry = readCompanionEntry(item);
+    if (entry === null) return { kind: "malformed" };
+    const judged = judgeCompanion(entry, rules.fields, errors);
+    if (judged === "malformed") return { kind: "malformed" };
+    if (judged !== null) companions.push(judged);
+  }
+  return { kind: "ok", companions };
+}
+
 /** What the event gives the check: its fixed questions, its organiser's questions and the consents it shows. */
 export type SubmissionRules = {
   askCompany: boolean;
@@ -271,6 +366,9 @@ export type SubmissionRules = {
   fields: readonly RegistrantFormField[];
   /** Keys of the extra consents the form shows: the texts of this event that are published. */
   consentKeys: readonly string[];
+  /** How many companions the form takes: 0 when it offers none (`fields` then holds the companion questions all the same,
+   * and none is read). */
+  companionMax: number;
   now: Date;
 };
 
@@ -292,9 +390,10 @@ export function checkSubmission(envelope: SubmissionEnvelope, rules: SubmissionR
   const identity = checkIdentity(envelope, errors);
   const profile = checkProfile(envelope, rules, errors);
   if (envelope.terms !== true) errors.set(ERROR_KEY_TERMS, SUBMIT_MESSAGES.terms);
-  const answers = checkAnswers(rules.fields, envelope.custom_data);
+  const answers = checkAnswers(rules.fields, envelope.custom_data, GUEST_ANSWERS);
   const consents = checkConsents(envelope.consents, rules.consentKeys);
-  if (answers.kind === "malformed" || consents === null) return { kind: "malformed" };
+  const companions = checkCompanions(envelope.companions, rules, errors);
+  if (answers.kind === "malformed" || consents === null || companions.kind === "malformed") return { kind: "malformed" };
   if (answers.kind === "refused") {
     for (const [key, message] of answers.errors) errors.set(key, message);
   }
@@ -307,6 +406,7 @@ export function checkSubmission(envelope: SubmissionEnvelope, rules: SubmissionR
       ...identity,
       ...profile,
       ...(answers.kind === "ok" && answers.answers !== undefined ? { custom_data: answers.answers } : {}),
+      ...(companions.companions.length > 0 ? { companions: companions.companions } : {}),
       accepted_at: rules.now,
       consents: Object.fromEntries(consents.map((key) => [key, acceptedAt])),
     },

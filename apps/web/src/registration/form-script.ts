@@ -34,6 +34,12 @@
  *   the guest back to the screen, with the sentence under the field and the focus in it, and the form keeps what was
  *   typed in it. The security check starts again after this answer, as it does after every other.
  *
+ * - gives the guest's companion (D-E5) a part of the form of its own, when the event takes one. The box
+ *   `data-companion-toggle` ("I am bringing a guest") opens the panel `data-companion-panel`. While it is not ticked, every
+ *   field in the panel is hidden, disabled and not required, so it is neither checked nor sent. The questions of the panel
+ *   are kept apart from the guest's own (`askedCompanion`), and a condition refers only to the questions of its own panel.
+ *   What is sent is `companions: [{ name, answers }]`, read from the fields of the panel. The companion is kept nowhere else.
+ *
  * Nothing the guest typed is put in an address, and the page has no cookie.
  */
 
@@ -56,10 +62,23 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
   var regions = Array.prototype.slice.call(document.querySelectorAll("[data-hide-when-done]"));
   var boxes = Array.prototype.slice.call(form.querySelectorAll("[data-field]"));
   var panels = Array.prototype.slice.call(form.querySelectorAll("[data-reveal]"));
+  var toggle = form.querySelector("[data-companion-toggle]");
+  var companionPanel = form.querySelector("[data-companion-panel]");
   var asked = Object.create(null);
+  var askedCompanion = Object.create(null);
+
+  // Whether a field is in the panel of the guest's companion, and whether the guest brings one.
+  function inCompanion(box) {
+    return companionPanel !== null && companionPanel.contains(box);
+  }
+
+  function companionOn() {
+    return toggle !== null && toggle.checked;
+  }
+
   boxes.forEach(function (box) {
     var key = box.getAttribute("data-custom");
-    if (key !== null) asked[key] = box;
+    if (key !== null) (inCompanion(box) ? askedCompanion : asked)[key] = box;
   });
   var challenge = form.querySelector('[data-kind="challenge"]');
   var captcha = form.querySelector(".cf-turnstile");
@@ -137,10 +156,14 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
   // Whether a question is asked now. One without a condition always is. One with a condition is when the question it
   // names, which has no condition of its own, has exactly that answer: the same rule as isQuestionShown, which reads
   // "true" for a ticked Yes/No and the text of the option for a choice, and takes no answer for a match of nothing.
+  // A field of the companion's panel is asked only while the guest brings a companion, and its condition names a question
+  // of that panel.
   function isShown(box) {
+    var inside = inCompanion(box);
+    if (inside && !companionOn()) return false;
     var field = box.getAttribute("data-show-when-field");
     if (field === null) return true;
-    var source = asked[field];
+    var source = (inside ? askedCompanion : asked)[field];
     if (!source || source.hasAttribute("data-show-when-field")) return false;
     return valueOf(source) === box.getAttribute("data-show-when-value");
   }
@@ -170,16 +193,18 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     else summaryText.textContent = marked === 1 ? TEXT.oneField : marked + TEXT.manyFields;
   }
 
-  // Shows and hides the questions that wait for a condition, and the panel that holds them while any is asked.
+  // Shows and hides the questions that wait for a condition and the fields of the companion's panel, and the panel of the
+  // companion while the guest brings one, and the panels that hold the questions under a condition while any is asked.
   function sync() {
     var unmarked = false;
     boxes.forEach(function (box) {
-      if (!box.hasAttribute("data-show-when-field")) return;
+      if (!box.hasAttribute("data-show-when-field") && !inCompanion(box)) return;
       var on = isShown(box);
       if (box.hidden !== on) return;
       if (!on && box.classList.contains("has-error")) unmarked = true;
       setShown(box, on);
     });
+    if (companionPanel) companionPanel.hidden = !companionOn();
     panels.forEach(function (panel) {
       panel.hidden = panel.querySelector("[data-show-when-field]:not([hidden])") === null;
     });
@@ -243,13 +268,23 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     var body = {};
     var answers = Object.create(null);
     var answered = 0;
+    var companionName = "";
+    var companionAnswers = Object.create(null);
+    var companionAnswered = 0;
     boxes.forEach(function (box) {
       var kind = box.getAttribute("data-kind");
       var custom = box.getAttribute("data-custom");
       if (!isShown(box)) return;
       var value = valueOf(box);
       if (value === "") return;
-      if (custom !== null) {
+      if (inCompanion(box)) {
+        if (custom !== null) {
+          companionAnswers[custom] = value;
+          companionAnswered += 1;
+        } else if (kind === "name") {
+          companionName = value;
+        }
+      } else if (custom !== null) {
         answers[custom] = value;
         answered += 1;
       } else if (kind === "name" || kind === "email" || kind === "text") {
@@ -257,6 +292,11 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
       }
     });
     if (answered > 0) body.custom_data = answers;
+    if (companionOn()) {
+      var companion = { name: companionName };
+      if (companionAnswered > 0) companion.answers = companionAnswers;
+      body.companions = [companion];
+    }
     body.terms = true;
     body.consents = Array.prototype.slice
       .call(form.querySelectorAll("[data-consent]"))

@@ -24,7 +24,9 @@
  *    address, and the client's budget comes first, so a client that is out of tries cannot spend the event's. A password
  *    that is wrong, missing, not a text or too long is the one `403 access_denied`, and an event whose way in is the link
  *    ignores a password it is sent, with no error and no line in a log.
- * 8. The fields are judged (422 with a fixed sentence for each) and the terms must be accepted.
+ * 8. The fields are judged (422 with a fixed sentence for each) and the terms must be accepted. So are the companions the guest
+ *    brings: for an event that takes none, a body that has them is malformed (400), as it is for any key the page does not
+ *    send, so the answer does not say what the event is set to. `placeRegistration` judges their number again under its locks.
  * 9. Only now the database is written, in `placeRegistration`, and the mail is queued in the same transaction. The mail
  *    of a new registration is withheld, not the registration, when the address or the event has spent its budget.
  *
@@ -58,6 +60,7 @@ import { isEventPassword, notePasswordTriesRefused } from "./event-password.js";
 import {
   ACCESS_DENIED_ERROR,
   ERROR_KEY_CHALLENGE,
+  ERROR_KEY_COMPANIONS,
   type RegistrationSubmitDenied,
   type RegistrationSubmitInvalid,
   type RegistrationSubmitOk,
@@ -242,6 +245,10 @@ async function answerPlacement(
       return respondRegistrationNotFound(c);
     case "full":
       return json(c, { error: "full" }, 409);
+    // The event took fewer companions by the time the locks were held than when the body was judged: the same refusal as a body
+    // that brings too many, whatever the address.
+    case "too_many_companions":
+      return invalid(c, new Map([[ERROR_KEY_COMPANIONS, SUBMIT_MESSAGES.tooManyCompanions]]));
     case "busy":
       return tryAgain(c);
   }
@@ -255,6 +262,7 @@ function rulesOf(target: Extract<ResolvedRegistration, { kind: "open" }>, now: D
     askDepartment: form.askDepartment,
     fields: target.fields,
     consentKeys: form.consents.map((consent) => consent.key),
+    companionMax: form.companion?.max ?? 0,
     now,
   };
 }

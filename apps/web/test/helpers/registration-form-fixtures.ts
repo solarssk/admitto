@@ -28,6 +28,7 @@ export function formModel(overrides: Partial<RegistrationFormModel> = {}): Regis
       question({ key: "arrival_time", label: "Expected arrival", type: "datetime", description: "Roughly is fine." }),
       question({ key: "mobile", label: "Mobile phone", type: "phone", rules: { example: "+1 555 0100" } }),
     ],
+    companion: null,
     privacyPath: "/legal/northwind-summit/privacy-notice",
     termsPath: "/legal/northwind-summit/event-terms",
     consents: [{ key: "photos", title: "Photos in the newsletter", path: "/legal/northwind-summit/consent-photos" }],

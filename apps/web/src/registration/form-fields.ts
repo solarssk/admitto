@@ -51,12 +51,15 @@ import {
 import { esc } from "../ticket-page.js";
 import {
   ERROR_KEY_CHALLENGE,
+  ERROR_KEY_COMPANIONS,
+  ERROR_KEY_COMPANION_NAME,
   ERROR_KEY_COMPANY,
   ERROR_KEY_DEPARTMENT,
   ERROR_KEY_EMAIL,
   ERROR_KEY_FIRST_NAME,
   ERROR_KEY_LAST_NAME,
   ERROR_KEY_TERMS,
+  companionAnswerErrorKey,
   customDataErrorKey,
 } from "./form-contract.js";
 import { checkTick, icon, type GuestIcon } from "./form-icons.js";
@@ -109,25 +112,27 @@ function fieldAttrs(errorKey: string, kind: string, required: boolean, message: 
   ]);
 }
 
-/** The `required` and `disabled` of a control. A question under a condition starts disabled and without `required`:
- * while it is not asked, nothing of it is sent and no browser rule can stop the form. The page script turns both on
- * when the condition is met (and `data-required` on its field says it is required then). */
-function stateAttrs(required: boolean, showWhen: ShowWhen | null | undefined): Attribute[] {
+/** The `required` and `disabled` of a control. A question that waits to be asked (under a condition, or a companion's, which
+ * waits for the guest to bring one) starts disabled and without `required`: while it is not asked, nothing of it is sent
+ * and no browser rule can stop the form. The page script turns both on when it is asked (and `data-required` on its field
+ * says it is required then). */
+function stateAttrs(required: boolean, waiting: boolean): Attribute[] {
   return [
-    ["required", required && !showWhen ? true : undefined],
-    ["disabled", showWhen ? true : undefined],
+    ["required", required && !waiting ? true : undefined],
+    ["disabled", waiting ? true : undefined],
   ];
 }
 
-/** The condition of a question as data on its field, and the field hidden until the script finds it met. `true` is the
- * answer of a Yes/No, written the way the script reads one: "true". */
-function conditionAttrs(showWhen: ShowWhen | null | undefined): Attribute[] {
-  if (!showWhen) return [];
-  return [
-    ["data-show-when-field", showWhen.field],
-    ["data-show-when-value", showWhen.value === true ? "true" : showWhen.value],
-    ["hidden", true],
-  ];
+/** The condition of a question as data on its field, and the field hidden until the script asks it: when the condition is
+ * met, or, for a companion's question, when the guest brings a companion. `true` is the answer of a Yes/No, written the
+ * way the script reads one: "true". */
+function conditionAttrs(showWhen: ShowWhen | null | undefined, waiting: boolean): Attribute[] {
+  const attributes: Attribute[] = [];
+  if (showWhen) {
+    attributes.push(["data-show-when-field", showWhen.field], ["data-show-when-value", showWhen.value === true ? "true" : showWhen.value]);
+  }
+  if (waiting) attributes.push(["hidden", true]);
+  return attributes;
 }
 
 interface TextFieldSpec {
@@ -154,6 +159,8 @@ interface TextFieldSpec {
   answerKey?: string;
   /** The condition of an organiser's question; absent for a fixed field and a question that is always asked. */
   showWhen?: ShowWhen | null;
+  /** The field waits to be asked: it has a condition, or it is the companion's. It starts hidden and disabled. */
+  waiting?: boolean;
   /** What to offer while the guest types: a list of rows under the box (see {@link renderCombo}). Absent: a plain box. */
   suggestions?: readonly string[];
 }
@@ -212,7 +219,7 @@ function renderTextField(spec: TextFieldSpec): string {
     ["inputmode", spec.inputMode ?? (spec.inputType === "email" ? "email" : undefined)],
     ["autocapitalize", spec.inputType === "email" ? "none" : undefined],
     ["spellcheck", spec.inputType === "email" ? "false" : undefined],
-    ...stateAttrs(spec.required, spec.showWhen),
+    ...stateAttrs(spec.required, spec.waiting === true),
     ["aria-describedby", `m-${spec.id}`],
     ...comboAttrs(spec.id, suggestions),
     ["data-control", true],
@@ -224,7 +231,7 @@ function renderTextField(spec: TextFieldSpec): string {
   const wrapper = fieldAttrs(spec.errorKey, spec.kind, spec.required, spec.message, [
     ["data-custom", spec.answerKey],
     ["data-invalid", spec.invalid],
-    ...conditionAttrs(spec.showWhen),
+    ...conditionAttrs(spec.showWhen, spec.waiting === true),
   ]);
   return `<div class="at-field"${wrapper}>${labelOf(spec.id, spec.label, spec.required)}${control}${slot(spec.id, spec.note)}</div>`;
 }
@@ -272,13 +279,6 @@ export function renderPersonalFields(model: RegistrationFormModel): string {
   return parts.join("");
 }
 
-function questionKeyAttrs(question: FormQuestion, kind: string, message: string | null): string {
-  return fieldAttrs(customDataErrorKey(question.key), kind, question.required, message, [
-    ["data-custom", question.key],
-    ...conditionAttrs(question.showWhen),
-  ]);
-}
-
 /** What the renderers know besides the question. */
 export interface QuestionContext {
   /** The IANA time zone the event's clock times are in. */
@@ -286,6 +286,27 @@ export interface QuestionContext {
   /** The id of the panel that follows this question and holds the questions that depend on its answer. Absent when
    * nothing depends on it. Only a Yes/No or a choice has one, and it names it in `aria-controls`. */
   panelId?: string;
+  /** Whose answers the questions ask for. Absent: the guest's own. A companion's questions wait for the guest to bring one,
+   * so they start hidden and disabled, as a question that waits for another answer does, and their errors have a name of
+   * their own (see `companionAnswerErrorKey`). */
+  recipient?: "guest" | "companion";
+}
+
+/** True when the question waits to be asked: it has a condition, or it is a companion's. */
+function waits(question: FormQuestion, context: QuestionContext): boolean {
+  return question.showWhen !== null || context.recipient === "companion";
+}
+
+/** The name of the error of a question in the answer of the route. */
+function errorKeyOf(question: FormQuestion, context: QuestionContext): string {
+  return context.recipient === "companion" ? companionAnswerErrorKey(question.key) : customDataErrorKey(question.key);
+}
+
+function questionKeyAttrs(question: FormQuestion, kind: string, message: string | null, context: QuestionContext): string {
+  return fieldAttrs(errorKeyOf(question, context), kind, question.required, message, [
+    ["data-custom", question.key],
+    ...conditionAttrs(question.showWhen, waits(question, context)),
+  ]);
 }
 
 type QuestionRenderer = (question: FormQuestion, id: string, context: QuestionContext) => string;
@@ -352,24 +373,30 @@ function invalidMessage(question: FormQuestion): string | undefined {
 
 /** A one-line control for a question: the spec of a fixed field, filled in from the question, with the question's icon
  * inside the box. */
-function questionField(question: FormQuestion, id: string, own: Pick<TextFieldSpec, "kind" | "message"> & Partial<TextFieldSpec>): string {
+function questionField(
+  question: FormQuestion,
+  id: string,
+  context: QuestionContext,
+  own: Pick<TextFieldSpec, "kind" | "message"> & Partial<TextFieldSpec>,
+): string {
   return renderTextField({
     id,
-    errorKey: customDataErrorKey(question.key),
+    errorKey: errorKeyOf(question, context),
     label: question.label,
     required: question.required,
     note: questionNote(question),
     inputMode: inputModeOf(question),
     answerKey: question.key,
     showWhen: question.showWhen,
+    waiting: waits(question, context),
     leadingIcon: question.icon ?? undefined,
     ...own,
   });
 }
 
 /** A short text. With suggestions it is a box with a list under it that helps and never limits. */
-function renderTextQuestion(question: FormQuestion, id: string): string {
-  return questionField(question, id, {
+function renderTextQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
+  return questionField(question, id, context, {
     kind: "text",
     message: "Answer this question.",
     maxLength: REGISTRANT_TEXT_MAX,
@@ -378,32 +405,32 @@ function renderTextQuestion(question: FormQuestion, id: string): string {
 }
 
 /** A long text is a box of several lines. Line breaks are kept; the server counts the characters. */
-function renderLongTextQuestion(question: FormQuestion, id: string): string {
+function renderLongTextQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
   const textarea = `<textarea class="at-textarea" id="${id}" name="${id.slice(2)}"${attrs([
     ["rows", "4"],
     ["maxlength", String(registrantRawLimit(REGISTRANT_LONG_TEXT_MAX))],
     ["inputmode", inputModeOf(question)],
-    ...stateAttrs(question.required, question.showWhen),
+    ...stateAttrs(question.required, waits(question, context)),
     ["aria-describedby", `m-${id}`],
     ["data-control", true],
   ])}></textarea>`;
-  const wrapper = fieldAttrs(customDataErrorKey(question.key), "longtext", question.required, "Answer this question.", [
+  const wrapper = fieldAttrs(errorKeyOf(question, context), "longtext", question.required, "Answer this question.", [
     ["data-custom", question.key],
     ["data-invalid", invalidMessage(question)],
-    ...conditionAttrs(question.showWhen),
+    ...conditionAttrs(question.showWhen, waits(question, context)),
   ]);
   return `<div class="at-field"${wrapper}>${labelOf(id, question.label, question.required)}${textarea}${slot(id, questionNote(question))}</div>`;
 }
 
 /** A date is the browser's own date control, which gives `YYYY-MM-DD`. */
-function renderDateQuestion(question: FormQuestion, id: string): string {
-  return questionField(question, id, { kind: "date", message: "Enter a date.", invalid: invalidMessage(question), inputType: "date" });
+function renderDateQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
+  return questionField(question, id, context, { kind: "date", message: "Enter a date.", invalid: invalidMessage(question), inputType: "date" });
 }
 
 /** A date and time is the browser's own control, which gives `YYYY-MM-DDTHH:mm` with no zone. The answer is
  * read as the clock of the event, so the note names the event's time zone. */
 function renderDateTimeQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
-  return questionField(question, id, {
+  return questionField(question, id, context, {
     kind: "datetime",
     message: "Enter a date and time.",
     invalid: invalidMessage(question),
@@ -413,8 +440,8 @@ function renderDateTimeQuestion(question: FormQuestion, id: string, context: Que
 }
 
 /** A phone number is typed freely; the server accepts spaces, dashes, dots, brackets and a leading + and keeps the digits. */
-function renderPhoneQuestion(question: FormQuestion, id: string): string {
-  return questionField(question, id, {
+function renderPhoneQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
+  return questionField(question, id, context, {
     kind: "phone",
     message: "Enter a phone number.",
     invalid: invalidMessage(question),
@@ -447,7 +474,7 @@ type Choice = readonly [value: string, text: string];
 function renderChoice(question: FormQuestion, id: string, kind: "select" | "choice", choices: readonly Choice[], context: QuestionContext): string {
   const message = kind === "select" ? "Choose one option." : "Choose Yes or No.";
   const native = `<select class="at-select reg-sr" id="${id}" name="${id.slice(2)}"${attrs([
-    ...stateAttrs(question.required, question.showWhen),
+    ...stateAttrs(question.required, waits(question, context)),
     ["tabindex", "-1"],
     ["aria-hidden", "true"],
     ["aria-describedby", `m-${id}`],
@@ -459,7 +486,7 @@ function renderChoice(question: FormQuestion, id: string, kind: "select" | "choi
     ["aria-controls", context.panelId ? `${id}-panel ${context.panelId}` : `${id}-panel`],
     ["aria-labelledby", `${id}-label ${id}-text`],
     ["aria-describedby", `m-${id}`],
-    ["disabled", question.showWhen ? true : undefined],
+    ["disabled", waits(question, context) ? true : undefined],
     ["data-picker-trigger", true],
   ])}><span class="searchable-select__placeholder" id="${id}-text" data-picker-text>${NO_CHOICE}</span>${icon("chevron-down", "ic searchable-select__chevron")}</button>`;
   const rows = [["", NO_CHOICE] as const, ...choices]
@@ -475,7 +502,7 @@ function renderChoice(question: FormQuestion, id: string, kind: "select" | "choi
   const empty = '<li class="searchable-select__empty" data-picker-empty hidden>No options found</li>';
   const panel = `<div class="searchable-select__panel picker__panel" id="${id}-panel" data-picker-panel hidden>${search}<ul class="searchable-select__list"${attrs([["aria-label", question.label]])}>${rows}${empty}</ul></div>`;
   const label = `<label class="at-label" id="${id}-label" for="${id}-trigger">${esc(question.label)}${question.required ? REQUIRED_MARK : ""}</label>`;
-  return `<div class="at-field"${questionKeyAttrs(question, kind, message)}>${label}<div class="picker" data-picker>${trigger}${native}${panel}</div>${slot(id, question.description)}</div>`;
+  return `<div class="at-field"${questionKeyAttrs(question, kind, message, context)}>${label}<div class="picker" data-picker>${trigger}${native}${panel}</div>${slot(id, question.description)}</div>`;
 }
 
 function renderSelectQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
@@ -494,11 +521,11 @@ function renderBooleanQuestion(question: FormQuestion, id: string, context: Ques
   // icons keep the text of such a row in line with the others.
   const picture = question.icon ? icon(question.icon) : "";
   const checkbox = `<input type="checkbox" id="${id}" name="${id.slice(2)}"${attrs([
-    ...stateAttrs(false, question.showWhen),
+    ...stateAttrs(false, waits(question, context)),
     ["aria-controls", context.panelId],
     ["data-control", true],
   ])}>`;
-  return `<label class="reg-opt at-check${question.icon ? "" : " reg-opt--bare"}"${questionKeyAttrs(question, "flag", null)}>${checkbox}<span class="at-check__box">${checkTick()}</span>${picture}<span class="reg-opt__text">${esc(question.label)}${note}</span></label>`;
+  return `<label class="reg-opt at-check${question.icon ? "" : " reg-opt--bare"}"${questionKeyAttrs(question, "flag", null, context)}>${checkbox}<span class="at-check__box">${checkTick()}</span>${picture}<span class="reg-opt__text">${esc(question.label)}${note}</span></label>`;
 }
 
 /** How to draw each kind of question. A kind that is not here is not drawn (see `canDrawQuestion`). */
@@ -565,13 +592,17 @@ interface Placed {
 }
 
 /** The questions of the main run, in the organiser's order, and the ones that wait in a panel, by the key of the
- * question they depend on. A question that cannot be shown is in neither. */
-function placeQuestions(questions: readonly FormQuestion[]): { main: Placed[]; panels: Map<string, Placed[]> } {
+ * question they depend on. A question that cannot be shown is in neither. `idPrefix` makes the ids of one set of questions
+ * (`f-q`, the guest's) differ from those of the other (`f-c`, the companion's). */
+function placeQuestions(
+  questions: readonly FormQuestion[],
+  idPrefix: string,
+): { main: Placed[]; panels: Map<string, Placed[]> } {
   const controllers = controllersByKey(questions);
   const main: Placed[] = [];
   const panels = new Map<string, Placed[]>();
   questions.forEach((question, index) => {
-    const placed = { question, id: `f-q${index}` };
+    const placed = { question, id: `${idPrefix}${index}` };
     const condition = question.showWhen;
     if (!condition) main.push(placed);
     else if (canBeShown(condition, controllers)) panels.set(condition.field, [...(panels.get(condition.field) ?? []), placed]);
@@ -619,9 +650,57 @@ function renderGroup(entries: readonly Placed[], panels: Map<string, Placed[]>, 
 
 /** The "Additional details" section: the organiser's questions, in their order. Empty without questions. */
 export function renderQuestions(questions: readonly FormQuestion[], context: QuestionContext): string {
-  const { main, panels } = placeQuestions(questions);
+  const { main, panels } = placeQuestions(questions, "f-q");
   if (main.length === 0) return "";
   return `<div class="reg-section"><p class="reg-section__label">Additional details</p>${renderGroup(main, panels, context)}</div>`;
+}
+
+/** The name of the guest's companion: one box, "full name", the only fixed field about the companion (the rest are the
+ * organiser's questions). It waits for the guest to bring a companion, like the questions about the companion. */
+function renderCompanionName(): string {
+  return renderTextField({
+    id: "f-companion_name",
+    errorKey: ERROR_KEY_COMPANION_NAME,
+    kind: "name",
+    label: "Full name",
+    required: true,
+    message: "Enter your guest's full name.",
+    note: null,
+    maxLength: REGISTRANT_NAME_MAX,
+    autocomplete: "off",
+    waiting: true,
+  });
+}
+
+/** The row "I am bringing a guest": a tick box in the rows of options, with an error slot of its own, for the refusal of
+ * the number of companions (the one thing the server can say about it). The page script shows the panel after it while the
+ * box is ticked. */
+function renderCompanionToggle(): string {
+  const checkbox = `<input type="checkbox" id="f-companion" name="companion"${attrs([
+    ["aria-controls", "f-companion-panel"],
+    ["aria-describedby", "m-f-companion"],
+    ["data-companion-toggle", true],
+    ["data-control", true],
+  ])}>`;
+  const text = `<span class="reg-opt__text">I am bringing a guest<small>You can bring one guest.</small></span>`;
+  const row = `<label class="reg-opt at-check">${checkbox}<span class="at-check__box">${checkTick()}</span>${icon("user-plus")}${text}</label>`;
+  return `<div${fieldAttrs(ERROR_KEY_COMPANIONS, "flag", false, null)}>${row}${slot("f-companion", null)}</div>`;
+}
+
+/**
+ * The part of the form for the guest's companion (D-E5), after the guest's own questions and before the agreement: the row
+ * "I am bringing a guest" and, under it, the panel that the script opens while the row is ticked, with the companion's name
+ * and the event's questions about a companion (drawn by the same renderers as the guest's own, with their own ids and
+ * names of errors). Empty for an event that takes no companion. The page asks for one companion: `MAX_COMPANION_SLOTS`
+ * is 1, and raising it needs a page that can ask for more.
+ */
+export function renderCompanion(model: RegistrationFormModel): string {
+  const section = model.companion;
+  if (!section) return "";
+  const { main, panels } = placeQuestions(section.questions, "f-c");
+  const context: QuestionContext = { timeZone: model.event.timezone, recipient: "companion" };
+  const panel = `<div class="reg-reveal" id="f-companion-panel" data-companion-panel hidden>${renderCompanionName()}${renderGroup(main, panels, context)}</div>`;
+  return `<div class="reg-section"><p class="reg-section__label">Your guest</p><div class="reg-opts">${renderCompanionToggle()}${panel}</div></div>`;
 }
 
 /** A link to a legal text. It opens in a new tab: the form keeps what the guest has typed. */

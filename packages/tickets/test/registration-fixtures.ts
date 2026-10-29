@@ -64,6 +64,8 @@ export type EventOptions = {
   waitlist?: boolean;
   verify?: boolean;
   archived?: boolean;
+  /** `max_companions` of the settings: how many companions a guest may bring. Default 0. */
+  maxCompanions?: number;
   /** Event day; the default is a month from now. */
   date?: Date;
 };
@@ -95,6 +97,7 @@ export function fixtures(db: PrismaClient) {
           mode: options.mode === undefined ? "automatic" : options.mode,
           waitlist_enabled: options.waitlist ?? true,
           verify_email: options.verify ?? true,
+          max_companions: options.maxCompanions ?? 0,
         },
       });
     }

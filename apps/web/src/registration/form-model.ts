@@ -24,6 +24,7 @@ import {
   type ShowWhen,
 } from "@admitto/shared";
 import {
+  allowedCompanions,
   formatDate,
   formatEventHoursRange,
   loadRegistrantFormFields,
@@ -95,6 +96,16 @@ export interface FormEvent {
   timezone: string;
 }
 
+/** The part of the form for a guest's companion (D-E5): the choice "I am bringing a guest", the companion's name and the
+ * event's questions about a companion. Only an event that takes companions has it. */
+export interface CompanionSection {
+  /** How many companions a guest may bring: `allowedCompanions(max_companions)`, 1 or more. The page asks for one. */
+  max: number;
+  /** The questions about the companion that are on the form (`applies_to = "companion"`, `show_on_form`), by the same rules as
+   * the guest's own: their conditions refer to each other and never to a question about the guest. */
+  questions: FormQuestion[];
+}
+
 export interface RegistrationFormModel {
   event: FormEvent;
   mode: "approval" | "automatic";
@@ -103,6 +114,8 @@ export interface RegistrationFormModel {
   askCompany: boolean;
   askDepartment: boolean;
   questions: FormQuestion[];
+  /** Null: the event takes no companion, and the page and the route behave as they did before companions existed. */
+  companion: CompanionSection | null;
   privacyPath: string;
   termsPath: string;
   consents: FormConsent[];
@@ -160,6 +173,7 @@ const EVENT_SELECT = {
       ask_company: true,
       ask_department: true,
       consent_keys: true,
+      max_companions: true,
     },
   },
 } as const;
@@ -237,9 +251,9 @@ function toQuestion(field: RegistrantFormField, type: FormQuestionType): FormQue
   };
 }
 
-/** The questions to draw, in the organiser's order, or null when a required one cannot be drawn. A form nobody
- * can submit is worse than a closed one: a required question of a type the page does not know or a choice with
- * no choices fails every submission on the server.
+/** The questions to draw for `appliesTo` (the guest's own, or the companion's), in the organiser's order, or null when a
+ * required one cannot be drawn. A form nobody can submit is worse than a closed one: a required question of a type the page
+ * does not know or a choice with no choices fails every submission on the server.
  *
  * A question with a condition (`rules.show_when`) is asked only when the question it names has that answer, so
  * the page can ask it only when that question is on the form, is a Yes/No or a choice, and is itself always
@@ -249,10 +263,10 @@ function toQuestion(field: RegistrantFormField, type: FormQuestionType): FormQue
  * question the page cannot draw closes the form only when a guest could meet its condition and then be stuck.
  *
  * Exported for the readiness of an event (./readiness.ts), which must judge the questions as the page does. */
-export function drawQuestions(fields: readonly RegistrantFormField[]): FormQuestion[] | null {
+export function drawQuestions(fields: readonly RegistrantFormField[], appliesTo: "guest" | "companion" = "guest"): FormQuestion[] | null {
   const drawable: FormQuestion[] = [];
   const stuck: RegistrantFormField[] = [];
-  for (const field of pickRegistrantFormFields(fields)) {
+  for (const field of pickRegistrantFormFields(fields, appliesTo)) {
     const type = drawableType(field);
     if (type !== null) drawable.push(toQuestion(field, type));
     else if (field.required) stuck.push(field);
@@ -273,6 +287,19 @@ function legalPaths(slug: string, legal: RequiredLegalDocuments): { privacy: str
       .filter((doc) => doc.kind === "consent")
       .map((doc) => ({ key: doc.key, title: doc.title, path: legalDocumentPath(slug, doc) })),
   };
+}
+
+/**
+ * The section for a companion, or null when the event offers none: it takes none (`max_companions` is 0), or a question
+ * about the companion that is required cannot be drawn. The second is not a reason to close the form, as it is for the
+ * guest's own questions: a guest can register without a companion, so the part that nobody could complete is left out
+ * and the rest stays open. The route reads the same model, so a companion that the page does not offer is a body it refuses.
+ */
+function drawCompanion(fields: readonly RegistrantFormField[], maxCompanions: number): CompanionSection | null {
+  const max = allowedCompanions(maxCompanions);
+  if (max === 0) return null;
+  const questions = drawQuestions(fields, "companion");
+  return questions ? { max, questions } : null;
 }
 
 /** The way in the event offers: the one method of `access_methods` (one in this release, D-C1) when it is a way built
@@ -302,7 +329,7 @@ async function loadOpenForm(
   ]);
   const way = availability.find((entry) => entry.method === access.method);
   const paths = legalPaths(row.slug, legal);
-  const questions = drawQuestions(fields);
+  const questions = drawQuestions(fields, "guest");
   if (!way?.available || keys.state !== "ready" || !paths || !questions) return NOT_FOUND;
   return {
     kind: "open",
@@ -316,6 +343,7 @@ async function loadOpenForm(
       askCompany: settings.ask_company,
       askDepartment: settings.ask_department,
       questions,
+      companion: drawCompanion(fields, settings.max_companions),
       privacyPath: paths.privacy,
       termsPath: paths.terms,
       consents: paths.consents,

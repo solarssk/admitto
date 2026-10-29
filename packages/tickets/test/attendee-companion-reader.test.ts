@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_COMPANION_SLOTS, readRegistrationCompanions } from "../src/attendee-companion.js";
+import { MAX_COMPANION_SLOTS, allowedCompanions, readRegistrationCompanions } from "../src/attendee-companion.js";
 import { seatsNeeded } from "../src/registration-seats.js";
 
 const companion = (name: string, customData: Record<string, string> | null = {}) => ({ name, custom_data: customData });
@@ -66,5 +66,23 @@ describe("seatsNeeded", () => {
     const stored = [5, { name: "" }, companion("Valid Companion"), companion("Another Companion"), companion("A Third One")];
     expect(seatsNeeded(stored as never)).toBe(1 + readRegistrationCompanions(stored as never).length);
     expect(seatsNeeded(stored as never)).toBe(1 + MAX_COMPANION_SLOTS);
+  });
+});
+
+describe("allowedCompanions", () => {
+  it.each([
+    [-5, 0],
+    [-1, 0],
+    [0, 0],
+    [1, 1],
+    [2, 1],
+    [5, 1],
+    [1000, 1],
+  ])("lets an event whose setting is %i take %i companion(s): the setting, never below zero and never above the application's", (setting, expected) => {
+    expect(allowedCompanions(setting)).toBe(expected);
+  });
+
+  it("is never more than the slots the application has, whatever the setting", () => {
+    expect(allowedCompanions(Number.MAX_SAFE_INTEGER)).toBe(MAX_COMPANION_SLOTS);
   });
 });

@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { REGISTRATION_MODE, type RegistrationAccessMethod, type RegistrationMode, type RegistrationStatus } from "@admitto/db/status";
 import { eventEndsAtUtc } from "@admitto/shared";
+import { allowedCompanions, readRegistrationCompanions, type RegistrationCompanion } from "./attendee-companion.js";
 import {
   EventLockBusyError,
   runEventCapacityTransaction,
@@ -46,6 +47,13 @@ export type RegistrantSubmission = {
   accepted_at?: Date | null;
   /** The extra consents given: consent key to the time it was given, as an ISO string (D-F3). */
   consents?: Record<string, string>;
+  /**
+   * The companions the guest brings (D-E5), after the input boundary: each name by registrantNameSchema and each set of
+   * answers by buildRegistrantCustomData for `companion`. They are stored in `Registration.companions`, take their seats
+   * with the guest (seatsNeeded) and become the attendee's companions when the guest is accepted. At most
+   * `allowedCompanions(max_companions)` of them: the placement refuses more, whatever the caller checked.
+   */
+  companions?: RegistrationCompanion[];
   locale?: string | null;
 };
 
@@ -64,7 +72,9 @@ export type PlaceRegistrationInput = {
  * true: `already_registered` for an address that has a place already.
  * What does not depend on the address may differ:
  * - `closed`: registration is off for the event, or the event is archived or over (D-B10);
- * - `full`: no seat for the guest and no waiting list (D-B6): nothing is stored;
+ * - `full`: no seat for the guest and the companions they bring, and no waiting list (D-B6): nothing is stored;
+ * - `too_many_companions`: the submission brings more companions than the event takes now (none, or one): nothing is stored.
+ *   The caller judged the body by the settings it read before the locks; this is the same judgement under them;
  * - `busy`: a lock was held for as long as a guest's request may wait: nothing is stored, answer `503 try_again`.
  */
 export type PlaceRegistrationResult =
@@ -72,6 +82,7 @@ export type PlaceRegistrationResult =
   | { outcome: "already_registered" }
   | { outcome: "closed" }
   | { outcome: "full" }
+  | { outcome: "too_many_companions" }
   | { outcome: "busy" };
 
 /** Mail rows an event may queue within the window, whatever its size: the base of {@link eventMailCap}. */
@@ -148,10 +159,10 @@ const EVENT_SELECT = {
   event_hours_start: true,
   event_hours_end: true,
   timezone: true,
-  registration_settings: { select: { mode: true, waitlist_enabled: true, verify_email: true } },
+  registration_settings: { select: { mode: true, waitlist_enabled: true, verify_email: true, max_companions: true } },
 } satisfies Prisma.EventSelect;
 
-type OpenSettings = { mode: RegistrationMode; waitlist_enabled: boolean; verify_email: boolean };
+type OpenSettings = { mode: RegistrationMode; waitlist_enabled: boolean; verify_email: boolean; max_companions: number };
 type OpenEvent = { capacity: number | null; settings: OpenSettings };
 
 function asMode(value: string | null | undefined): RegistrationMode | null {
@@ -173,8 +184,8 @@ async function readOpenEvent(tx: Prisma.TransactionClient, eventId: string, now:
     timezone: event.timezone,
   });
   if (now.getTime() >= end.getTime()) return null;
-  const { waitlist_enabled, verify_email } = event.registration_settings;
-  return { capacity: event.capacity, settings: { mode, waitlist_enabled, verify_email } };
+  const { waitlist_enabled, verify_email, max_companions } = event.registration_settings;
+  return { capacity: event.capacity, settings: { mode, waitlist_enabled, verify_email, max_companions } };
 }
 
 /** The registration queue of the event, without waiting for it (the place of step 5 in the order of locks). */
@@ -196,6 +207,8 @@ type SubmissionContext = {
   eventId: string;
   now: Date;
   registrant: RegistrantSubmission;
+  /** The companions that are stored and whose seats were counted: the registrant's, as readRegistrationCompanions reads them. */
+  companions: readonly RegistrationCompanion[];
   verifiedByProvider: boolean;
   /** Whether the event has budget left for one more mail (see SubmissionMailLimits). */
   eventBudgetLeft: boolean;
@@ -225,7 +238,7 @@ async function queueMailFor(context: SubmissionContext, registrationId: string, 
   if (await mailBudgetAllows(context)) await enqueueMailsForMoment(context.tx, context.eventId, [registrationId], moment);
 }
 
-function registrationColumns({ eventId, now, registrant }: SubmissionContext) {
+function registrationColumns({ eventId, now, registrant, companions }: SubmissionContext) {
   return {
     event_id: eventId,
     email: registrant.email,
@@ -235,6 +248,7 @@ function registrationColumns({ eventId, now, registrant }: SubmissionContext) {
     company: registrant.company ?? null,
     department: registrant.department ?? null,
     ...(registrant.custom_data ? { custom_data: registrant.custom_data } : {}),
+    companions: [...companions],
     accepted_at: registrant.accepted_at ?? null,
     consents: registrant.consents ?? {},
     locale: registrant.locale ?? null,
@@ -379,14 +393,26 @@ async function submitInTransaction(
   await lockQueueWithoutWaiting(tx, eventId);
   const event = await readOpenEvent(tx, eventId, now);
   if (!event) return { outcome: "closed" };
+  // The setting is judged here, under the locks, whatever the caller read before them: a guest is never given a companion
+  // the event does not take, and a seat is never counted for one that is not stored. What is stored is what the seats are
+  // counted for (readRegistrationCompanions, the one reading of the column).
+  if ((registrant.companions?.length ?? 0) > allowedCompanions(event.settings.max_companions)) {
+    return { outcome: "too_many_companions" };
+  }
+  const companions = readRegistrationCompanions(registrant.companions);
   // Before the address is looked at, so that a full event answers every address alike.
-  const placement = decidePlacement(event.settings, await readSeatState(tx, eventId, event.capacity), seatsNeeded([]));
+  const placement = decidePlacement(
+    event.settings,
+    await readSeatState(tx, eventId, event.capacity),
+    seatsNeeded(companions),
+  );
   if (placement === "full") return { outcome: "full" };
   const context: SubmissionContext = {
     tx,
     eventId,
     now,
     registrant,
+    companions,
     verifiedByProvider: input.method === "sso",
     eventBudgetLeft: await eventBudgetLeft(tx, eventId, event.capacity, now, mail?.event),
     mailCap: mail?.event ? eventMailCap(mail.event.base, event.capacity) : null,
