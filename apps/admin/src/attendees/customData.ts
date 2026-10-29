@@ -3,19 +3,25 @@ import { filterCustomDataAttributeFields } from "@admitto/tickets/custom-data-re
 import { fetchEventCustomFields } from "../api/client.js";
 import type { EventCustomFieldDto } from "../api/types.js";
 import { formatIsoCalendarDate, formatWallClockDateTime } from "../utils/event-dates.js";
+import { guestQuestions } from "../utils/questionRecipient.js";
 import { answerExpectation, answerProblem } from "./answerFormat.js";
 
 /** The registry row shape is exactly what attendee forms need - no separate flatten/merge step. */
 export type CustomDataFieldDef = EventCustomFieldDto;
 
-/** Registry fields usable on an attendee form. Filters out any field whose source_field collides
+/** Registry fields that hold an answer, whoever it is about. Filters out any field whose source_field collides
  * with a reserved profile/import column (email, name, ...) - the live create-field API already
  * rejects these, but a field created before that rule existed, or migrated from legacy item
  * config, could still exist in the registry, and rendering it as a second editable "Email" input
  * alongside the real one would be confusing. */
-export async function fetchAttendeeCustomFields(eventId: string, signal?: AbortSignal): Promise<CustomDataFieldDef[]> {
+export async function fetchAnswerFields(eventId: string, signal?: AbortSignal): Promise<CustomDataFieldDef[]> {
   const fields = await fetchEventCustomFields(eventId, signal);
   return filterCustomDataAttributeFields(fields);
+}
+
+/** Registry fields usable on an attendee form: the questions about the guest (see fetchAnswerFields for what is left out). */
+export async function fetchAttendeeCustomFields(eventId: string, signal?: AbortSignal): Promise<CustomDataFieldDef[]> {
+  return guestQuestions(await fetchAnswerFields(eventId, signal));
 }
 
 /** Read a single custom_data string field (mirrors server customDataValue semantics). */

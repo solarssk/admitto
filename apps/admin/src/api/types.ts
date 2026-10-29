@@ -356,6 +356,14 @@ export interface AttendeeErasureDto {
   location: IpLocationDto | null;
 }
 
+/** The person a guest brings, as the attendee's page shows and edits them (`PATCH` and `DELETE .../attendees/:id/companion`). */
+export interface AttendeeCompanionDto {
+  slot: number;
+  name: string;
+  /** The answers to the event's questions about a companion, key to text; null when there are none. */
+  custom_data: Record<string, string> | null;
+}
+
 export interface AttendeeDetailDto {
   id: string;
   /** Set once the attendee's personal data has been erased: the page is read-only. */
@@ -394,6 +402,9 @@ export interface AttendeeDetailDto {
    * actually reaches an already-issued pass. */
   wallet_field_mapping: Record<string, string> | null;
   custom_data: unknown;
+  /** The person the guest brings, or null (none, or the attendee is erased). The server always sends it; optional here so
+   * existing fixtures keep their shape. */
+  companion?: AttendeeCompanionDto | null;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
   action_log_total: number;
@@ -723,6 +734,9 @@ export interface EventImageAssetsListResponse {
 // API, the import and the registration form read too.
 export type { EventCustomFieldRules, EventCustomFieldType };
 
+/** Whose answer a question asks for (`EventCustomField.applies_to`). */
+export type EventCustomFieldRecipient = "guest" | "companion";
+
 /** A definition in the event's custom attendee data field registry (dietary, shirt size, ...) -
  * the single source of truth for a field; EventItem.config.content_fields only references these
  * by source_field. */
@@ -735,6 +749,9 @@ export interface EventCustomFieldDto {
   required: boolean;
   /** Whether the public registration form asks guests this question. */
   show_on_form: boolean;
+  /** Whose answer the question asks for: the guest's own, or the person the guest brings. The server always sends it; absent
+   * reads as the guest's, as it does there, and keeps the shape of existing fixtures. */
+  applies_to?: EventCustomFieldRecipient;
   /** Position among the event's fields, from 0; null = not placed yet (listed last). The list
    * endpoint already returns the fields in order, so a screen has no need to sort by this. */
   display_order: number | null;
@@ -763,6 +780,8 @@ export interface CreateEventCustomFieldBody {
   required?: boolean;
   /** Left out = off. The Registration page sends true for the fields it creates. */
   show_on_form?: boolean;
+  /** Left out = the guest's own question. */
+  applies_to?: EventCustomFieldRecipient;
   options?: string[];
   /** Only for a text, long text or phone field; left out or null = none. */
   rules?: EventCustomFieldRules | null;
@@ -784,6 +803,9 @@ export interface UpdateEventCustomFieldPatch {
   type?: EventCustomFieldType;
   required?: boolean;
   show_on_form?: boolean;
+  /** Left out = unchanged. A question that others wait for cannot move to the other recipient (409 `field_controls_others`),
+   * nor can one that waits for a question of the first (422 `invalid_show_when`). */
+  applies_to?: EventCustomFieldRecipient;
   /** null clears a previous select's options; omit to leave options untouched. */
   options?: string[] | null;
   /** null clears the rules (send it when the field becomes a type that takes none); omit to leave

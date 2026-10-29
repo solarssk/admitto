@@ -274,6 +274,21 @@ describe("what a request says", () => {
     expect(valueOf(box, "Diet")).toBe("Vegan");
   });
 
+  it("names the answers about the companion by the questions about a companion, which an attendee's own form leaves out", async () => {
+    api.fetchEventCustomFields.mockResolvedValue([{ ...field("badge", "Badge name"), applies_to: "companion" }, field("diet", "Diet")]);
+    api.fetchRegistration.mockResolvedValue(
+      detail("r1", { custom_data: { diet: "None" }, companions: [{ name: "Wiktoria Kowalska", custom_data: { badge: "Wika" } }] }),
+    );
+    renderTab({ search: EVERY_STATE });
+    await loaded();
+
+    const box = await openRequest("r1", "Ann Kowalska");
+    await within(box).findByText("Companion");
+
+    expect(valueOf(box, "Badge name")).toBe("Wika");
+    expect(valueOf(box, "Diet")).toBe("None");
+  });
+
   it("numbers the companions when there are several, and shows one without answers as a name only", async () => {
     api.fetchRegistration.mockResolvedValue(
       detail("r1", {

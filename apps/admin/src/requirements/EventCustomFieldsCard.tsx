@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Card, EmptyState, HintLabel, IconButton, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, IconButton, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, deleteEventCustomField } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AddSuggestedFieldsResponse, EventCustomFieldDto, EventDto } from "../api/types.js";
@@ -7,6 +7,7 @@ import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SuggestedQuestionsDialog } from "../registration/SuggestedQuestionsDialog.js";
 import { addedMessage } from "../registration/suggestedQuestions.js";
+import { isCompanionQuestion } from "../utils/questionRecipient.js";
 import { customFieldTypeIcon, customFieldTypeLabel } from "./customFieldType.js";
 import { disambiguatedLabel, findDuplicateLabels } from "./duplicateLabels.js";
 import { EventCustomFieldModal } from "./EventCustomFieldModal.js";
@@ -26,13 +27,13 @@ const CARD_TEXT: Record<
 > = {
   requirements: {
     title: "Custom attendee fields",
-    hint: "Also used in the attendee form, CSV import, and exports. Fields used as item hints can't be deleted until removed from the item.",
+    hint: "Also used in the attendee form, CSV import, and exports. A field marked Companion is asked about the person a guest brings, so it is not part of those. Fields used as item hints can't be deleted until removed from the item.",
     emptyTitle: "No custom fields yet",
     emptyText: "Add one to collect extra attendee data, like dietary requirements or shirt size.",
   },
   registration: {
     title: "Attendee fields",
-    hint: "Guests answer the fields that are on the form. The same fields are used in the attendee form, CSV import, and exports. Fields used as item hints can't be deleted until removed from the item.",
+    hint: "Guests answer the fields that are on the form. A field marked Companion is asked about the person a guest brings, when the event lets a guest bring someone. The other fields are also used in the attendee form, CSV import, and exports. Fields used as item hints can't be deleted until removed from the item.",
     emptyTitle: "No attendee fields yet",
     emptyText: "Add a field to ask guests a question on the registration form, like dietary requirements or shirt size.",
   },
@@ -168,6 +169,13 @@ function CustomFieldRow({
               ) : null}
               {name}
             </div>
+            {isCompanionQuestion(field) ? (
+              <div className="requirements-item-recipient">
+                <Badge variant="info">
+                  <i className="ti ti-users" aria-hidden="true" /> Companion
+                </Badge>
+              </div>
+            ) : null}
             {condition ? <div className="requirements-item-condition">{condition}</div> : null}
           </div>
         </div>

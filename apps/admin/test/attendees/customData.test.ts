@@ -12,6 +12,7 @@ const {
   allCustomDataEntries,
   customDataApiErrorMessage,
   customDataFieldLabel,
+  fetchAnswerFields,
   fetchAttendeeCustomFields,
   initialCustomFieldValues,
   isLongAnswer,
@@ -30,6 +31,36 @@ describe("fetchAttendeeCustomFields", () => {
     const fields = await fetchAttendeeCustomFields("evt-1");
 
     expect(fields.map((f) => f.source_field)).toEqual(["dietary"]);
+  });
+
+  const registry = () => [
+    { id: "1", source_field: "dietary", label: "Dietary", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+    { id: "2", source_field: "badge", label: "Badge name", type: "text", required: false, options: null, applies_to: "companion", created_at: "2026-01-01T00:00:00.000Z" },
+    { id: "3", source_field: "shirt", label: "Shirt", type: "text", required: false, options: null, applies_to: "guest", created_at: "2026-01-01T00:00:00.000Z" },
+    { id: "4", source_field: "email", label: "Email copy", type: "text", required: false, options: null, applies_to: "companion", created_at: "2026-01-01T00:00:00.000Z" },
+  ];
+
+  it("leaves out the questions about a companion: an attendee's own form, import and list never ask them", async () => {
+    mockFetchEventCustomFields.mockResolvedValueOnce(registry());
+
+    const fields = await fetchAttendeeCustomFields("evt-1");
+
+    expect(fields.map((f) => f.source_field)).toEqual(["dietary", "shirt"]);
+  });
+});
+
+describe("fetchAnswerFields", () => {
+  it("keeps the questions about the guest and about the companion, in the order of the event, and drops a reserved column of either", async () => {
+    mockFetchEventCustomFields.mockResolvedValueOnce([
+      { id: "1", source_field: "dietary", label: "Dietary", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "2", source_field: "badge", label: "Badge name", type: "text", required: false, options: null, applies_to: "companion", created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "3", source_field: "email", label: "Email copy", type: "text", required: false, options: null, applies_to: "companion", created_at: "2026-01-01T00:00:00.000Z" },
+    ]);
+
+    const fields = await fetchAnswerFields("evt-1", new AbortController().signal);
+
+    expect(fields.map((f) => f.source_field)).toEqual(["dietary", "badge"]);
+    expect(mockFetchEventCustomFields).toHaveBeenLastCalledWith("evt-1", expect.any(AbortSignal));
   });
 });
 

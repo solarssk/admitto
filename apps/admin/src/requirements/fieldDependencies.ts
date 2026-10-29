@@ -1,5 +1,6 @@
 import { acceptsCondition, dependentsOf, findShowWhenProblem, type ConditionField, type ShowWhen } from "@admitto/shared";
-import type { EventCustomFieldDto } from "../api/types.js";
+import type { EventCustomFieldDto, EventCustomFieldRecipient } from "../api/types.js";
+import { isCompanionQuestion } from "../utils/questionRecipient.js";
 import { disambiguatedLabel, findDuplicateLabels } from "./duplicateLabels.js";
 
 /** What is wrong with saving a field, as far as the other fields of the event go: the question a condition depends on, and the questions
@@ -19,10 +20,20 @@ export function fieldNameIn(field: Pick<EventCustomFieldDto, "label" | "source_f
 }
 
 /** The fields that another field can depend on: a yes/no or a single choice question of the event that has no condition of its own,
- * and is not the field itself. (A condition on a question that has one would make a chain.) */
-export function conditionCandidates(fields: readonly EventCustomFieldDto[], sourceField: string): EventCustomFieldDto[] {
+ * is not the field itself, and is about the same person (`appliesTo`): a question about the guest cannot wait for the answer to one
+ * about their companion, nor the other way round, because two different people answer them, and the server refuses it. (A condition
+ * on a question that has one would make a chain.) */
+export function conditionCandidates(
+  fields: readonly EventCustomFieldDto[],
+  sourceField: string,
+  appliesTo: EventCustomFieldRecipient,
+): EventCustomFieldDto[] {
   return fields.filter(
-    (field) => field.source_field !== sourceField && (field.type === "boolean" || field.type === "select") && !field.rules?.show_when,
+    (field) =>
+      field.source_field !== sourceField &&
+      isCompanionQuestion(field) === (appliesTo === "companion") &&
+      (field.type === "boolean" || field.type === "select") &&
+      !field.rules?.show_when,
   );
 }
 
@@ -42,8 +53,11 @@ export function dependencyProblem(saved: ConditionField, fields: readonly EventC
   const problem = findShowWhenProblem(saved, fields);
   if (problem === null) return null;
   if (problem === "field_controls_others") {
+    // The ones that lose their answer, and the ones that would be about another person than the field they wait for.
     const dependents = dependentsOf(saved.source_field, fields).filter(
-      (field) => field.rules?.show_when !== undefined && !acceptsCondition(saved, field.rules.show_when),
+      (field) =>
+        field.rules?.show_when !== undefined &&
+        (isCompanionQuestion(field) !== isCompanionQuestion(saved) || !acceptsCondition(saved, field.rules.show_when)),
     );
     return { kind: "controls_others", dependents };
   }

@@ -52,6 +52,18 @@ describe("useWalletCustomFields", () => {
     expect(fetchEventCustomFields).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
   });
 
+  it("leaves out the questions about a companion: a pass is made from the attendee's own fields", async () => {
+    vi.mocked(fetchEventCustomFields).mockResolvedValueOnce([
+      makeField(),
+      makeField({ id: "cf-2", source_field: "badge", label: "Badge name", applies_to: "companion" }),
+      makeField({ id: "cf-3", source_field: "shirt", label: "Shirt", applies_to: "guest" }),
+    ]);
+
+    const { result } = renderHook(() => useWalletCustomFields("evt-1", WALLET_TAB));
+
+    await waitFor(() => expect(result.current?.map((field) => field.source_field)).toEqual(["t_shirt_size", "shirt"]));
+  });
+
   it("does not re-fetch on a re-render for the same event", async () => {
     vi.mocked(fetchEventCustomFields).mockResolvedValueOnce([]);
     const { result, rerender } = renderHook(

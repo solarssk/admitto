@@ -8,6 +8,7 @@ const save = (changes: Partial<FieldSave> = {}): FieldSave => ({
   label: "Postcode",
   description: "",
   required: false,
+  appliesTo: "guest",
   options: [],
   rules: null,
   ...changes,
@@ -57,6 +58,11 @@ describe("createFieldBody", () => {
   it("sends no options for a type that is not a choice, whatever the form still holds", () => {
     expect(createFieldBody("note", save({ type: "long_text", options: ["leftover"] }), false).options).toBeUndefined();
   });
+
+  it("names the recipient only for a question about the companion: the API's own default is the guest's", () => {
+    expect(createFieldBody("badge", save({ appliesTo: "companion" }), true)).toMatchObject({ applies_to: "companion", show_on_form: true });
+    expect(createFieldBody("badge", save({ appliesTo: "guest" }), true)).not.toHaveProperty("applies_to");
+  });
 });
 
 describe("updateFieldPatch", () => {
@@ -68,6 +74,14 @@ describe("updateFieldPatch", () => {
 
   it("sends null to clear a description, so the server can tell it from a description that is left alone", () => {
     expect(updateFieldPatch(field({ description: "Old" }), save({ description: "" })).description).toBeNull();
+  });
+
+  it("names the recipient only when it changed, whichever way, and reads a field with no recipient as the guest's", () => {
+    expect(updateFieldPatch(field(), save({ appliesTo: "companion" }))).toMatchObject({ applies_to: "companion" });
+    expect(updateFieldPatch(field({ applies_to: "companion" }), save({ appliesTo: "guest" }))).toMatchObject({ applies_to: "guest" });
+    expect(updateFieldPatch(field({ applies_to: "companion" }), save({ appliesTo: "companion" }))).not.toHaveProperty("applies_to");
+    expect(updateFieldPatch(field({ applies_to: "guest" }), save({ appliesTo: "guest" }))).not.toHaveProperty("applies_to");
+    expect(updateFieldPatch(field(), save({ appliesTo: "guest" }))).not.toHaveProperty("applies_to");
   });
 
   it("names the type only when it changed", () => {
@@ -181,10 +195,13 @@ describe("fieldSaveOf and sameFieldSave", () => {
       label: "Postcode",
       description: "Pick one",
       required: true,
+      appliesTo: "guest",
       options: ["S", "M"],
       rules: { icon: "shirt" },
     });
     expect(sameFieldSave(fieldSaveOf(choice), fieldSaveOf(choice))).toBe(true);
+    expect(fieldSaveOf(field({ applies_to: "companion" })).appliesTo).toBe("companion");
+    expect(fieldSaveOf(field({ applies_to: "guest" })).appliesTo).toBe("guest");
     expect(fieldSaveOf(field()).description).toBe("");
     expect(fieldSaveOf(field()).options).toEqual([]);
     expect(fieldSaveOf(field({ type: "text", options: ["left over"] })).options).toEqual([]);
@@ -196,6 +213,7 @@ describe("fieldSaveOf and sameFieldSave", () => {
     expect(sameFieldSave(base, { ...base, label: "Size" })).toBe(false);
     expect(sameFieldSave(base, { ...base, description: "" })).toBe(false);
     expect(sameFieldSave(base, { ...base, required: false })).toBe(false);
+    expect(sameFieldSave(base, { ...base, appliesTo: "companion" })).toBe(false);
     expect(sameFieldSave(base, { ...base, options: ["M", "S"] })).toBe(false);
     expect(sameFieldSave(base, { ...base, rules: { icon: "car" } })).toBe(false);
     expect(sameFieldSave(base, { ...base, rules: null })).toBe(false);

@@ -427,6 +427,35 @@ describe("RequirementsPage — Add item and Edit item", () => {
     expect(screen.getByRole("heading", { name: "Badge" })).toBeTruthy();
   });
 
+  it("offers the questions about the guest as hints for an item, and not the questions about a companion: the hint shows the attendee's own answer", async () => {
+    fetchEventItems.mockResolvedValue([badgeItem]);
+    const field = (source_field: string, label: string, applies_to?: "guest" | "companion") => ({
+      id: source_field,
+      source_field,
+      label,
+      description: null,
+      type: "text",
+      required: false,
+      show_on_form: true,
+      display_order: null,
+      options: null,
+      rules: null,
+      ...(applies_to ? { applies_to } : {}),
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+    fetchEventCustomFields.mockResolvedValue([field("shirt", "Shirt size"), field("badge_name", "Badge name", "companion"), field("diet", "Diet", "guest")]);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit item" }));
+    const drawer = await screen.findByRole("dialog");
+
+    expect(within(drawer).getByRole("checkbox", { name: "Shirt size" })).toBeTruthy();
+    expect(within(drawer).getByRole("checkbox", { name: "Diet" })).toBeTruthy();
+    expect(within(drawer).queryByRole("checkbox", { name: "Badge name" })).toBeNull();
+    // The card above the drawer lists all three, the companion's with its mark.
+    expect(within(requirementsRegion()).getByText("Companion")).toBeTruthy();
+  });
+
   it("closes the Add item modal on Escape", async () => {
     fetchEventItems.mockResolvedValue([]);
 

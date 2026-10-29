@@ -35,23 +35,49 @@ const asCondition = (field: EventCustomFieldDto, changes: Partial<ConditionField
 
 describe("conditionCandidates", () => {
   it("are the yes/no and choice questions of the event that have no condition of their own, in the order of the event", () => {
-    expect(conditionCandidates(EVENT, "new_field").map((field) => field.source_field)).toEqual(["parking", "meal"]);
+    expect(conditionCandidates(EVENT, "new_field", "guest").map((field) => field.source_field)).toEqual(["parking", "meal"]);
   });
 
   it("leave the field itself out, whatever it is", () => {
-    expect(conditionCandidates(EVENT, "parking").map((field) => field.source_field)).toEqual(["meal"]);
-    expect(conditionCandidates(EVENT, "meal").map((field) => field.source_field)).toEqual(["parking"]);
+    expect(conditionCandidates(EVENT, "parking", "guest").map((field) => field.source_field)).toEqual(["meal"]);
+    expect(conditionCandidates(EVENT, "meal", "guest").map((field) => field.source_field)).toEqual(["parking"]);
   });
 
   it("leave out a question that has a condition, so that a condition never makes a chain, and every other type", () => {
     const chained = answerField("chained", "Chained", "boolean", { rules: whenParking });
     const types = ["text", "long_text", "date", "datetime", "phone"].map((type) => answerField(`t_${type}`, type, type as EventCustomFieldDto["type"]));
-    expect(conditionCandidates([parking, chained, ...types], "other")).toEqual([parking]);
+    expect(conditionCandidates([parking, chained, ...types], "other", "guest")).toEqual([parking]);
   });
 
   it("are none for an event with no such question", () => {
-    expect(conditionCandidates([], "x")).toEqual([]);
-    expect(conditionCandidates([notes, plate], "x")).toEqual([]);
+    expect(conditionCandidates([], "x", "guest")).toEqual([]);
+    expect(conditionCandidates([notes, plate], "x", "guest")).toEqual([]);
+  });
+
+  describe("about the same person", () => {
+    const pet = answerField("pet", "Pet", "boolean", { applies_to: "companion", show_on_form: true });
+    const diet = answerField("diet", "Diet", "select", { options: ["Vegan", "None"], applies_to: "companion", show_on_form: true });
+    const mixed = [parking, meal, pet, diet];
+    const keys = (fields: EventCustomFieldDto[]) => fields.map((field) => field.source_field);
+
+    it("offers a question about the guest only the questions about the guest", () => {
+      expect(keys(conditionCandidates(mixed, "new_field", "guest"))).toEqual(["parking", "meal"]);
+    });
+
+    it("offers a question about the companion only the questions about the companion", () => {
+      expect(keys(conditionCandidates(mixed, "new_field", "companion"))).toEqual(["pet", "diet"]);
+    });
+
+    it("offers none when the event has no such question about the same person", () => {
+      expect(conditionCandidates([parking, meal], "new_field", "companion")).toEqual([]);
+      expect(conditionCandidates([pet, diet], "new_field", "guest")).toEqual([]);
+    });
+
+    it("takes a question with no recipient written as the guest's", () => {
+      const bare = { ...parking, applies_to: undefined };
+      expect(keys(conditionCandidates([bare], "new_field", "guest"))).toEqual(["parking"]);
+      expect(conditionCandidates([bare], "new_field", "companion")).toEqual([]);
+    });
   });
 
   it("are the questions the server accepts a condition on, and no other: the list and the server's check agree", () => {
@@ -60,10 +86,18 @@ describe("conditionCandidates", () => {
       [parking, meal],
       [notes, plate, answerField("when", "When", "date")],
       [answerField("a", "A", "boolean", { rules: { show_when: { field: "b", value: true } } }), answerField("b", "B", "boolean")],
+      [
+        parking,
+        meal,
+        answerField("pet", "Pet", "boolean", { applies_to: "companion" }),
+        answerField("diet", "Diet", "select", { options: ["Vegan", "None"], applies_to: "companion" }),
+        answerField("leash", "Leash", "text", { applies_to: "companion", rules: { show_when: { field: "pet", value: true } } }),
+      ],
     ];
-    for (const fields of events) {
+    const recipients = ["guest", "companion"] as const;
+    for (const [fields, appliesTo] of events.flatMap((fields) => recipients.map((recipient) => [fields, recipient] as const))) {
       for (const subject of ["new_field", ...fields.map((field) => field.source_field)]) {
-        const offered = new Set(conditionCandidates(fields, subject).map((field) => field.source_field));
+        const offered = new Set(conditionCandidates(fields, subject, appliesTo).map((field) => field.source_field));
         for (const other of fields.filter((field) => field.source_field !== subject)) {
           const answer = other.type === "select" ? (other.options?.[0] ?? "x") : true;
           const asked: ConditionField = {
@@ -72,6 +106,7 @@ describe("conditionCandidates", () => {
             show_on_form: false,
             options: null,
             rules: { show_when: { field: other.source_field, value: answer } },
+            applies_to: appliesTo,
           };
           const others = fields.filter((field) => field.source_field !== subject);
           const accepted = findShowWhenProblem(asked, others) === null;
@@ -153,6 +188,15 @@ describe("dependencyProblem: the fields that depend on this one", () => {
     });
   });
 
+  it("holds back moving a field that others are shown for to the other person, and names them", () => {
+    expect(dependencyProblem(asCondition(parking, { applies_to: "companion" }), EVENT)).toEqual({ kind: "controls_others", dependents: [plate] });
+    expect(dependencyProblem(asCondition(meal, { applies_to: "companion" }), EVENT)).toEqual({ kind: "controls_others", dependents: [veganNote] });
+    // Moved back, with the field they wait for, it is a move that nothing holds back.
+    const companionEvent = EVENT.map((field) => ({ ...field, applies_to: "companion" as const }));
+    expect(dependencyProblem(asCondition(parking, { applies_to: "companion" }), companionEvent)).toBeNull();
+    expect(dependencyProblem(asCondition(parking, { applies_to: "guest" }), companionEvent)).toEqual({ kind: "controls_others", dependents: [companionEvent[2]] });
+  });
+
   it("lets an option go that no field is shown for, and an option be added", () => {
     expect(dependencyProblem(asCondition(meal, { options: ["Vegetarian", "Vegan"] }), EVENT)).toBeNull();
     expect(dependencyProblem(asCondition(meal, { options: ["Standard", "Vegetarian", "Vegan", "Halal"] }), EVENT)).toBeNull();
@@ -191,6 +235,13 @@ describe("dependencyProblem: the condition of the field itself", () => {
     expect(dependencyProblem(candidate({ rules: whenMeal("Halal") }), EVENT)).toEqual({ kind: "condition_cannot_be_kept" });
     expect(dependencyProblem(candidate({ rules: { show_when: { field: "meal", value: true } } }), EVENT)).toEqual({ kind: "condition_cannot_be_kept" });
     expect(dependencyProblem(candidate({ rules: { show_when: { field: "notes", value: true } } }), EVENT)).toEqual({ kind: "condition_cannot_be_kept" });
+  });
+
+  it("holds back a condition on a question about the other person, whichever way, and accepts one about the same person", () => {
+    const pet = answerField("pet", "Pet", "boolean", { applies_to: "companion", show_on_form: true });
+    expect(dependencyProblem(candidate({ rules: { show_when: { field: "pet", value: true } } }), [...EVENT, pet])).toEqual({ kind: "condition_cannot_be_kept" });
+    expect(dependencyProblem(candidate({ applies_to: "companion", rules: whenParking }), [...EVENT, pet])).toEqual({ kind: "condition_cannot_be_kept" });
+    expect(dependencyProblem(candidate({ applies_to: "companion", show_on_form: true, rules: { show_when: { field: "pet", value: true } } }), [...EVENT, pet])).toBeNull();
   });
 
   it("holds back a condition on a field that others are shown for: a chain of two conditions", () => {

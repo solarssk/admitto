@@ -1,11 +1,8 @@
 import { fetchAttendeeDetail } from "../api/client.js";
 import type { AttendeeDetailDto, RsvpStatus } from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
-import {
-  fetchAttendeeCustomFields,
-  readCustomDataField,
-  type CustomDataFieldDef,
-} from "./customData.js";
+import { companionQuestions, guestQuestions } from "../utils/questionRecipient.js";
+import { fetchAnswerFields, readCustomDataField, type CustomDataFieldDef } from "./customData.js";
 
 export type AttendeeFormState = {
   first_name: string;
@@ -97,19 +94,23 @@ export async function loadAttendeeDetailData(
   signal?: AbortSignal,
 ): Promise<{
   detail: AttendeeDetailDto;
+  /** The questions about the guest: the fields of the attendee's own form. */
   attributeFields: CustomDataFieldDef[];
+  /** The questions about the person the guest brings: the fields of the companion's form. */
+  companionFields: CustomDataFieldDef[];
   itemsWarning: string | null;
 }> {
   const [detail, fieldsResult] = await Promise.all([
     fetchAttendeeDetail(eventId, attendeeId, signal, notesPage),
-    fetchAttendeeCustomFields(eventId, signal).then(
+    fetchAnswerFields(eventId, signal).then(
       (fields) => ({ ok: true as const, fields }),
       () => ({ ok: false as const }),
     ),
   ]);
   return {
     detail,
-    attributeFields: fieldsResult.ok ? fieldsResult.fields : [],
+    attributeFields: fieldsResult.ok ? guestQuestions(fieldsResult.fields) : [],
+    companionFields: fieldsResult.ok ? companionQuestions(fieldsResult.fields) : [],
     itemsWarning: fieldsResult.ok ? null : ITEMS_LOAD_WARNING,
   };
 }
