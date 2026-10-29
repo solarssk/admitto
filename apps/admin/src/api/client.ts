@@ -92,6 +92,8 @@ import type {
   SaveMapsSettingsBody,
   RegistrationTurnstileDto,
   SaveRegistrationTurnstileBody,
+  RegistrationAccessMethodsDto,
+  SaveRegistrationAccessMethodsBody,
   LegalDocumentDto,
   LegalDocumentsListResponse,
   LegalDocumentWithContentDto,
@@ -2569,6 +2571,19 @@ export async function fetchRegistrationTurnstile(signal?: AbortSignal): Promise<
 export async function saveRegistrationTurnstile(body: SaveRegistrationTurnstileBody): Promise<RegistrationTurnstileDto> {
   const res = await fetch("/api/admin/registration/turnstile", jsonPutInit(body));
   return parseJson<RegistrationTurnstileDto>(res);
+}
+
+/** Every way in to the guest registration form and whether the superadmin has it on. Superadmin only. */
+export async function fetchRegistrationAccessMethods(signal?: AbortSignal): Promise<RegistrationAccessMethodsDto> {
+  const res = await fetch("/api/admin/registration/access-methods", { credentials: "same-origin", signal });
+  return parseJson<RegistrationAccessMethodsDto>(res);
+}
+
+/** Replaces the list of ways in that are on, and answers like the read. A way that is left out is turned off, which closes
+ * the registration form of every event that uses it. */
+export async function saveRegistrationAccessMethods(body: SaveRegistrationAccessMethodsBody): Promise<RegistrationAccessMethodsDto> {
+  const res = await fetch("/api/admin/registration/access-methods", jsonPutInit(body));
+  return parseJson<RegistrationAccessMethodsDto>(res);
 }
 
 function legalDocumentsUrl(eventId: string, ref?: string): string {

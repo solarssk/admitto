@@ -1203,6 +1203,34 @@ describe("AuditLogPanel rendering", () => {
     expect(screen.getByRole("button", { name: "Guest registration password changed" })).toBeTruthy();
   });
 
+  it("names a change to the ways in of the whole instance, lists the ways that are on in Details (or None), and offers it in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "audit-ways-on", action_type: "registration_access_methods_updated", metadata: { methods: ["link", "password"] } }),
+        makeAuditEntry({ id: "audit-ways-off", action_type: "registration_access_methods_updated", metadata: { methods: [] } }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    const labels = within(table).getAllByText("Guest registration access methods updated");
+    expect(labels).toHaveLength(2);
+    expect(labels[0]!.className).toContain("at-badge--neutral");
+    const [onRow, offRow] = within(table).getAllByRole("row").slice(1);
+    fireEvent.click(within(onRow!).getByText("View"));
+    expect(within(onRow!).getByText("Methods")).toBeTruthy();
+    expect(within(onRow!).getByText("link, password")).toBeTruthy();
+    fireEvent.click(within(offRow!).getByText("View"));
+    expect(within(offRow!).getByText("None")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    expect(screen.getByRole("button", { name: "Guest registration access methods updated" })).toBeTruthy();
+  });
+
   it("names a change to the registration settings of an event, shows in Details what changed and to what, and offers it in the Action filter", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [

@@ -82,7 +82,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 | Row | If it is not done |
 |---|---|
 | **Way in** | Choose **Link** or **Password** on this tab |
-| **Way in allowed** | Ask a Superadmin to allow that way in for the instance |
+| **Way in allowed** | Ask a Superadmin to turn that way in on: Organisation settings > External services > Ways in |
 | **Bot protection** | Ask a Superadmin to set up bot protection |
 | **Event password** | Set the password on this tab |
 | **Legal texts** | Publish the privacy notice, the terms and the consents you chose on the **Legal** tab |

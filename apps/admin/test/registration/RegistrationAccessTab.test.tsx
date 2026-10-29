@@ -339,7 +339,8 @@ describe("RegistrationAccessTab: the checklist", () => {
     expect(legal.getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=legal");
     expect(checklist.getAllByRole("link", { name: "Open the Fields tab." })).toHaveLength(2);
     expect(checklist.getByRole("link", { name: "Check the date and hours in Event settings." }).getAttribute("href")).toBe("/admin/events/evt-1/settings");
-    expect(checklist.getAllByText("Ask a superadmin to set it up.")).toHaveLength(4);
+    expect(checklist.getAllByText("Ask a superadmin to set it up.")).toHaveLength(3);
+    expect(checklist.getByText("Ask a superadmin to turn it on in Organisation settings, External services, Ways in.")).toBeTruthy();
 
     fireEvent.click(legal);
     expect(router.state.location.search).toBe("?tab=legal");
