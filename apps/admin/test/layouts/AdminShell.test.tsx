@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useOutletContext } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { EventDto } from "../../src/api/types.js";
+import type { EventDto, RoleAssignment } from "../../src/api/types.js";
+import { AdminGuard } from "../../src/auth/RoleRouter.js";
 import { AdminShell } from "../../src/layouts/AdminShell.js";
+import { makeOrgAdminAssignment, makeSuperadminAssignment } from "../test-utils.js";
 
-let mockAssignments = [{ role: "superadmin", scope_type: "instance" as const, scope_id: null }];
+let mockAssignments: RoleAssignment[] = [makeSuperadminAssignment()];
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: mockAssignments }),
@@ -70,6 +72,7 @@ function renderShell(event: EventDto = sampleEvent, refreshEvent: () => Promise<
 
 afterEach(() => {
   cleanup();
+  mockAssignments = [makeSuperadminAssignment()];
 });
 
 describe("AdminShell", () => {
@@ -139,5 +142,68 @@ describe("AdminShell", () => {
     expect(screen.getByTestId("main").contains(notice)).toBe(true);
     expect(notice.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("button", { name: "Restore event" })).toBeTruthy();
+  });
+});
+
+/** The event section of the app as a viewer meets it: the guard of the admin panel, then the shell with the menu. */
+function renderPanel(path: string) {
+  return render(
+    <ToastProvider>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/admin" element={<AdminGuard />}>
+            <Route path="events/:eventId/*" element={<AdminShell event={sampleEvent} refreshEvent={vi.fn()} />}>
+              <Route path="overview" element={<div>overview page</div>} />
+              <Route path="registration" element={<div>registration page</div>} />
+            </Route>
+          </Route>
+          <Route path="/operator" element={<p>Operator home</p>} />
+        </Routes>
+      </MemoryRouter>
+    </ToastProvider>,
+  );
+}
+
+const lifecycleMenu = () => within(screen.getByRole("navigation", { name: "Event lifecycle" }));
+
+describe("AdminShell: the Registration entry of the menu", () => {
+  it("is the second entry, after Overview, a link to the page with the clipboard icon", () => {
+    renderShell();
+
+    const names = lifecycleMenu().getAllByRole("link").map((link) => link.textContent);
+    expect(names.slice(0, 3)).toEqual(["Overview", "Registration", "Attendees"]);
+    const entry = lifecycleMenu().getByRole("link", { name: "Registration" });
+    expect(entry.getAttribute("href")).toBe("/admin/events/evt-1/registration");
+    expect(entry.querySelector("i")?.className).toContain("ti-clipboard-check");
+    // A live entry is a link, not one of the disabled items that stand for pages that do not exist.
+    expect(lifecycleMenu().queryByRole("button", { name: "Registration" })).toBeNull();
+  });
+
+  it.each([
+    ["a superadmin", [makeSuperadminAssignment()]],
+    ["the administrator of the event's organisation", [makeOrgAdminAssignment()]],
+  ])("is there for %s, who reach the page", (_who, assignments) => {
+    mockAssignments = assignments;
+    renderPanel("/admin/events/evt-1/overview");
+
+    expect(lifecycleMenu().getByRole("link", { name: "Registration" })).toBeTruthy();
+  });
+
+  it("is not there for an operator, who never gets into the panel: they are sent to the operator screen, from the Registration page too", () => {
+    mockAssignments = [{ role: "operator", scope_type: "event", scope_id: "evt-1" }];
+    renderPanel("/admin/events/evt-1/registration");
+
+    expect(screen.getByText("Operator home")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Registration" })).toBeNull();
+    expect(screen.queryByText("registration page")).toBeNull();
+  });
+
+  it("is marked as the page that is open on the Registration page, whichever tab is open", () => {
+    renderPanel("/admin/events/evt-1/registration?tab=access");
+
+    const entry = lifecycleMenu().getByRole("link", { name: "Registration" });
+    expect(entry.getAttribute("aria-current")).toBe("page");
+    expect(entry.className).toContain("nav-item--active");
+    expect(lifecycleMenu().getByRole("link", { name: "Overview" }).getAttribute("aria-current")).toBeNull();
   });
 });

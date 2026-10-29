@@ -47,7 +47,7 @@ Saving or reverting a registration email changes every one of its emails that is
 
 A guest who registers through the event's form gets up to four emails of their own, besides the ticket. They are at the end of the template picker, under your own templates. Each one runs on the built-in English text until you save your own.
 
-Guests cannot register through the form yet, so no one gets these emails yet. You can already read and change them here.
+A guest gets these emails only when registration is turned on for the event. See [Registration Access](Registration-Access).
 
 | Email | Sent when |
 |-------|-----------|

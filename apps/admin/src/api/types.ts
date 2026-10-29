@@ -262,6 +262,7 @@ import type {
   AttendeeStatus,
   EmailDeliveryStatus,
   LegalDocumentKind,
+  RegistrationAccessMethod,
   RegistrationMailTemplateName,
   RegistrationMode,
   RegistrationStatus,
@@ -1535,6 +1536,69 @@ export interface RegistrationCountsDto {
   by_status: Record<RegistrationStatus, number>;
   /** Requests that wait for a decision. The waiting list is counted apart. */
   needs_decision: number;
+}
+
+/** The checks that decide whether an event may have registration on. The server holds the list (`READINESS_KEYS` in
+ * `apps/web/src/registration/readiness.ts`), and a test keeps the words of each key (`registration/accessReadiness.ts`) equal to it. */
+export type RegistrationReadinessKey =
+  | "access_method"
+  | "access_method_enabled"
+  | "bot_protection"
+  | "password"
+  | "legal_documents"
+  | "form_questions"
+  | "required_fields"
+  | "mail_provider"
+  | "instance_url"
+  | "event_not_archived"
+  | "event_not_ended";
+
+/** One check: a fixed key and whether it is met. Never a sentence, so the words are the screen's own. */
+export interface RegistrationReadinessCheckDto {
+  key: RegistrationReadinessKey;
+  ok: boolean;
+}
+
+/** A question the guest form asks (the ones the organiser wrote), as the form draws it. */
+export interface RegistrationPublicFieldDto {
+  key: string;
+  label: string;
+  type: EventCustomFieldType;
+  required: boolean;
+}
+
+/**
+ * GET and PUT /api/admin/events/:eventId/registration/settings: how guests may register for the event, with whether it is ready
+ * for registration to be on. `password_set` says whether an event password is stored and nothing else: the password is never
+ * sent back, not even its length. `guest_url` is null while the instance has no address.
+ */
+export interface RegistrationSettingsDto {
+  /** Null while registration is off. */
+  mode: RegistrationMode | null;
+  /** None or one way in. The server may hold a way this screen does not offer; it counts as no choice. */
+  access_methods: RegistrationAccessMethod[];
+  waitlist_enabled: boolean;
+  verify_email: boolean;
+  max_companions: number;
+  ask_company: boolean;
+  ask_department: boolean;
+  consent_keys: string[];
+  password_set: boolean;
+  guest_url: string | null;
+  readiness: RegistrationReadinessCheckDto[];
+  public_fields: RegistrationPublicFieldDto[];
+}
+
+/** PUT of the settings: a part of them, and only the part that changed. An unknown key is refused (400). */
+export interface SaveRegistrationSettingsBody {
+  mode?: RegistrationMode | null;
+  access_methods?: Array<"link" | "password">;
+  waitlist_enabled?: boolean;
+  verify_email?: boolean;
+  max_companions?: number;
+  ask_company?: boolean;
+  ask_department?: boolean;
+  consent_keys?: string[];
 }
 
 /** What the request list is asked for; a left-out filter selects every request. */

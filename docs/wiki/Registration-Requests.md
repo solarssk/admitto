@@ -4,9 +4,9 @@
 
 ## What this page helps you do
 
-Work through the requests that guests sent through the registration form: read each one, accept or reject it, send a failed email again, and delete the requests you no longer need. You do this on the **Requests** tab of the event's **Registration** page. That page is not in the event menu yet, so the tab cannot be reached from the menu.
+Work through the requests that guests sent through the registration form: read each one, accept or reject it, send a failed email again, and delete the requests you no longer need. You do this on the **Requests** tab of the event's **Registration** page, which is in the event menu.
 
-Guests cannot open the form yet. It opens for an event only when registration is turned on for it.
+The form opens for an event only when registration is turned on for it. See [Registration Access](Registration-Access).
 
 ## Before you start
 
@@ -186,6 +186,7 @@ The column shows the email the guest was sent last, and what happened to it.
 
 ## Related pages
 
+- [Registration Access](Registration-Access)
 - [Registration Form Fields](Registration-Form-Fields)
 - [Legal Texts and Consents](Legal-Texts-and-Consents)
 - [Event Overview and Settings](Event-Overview-and-Settings)

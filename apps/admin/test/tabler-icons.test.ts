@@ -37,6 +37,7 @@ const ADMIN_TABLER_ICON_CLASSES = [
   "download",
   "external-link",
   "eye",
+  "eye-off",
   "file-text",
   "file-type-pdf",
   "filter-off",
