@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { Button, Card, Input, ModalBackdrop, Notice } from "@admitto/ui";
 import type { AttendeeCompanionDto, EventDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -121,6 +121,17 @@ function CompanionEditDialog({
 export function CompanionCard({ event, companion, fields, fieldsLoaded, ...actionInput }: Readonly<CompanionCardProps>) {
   const actions = useCompanionActions({ ...actionInput, fields });
   const answers = companionAnswerEntries(companion, fields, event.timezone);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  const removeButtonRef = useRef<HTMLButtonElement>(null);
+  // A dialog that closes leaves the keyboard on <body>: the controls it held are gone or hidden. The keyboard goes back to the button that
+  // opened it, in an effect that follows the render that closed it (never a timer). A removal that worked takes the card away with the
+  // button, so the page puts the focus somewhere else (AttendeeDetailPage, handleCompanionChanged).
+  const wasOpen = useRef({ edit: false, removal: false });
+  useEffect(() => {
+    if (wasOpen.current.edit && !actions.edit.open) editButtonRef.current?.focus();
+    if (wasOpen.current.removal && !actions.removal.open) removeButtonRef.current?.focus();
+    wasOpen.current = { edit: actions.edit.open, removal: actions.removal.open };
+  }, [actions.edit.open, actions.removal.open]);
   return (
     <>
       <Card
@@ -129,14 +140,14 @@ export function CompanionCard({ event, companion, fields, fieldsLoaded, ...actio
           <>
             <ArchivedGuard event={event} reasonId="edit-companion-reason" disabled={!fieldsLoaded} tooltip={FIELDS_NOT_LOADED}>
               {(guard) => (
-                <Button variant="secondary" size="sm" icon={<i className="ti ti-pencil" aria-hidden="true" />} {...guard} onClick={actions.edit.show}>
+                <Button ref={editButtonRef} variant="secondary" size="sm" icon={<i className="ti ti-pencil" aria-hidden="true" />} {...guard} onClick={actions.edit.show}>
                   Edit
                 </Button>
               )}
             </ArchivedGuard>
             <ArchivedGuard event={event} reasonId="remove-companion-reason">
               {(guard) => (
-                <Button variant="secondary" size="sm" icon={<i className="ti ti-user-minus" aria-hidden="true" />} {...guard} onClick={actions.removal.show}>
+                <Button ref={removeButtonRef} variant="secondary" size="sm" icon={<i className="ti ti-user-minus" aria-hidden="true" />} {...guard} onClick={actions.removal.show}>
                   Remove
                 </Button>
               )}

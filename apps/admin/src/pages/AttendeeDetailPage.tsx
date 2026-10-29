@@ -2045,6 +2045,11 @@ export function AttendeeDetailPage() {
   // The detail on screen, for applyDetail: an answer can come from a request started long ago, in a closure that
   // rendered before the detail it would replace, so the state it sees would be stale.
   const heldDetailRef = useRef<AttendeeDetailDto | null>(null);
+  const pageRef = useRef<HTMLElement>(null);
+  const [tabFocusRequests, setTabFocusRequests] = useState(0);
+  useEffect(() => {
+    if (tabFocusRequests > 0) pageRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+  }, [tabFocusRequests]);
   // Every whole-detail replacement (edit, note, wallet action, reload) also reseeds the Activity log,
   // which invalidates any page request still in flight. The one answer that is refused is an older one
   // than the erasure (see isOlderThanErasure): nothing of an erased person comes back, by any path.
@@ -2262,6 +2267,8 @@ export function AttendeeDetailPage() {
   function handleCompanionChanged(next: AttendeeDetailDto, target: { eventId: string; attendeeId: string }) {
     if (!isStillSelected(target)) return;
     loadSeqRef.current += 1;
+    // A removal takes the card, and the button the keyboard was on, away: the focus goes to the tab that is open.
+    if (heldDetailRef.current?.companion && !next.companion) setTabFocusRequests((count) => count + 1);
     applyDetail(next);
   }
 
@@ -2859,7 +2866,7 @@ export function AttendeeDetailPage() {
   }
 
   return (
-    <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
+    <section ref={pageRef} key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
       <PageHeader
         title={
           <span className="attendee-detail-title">

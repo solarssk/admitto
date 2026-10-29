@@ -427,6 +427,46 @@ describe("the Edit dialog", () => {
   });
 });
 
+describe("where the keyboard goes when a dialog closes", () => {
+  it("is back on the Edit button after Escape, after Cancel and after a save", async () => {
+    updateAttendeeCompanion.mockResolvedValueOnce(detailOf({ slot: 1, name: "Anna Companion", custom_data: null }));
+    mockLoad(COMPANION);
+    renderPage();
+    await pageLoaded();
+    expect(document.activeElement).not.toBe(editButton());
+
+    fireEvent.click(editButton());
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(document.activeElement).toBe(editButton());
+
+    fireEvent.click(editButton());
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(editButton());
+
+    fireEvent.click(editButton());
+    typeName("Anna Companion");
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit companion" })).toBeNull());
+    expect(document.activeElement).toBe(editButton());
+  });
+
+  it("is back on the Remove button after the confirmation is cancelled, and on the open tab after a removal that worked", async () => {
+    removeAttendeeCompanion.mockResolvedValueOnce(detailOf(null));
+    mockLoad(COMPANION);
+    renderPage();
+    await pageLoaded();
+
+    fireEvent.click(removeButton());
+    fireEvent.click(within(screen.getByRole("dialog", { name: REMOVE_TITLE })).getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(removeButton());
+
+    fireEvent.click(removeButton());
+    fireEvent.click(confirmRemove());
+    await waitFor(() => expect(screen.queryByText("Companion", { selector: ".at-card__title" })).toBeNull());
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Overview" }));
+  });
+});
+
 describe("the Remove confirmation", () => {
   it("says what it removes and what it frees, in those words, and does nothing until it is confirmed", async () => {
     mockLoad(COMPANION);
