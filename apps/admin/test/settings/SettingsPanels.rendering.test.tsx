@@ -1155,6 +1155,29 @@ describe("AuditLogPanel rendering", () => {
     expect(screen.queryByRole("button", { name: /GDPR/ })).toBeNull();
   });
 
+  it("names the changes of staff to a guest's companion, shows only the ids and the slot of an entry, and offers both in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "audit-updated", action_type: "attendee_companion_updated", metadata: { event_id: "evt-1", event_title: "Demo", attendee_id: "att-1", slot: 1 } }),
+        makeAuditEntry({ id: "audit-removed", action_type: "attendee_companion_removed", metadata: { event_id: "evt-1", event_title: "Demo", attendee_id: "att-1", slot: 1, seats_freed: 1 } }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Companion updated").className).toContain("at-badge--neutral");
+    expect(within(table).getByText("Companion removed").className).toContain("at-badge--error");
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    for (const label of ["Companion updated", "Companion removed"]) {
+      expect(screen.getByRole("button", { name: label })).toBeTruthy();
+    }
+  });
+
   it("names the decisions of staff on guest registrations and their deletion, and offers them in the Action filter", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [
