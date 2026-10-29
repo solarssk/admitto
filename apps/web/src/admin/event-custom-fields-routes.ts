@@ -1,6 +1,6 @@
 import type { Context } from "hono";
-import { Prisma } from "@admitto/db";
-import type { PrismaClient } from "@admitto/db";
+import { CUSTOM_FIELD_APPLIES_TO, Prisma } from "@admitto/db";
+import type { CustomFieldAppliesTo, PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import {
   CUSTOM_FIELD_NOT_ANSWERED_KEY,
@@ -108,6 +108,9 @@ const optionValueField = z
 
 const fieldTypeSchema = z.enum(EVENT_CUSTOM_FIELD_TYPES);
 
+/** Whose answer the question asks for: the guest's own, or the guest's companion's (`EventCustomField.applies_to`). */
+const appliesToSchema = z.enum(CUSTOM_FIELD_APPLIES_TO);
+
 const createFieldSchema = z
   .object({
     source_field: slugField.min(1).max(60),
@@ -118,6 +121,8 @@ const createFieldSchema = z
     // Whether the registration form asks guests this question. Left out = off, as for every field
     // that existed before the form; the Registration page sends true for a field it creates.
     show_on_form: z.boolean().optional(),
+    // Left out = the guest's own question, as every field that existed before the companion.
+    applies_to: appliesToSchema.optional(),
     options: z.array(optionValueField).max(20).optional(),
     // The rules of the field (see eventCustomFieldRulesSchema): a shape that is not one is a 400, rules the
     // type does not take are a 422 (eventCustomFieldRulesFitType), and a condition between fields that cannot
@@ -144,6 +149,9 @@ const patchFieldSchema = z
     type: fieldTypeSchema.optional(),
     required: z.boolean().optional(),
     show_on_form: z.boolean().optional(),
+    // Changing whose answer a question asks for is judged like any other change to the conditions between fields: a question
+    // that others wait for cannot move to the other recipient, and nor can one that waits for a question of the first.
+    applies_to: appliesToSchema.optional(),
     // null (not just omitted) is how the client asks to clear a previous select's options when
     // switching to text/boolean - omitting the key means "leave options untouched" for PATCH.
     options: z.union([z.array(optionValueField).max(20), z.null()]).optional(),
@@ -175,6 +183,8 @@ export type EventCustomFieldDto = {
   type: EventCustomFieldType;
   required: boolean;
   show_on_form: boolean;
+  /** Whose answer the question asks for: the guest's own, or the guest's companion's. */
+  applies_to: CustomFieldAppliesTo;
   display_order: number | null;
   options: string[] | null;
   /** Format rules (text, long text and phone fields), and the icon, condition and suggestions of the
@@ -202,10 +212,15 @@ type CustomFieldRow = {
   display_order: number | null;
   options: Prisma.JsonValue;
   rules: Prisma.JsonValue;
-  /** Whose answer the question asks for; not part of the DTO until the field editor can set it. */
+  /** Whose answer the question asks for (`guest` or `companion`). */
   applies_to: string;
   created_at: Date;
 };
+
+/** The recipient of a stored `applies_to`; anything but `companion` reads as the guest's, as the checks of conditions read it. */
+function recipientOf(appliesTo: string): CustomFieldAppliesTo {
+  return appliesTo === "companion" ? "companion" : "guest";
+}
 
 function serializeCustomField(row: CustomFieldRow): EventCustomFieldDto {
   const options = Array.isArray(row.options)
@@ -219,6 +234,7 @@ function serializeCustomField(row: CustomFieldRow): EventCustomFieldDto {
     type: row.type as EventCustomFieldDto["type"],
     required: row.required,
     show_on_form: row.show_on_form,
+    applies_to: recipientOf(row.applies_to),
     display_order: row.display_order,
     options: options && options.length > 0 ? options : null,
     rules: readStoredFieldRules(row.rules) ?? null,
@@ -293,7 +309,7 @@ function toConditionField(row: ConditionRow): ConditionField {
     show_on_form: row.show_on_form,
     options: Array.isArray(row.options) ? row.options.filter((o): o is string => typeof o === "string") : null,
     rules: readStoredFieldRules(row.rules) ?? null,
-    applies_to: row.applies_to === "companion" ? "companion" : "guest",
+    applies_to: recipientOf(row.applies_to),
   };
 }
 
@@ -310,8 +326,7 @@ async function assertConditionsHold(tx: Prisma.TransactionClient, eventId: strin
   if (problem) throw new ShowWhenError(problem);
 }
 
-/** A new field as the checks of conditions read it. The API makes a question about the guest; one about a companion is
- * made in the database until the field editor can ask for it. */
+/** A new field as the checks of conditions read it. */
 function newConditionField(input: z.infer<typeof createFieldSchema>): ConditionField {
   return {
     source_field: input.source_field,
@@ -319,7 +334,7 @@ function newConditionField(input: z.infer<typeof createFieldSchema>): ConditionF
     show_on_form: input.show_on_form ?? false,
     options: input.options ?? null,
     rules: input.rules ?? null,
-    applies_to: "guest",
+    applies_to: input.applies_to ?? "guest",
   };
 }
 
@@ -361,6 +376,7 @@ function newFieldData(
     type: input.type ?? "text",
     required: input.required ?? false,
     show_on_form: input.show_on_form ?? false,
+    applies_to: input.applies_to ?? "guest",
     options: input.options ?? Prisma.JsonNull,
     rules: rulesColumn(input.rules),
   };
@@ -544,6 +560,7 @@ function fieldPatchData(patch: z.infer<typeof patchFieldSchema>): Prisma.EventCu
   if (patch.type !== undefined) data.type = patch.type;
   if (patch.required !== undefined) data.required = patch.required;
   if (patch.show_on_form !== undefined) data.show_on_form = patch.show_on_form;
+  if (patch.applies_to !== undefined) data.applies_to = patch.applies_to;
   if (patch.options !== undefined) data.options = patch.options ?? Prisma.JsonNull;
   if (patch.rules !== undefined) data.rules = rulesColumn(patch.rules);
   return data;
@@ -564,7 +581,8 @@ function patchTouchesConditions(patch: z.infer<typeof patchFieldSchema>): boolea
     patch.type !== undefined ||
     patch.options !== undefined ||
     patch.rules !== undefined ||
-    patch.show_on_form !== undefined
+    patch.show_on_form !== undefined ||
+    patch.applies_to !== undefined
   );
 }
 
@@ -575,6 +593,7 @@ function patchedConditionField(current: CustomFieldRow, patch: z.infer<typeof pa
     ...stored,
     type: patch.type ?? stored.type,
     show_on_form: patch.show_on_form ?? stored.show_on_form,
+    applies_to: patch.applies_to ?? stored.applies_to,
     options: patch.options === undefined ? stored.options : patch.options,
     rules: patch.rules === undefined ? stored.rules : patch.rules,
   };
