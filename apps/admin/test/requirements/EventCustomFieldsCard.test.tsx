@@ -5,10 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldDto, EventDto } from "../../src/api/types.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import {
-  EventCustomFieldsCard,
-  type EventCustomFieldsPlacement,
-} from "../../src/requirements/EventCustomFieldsCard.js";
+import { EventCustomFieldsCard } from "../../src/requirements/EventCustomFieldsCard.js";
 import type { FieldsChange } from "../../src/requirements/useFieldFormControls.js";
 import { deferred, getTooltipText, renderWithToast } from "../test-utils.js";
 
@@ -84,7 +81,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderCard(fields: EventCustomFieldDto[], placement?: EventCustomFieldsPlacement, hostEvent: EventDto = event) {
+function renderCard(fields: EventCustomFieldDto[], hostEvent: EventDto = event) {
   const onChanged = vi.fn();
   const onUpdated = vi.fn();
   renderWithToast(
@@ -92,7 +89,6 @@ function renderCard(fields: EventCustomFieldDto[], placement?: EventCustomFields
       eventId="evt-1"
       event={hostEvent}
       fields={fields}
-      placement={placement}
       onChanged={onChanged}
       onUpdated={onUpdated}
     />,
@@ -108,7 +104,6 @@ function Host({ initial }: Readonly<{ initial: EventCustomFieldDto[] }>) {
       eventId="evt-1"
       event={event}
       fields={fields}
-      placement="registration"
       onChanged={vi.fn()}
       onUpdated={(change: FieldsChange) => setFields(change)}
     />
@@ -117,49 +112,35 @@ function Host({ initial }: Readonly<{ initial: EventCustomFieldDto[] }>) {
 
 const rowNames = () => screen.getAllByRole("row").slice(1).map((row) => row.querySelector(".requirements-item-name")?.textContent);
 
-// The card is the same one on both pages: what it does for a field is tested once, for each place it is shown.
-describe.each([
-  {
-    placement: "requirements" as const,
-    title: "Custom attendee fields",
-    emptyTitle: "No custom fields yet",
-    emptyText: /Add one to collect extra attendee data, like dietary requirements/,
-  },
-  {
-    placement: "registration" as const,
-    title: "Attendee fields",
-    emptyTitle: "No attendee fields yet",
-    emptyText: /Add a field to ask guests a question on the registration form, like dietary requirements/,
-  },
-])("EventCustomFieldsCard on $placement", ({ placement, title, emptyTitle, emptyText }) => {
-  it("is titled for the page it is on", () => {
-    renderCard([dietaryField], placement);
-    expect(screen.getByText(title)).toBeTruthy();
+describe("EventCustomFieldsCard", () => {
+  it("is titled Attendee fields", () => {
+    renderCard([dietaryField]);
+    expect(screen.getByText("Attendee fields")).toBeTruthy();
   });
 
   it("shows EmptyState when there are no fields", () => {
-    renderCard([], placement);
-    expect(screen.getByText(emptyTitle)).toBeTruthy();
-    expect(screen.getByText(emptyText)).toBeTruthy();
+    renderCard([]);
+    expect(screen.getByText("No attendee fields yet")).toBeTruthy();
+    expect(screen.getByText(/Add a field to ask guests a question on the registration form, like dietary requirements/)).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
   });
 
   it("keeps the card's padding for the empty state and lets the table bleed edge to edge", () => {
     const { container, unmount } = renderWithToast(
-      <EventCustomFieldsCard eventId="evt-1" event={event} fields={[]} placement={placement} onChanged={vi.fn()} />,
+      <EventCustomFieldsCard eventId="evt-1" event={event} fields={[]} onChanged={vi.fn()} />,
     );
     expect(container.querySelector(".at-card__body")).not.toBeNull();
     unmount();
 
     const withFields = renderWithToast(
-      <EventCustomFieldsCard eventId="evt-1" event={event} fields={[dietaryField]} placement={placement} onChanged={vi.fn()} />,
+      <EventCustomFieldsCard eventId="evt-1" event={event} fields={[dietaryField]} onChanged={vi.fn()} />,
     );
     expect(withFields.container.querySelector(".at-card__body")).toBeNull();
     expect(withFields.container.querySelector(".at-card > .attendees-table-wrap")).not.toBeNull();
   });
 
   it("lists fields with description and required status", () => {
-    renderCard([dietaryField, shirtField], placement);
+    renderCard([dietaryField, shirtField]);
 
     expect(screen.getByRole("columnheader", { name: "Description" })).toBeTruthy();
     expect(screen.queryByRole("columnheader", { name: "Type" })).toBeNull();
@@ -188,7 +169,7 @@ describe.each([
     ["select", "Single choice", "ti-list"],
     ["boolean", "Yes / No", "ti-checkbox"],
   ] as const)("draws a %s field with the name and the icon of its type", (type, name, icon) => {
-    renderCard([{ ...dietaryField, id: `field-${type}`, source_field: type, label: `A ${type} field`, type }], placement);
+    renderCard([{ ...dietaryField, id: `field-${type}`, source_field: type, label: `A ${type} field`, type }]);
 
     const row = screen.getByText(`A ${type} field`).closest("tr")!;
     const marker = within(row).getByLabelText(name);
@@ -198,7 +179,7 @@ describe.each([
 
   it("marks a question about the companion with a Companion badge under its name, and none on a question about the guest", () => {
     const badgeField: EventCustomFieldDto = { ...dietaryField, id: "field-badge", source_field: "badge", label: "Badge name", applies_to: "companion" };
-    renderCard([dietaryField, badgeField], placement);
+    renderCard([dietaryField, badgeField]);
 
     const companionRow = screen.getByText("Badge name").closest("tr")!;
     const mark = within(companionRow).getByText("Companion");
@@ -210,13 +191,13 @@ describe.each([
   });
 
   it("marks a field that says nothing of its recipient as the guest's: no badge", () => {
-    renderCard([dietaryField, { ...shirtField, applies_to: "guest" }], placement);
+    renderCard([dietaryField, { ...shirtField, applies_to: "guest" }]);
     expect(screen.queryByText("Companion")).toBeNull();
   });
 
   it("opens the edit modal of a question about the companion with Companion pressed", () => {
     const badgeField: EventCustomFieldDto = { ...dietaryField, id: "field-badge", source_field: "badge", label: "Badge name", applies_to: "companion" };
-    renderCard([dietaryField, badgeField], placement);
+    renderCard([dietaryField, badgeField]);
     fireEvent.click(within(screen.getByText("Badge name").closest("tr")!).getByRole("button", { name: "Edit field" }));
     const recipients = screen.getByRole("group", { name: "Applies to" });
     expect(within(recipients).getByRole("button", { name: "Companion" }).getAttribute("aria-pressed")).toBe("true");
@@ -226,7 +207,7 @@ describe.each([
   it("disambiguates two fields that share a display label with their slug", () => {
     const shirtA: EventCustomFieldDto = { ...dietaryField, id: "f-shirt-a", source_field: "shirt_size", label: "Shirt size" };
     const shirtB: EventCustomFieldDto = { ...dietaryField, id: "f-shirt-b", source_field: "shirt_size_2", label: "Shirt size" };
-    renderCard([shirtA, shirtB], placement);
+    renderCard([shirtA, shirtB]);
 
     expect(screen.getByText("Shirt size (shirt_size)")).toBeTruthy();
     expect(screen.getByText("Shirt size (shirt_size_2)")).toBeTruthy();
@@ -234,7 +215,7 @@ describe.each([
   });
 
   it("shows the add-field modal with a header subtitle", () => {
-    renderCard([], placement);
+    renderCard([]);
     fireEvent.click(screen.getByRole("button", { name: "Add field" }));
     expect(screen.getByRole("heading", { name: "Add custom field" })).toBeTruthy();
     expect(
@@ -245,7 +226,7 @@ describe.each([
   });
 
   it("opens the edit modal pre-filled for an existing field", () => {
-    renderCard([dietaryField], placement);
+    renderCard([dietaryField]);
     fireEvent.click(screen.getByRole("button", { name: "Edit field" }));
     expect(screen.getByRole("heading", { name: "Edit custom field" })).toBeTruthy();
     expect(screen.getByLabelText("Display label")).toHaveProperty("value", "Dietary requirements");
@@ -253,7 +234,7 @@ describe.each([
 
   it("deletes a field after confirmation", async () => {
     vi.mocked(deleteEventCustomField).mockResolvedValueOnce(undefined);
-    const { onChanged } = renderCard([dietaryField], placement);
+    const { onChanged } = renderCard([dietaryField]);
     fireEvent.click(screen.getByRole("button", { name: "Delete field" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => {
@@ -266,12 +247,12 @@ describe.each([
     vi.mocked(deleteEventCustomField).mockRejectedValueOnce(
       new ApiError(409, "field_in_use", "field_in_use"),
     );
-    renderCard([dietaryField], placement);
+    renderCard([dietaryField]);
     fireEvent.click(screen.getByRole("button", { name: "Delete field" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
-        expect.stringMatching(/used as a hint on an item/),
+        expect.stringMatching(/item on the Requirements page still uses this field/),
         "warning",
       );
     });
@@ -279,7 +260,7 @@ describe.each([
 
   it("shows a generic error toast when delete fails for another reason", async () => {
     vi.mocked(deleteEventCustomField).mockRejectedValueOnce(new ApiError(500, "server error", ""));
-    renderCard([dietaryField], placement);
+    renderCard([dietaryField]);
     fireEvent.click(screen.getByRole("button", { name: "Delete field" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => {
@@ -288,7 +269,7 @@ describe.each([
   });
 
   it("closes the delete confirmation without deleting on Cancel", () => {
-    renderCard([dietaryField], placement);
+    renderCard([dietaryField]);
     fireEvent.click(screen.getByRole("button", { name: "Delete field" }));
     expect(screen.getByRole("heading", { name: "Delete custom field" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -298,7 +279,7 @@ describe.each([
 
   it("closes the add modal and refreshes after a field is created", async () => {
     vi.mocked(createEventCustomField).mockResolvedValueOnce(dietaryField);
-    const { onChanged } = renderCard([], placement);
+    const { onChanged } = renderCard([]);
     fireEvent.click(screen.getByRole("button", { name: "Add field" }));
     fireEvent.change(screen.getByLabelText("Display label"), {
       target: { value: "Dietary requirements" },
@@ -311,20 +292,16 @@ describe.each([
   });
 
   it("locks every control of an archived event, with the reason", () => {
-    renderCard([dietaryField, shirtField], placement, archivedEvent);
+    renderCard([dietaryField, shirtField], archivedEvent);
     const controls = [
       screen.getByRole("button", { name: "Add field" }),
       ...screen.getAllByRole("button", { name: "Edit field" }),
       ...screen.getAllByRole("button", { name: "Delete field" }),
+      screen.getByRole("button", { name: "Add suggested questions" }),
+      screen.getByRole("switch", { name: "Dietary requirements on the form" }),
+      screen.getByRole("button", { name: "Move Dietary requirements down" }),
+      screen.getByRole("button", { name: "Move Shirt size up" }),
     ];
-    if (placement === "registration") {
-      controls.push(
-        screen.getByRole("button", { name: "Add suggested questions" }),
-        screen.getByRole("switch", { name: "Dietary requirements on the form" }),
-        screen.getByRole("button", { name: "Move Dietary requirements down" }),
-        screen.getByRole("button", { name: "Move Shirt size up" }),
-      );
-    }
     for (const control of controls) {
       expect((control as HTMLButtonElement | HTMLInputElement).disabled).toBe(true);
       expect(getTooltipText(control)).toBe(ARCHIVED_ACTION_TOOLTIP);
@@ -332,38 +309,9 @@ describe.each([
   });
 });
 
-describe("EventCustomFieldsCard: the Requirements page (the default)", () => {
-  it("has no Add suggested questions button: the suggested questions are a matter of the registration form", () => {
-    renderCard([dietaryField]);
-
-    expect(screen.getByRole("button", { name: "Add field" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Add suggested questions" })).toBeNull();
-  });
-
-  it("is the card as it was: no On the form column, switch or arrows", () => {
-    renderCard([dietaryField, shirtField]);
-
-    expect(screen.getByText("Custom attendee fields")).toBeTruthy();
-    expect(screen.queryByRole("columnheader", { name: "On the form" })).toBeNull();
-    expect(screen.queryByRole("switch")).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Move / })).toBeNull();
-    expect(document.querySelector(".requirements-section--registration")).toBeNull();
-  });
-
-  it("creates a field that is not on the registration form, as the API does by default", async () => {
-    vi.mocked(createEventCustomField).mockResolvedValueOnce(dietaryField);
-    renderCard([]);
-    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
-    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Dietary requirements" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create field" }));
-    await waitFor(() => expect(createEventCustomField).toHaveBeenCalled());
-    expect(vi.mocked(createEventCustomField).mock.calls[0]![1]).not.toHaveProperty("show_on_form");
-  });
-});
-
-describe("EventCustomFieldsCard: the Registration page", () => {
+describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
   it("has an On the form switch for each field, on for the fields that are on the form", () => {
-    renderCard([dietaryField, shirtField], "registration");
+    renderCard([dietaryField, shirtField]);
 
     expect(screen.getByRole("columnheader", { name: "On the form" })).toBeTruthy();
     expect((screen.getByRole("switch", { name: "Dietary requirements on the form" }) as HTMLInputElement).checked).toBe(true);
@@ -374,7 +322,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
   it("names the switch and the arrows of two fields with the same label by their slugs", () => {
     const first: EventCustomFieldDto = { ...dietaryField, id: "f-a", source_field: "shirt_size", label: "Shirt size" };
     const second: EventCustomFieldDto = { ...dietaryField, id: "f-b", source_field: "shirt_size_2", label: "Shirt size" };
-    renderCard([first, second], "registration");
+    renderCard([first, second]);
 
     expect(screen.getByRole("switch", { name: "Shirt size (shirt_size) on the form" })).toBeTruthy();
     expect(screen.getByRole("switch", { name: "Shirt size (shirt_size_2) on the form" })).toBeTruthy();
@@ -383,7 +331,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
   it("creates a new field already on the form", async () => {
     vi.mocked(createEventCustomField).mockResolvedValueOnce(dietaryField);
-    renderCard([], "registration");
+    renderCard([]);
     fireEvent.click(screen.getByRole("button", { name: "Add field" }));
     fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Dietary requirements" } });
     fireEvent.click(screen.getByRole("button", { name: "Create field" }));
@@ -402,7 +350,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
   it("does not move a field on or off the form when its other details are edited", async () => {
     vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...dietaryField, required: true });
-    renderCard([dietaryField], "registration");
+    renderCard([dietaryField]);
     fireEvent.click(screen.getByRole("button", { name: "Edit field" }));
     fireEvent.click(screen.getByRole("button", { name: "Required" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -416,7 +364,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     const suggestDialog = () => screen.queryByRole("dialog", { name: "Add suggested questions" });
 
     it("stands beside Add field, before it, as a secondary button", () => {
-      renderCard([dietaryField], "registration");
+      renderCard([dietaryField]);
 
       const buttons = within(document.querySelector(".at-card__actions") as HTMLElement).getAllByRole("button");
       expect(buttons.map((button) => button.textContent)).toEqual(["Add suggested questions", "Add field"]);
@@ -425,7 +373,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     });
 
     it("opens the window for the fields the event has now, and Cancel closes it without asking the server, with the focus back on the button", () => {
-      renderCard([{ ...parkingField, show_on_form: true }], "registration");
+      renderCard([{ ...parkingField, show_on_form: true }]);
 
       fireEvent.click(suggestButton());
 
@@ -438,7 +386,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     });
 
     it("gives the focus back to the button when the window is closed with Escape", () => {
-      renderCard([], "registration");
+      renderCard([]);
       fireEvent.click(suggestButton());
 
       fireEvent.keyDown(document, { key: "Escape" });
@@ -449,7 +397,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
     it("adds the questions, says how many, reads the list again, closes the window and gives the focus back", async () => {
       vi.mocked(addSuggestedEventCustomFields).mockResolvedValueOnce(ADDED);
-      const { onChanged } = renderCard([], "registration");
+      const { onChanged } = renderCard([]);
       fireEvent.click(suggestButton());
 
       fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 5 questions" }));
@@ -466,7 +414,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
         added: [],
         skipped: ADDED.added.map((source_field) => ({ source_field, reason: "exists" as const })),
       });
-      const { onChanged } = renderCard([], "registration");
+      const { onChanged } = renderCard([]);
       fireEvent.click(suggestButton());
 
       fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 5 questions" }));
@@ -477,7 +425,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
     it("keeps the window open with the refusal, and neither reads the list again nor says it added anything", async () => {
       vi.mocked(addSuggestedEventCustomFields).mockRejectedValueOnce(new ApiError(422, "field_limit_reached", "field_limit_reached"));
-      const { onChanged } = renderCard([], "registration");
+      const { onChanged } = renderCard([]);
       fireEvent.click(suggestButton());
 
       fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 5 questions" }));
@@ -490,7 +438,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
     it("tells an event over the limit by how much, and asks nothing of the server", () => {
       const own: EventCustomFieldDto[] = Array.from({ length: 18 }, (_, index) => ({ ...dietaryField, id: `f-${index}`, source_field: `own_${index}`, label: `Own ${index}` }));
-      renderCard(own, "registration");
+      renderCard(own);
 
       fireEvent.click(suggestButton());
 
@@ -499,7 +447,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     });
 
     it("is locked for an archived event, with the reason, and opens nothing", () => {
-      renderCard([], "registration", archivedEvent);
+      renderCard([], archivedEvent);
 
       fireEvent.click(suggestButton());
 
@@ -513,7 +461,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     it("saves the other state, shows the answer on the list the host has now and says so", async () => {
       const saved = { ...shirtField, show_on_form: true };
       vi.mocked(updateEventCustomField).mockResolvedValueOnce(saved);
-      const { onUpdated, onChanged } = renderCard([dietaryField, shirtField], "registration");
+      const { onUpdated, onChanged } = renderCard([dietaryField, shirtField]);
 
       fireEvent.click(screen.getByRole("switch", { name: "Shirt size on the form" }));
 
@@ -528,7 +476,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
     it("takes a field off the form with the same request the other way", async () => {
       vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...dietaryField, show_on_form: false });
-      renderCard([dietaryField], "registration");
+      renderCard([dietaryField]);
 
       fireEvent.click(screen.getByRole("switch", { name: "Dietary requirements on the form" }));
 
@@ -539,7 +487,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     it("reads the list again instead, when the host has no way to show the answer", async () => {
       vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, show_on_form: true });
       const onChanged = vi.fn();
-      renderWithToast(<EventCustomFieldsCard eventId="evt-1" event={event} fields={[shirtField]} placement="registration" onChanged={onChanged} />);
+      renderWithToast(<EventCustomFieldsCard eventId="evt-1" event={event} fields={[shirtField]} onChanged={onChanged} />);
 
       fireEvent.click(screen.getByRole("switch", { name: "Shirt size on the form" }));
 
@@ -549,7 +497,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     it("is busy while its request is on its way, keeps the focus and ignores a second change", async () => {
       const request = deferred<EventCustomFieldDto>();
       vi.mocked(updateEventCustomField).mockReturnValueOnce(request.promise);
-      const { onUpdated } = renderCard([shirtField], "registration");
+      const { onUpdated } = renderCard([shirtField]);
       const toggle = screen.getByRole("switch", { name: "Shirt size on the form" }) as HTMLInputElement;
 
       toggle.focus();
@@ -572,7 +520,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
     it("says why a required field cannot leave the form, and changes nothing", async () => {
       vi.mocked(updateEventCustomField).mockRejectedValueOnce(new ApiError(422, "required_field_not_on_form", "required_field_not_on_form"));
-      const { onUpdated } = renderCard([{ ...dietaryField, required: true }], "registration");
+      const { onUpdated } = renderCard([{ ...dietaryField, required: true }]);
 
       fireEvent.click(screen.getByRole("switch", { name: "Dietary requirements on the form" }));
 
@@ -585,7 +533,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
     it("says that it failed, never the server's own words", async () => {
       vi.mocked(updateEventCustomField).mockRejectedValueOnce(new ApiError(500, "SELECT secret FROM x", ""));
-      renderCard([shirtField], "registration");
+      renderCard([shirtField]);
 
       fireEvent.click(screen.getByRole("switch", { name: "Shirt size on the form" }));
 
@@ -595,7 +543,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
   describe("the arrows", () => {
     it("are named after the field, and off where a field cannot go further", () => {
-      renderCard([dietaryField, shirtField, parkingField], "registration");
+      renderCard([dietaryField, shirtField, parkingField]);
 
       const off = (name: string) => (screen.getByRole("button", { name }) as HTMLButtonElement).disabled;
       expect(off("Move Dietary requirements up")).toBe(true);
@@ -609,7 +557,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     it("send the ids of all the fields with the moved one a place further, and show the order the server answers", async () => {
       const answer = [shirtField, dietaryField, parkingField];
       vi.mocked(reorderEventCustomFields).mockResolvedValueOnce(answer);
-      const { onUpdated, onChanged } = renderCard([dietaryField, shirtField, parkingField], "registration");
+      const { onUpdated, onChanged } = renderCard([dietaryField, shirtField, parkingField]);
 
       fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
 
@@ -623,7 +571,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
     it("move a field up the same way", async () => {
       vi.mocked(reorderEventCustomFields).mockResolvedValueOnce([]);
-      renderCard([dietaryField, shirtField, parkingField], "registration");
+      renderCard([dietaryField, shirtField, parkingField]);
 
       fireEvent.click(screen.getByRole("button", { name: "Move Needs parking up" }));
 
@@ -632,7 +580,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     });
 
     it("do nothing at the end of the list", () => {
-      renderCard([dietaryField, shirtField], "registration");
+      renderCard([dietaryField, shirtField]);
 
       fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements up" }));
       fireEvent.click(screen.getByRole("button", { name: "Move Shirt size down" }));
@@ -643,7 +591,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     it("keep the pressed arrow busy, with its focus, and let one move at a time through", async () => {
       const request = deferred<EventCustomFieldDto[]>();
       vi.mocked(reorderEventCustomFields).mockReturnValueOnce(request.promise);
-      renderCard([dietaryField, shirtField, parkingField], "registration");
+      renderCard([dietaryField, shirtField, parkingField]);
       const pressed = screen.getByRole("button", { name: "Move Dietary requirements down" });
 
       pressed.focus();
@@ -667,7 +615,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
     it("leave the switches busy while a move is on its way, and ignore a switch made then", async () => {
       const request = deferred<EventCustomFieldDto[]>();
       vi.mocked(reorderEventCustomFields).mockReturnValueOnce(request.promise);
-      renderCard([dietaryField, shirtField, parkingField], "registration");
+      renderCard([dietaryField, shirtField, parkingField]);
       fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
       const toggle = screen.getByRole("switch", { name: "Shirt size on the form" });
       expect(toggle.getAttribute("aria-busy")).toBe("true");
@@ -684,7 +632,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
       const request = deferred<EventCustomFieldDto>();
       vi.mocked(updateEventCustomField).mockReturnValueOnce(request.promise);
       vi.mocked(reorderEventCustomFields).mockResolvedValueOnce([shirtField, dietaryField, parkingField]);
-      renderCard([dietaryField, shirtField, parkingField], "registration");
+      renderCard([dietaryField, shirtField, parkingField]);
       fireEvent.click(screen.getByRole("switch", { name: "Shirt size on the form" }));
 
       fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
@@ -723,7 +671,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
     it("refresh the list when it is out of date, and say so", async () => {
       vi.mocked(reorderEventCustomFields).mockRejectedValueOnce(new ApiError(409, "stale_write", "stale_write"));
-      const { onChanged, onUpdated } = renderCard([dietaryField, shirtField], "registration");
+      const { onChanged, onUpdated } = renderCard([dietaryField, shirtField]);
 
       fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
 
@@ -734,7 +682,7 @@ describe("EventCustomFieldsCard: the Registration page", () => {
 
     it("say that a move failed for any other reason, never the server's own words, and leave the list alone", async () => {
       vi.mocked(reorderEventCustomFields).mockRejectedValueOnce(new ApiError(500, "SELECT secret FROM x", ""));
-      const { onChanged, onUpdated } = renderCard([dietaryField, shirtField], "registration");
+      const { onChanged, onUpdated } = renderCard([dietaryField, shirtField]);
 
       fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
 
@@ -769,89 +717,85 @@ describe("EventCustomFieldsCard: the icon and the condition of a question", { ti
   const food: EventCustomFieldDto = { ...dietaryField, rules: { icon: "food" } };
   const rowOf = (name: string) => screen.getByText(name, { selector: ".requirements-item-name" }).closest("tr") as HTMLTableRowElement;
 
-  for (const placement of ["requirements", "registration"] as const) {
-    describe(`on the ${placement} card`, () => {
-      it("draws the icon of the question before its name, with a name of its own, and the glyph Tabler has for it", () => {
-        renderCard([food, parking], placement);
-        const icon = within(rowOf("Dietary requirements")).getByRole("img", { name: "Icon on the form: Food" });
-        expect(icon.querySelector("i")?.className).toBe("ti ti-tools-kitchen-2");
-        const name = rowOf("Dietary requirements").querySelector(".requirements-item-name") as HTMLElement;
-        expect(name.contains(icon)).toBe(true);
-        expect(name.firstElementChild).toBe(icon);
-        expect(within(rowOf("Needs parking")).getByRole("img", { name: "Icon on the form: Parking" })).toBeTruthy();
-      });
+  it("draws the icon of the question before its name, with a name of its own, and the glyph Tabler has for it", () => {
+    renderCard([food, parking]);
+    const icon = within(rowOf("Dietary requirements")).getByRole("img", { name: "Icon on the form: Food" });
+    expect(icon.querySelector("i")?.className).toBe("ti ti-tools-kitchen-2");
+    const name = rowOf("Dietary requirements").querySelector(".requirements-item-name") as HTMLElement;
+    expect(name.contains(icon)).toBe(true);
+    expect(name.firstElementChild).toBe(icon);
+    expect(within(rowOf("Needs parking")).getByRole("img", { name: "Icon on the form: Parking" })).toBeTruthy();
+  });
 
-      it("draws no icon for a question that has none, or whose icon this version does not know", () => {
-        const unknown = { ...shirtField, rules: { icon: "rocket" } } as unknown as EventCustomFieldDto;
-        renderCard([dietaryField, unknown], placement);
-        expect(within(rowOf("Dietary requirements")).queryByRole("img", { name: /Icon on the form/ })).toBeNull();
-        expect(within(rowOf("Shirt size")).queryByRole("img", { name: /Icon on the form/ })).toBeNull();
-        // The type of the answer keeps its own icon, named by the type.
-        expect(within(rowOf("Dietary requirements")).getByRole("img", { name: "Text" })).toBeTruthy();
-      });
+  it("draws no icon for a question that has none, or whose icon this version does not know", () => {
+    const unknown = { ...shirtField, rules: { icon: "rocket" } } as unknown as EventCustomFieldDto;
+    renderCard([dietaryField, unknown]);
+    expect(within(rowOf("Dietary requirements")).queryByRole("img", { name: /Icon on the form/ })).toBeNull();
+    expect(within(rowOf("Shirt size")).queryByRole("img", { name: /Icon on the form/ })).toBeNull();
+    // The type of the answer keeps its own icon, named by the type.
+    expect(within(rowOf("Dietary requirements")).getByRole("img", { name: "Text" })).toBeTruthy();
+  });
 
-      it("says under the name of a question that has a condition which question it is shown for, and the answer", () => {
-        renderCard([parking, plate, meal, veganNote], placement);
-        expect(within(rowOf("Plate number")).getByText("Shown only when “Needs parking” is Yes")).toBeTruthy();
-        expect(within(rowOf("Vegan note")).getByText("Shown only when “Meal” is “Vegan”")).toBeTruthy();
-        const line = within(rowOf("Plate number")).getByText("Shown only when “Needs parking” is Yes");
-        expect(line.classList.contains("requirements-item-condition")).toBe(true);
-        expect(line.previousElementSibling?.classList.contains("requirements-item-name")).toBe(true);
-      });
+  it("says under the name of a question that has a condition which question it is shown for, and the answer", () => {
+    renderCard([parking, plate, meal, veganNote]);
+    expect(within(rowOf("Plate number")).getByText("Shown only when “Needs parking” is Yes")).toBeTruthy();
+    expect(within(rowOf("Vegan note")).getByText("Shown only when “Meal” is “Vegan”")).toBeTruthy();
+    const line = within(rowOf("Plate number")).getByText("Shown only when “Needs parking” is Yes");
+    expect(line.classList.contains("requirements-item-condition")).toBe(true);
+    expect(line.previousElementSibling?.classList.contains("requirements-item-name")).toBe(true);
+  });
 
-      it("says nothing under a question that is always asked, and the question it depends on is not marked", () => {
-        renderCard([parking, plate, meal, veganNote], placement);
-        expect(rowOf("Needs parking").querySelector(".requirements-item-condition")).toBeNull();
-        expect(rowOf("Meal").querySelector(".requirements-item-condition")).toBeNull();
-      });
+  it("says nothing under a question that is always asked, and the question it depends on is not marked", () => {
+    renderCard([parking, plate, meal, veganNote]);
+    expect(rowOf("Needs parking").querySelector(".requirements-item-condition")).toBeNull();
+    expect(rowOf("Meal").querySelector(".requirements-item-condition")).toBeNull();
+  });
 
-      it("tells two questions with the same label apart in that line, by the key", () => {
-        const twin = { ...parking, id: "field-parking-2", source_field: "parking_2" };
-        renderCard([parking, twin, plate], placement);
-        expect(within(rowOf("Plate number")).getByText("Shown only when “Needs parking (parking)” is Yes")).toBeTruthy();
-      });
+  it("tells two questions with the same label apart in that line, by the key", () => {
+    const twin = { ...parking, id: "field-parking-2", source_field: "parking_2" };
+    renderCard([parking, twin, plate]);
+    expect(within(rowOf("Plate number")).getByText("Shown only when “Needs parking (parking)” is Yes")).toBeTruthy();
+  });
 
-      it("opens the editor of a question with its condition in place, and offers the questions of the event", async () => {
-        renderCard([parking, plate, meal, veganNote], placement);
-        fireEvent.click(within(rowOf("Plate number")).getByRole("button", { name: "Edit field" }));
-        expect(await screen.findByRole("button", { name: "Question, Needs parking" })).toBeTruthy();
-        expect(screen.getByRole("button", { name: "Answer, Yes" })).toBeTruthy();
-      });
+  it("opens the editor of a question with its condition in place, and offers the questions of the event", async () => {
+    renderCard([parking, plate, meal, veganNote]);
+    fireEvent.click(within(rowOf("Plate number")).getByRole("button", { name: "Edit field" }));
+    expect(await screen.findByRole("button", { name: "Question, Needs parking" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Answer, Yes" })).toBeTruthy();
+  });
 
-      it("holds back deleting a question that others are shown for: the dialog says which, in text, and Delete is off", () => {
-        renderCard([parking, plate, meal, veganNote], placement);
-        fireEvent.click(within(rowOf("Needs parking")).getByRole("button", { name: "Delete field" }));
-        const dialog = screen.getByRole("dialog", { name: "Delete custom field" });
-        expect(within(dialog).getByText("“Needs parking” can't be deleted yet: “Plate number” (for Yes) is shown only for an answer to it. Remove its condition first.")).toBeTruthy();
-        expect(within(dialog).queryByText(/This cannot be undone/)).toBeNull();
-        expect(within(dialog).getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(true);
-        fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-        expect(deleteEventCustomField).not.toHaveBeenCalled();
-        expect(within(dialog).queryByRole("button", { name: "Cancel" })).toBeNull();
-        fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
-        expect(screen.queryByRole("dialog", { name: "Delete custom field" })).toBeNull();
-      });
+  it("holds back deleting a question that others are shown for: the dialog says which, in text, and Delete is off", () => {
+    renderCard([parking, plate, meal, veganNote]);
+    fireEvent.click(within(rowOf("Needs parking")).getByRole("button", { name: "Delete field" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete custom field" });
+    expect(within(dialog).getByText("“Needs parking” can't be deleted yet: “Plate number” (for Yes) is shown only for an answer to it. Remove its condition first.")).toBeTruthy();
+    expect(within(dialog).queryByText(/This cannot be undone/)).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    expect(deleteEventCustomField).not.toHaveBeenCalled();
+    expect(within(dialog).queryByRole("button", { name: "Cancel" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Delete custom field" })).toBeNull();
+  });
 
-      it("deletes a question that nothing depends on as before, and one that depends on others, with the usual dialog", async () => {
-        vi.mocked(deleteEventCustomField).mockResolvedValueOnce(undefined as never);
-        const { onChanged } = renderCard([parking, plate], placement);
-        fireEvent.click(within(rowOf("Plate number")).getByRole("button", { name: "Delete field" }));
-        const dialog = screen.getByRole("dialog", { name: "Delete custom field" });
-        expect(within(dialog).getByText(/Delete "Plate number"\? This cannot be undone\./)).toBeTruthy();
-        expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeTruthy();
-        fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-        await waitFor(() => expect(deleteEventCustomField).toHaveBeenCalledWith("evt-1", "field-plate"));
-        await waitFor(() => expect(onChanged).toHaveBeenCalled());
-      });
+  it("deletes a question that nothing depends on as before, and one that depends on others, with the usual dialog", async () => {
+    vi.mocked(deleteEventCustomField).mockResolvedValueOnce(undefined as never);
+    const { onChanged } = renderCard([parking, plate]);
+    fireEvent.click(within(rowOf("Plate number")).getByRole("button", { name: "Delete field" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete custom field" });
+    expect(within(dialog).getByText(/Delete "Plate number"\? This cannot be undone\./)).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleteEventCustomField).toHaveBeenCalledWith("evt-1", "field-plate"));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
 
-      it("names every field that is shown for a question that is to be deleted", () => {
-        const second = { ...plate, id: "field-second", source_field: "second", label: "Second" };
-        renderCard([parking, plate, second], placement);
-        fireEvent.click(within(rowOf("Needs parking")).getByRole("button", { name: "Delete field" }));
-        expect(
-          screen.getByText("“Needs parking” can't be deleted yet: “Plate number” (for Yes) and “Second” (for Yes) are shown only for an answer to it. Remove their conditions first."),
-        ).toBeTruthy();
-      });
-    });
-  }
+  it("names every field that is shown for a question that is to be deleted", () => {
+    const second = { ...plate, id: "field-second", source_field: "second", label: "Second" };
+    renderCard([parking, plate, second]);
+    fireEvent.click(within(rowOf("Needs parking")).getByRole("button", { name: "Delete field" }));
+    expect(
+      screen.getByText("“Needs parking” can't be deleted yet: “Plate number” (for Yes) and “Second” (for Yes) are shown only for an answer to it. Remove their conditions first."),
+    ).toBeTruthy();
+  });
 });

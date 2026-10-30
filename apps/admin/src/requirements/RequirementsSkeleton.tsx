@@ -90,23 +90,15 @@ function PlaceholderCard({
 }
 
 /**
- * The Requirements page below its header while its first read is on its way: the Event items and Custom attendee fields
- * cards with their real titles and column headings over a few rows of grey shapes, in a status region named after what is
- * loading (invisible for the first 200ms, with the 8 second note). Decoration, so hidden from assistive tech.
+ * The Requirements page below its header while its first read is on its way: the Event items card with its real title and
+ * column headings over a few rows of grey shapes, in a status region named after what is loading (invisible for the first
+ * 200ms, with the 8 second note). Decoration, so hidden from assistive tech.
  */
 export function RequirementsSkeleton({ held, slow }: Readonly<{ held: boolean; slow: boolean }>) {
   return (
     <SettingsSkeletonRegion label="Loading requirements" held={held} slow={slow}>
       <div aria-hidden="true">
         <PlaceholderCard title="Event items" action={64} headings={["Item", "Description", "Active"]} rows={ITEM_ROWS} buttons={1} status="switch" />
-        <PlaceholderCard
-          title="Custom attendee fields"
-          action={104}
-          headings={["Field", "Description", "Required"]}
-          rows={FIELD_ROWS}
-          buttons={2}
-          status="text"
-        />
       </div>
     </SettingsSkeletonRegion>
   );

@@ -12,7 +12,7 @@ Decide which information is necessary for this event. Choose a stable field name
 
 ## Steps
 
-1. Open **Requirements**, then find **Custom attendee fields**.
+1. Open the event's **Registration** page, then the **Fields** tab. The **Attendee fields** card lists the fields.
 2. Select **Add field**.
 3. Enter a clear **Display label**.
 4. Review the generated field ID. It is the source field used by imports and references.
@@ -37,7 +37,7 @@ The field appears in supported attendee and import workflows with the label, typ
 - Use the field ID, not only the display label, as the import column name.
 - A required field can prevent incomplete attendee data from being saved or imported.
 - Select values must match an allowed option.
-- A field used by an event item cannot be deleted until that reference is removed.
+- A field used by an event item cannot be deleted until that reference is removed. Open the item on the **Requirements** page and uncheck the field under **Attendee data field**.
 
 ### Types of answer
 
@@ -187,7 +187,7 @@ A Yes / No or Single choice question can have other questions that wait for one 
 - A **Text** field is a box for a short answer of up to 100 characters. A **Select** field is a list, and the guest picks one option.
 - An optional **Yes/No** field is a checkbox. A guest who leaves it unticked sends no answer, so Admitto does not record a "No". A **Required** Yes/No field is a list of Yes and No instead, because the guest has to answer.
 - A guest cannot send the form until every **Required** field is answered.
-- A question can be shown only when another yes/no or select question has a certain answer. A question that is not shown is not required, and a guest's answer to it is never saved. Admitto keeps an answer that was saved while the question was shown. Set it under **Registration form** in the field editor, see [Icon, condition and suggestions](#icon-condition-and-suggestions). The rules are in the [Validation Reference](Validation-Reference#custom-attendee-fields-requirements-page).
+- A question can be shown only when another yes/no or select question has a certain answer. A question that is not shown is not required, and a guest's answer to it is never saved. Admitto keeps an answer that was saved while the question was shown. Set it under **Registration form** in the field editor, see [Icon, condition and suggestions](#icon-condition-and-suggestions). The rules are in the [Validation Reference](Validation-Reference#custom-attendee-fields-registration-page).
 
 ## What changes after this action
 
@@ -212,7 +212,7 @@ A phone number is saved as a + and its digits. A number saved earlier in another
 | **The field ID is not what you need** | Delete and recreate the unused field before importing data. It cannot be renamed later |
 | **A Select field cannot be saved** | Add at least one option |
 | **An import value is invalid** | Use the field ID as the column and match the selected type or option |
-| **The field cannot be deleted** | Remove its use from event items first, and change or remove the condition of any field that is shown only for an answer to it |
+| **The field cannot be deleted** | Open the event item that uses it, on the **Requirements** page, and uncheck the field under **Attendee data field**. Also change or remove the condition of any field that is shown only for an answer to it |
 | **A Required field cannot be saved because of the registration form** | The event accepts registrations, and a guest cannot answer a field that is not on the form. Put the field on the form, or clear **Required** |
 | **The editor says a change can't be saved when you move a question to the other person** | Other questions are shown for an answer to it, or it is shown for an answer to a question about the other person. Open those questions and set **Show only when** to **No condition**, or undo the move |
 | **The editor says a change can't be saved because other questions are shown for an answer to this field** | Open each of those questions and set **Show only when** to **No condition**, or undo the change. The same applies to deleting the field |

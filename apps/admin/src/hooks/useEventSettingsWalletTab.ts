@@ -48,7 +48,7 @@ export function useWalletLocationPreview(
   return { walletLocationPreview, invalidateWalletLocationPreview };
 }
 
-/** The event's own custom-field registry (Requirements/Registrations tab), reused by the Wallet
+/** The event's own custom-field registry (Registration page, Fields tab), reused by the Wallet
  * tab's field mapping dropdown so an admin can map a select/boolean custom field onto a
  * PassCreator property (v0.7.1) - same fetch-once-on-visit shape as useWalletLocationPreview
  * above, for the same reason (this is a read-only preview list, not the editable copy owned by

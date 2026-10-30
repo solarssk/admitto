@@ -17,7 +17,7 @@ Agree what operators will physically issue or return. Decide whether operators n
 1. Open **Requirements**, then **Event items**.
 2. New events start with an always-present **Badge** item (legacy events are backfilled). You can disable Badge, but you cannot delete it.
 3. Select **Add** for any extra item and enter a short name. Edits open in a centred modal with validation.
-4. Open the item and add the description or attendee content fields operators need. Select-type option lists accept multi-line entry.
+4. Open the item and add the description or attendee content fields operators need. The fields to choose from are the ones on the **Fields** tab of the event's **Registration** page. Select-type option lists accept multi-line entry.
 5. Enable **Issue on check-in** only when the item should be offered during admission.
 6. Mark the item active when it is ready for event use (Active-toggle changes confirm with a toast).
 
@@ -60,14 +60,14 @@ Active items and behaviour settings become available on check-in devices. Later 
 | **A scan stops at a preview** | Confirmation is required. The operator must confirm the attendee |
 | **The result disappears too quickly** | Review **Auto-advance after valid check-in** |
 
-**The Requirements page shows grey cards, says "Taking longer than usual", or "Could not load requirements"**
+**The Requirements page shows a grey card, says "Taking longer than usual", or "Could not load requirements"**
 
-The page reads the event's items and its custom fields together.
+The page reads the event's items and its attendee fields together, because the item editor offers the fields as content for an item. A failed read of either one shows the error.
 
-- It shows grey cards of its own shape. They stay invisible for the first fraction of a second, so a quick answer shows no flash. There is nothing to add to until they are in.
+- It shows a grey card of its own shape. It stays invisible for the first fraction of a second, so a quick answer shows no flash. There is nothing to add to until it is in.
 - After 30 seconds, or when the read fails, it stops waiting and shows an error with a **Retry** button. The button stays on screen, busy, until the answer is in, and the keyboard focus goes to the page when it works.
 - An error that says you do not have access to the event means your role cannot see this event.
-- After you add, change or delete an item or a field, the cards stay on screen, dimmed and not clickable, while the page is read again. If that fails, the page shows the error instead of cards that may be out of date.
+- After you add or change an item, the card stays on screen, dimmed and not clickable, while the page is read again. If that fails, the page shows the error instead of a card that may be out of date.
 - **Create** and **Save** show a spinner on the button while they work.
 
 ## Related pages

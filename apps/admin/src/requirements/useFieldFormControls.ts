@@ -43,7 +43,7 @@ function inOrderOf(answer: readonly EventCustomFieldDto[]): FieldsChange {
 }
 
 /**
- * What the Registration page's card does besides what the Requirements card does: an "On the form" switch for each field
+ * What the Fields tab's card does besides listing, adding, editing and deleting fields: an "On the form" switch for each field
  * and arrows that put a field one place up or down. A switch has a request of its own for each field; reorders run one at a
  * time, because a reorder sends the whole list and a second one made from the list before the first has landed would put
  * the first back. For the same reason a switch and a reorder do not run together: the answer of a reorder is the whole list,

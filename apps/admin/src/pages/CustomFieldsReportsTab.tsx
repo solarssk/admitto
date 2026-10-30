@@ -152,7 +152,7 @@ function FillRateGauge({ pct, isActive }: Readonly<{ pct: number; isActive: bool
 
 /** Same placement as every WalletsReportsTab.tsx card - a plain description paragraph above the
  * chart. Unlike Wallets' own fixed captions, this one is admin-entered per field
- * (EventCustomField.description, same text as the Requirements page's field editor), so it falls
+ * (EventCustomField.description, same text as the field editor on the Registration page), so it falls
  * back to a literal "No description" rather than rendering nothing when the admin left it blank -
  * every card keeps the same shape instead of some having a caption and others not. */
 function FieldDescription({ description }: Readonly<{ description: string | null }>) {
@@ -200,7 +200,7 @@ export function CustomFieldsReport({ data, isActive }: Readonly<{ data: EventCus
       <EmptyState
         icon={<i className="ti ti-forms" aria-hidden="true" />}
         title="No custom fields yet"
-        description="Add custom fields on the Requirements page to see a chart for each one here."
+        description="Add custom fields on the Fields tab of the Registration page to see a chart for each one here."
       />
     );
   }

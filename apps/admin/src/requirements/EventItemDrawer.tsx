@@ -254,12 +254,12 @@ export function EventItemDrawer({
                 <p className="requirements-section-hint">
                   Show one or more custom attendee fields next to this item at check-in. Useful when
                   the item varies per person (e.g. shirt size on a gift bag). Manage the fields
-                  themselves in the "Custom attendee fields" card above.
+                  themselves in the "Attendee fields" card on the Fields tab of the Registration page.
                 </p>
                 {customFields.length === 0 ? (
                   <Notice variant="info">
-                    No custom fields defined for this event yet. Add fields in Custom attendee fields
-                    above, then link them here.
+                    No custom fields defined for this event yet. Add fields in the "Attendee fields" card
+                    on the Fields tab of the Registration page, then link them here.
                   </Notice>
                 ) : (
                   <div className="requirements-field-stack">
