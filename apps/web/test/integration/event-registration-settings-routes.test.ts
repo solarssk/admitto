@@ -208,13 +208,14 @@ describe("who may use the settings routes", () => {
     const event = await addEvent("archived", { archived: true });
 
     const read = await get(event.id);
-    const write = await put(event.id, { mode: null, waitlist_enabled: false });
+    const write = await put(event.id, { mode: null, waitlist_enabled: false, styled_form_controls: true });
 
     expect(read.status).toBe(200);
     expect((await dto(read)).readiness).toContainEqual({ key: "event_not_archived", ok: false });
     expect(write.status).toBe(403);
     expect(await write.json()).toEqual({ code: "event_archived" });
     expect((await settingsRow(event.id))?.waitlist_enabled).toBe(true);
+    expect((await settingsRow(event.id))?.styled_form_controls).toBe(false);
     expect(await auditOf(event.id)).toHaveLength(0);
   });
 
@@ -286,6 +287,7 @@ describe("reading the settings", () => {
       ask_company: body.ask_company,
       ask_department: body.ask_department,
       consent_keys: body.consent_keys,
+      styled_form_controls: body.styled_form_controls,
     }).toEqual(defaultSettings());
   });
 
@@ -300,6 +302,7 @@ describe("reading the settings", () => {
         ask_company: true,
         ask_department: true,
         consent_keys: ["photos"],
+        styled_form_controls: true,
       },
       legal: { consents: ["photos"] },
       fields: [
@@ -320,6 +323,7 @@ describe("reading the settings", () => {
       ask_company: true,
       ask_department: true,
       consent_keys: ["photos"],
+      styled_form_controls: true,
       password_set: false,
       guest_url: `https://tickets.example.com/r/${event.slug}`,
       readiness: READINESS_KEYS.filter((key) => key !== "password").map((key) => ({ key, ok: true })),
@@ -352,6 +356,7 @@ describe("reading the settings", () => {
       "password_set",
       "public_fields",
       "readiness",
+      "styled_form_controls",
       "verify_email",
       "waitlist_enabled",
     ]);
@@ -408,6 +413,9 @@ describe("what a save may carry", () => {
     ["a number of companions that is a text", { max_companions: "1" }],
     ["a switch that is a text", { waitlist_enabled: "false" }],
     ["a switch that is null", { ask_company: null }],
+    ["the styled boxes switch as a text", { styled_form_controls: "true" }],
+    ["the styled boxes switch as null", { styled_form_controls: null }],
+    ["the styled boxes switch as a number", { styled_form_controls: 1 }],
     ["a consent key that is no key", { consent_keys: ["Not A Key"] }],
     ["more consents than an event may have", { consent_keys: Array.from({ length: 11 }, (_, index) => `consent-${index}`) }],
     ["a list of consents that is a text", { consent_keys: "photos" }],
@@ -699,6 +707,7 @@ describe("changing the way in or the consents of an event that has registration 
       max_companions: 1,
       ask_company: true,
       ask_department: true,
+      styled_form_controls: true,
     });
 
     expect(res.status).toBe(200);
@@ -709,6 +718,7 @@ describe("changing the way in or the consents of an event that has registration 
       max_companions: 1,
       ask_company: true,
       ask_department: true,
+      styled_form_controls: true,
     });
   });
 
@@ -962,6 +972,79 @@ describe("what a save leaves behind", () => {
     await put(event.id, { mode: null });
 
     expect((await auditOf(event.id)).map((row) => (row.metadata as { mode: string }).mode)).toEqual(["automatic", "approval", "off"]);
+  });
+});
+
+describe("the switch for the styled boxes of the guest form", () => {
+  it("is off for an event until an organiser turns it on, and says so when read", async () => {
+    const event = await addEvent("styled-default");
+
+    expect((await dto(await get(event.id))).styled_form_controls).toBe(false);
+    expect((await settingsRow(event.id))?.styled_form_controls).toBe(false);
+  });
+
+  it("is saved as sent, read back as saved, and the other settings stay as they were", async () => {
+    const event = await addEvent("styled-save", { settings: { mode: "automatic", waitlist_enabled: false, ask_company: true } });
+
+    const on = await put(event.id, { styled_form_controls: true });
+
+    expect(on.status).toBe(200);
+    expect(await dto(on)).toMatchObject({ styled_form_controls: true, mode: "automatic", waitlist_enabled: false, ask_company: true });
+    expect(await settingsRow(event.id)).toMatchObject({ styled_form_controls: true, mode: "automatic", waitlist_enabled: false, ask_company: true });
+    expect((await dto(await get(event.id))).styled_form_controls).toBe(true);
+
+    const off = await put(event.id, { styled_form_controls: false });
+
+    expect((await dto(off)).styled_form_controls).toBe(false);
+    expect((await settingsRow(event.id))?.styled_form_controls).toBe(false);
+  });
+
+  it("is left alone by a save that does not name it", async () => {
+    const event = await addEvent("styled-kept", { settings: { styled_form_controls: true } });
+
+    await put(event.id, { ask_department: true });
+
+    expect(await settingsRow(event.id)).toMatchObject({ styled_form_controls: true, ask_department: true });
+  });
+
+  it("is never judged: it can be switched while registration is off, and while an event that is on has lost a piece", async () => {
+    const off = await addEvent("styled-off");
+    expect((await put(off.id, { styled_form_controls: true })).status).toBe(200);
+
+    const running = await addEvent("styled-running", { settings: { mode: "automatic" } });
+    await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
+    await setMail(false);
+    expect((await put(running.id, { styled_form_controls: true })).status).toBe(200);
+    expect((await settingsRow(running.id))?.styled_form_controls).toBe(true);
+  });
+
+  it("writes the entry of the central audit log once, with the name of the switch and its new value, and nothing more", async () => {
+    const event = await addEvent("styled-audit");
+    await prisma.event.update({ where: { id: event.id }, data: { title: "Styled Summit" } });
+
+    await put(event.id, { styled_form_controls: true });
+    await put(event.id, { styled_form_controls: true });
+
+    const [entry, ...rest] = await auditOf(event.id);
+    expect(rest).toEqual([]);
+    expect(entry).toMatchObject({ organization_id: ORG, actor_user_id: adminId, action_type: "registration_settings_changed" });
+    expect(entry!.metadata).toEqual({
+      event_id: event.id,
+      event_title: "Styled Summit",
+      fields_changed: ["styled_form_controls"],
+      styled_form_controls: true,
+    });
+  });
+
+  it("is refused to an operator and to the admin of another organisation, and nothing is saved", async () => {
+    const event = await addEvent("styled-roles");
+
+    const operator = await put(event.id, { styled_form_controls: true }, cookies.operator);
+    const other = await put(event.id, { styled_form_controls: true }, cookies.otherAdmin);
+
+    expect(operator.status).toBe(403);
+    expect(other.status).toBe(403);
+    expect((await settingsRow(event.id))?.styled_form_controls).toBe(false);
   });
 });
 
