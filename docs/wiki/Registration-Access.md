@@ -34,8 +34,9 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 1. Under **Form**, switch on what you need: **Ask for the company**, **Ask for the department** or **Guests can bring one person**.
 2. Switch **Waiting list** and **Confirm email addresses** off only when you do not need them.
-3. Under **Extra consents**, tick each consent that guests must accept. The list holds the consents that you published on the **Legal** tab.
-4. Select **Save**.
+3. Switch **Styled date, time and phone boxes** on if you want the form to draw its own boxes instead of the browser's. See [Styled boxes](#styled-boxes).
+4. Under **Extra consents**, tick each consent that guests must accept. The list holds the consents that you published on the **Legal** tab.
+5. Select **Save**.
 
 **Turn registration on**
 
@@ -77,6 +78,19 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 - A new password does not change the requests that guests already sent.
 - Choosing another way in and saving removes the password.
 
+**Styled boxes**
+
+By default the guest's browser draws the boxes of the form. With **Styled date, time and phone boxes** on, the form draws its own, in the style of Admitto. The switch is for the whole event, not for one question.
+
+| Box | Switch off | Switch on |
+|---|---|---|
+| Phone | A one-line box | A button with a flag and a country code, a list of countries with a search box, and the number beside it |
+| Date and time | The browser's boxes | The browser's boxes |
+
+- A guest picks a country from the list, or types the number with a `+` and the country code. The answer is saved as the code and the digits, for example `+48500100200`.
+- A phone question that asks for digits only, or sets a shortest or longest length, keeps the browser's box. A country code would break its rule. This suits a desk extension.
+- The answers, the rules and the messages are the same with the switch on or off. Only the boxes differ.
+
 **What each row of the checklist needs**
 
 | Row | If it is not done |
@@ -113,6 +127,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 | Turn registration on | The form opens at once. It is refused while a row of the checklist is not done |
 | Change the way in or the consents of an event that is on | Refused while a row is not done, like turning on |
 | Move between **Automatic** and **With approval** | The new mode applies to new requests |
+| Switch **Styled date, time and phone boxes** on or off | The next guest who opens the form gets the boxes you chose. A form that is already open keeps the boxes it has |
 | Turn registration off | The form answers "not found" at once |
 | Set, change or remove the password | The password is saved or removed at once. Removing it closes the form until you set a new one |
 
@@ -130,6 +145,7 @@ When you turn registration off:
 | The page says "This change needs something that is not set up yet" | Nothing was saved. The rows it lists are what is missing. Put them right and select **Save** again |
 | An extra consent is marked "(not published)" | Publish its text on the **Legal** tab, or take the consent off the list |
 | "One of the extra consents you chose is not published" | Someone took a text back while you were editing. Publish it again or take it off the list |
+| A phone question shows the browser's box although the styled boxes are on | The question asks for digits only, or sets a shortest or longest length. A country code would break that rule. Remove the rule if the question should take a country |
 | There is no link under **Link for guests** | The address of the instance is not set. Ask a Superadmin |
 | Registration is on, but the page warns that something is missing | A row of the checklist stopped being done, for example the bot protection keys. The form may be closed to guests until it is fixed |
 | **Save** and the controls are off | The event is archived, or a save is still running |
