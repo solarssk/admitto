@@ -46,7 +46,7 @@ The Apple Wallet and Google Wallet pass shows the attendee's name, the event dat
 
 - Admitto has no built-in default field mapping. An event with an empty **Field mapping** sends nothing beyond the QR code to PassCreator. Every value shown on the pass, including the attendee's name, must be mapped explicitly. This is deliberate. Different templates use different property names, so a guessed default would only ever match one specific template and silently send nothing for every other one.
 - Event Settings → Wallet's **Field mapping** and the template's Additional Properties must stay in sync by hand. The mapping's key must match a registered property's name character for character.
-- **Field mapping** also offers this event's own custom fields (Event Settings → Requirements/Registrations) as values. Only fields set up as **Single choice** or **Yes/No** are offered, not free text.
+- **Field mapping** also offers this event's own custom fields (Registration → Fields) as values. Only fields set up as **Single choice** or **Yes/No** are offered, not free text.
   - A Yes/No field shows as "Yes" or "No" on the card.
   - A Single choice field shows the option the attendee picked.
   - A custom field mapped here and later deleted, or changed to free text, just stops sending a value. That is the same as any other unmapped field. It is not an error.

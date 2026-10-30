@@ -53,7 +53,7 @@ Pass adoption always equals Registration state's registered plus previously regi
 
 #### Custom fields
 
-A chart for each custom field configured on the event's Requirements page:
+A chart for each custom field configured on the **Fields** tab of the event's **Registration** page:
 
 - A selector or yes/no field shows a donut: how many attendees hold each value, plus how many have not answered.
 - A free-text field shows a gauge: how many attendees have filled it in.

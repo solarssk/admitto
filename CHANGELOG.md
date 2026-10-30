@@ -54,6 +54,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Mail the same confirmation link again when a guest sends the form again for an address that still waits, at most every 10 minutes ([#1795](https://github.com/solarssk/admitto/pull/1795))
 - Show the number on a tab in a darker grey, so it can be read on the grey page background ([#1796](https://github.com/solarssk/admitto/pull/1796))
 - Open the Requests tab on the requests that wait for a decision when staff decide by hand, with a shortcut to all requests ([#1807](https://github.com/solarssk/admitto/pull/1807))
+- Move the attendee fields from the Requirements page to the Fields tab of the Registration page, and point to them from Requirements ([#1828](https://github.com/solarssk/admitto/pull/1828))
 
 ### Fixed
 

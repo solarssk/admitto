@@ -168,7 +168,7 @@ Restoring a revoked attendee checks the event's capacity limit again, the same a
 
 Every row gets its own pass or fail reason in the preview before you commit. Nothing is guessed or silently dropped. See [Import File Reference](Import-File-Reference) for the full column reference.
 
-### Custom attendee fields (Requirements page)
+### Custom attendee fields (Registration page)
 
 | Field | Requirement |
 |---|---|
