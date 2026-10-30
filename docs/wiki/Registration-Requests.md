@@ -28,7 +28,7 @@ The list runs from the oldest request to the newest. A request does not move whe
 **Work through the requests that wait**
 
 1. Open the **Requests** tab. When staff decide by hand and some requests wait, the list opens on **Waiting for a decision**. The two buttons above the list switch between that and **All**. The number beside each is how many requests it holds.
-2. Select a guest's name to open the request. The window shows the answers, the consents, the person the guest brings and the emails the guest was sent.
+2. Select a guest's name to open the request. The window shows the answers, the consents, the person the guest brings and the emails the guest was sent. It is read-only: it shows the person as the guest sent them. To correct or remove the companion of a guest who is accepted, use the attendee's page (see [Managing Attendees](Managing-Attendees#correct-or-remove-a-guests-companion)).
 3. Select **Accept** or **Reject**, and confirm.
 4. The request leaves the list, and the keyboard focus moves to the next one. Press Enter to open it.
 

@@ -781,7 +781,7 @@ describe("GET /api/admin/events/:eventId/attendees/:id", () => {
     expect(res.status).toBe(403);
   });
 
-  it("lists an item for guests with a companion only for an attendee who has a companion, and names no companion", async () => {
+  it("lists an item for guests with a companion only for an attendee who has a companion, and the item names no companion", async () => {
     await prisma.eventItem.create({
       data: {
         event_id: EVENT_A,
@@ -798,6 +798,7 @@ describe("GET /api/admin/events/:eventId/attendees/:id", () => {
         return res.text();
       };
       const items = (text: string) => (JSON.parse(text) as { event_items: { key: string; state: string }[] }).event_items;
+      const companionOf = (text: string) => (JSON.parse(text) as { companion: { name: string } | null }).companion;
 
       const withCompanion = await detailOf(ATT_A1);
       // Not issued yet, and no state row made by reading: the summary reads, it does not write.
@@ -805,8 +806,12 @@ describe("GET /api/admin/events/:eventId/attendees/:id", () => {
         { key: "companion", label: "Companion", icon: null, state: "pending" },
         expect.objectContaining({ key: "giftbag" }),
       ]);
-      expect(withCompanion).not.toContain("Zzyzx Companion Name");
-      expect(items(await detailOf(ATT_A2)).map((item) => item.key)).toEqual(["giftbag"]);
+      // The item is the same for every companion; the person is in the card of the detail (`companion`), not in the list of items.
+      expect(JSON.stringify(items(withCompanion))).not.toContain("Zzyzx Companion Name");
+      expect(companionOf(withCompanion)?.name).toBe("Zzyzx Companion Name");
+      const withoutCompanion = await detailOf(ATT_A2);
+      expect(items(withoutCompanion).map((item) => item.key)).toEqual(["giftbag"]);
+      expect(companionOf(withoutCompanion)).toBeNull();
       expect(await prisma.attendeeItemState.count({ where: { attendee_id: { in: [ATT_A1, ATT_A2] }, event_item: { key: "companion" } } })).toBe(0);
     } finally {
       await prisma.attendeeCompanion.deleteMany({ where: { attendee_id: ATT_A1 } });

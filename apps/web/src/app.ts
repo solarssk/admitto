@@ -190,6 +190,7 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
+import { MAX_COMPANION_BODY_BYTES, handleDeleteAttendeeCompanion, handlePatchAttendeeCompanion } from "./admin/attendee-companion-routes.js";
 import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "./admin/attendee-erase-routes.js";
 import {
   handleDeleteEventRegistrations,
@@ -915,6 +916,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const registrationSettingsBodyLimit = bodyLimit({
     maxSize: MAX_REGISTRATION_SETTINGS_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const companionBodyLimit = bodyLimit({
+    maxSize: MAX_COMPANION_BODY_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const templateTestSendBodyLimit = bodyLimit({
@@ -2334,6 +2339,24 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminAttendeePatchRateLimit,
     guardArchivedEvent((c) => handlePatchEventAttendee(c, db)),
+  );
+  // The guest's companion (D-E5): staff correct their name and answers, or remove them (the seat is free again and the
+  // person's data goes, the copy in the registration included). Behind guardArchivedEvent, which also checks that the
+  // caller manages the event; the attendee's budget of edits is the same as for the attendee's own.
+  app.patch(
+    "/api/admin/events/:eventId/attendees/:id/companion",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminAttendeePatchRateLimit,
+    companionBodyLimit,
+    guardArchivedEvent((c) => handlePatchAttendeeCompanion(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/attendees/:id/companion",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminAttendeePatchRateLimit,
+    guardArchivedEvent((c) => handleDeleteAttendeeCompanion(c, db)),
   );
   // Erase personal data (anonymise in place, Reports keep their numbers). Not behind
   // guardArchivedEvent: a privacy request is still valid after the event has ended.

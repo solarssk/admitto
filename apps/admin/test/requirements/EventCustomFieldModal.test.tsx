@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
@@ -890,7 +890,7 @@ describe("EventCustomFieldModal: the answer types", () => {
     renderModal(null);
     fireEvent.click(typeButton(label));
     expect(typeButton(label).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getAllByRole("button", { pressed: true }).filter((button) => button.closest(".custom-field-types"))).toHaveLength(1);
+    expect(within(screen.getByRole("group", { name: "Field type" })).getAllByRole("button", { pressed: true })).toHaveLength(1);
     expect(screen.getByText(hint)).toBeTruthy();
   });
 

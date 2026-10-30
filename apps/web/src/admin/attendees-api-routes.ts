@@ -408,6 +408,15 @@ export type AttendeeNoteDto = {
   created_at: string;
 };
 
+/** The person a guest brings, as the staff page shows and edits them (D-E5): a third party whose data is the guest's to
+ * give and the organiser's to correct, and to remove. `custom_data` holds the answers to the event's questions about a
+ * companion, key to text; null when there are none. */
+export type AttendeeCompanionDto = {
+  slot: number;
+  name: string;
+  custom_data: Record<string, string> | null;
+};
+
 export type AttendeeDetailDto = {
   id: string;
   /** Set once the attendee's personal data has been erased: the name and email are placeholders and
@@ -453,6 +462,9 @@ export type AttendeeDetailDto = {
    * (isWalletFieldMappingRelevant, @admitto/wallet/passcreator-mapper). */
   wallet_field_mapping: Record<string, string> | null;
   custom_data: unknown;
+  /** The companion the guest brings, or null: none, or the attendee is erased (the row stays with a placeholder, which
+   * the page never shows). */
+  companion: AttendeeCompanionDto | null;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
   event_items: AttendeeDetailItemDto[];
@@ -566,14 +578,14 @@ async function loadAttendeeInEvent(
   return row;
 }
 
-type ManagedEventAttendee = {
+export type ManagedEventAttendee = {
   attendee: NonNullable<Awaited<ReturnType<typeof loadAttendeeInEvent>>>;
   attendeeId: string;
   eventId: string;
 };
 
 /** Resolve, authorize, and load an attendee scoped to the requested event. */
-async function requireManagedEventAttendee(
+export async function requireManagedEventAttendee(
   c: Context,
   db: PrismaClient,
 ): Promise<ManagedEventAttendee | Response> {
@@ -1119,8 +1131,29 @@ async function resolveAttendeeWalletLinksForDto(
   }
 }
 
+/** The answers of a companion as the page reads them: the entries that are text, key to text; null when there are none. */
+function companionAnswers(raw: Prisma.JsonValue): Record<string, string> | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const answers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string") answers[key] = value;
+  }
+  return Object.keys(answers).length > 0 ? answers : null;
+}
+
+/** The companion of an attendee, or null for one who has none or was erased: an erased attendee's page is read-only and
+ * shows nothing of the person they brought, whose row stays only to keep the seat. The attendee's state is judged in the
+ * same read, so a page built from a row that was read before an erasure still shows nothing of the person. */
+async function loadAttendeeCompanion(db: PrismaClient, attendeeId: string): Promise<AttendeeCompanionDto | null> {
+  const row = await db.attendeeCompanion.findFirst({
+    where: { attendee_id: attendeeId, attendee: { erased_at: null } },
+    orderBy: { slot: "asc" },
+  });
+  return row ? { slot: row.slot, name: row.name, custom_data: companionAnswers(row.custom_data) } : null;
+}
+
 /** Build attendee detail DTO including delivery log and activity. */
-async function buildAttendeeDetailDto(
+export async function buildAttendeeDetailDto(
   db: PrismaClient,
   eventId: string,
   row: {
@@ -1149,13 +1182,14 @@ async function buildAttendeeDetailDto(
   activityPageSize: number = ATTENDEE_ACTIVITY_DEFAULT_PAGE_SIZE,
   activitySnapshot: ActivitySnapshot | null = null,
 ): Promise<AttendeeDetailDto> {
-  const [deliveriesResult, actionLog, event_items, notes, walletLinks, event] = await Promise.all([
+  const [deliveriesResult, actionLog, event_items, notes, walletLinks, event, companion] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
     loadAttendeeActionLogEntries(db, row.id, activityPage, activityPageSize, activitySnapshot),
     loadAttendeeItemsSummary(db, eventId, row.id),
     loadAttendeeNotes(db, eventId, row.id, notesPage),
     resolveAttendeeWalletLinksForDto(db, row.id),
     db.event.findUnique({ where: { id: eventId }, select: { wallet_field_mapping: true } }),
+    loadAttendeeCompanion(db, row.id),
   ]);
   const { company, department } = resolveCompanyDepartment(row);
 
@@ -1186,6 +1220,7 @@ async function buildAttendeeDetailDto(
     wallet_google_link: walletLinks.google,
     wallet_field_mapping: parseWalletFieldMapping(event?.wallet_field_mapping),
     custom_data: row.custom_data ?? null,
+    companion,
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log: actionLog.items,
     action_log_total: actionLog.total,

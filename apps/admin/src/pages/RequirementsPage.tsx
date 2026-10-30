@@ -27,6 +27,7 @@ import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
 import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
 import { RequirementsSkeleton } from "../requirements/RequirementsSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
+import { guestQuestions } from "../utils/questionRecipient.js";
 import "../requirements/requirements.css";
 
 const EVENT_ITEMS_HINT =
@@ -270,6 +271,9 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const card = useCardLoad(list);
   const items = list.data?.items ?? NO_ITEMS;
   const customFields = list.data?.fields ?? NO_FIELDS;
+  // An item's hint shows the attendee's own answer, so the drawer offers the questions about the guest; the server refuses a hint
+  // that names a question about a companion.
+  const hintFields = useMemo(() => guestQuestions(customFields), [customFields]);
 
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
@@ -464,7 +468,7 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
         <EventItemDrawer
           eventId={eventId}
           item={selectedItem}
-          customFields={customFields}
+          customFields={hintFields}
           items={items}
           onClose={() => setSelectedItem(null)}
           onUpdated={() => {

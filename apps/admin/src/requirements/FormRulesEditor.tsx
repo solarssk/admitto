@@ -1,6 +1,6 @@
 import { EVENT_CUSTOM_FIELD_SUGGESTIONS_MAX, EVENT_CUSTOM_FIELD_SUGGESTION_MAX, type EventCustomFieldType } from "@admitto/shared";
 import { Notice } from "@admitto/ui";
-import type { EventCustomFieldDto } from "../api/types.js";
+import type { EventCustomFieldDto, EventCustomFieldRecipient } from "../api/types.js";
 import { SectionLabel } from "../attendees/SectionLabel.js";
 import { SearchableSelect, type SearchableSelectOption } from "../components/SearchableSelect.js";
 import { customFieldTypeIcon } from "./customFieldType.js";
@@ -21,6 +21,8 @@ export interface FormRulesEditorProps {
   fields: readonly EventCustomFieldDto[];
   /** The key of the field being edited; empty while a new field has no label yet. */
   sourceField: string;
+  /** Whose answer the field asks for: a question waits only for another about the same person. */
+  appliesTo: EventCustomFieldRecipient;
   /** The field is on the registration form once it is saved: a question with a condition can be there only with the one it depends on. */
   onForm: boolean;
   /** What is wrong with the condition as far as the other fields go, in a sentence (`dependencyMessage`); empty when nothing is. */
@@ -32,6 +34,13 @@ export interface FormRulesEditorProps {
 
 const NO_CONDITION: SearchableSelectOption = { id: "", label: "No condition" };
 
+/** Why there is nothing to choose from: the questions a condition may wait for are about the same person as the question itself. */
+function noCandidatesMessage(appliesTo: EventCustomFieldRecipient): string {
+  return appliesTo === "companion"
+    ? "This event has no yes/no or single choice question about the companion without a condition yet. Add one first."
+    : "This event has no yes/no or single choice question without a condition yet. Add one first.";
+}
+
 /** What the condition row says while nothing is wrong with it. */
 function conditionHint(controller: EventCustomFieldDto | undefined): string {
   if (controller?.type === "boolean") return "Asked only when the answer to that question is Yes. Leave it empty to ask everyone.";
@@ -42,6 +51,7 @@ interface ConditionControlsProps {
   draft: RulesDraft;
   fields: readonly EventCustomFieldDto[];
   candidates: readonly EventCustomFieldDto[];
+  appliesTo: EventCustomFieldRecipient;
   onForm: boolean;
   blockedReason: string;
   conditionError: string;
@@ -55,6 +65,7 @@ function ConditionControls({
   draft,
   fields,
   candidates,
+  appliesTo,
   onForm,
   blockedReason,
   conditionError,
@@ -64,7 +75,9 @@ function ConditionControls({
 }: Readonly<ConditionControlsProps>) {
   const controller = candidates.find((field) => field.source_field === draft.showWhen?.field);
   const noCandidates = candidates.length === 0;
-  const reason = blockedReason || (noCandidates ? "This event has no yes/no or single choice question without a condition yet. Add one first." : "");
+  const reason = blockedReason || (noCandidates ? noCandidatesMessage(appliesTo) : "");
+  // A held condition can always be removed, unless the question has dependents of its own that hold it back.
+  const removable = blockedReason === "" && draft.showWhen !== null;
   const questionOptions: SearchableSelectOption[] = [
     NO_CONDITION,
     ...candidates.map((field) => ({
@@ -105,7 +118,9 @@ function ConditionControls({
           emptyLabel="No questions found"
           value={draft.showWhen?.field ?? ""}
           options={questionOptions}
-          disabled={disabled || reason !== ""}
+          // With no question to choose, the box still takes "No condition" while a condition is held (one a move of the question to the
+          // other person left behind): it is the only way to remove it.
+          disabled={disabled || (reason !== "" && !removable)}
           invalid={conditionError !== ""}
           describedBy="cf-show-when-note"
           onChange={chooseQuestion}
@@ -153,12 +168,13 @@ export function FormRulesEditor({
   problems,
   fields,
   sourceField,
+  appliesTo,
   onForm,
   conditionError,
   saving,
   onChange,
 }: Readonly<FormRulesEditorProps>) {
-  const candidates = conditionCandidates(fields, sourceField);
+  const candidates = conditionCandidates(fields, sourceField, appliesTo);
   const dependents = dependentsIn(fields, sourceField);
   // An icon that is chosen for a kind of question the form draws no icon for is saved all the same: the editor says so, and does not hold it back.
   const notDrawn = draft.icon === null ? "" : iconNotDrawnMessage(type, required);
@@ -191,6 +207,7 @@ export function FormRulesEditor({
         draft={draft}
         fields={fields}
         candidates={candidates}
+        appliesTo={appliesTo}
         onForm={onForm}
         blockedReason={ownConditionBlockedMessage(dependents, fields)}
         conditionError={conditionError}

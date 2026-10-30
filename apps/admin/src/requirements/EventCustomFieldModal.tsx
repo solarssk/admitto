@@ -3,10 +3,11 @@ import type { EventCustomFieldType } from "@admitto/shared";
 import { Button, IconButton, ModalBackdrop, Notice, Tooltip, useToast } from "@admitto/ui";
 import { createEventCustomField, updateEventCustomField } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventCustomFieldDto } from "../api/types.js";
+import type { EventCustomFieldDto, EventCustomFieldRecipient } from "../api/types.js";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
 import { dependencyMessage, dependencyProblem } from "./fieldDependencies.js";
-import { createFieldBody, fieldSaveOf, sameFieldSave, updateFieldPatch, type FieldSave } from "./fieldRequests.js";
+import { createFieldBody, fieldSaveOf, recipientOfField, sameFieldSave, updateFieldPatch, type FieldSave } from "./fieldRequests.js";
+import { FieldRecipientPicker, FIELD_RECIPIENTS } from "./FieldRecipientPicker.js";
 import { FieldRulesEditor } from "./FieldRulesEditor.js";
 import { FieldTypePicker } from "./FieldTypePicker.js";
 import {
@@ -50,6 +51,8 @@ type FormState = {
   description: string;
   type: EventCustomFieldDto["type"];
   required: boolean;
+  /** Whose answer the field asks for. */
+  appliesTo: EventCustomFieldRecipient;
   options: OptionRow[];
   /** The rules, as typed: the format rules, the icon, the condition and the suggestions. What was typed for a type that does not take
    * it stays, so that going back to a type that does gives it back; what counts as an edit and what is sent follows the type
@@ -58,7 +61,7 @@ type FormState = {
 };
 
 function emptyForm(): FormState {
-  return { label: "", source_field: "", description: "", type: "text", required: false, options: [], rules: EMPTY_RULES_DRAFT };
+  return { label: "", source_field: "", description: "", type: "text", required: false, appliesTo: "guest", options: [], rules: EMPTY_RULES_DRAFT };
 }
 
 function formFromField(field: EventCustomFieldDto): FormState {
@@ -68,6 +71,7 @@ function formFromField(field: EventCustomFieldDto): FormState {
     description: field.description ?? "",
     type: field.type,
     required: field.required,
+    appliesTo: recipientOfField(field),
     options: optionRowsFromOptions(field.options),
     rules: rulesDraftFromRules(field.rules),
   };
@@ -107,6 +111,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
     label: labelTrimmed,
     description: form.description.trim(),
     required: form.required,
+    appliesTo: form.appliesTo,
     options: selectOptions,
     rules: nextRules,
   };
@@ -120,6 +125,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
       show_on_form: onForm,
       options: form.type === "select" ? selectOptions : null,
       rules: nextRules,
+      applies_to: form.appliesTo,
     },
     fields,
   );
@@ -136,6 +142,9 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
   // the new type and rules from now on. The icon, the condition and the suggestions do not judge an answer.
   const nextFormatRules = typeTakesRules(form.type) ? formatRulesFromDraft(form.rules) : null;
   const changesAnswerFormat = field !== null && (form.type !== field.type || !sameRules(nextFormatRules, field.rules));
+  // Whether this moves a field that exists to the other person: the answers already given are not moved with it.
+  const movesRecipient = field !== null && form.appliesTo !== recipientOfField(field);
+  const recipientHint = FIELD_RECIPIENTS.find((recipient) => recipient.value === form.appliesTo)?.hint;
 
   // Options renamed - or blanked, which selectOptions below treats as a removal - away from a
   // value with attendees currently on it. Save gates on these with ConfirmDialog instead of
@@ -265,6 +274,24 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
               />
             </div>
             <div className="at-field">
+              <span className="at-label" id="cf-applies-to-label">
+                Applies to
+              </span>
+              <FieldRecipientPicker
+                value={form.appliesTo}
+                onChange={(appliesTo) => setForm((f) => ({ ...f, appliesTo }))}
+                labelledBy="cf-applies-to-label"
+                disabled={saving}
+              />
+              <span className="at-hint">{recipientHint}</span>
+              {movesRecipient && (
+                <Notice variant="warning" as="output">
+                  Answers already given stay where they are and are not moved to the other person. This question is not asked of the
+                  person it used to be about any more.
+                </Notice>
+              )}
+            </div>
+            <div className="at-field">
               <span className="at-label" id="cf-type-label">
                 Field type
               </span>
@@ -313,6 +340,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
               problems={problems}
               fields={fields}
               sourceField={form.source_field}
+              appliesTo={form.appliesTo}
               onForm={onForm}
               conditionError={dependency && dependency.kind !== "controls_others" ? dependencyMessage(dependency, fields) : ""}
               saving={saving}

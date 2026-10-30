@@ -120,7 +120,7 @@ When the event takes a companion, the form has one more part after the questions
 - The companion takes a place of their own, so a guest with a companion needs two places. When only one is free, the registration goes on the waiting list. When the event has no waiting list, the guest is told that the event is full. A guest who comes alone is not affected.
 - The panel stays closed until the guest ticks the row. What is closed is not checked and not sent. A guest who unticks the row sends no companion, and what they typed stays in the boxes in case they tick it again.
 - A question about the companion can wait for another answer about the same companion. A question about the guest cannot wait for a question about the companion, and the other way round.
-- What the guest typed about the companion is kept only in the registration, and is deleted with it.
+- What the guest typed about the companion is kept in the registration, and with the attendee once the guest is accepted. It is deleted with them. An Administrator can correct it or remove the companion on the attendee's page (see [Managing Attendees](Managing-Attendees#correct-or-remove-a-guests-companion)).
 
 What the guest reads when something about the companion is not accepted:
 

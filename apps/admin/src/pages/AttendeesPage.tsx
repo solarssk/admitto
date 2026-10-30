@@ -91,6 +91,7 @@ import { loadWithTimeout } from "../utils/load-timeout.js";
 import { goToLogin } from "../auth/login-navigation.js";
 import { LOAD_TIMEOUT_MESSAGE } from "../utils/loading-timing.js";
 import { pluralize } from "../utils/pluralize.js";
+import { guestQuestions } from "../utils/questionRecipient.js";
 import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
@@ -1286,6 +1287,8 @@ export function AttendeesPage() {
     if (!beginCustomFields()) setCustomFieldsError(null);
     const ac = new AbortController();
     fetchEventCustomFields(eventId, ac.signal)
+      // The list holds the guests' own answers: a question about a companion is answered into another row.
+      .then((all) => guestQuestions(all))
       .then((fields) => {
         if (ac.signal.aborted) return;
         setCustomFields((current) => (current.length === 0 && fields.length === 0 ? current : fields));

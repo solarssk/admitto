@@ -1,6 +1,8 @@
 import { Prisma } from "@admitto/db/client";
+import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db/status";
 import { isAttendeeGone, lockAttendeeRow } from "./attendee-lock.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
+import { lockRegistrationQueue } from "./registration-lock.js";
 import {
   buildRegistrantCustomData,
   RegistrantInputError,
@@ -78,7 +80,10 @@ const isCompanionSlot = (slot: number): boolean => Number.isInteger(slot) && slo
  * - `no_companion`: the attendee has no companion in that slot, so there is nothing to edit or remove.
  */
 export type AttendeeCompanionWriteResult = { outcome: "written" | "attendee_gone" | "invalid_slot" | "no_companion" };
-export type AttendeeCompanionRemoveResult = { outcome: "removed" | "attendee_gone" | "invalid_slot" | "no_companion" };
+/** `seats_freed` is what the removal gave back: 1 for an attendee who holds seats, 0 for one who is out of the count (revoked or cancelled). */
+export type AttendeeCompanionRemoveResult =
+  | { outcome: "removed"; seats_freed: 0 | 1 }
+  | { outcome: "event_archived" | "attendee_gone" | "invalid_slot" | "no_companion" };
 
 export type AttendeeCompanionTarget = {
   eventId: string;
@@ -103,6 +108,20 @@ async function loadCompanionQuestions(tx: Prisma.TransactionClient, eventId: str
   return fields.map((field) => ({ ...field, show_on_form: true, applies_to: "companion" }));
 }
 
+/** Keys that are never copied from stored data into a new object. */
+const UNSAFE_ANSWER_KEYS: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
+
+/** The stored answers to questions that are not asked of the companion now (`asked`): they are kept when the others are replaced. */
+function answersToKeep(stored: Prisma.JsonValue | null, asked: ReadonlySet<string>): Record<string, string> {
+  const kept = new Map<string, string>();
+  if (stored !== null && typeof stored === "object" && !Array.isArray(stored)) {
+    for (const [key, value] of Object.entries(stored)) {
+      if (typeof value === "string" && !asked.has(key) && !UNSAFE_ANSWER_KEYS.has(key)) kept.set(key, value);
+    }
+  }
+  return Object.fromEntries(kept);
+}
+
 /**
  * Corrects the name and the answers of an attendee's companion (staff, D-E5). The companion has to exist: this never
  * adds one, because a companion takes a seat, and a seat is taken under the capacity lock after a count, which only
@@ -117,7 +136,9 @@ async function loadCompanionQuestions(tx: Prisma.TransactionClient, eventId: str
  * The name goes through registrantNameSchema, the answers through buildRegistrantCustomData for `companion`: only keys
  * of fields with `applies_to = 'companion'` are read, whatever else the input holds (a guest question, `__proto__`, a
  * fixed column) is left out, a text that is hostile or too long is refused, and a required question must be answered.
- * The answers replace the old ones.
+ * The answers to the questions asked of the companion replace the old ones. An answer to a question that is not asked of the
+ * companion any more (the question was deleted, or is asked of the guest now) stays as it is, as it does on the attendee's own
+ * page: the form has no box for it, so it is not the operator's to drop.
  *
  * Must run in the caller's transaction, which this does not commit. Throws RegistrantInputError for a name or an answer
  * the boundary refuses (the message is a fixed code, never the input), and the transaction should end then.
@@ -131,25 +152,78 @@ export async function writeAttendeeCompanion(
   if (!isCompanionSlot(slot)) return { outcome: "invalid_slot" };
   const name = registrantNameSchema.safeParse(params.name);
   if (!name.success) throw new RegistrantInputError();
-  const answers = buildRegistrantCustomData(await loadCompanionQuestions(tx, eventId), params.customData, "companion");
+  const questions = await loadCompanionQuestions(tx, eventId);
+  const answers = buildRegistrantCustomData(questions, params.customData, "companion");
+  const stored = await tx.attendeeCompanion.findFirst({ where: { attendee_id: attendeeId, slot }, select: { custom_data: true } });
+  if (!stored) return { outcome: "no_companion" };
+  const kept = answersToKeep(stored.custom_data, new Set(questions.map((question) => question.source_field)));
+  const merged = { ...kept, ...answers };
   const updated = await tx.attendeeCompanion.updateMany({
     where: { attendee_id: attendeeId, slot },
-    data: { name: name.data, custom_data: answers ?? Prisma.DbNull },
+    data: { name: name.data, custom_data: Object.keys(merged).length > 0 ? merged : Prisma.DbNull },
   });
   return { outcome: updated.count === 0 ? "no_companion" : "written" };
 }
 
 /**
+ * The entries of `Registration.companions` without the one that became `slot`: a slot is the position among the entries
+ * that are shaped like a companion, the order readRegistrationCompanions and createAttendeeFromRegistration give the rows
+ * in. Whatever else the list holds stays as it is.
+ */
+function withoutSlot(value: Prisma.JsonValue, slot: number): Prisma.JsonArray {
+  if (!Array.isArray(value)) return [];
+  let position = 0;
+  return value.filter((entry) => {
+    if (readCompanion(entry) === null) return true;
+    position += 1;
+    return position !== slot;
+  });
+}
+
+/**
+ * Takes a companion's name and answers out of the registration the attendee was accepted from, which keeps the companion
+ * as the form sent it (`Registration.companions`). Staff remove a companion to take the person's data out, so the copy goes
+ * with the row: otherwise the request window would go on showing a person the guest no longer brings. Under the registration
+ * queue, which the caller holds; a manual attendee or an imported one has no registration, and there is nothing to do.
+ */
+async function dropRegistrationCopy(tx: Prisma.TransactionClient, eventId: string, attendeeId: string, slot: number): Promise<void> {
+  const registration = await tx.registration.findFirst({
+    where: { event_id: eventId, attendee_id: attendeeId },
+    select: { id: true, companions: true },
+  });
+  if (!registration) return;
+  await tx.registration.update({ where: { id: registration.id }, data: { companions: withoutSlot(registration.companions, slot) } });
+}
+
+/**
  * Removes an attendee's companion (staff): the guest comes alone after all. Frees the seat; the other companions keep
- * their slots. Takes the attendee's row lock first, like writeAttendeeCompanion, and refuses the same attendees: a
+ * their slots. A removal is a privacy action (the person's name and answers are gone), so it also clears the copy of the
+ * companion in the registration the attendee was accepted from, in the same transaction.
+ *
+ * Takes the registration queue of the event first and then the attendee's row lock, which is the documented order
+ * (docs/dev/attendee-erasure.md, "Taking locks: one order": the queue is step 5, rows are step 6, and a transaction that
+ * holds an attendee row must never wait for the queue). The attendee lock is still the first statement that reads or writes
+ * anything of the attendee, so an erasure that is open is waited for at the queue and then finds the attendee erased, and
+ * a removal that waits at the queue for one finds it gone. Refuses the same attendees as writeAttendeeCompanion: the
  * companion of an erased attendee is kept as the erasure left it (its seat is the admitted guest's).
+ *
+ * Takes no capacity lock: it takes no seat, and the seat it frees is freed under the attendee's row, as in an erasure.
  */
 export async function removeAttendeeCompanion(
   tx: Prisma.TransactionClient,
   { eventId, attendeeId, slot = 1 }: AttendeeCompanionTarget,
 ): Promise<AttendeeCompanionRemoveResult> {
-  if (isAttendeeGone(await lockAttendeeRow(tx, attendeeId, eventId))) return { outcome: "attendee_gone" };
+  await lockRegistrationQueue(tx, eventId);
+  const locked = await lockAttendeeRow(tx, attendeeId, eventId);
+  if (locked === null || isAttendeeGone(locked)) return { outcome: "attendee_gone" };
+  // Archiving takes no queue: an event archived while this waited for it takes no removal (the route checked before the wait).
+  const event = await tx.event.findUnique({ where: { id: eventId }, select: { archived_at: true } });
+  if (event?.archived_at) return { outcome: "event_archived" };
   if (!isCompanionSlot(slot)) return { outcome: "invalid_slot" };
   const removed = await tx.attendeeCompanion.deleteMany({ where: { attendee_id: attendeeId, slot } });
-  return { outcome: removed.count === 0 ? "no_companion" : "removed" };
+  if (removed.count === 0) return { outcome: "no_companion" };
+  await dropRegistrationCopy(tx, eventId, attendeeId, slot);
+  // The seat is given back only by an attendee who holds seats: a revoked or cancelled one is out of the count already.
+  const holdsSeats = !(CAPACITY_EXCLUDED_STATUSES as readonly string[]).includes(locked.status);
+  return { outcome: "removed", seats_freed: holdsSeats ? 1 : 0 };
 }

@@ -1,6 +1,6 @@
 import type { EventCustomFieldType } from "@admitto/shared";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
-import "./requirements.css";
+import { FieldChoicePicker } from "./FieldChoicePicker.js";
 
 export interface FieldTypePickerProps {
   value: EventCustomFieldType;
@@ -13,21 +13,5 @@ export interface FieldTypePickerProps {
 /** The answer types of a custom field as a grid of buttons, one pressed: seven of them do not fit in a row of a dialog, so they
  * wrap, two to a row on a phone. Each has its icon and its name, so the name is not hidden in a tooltip. */
 export function FieldTypePicker({ value, onChange, labelledBy, disabled }: Readonly<FieldTypePickerProps>) {
-  return (
-    <fieldset className="custom-field-types" aria-labelledby={labelledBy}>
-      {CUSTOM_FIELD_TYPES.map((type) => (
-        <button
-          key={type.value}
-          type="button"
-          className={`custom-field-types__btn${value === type.value ? " custom-field-types__btn--active" : ""}`}
-          aria-pressed={value === type.value}
-          disabled={disabled}
-          onClick={() => onChange(type.value)}
-        >
-          <i className={`ti ${type.icon}`} aria-hidden="true" />
-          <span>{type.label}</span>
-        </button>
-      ))}
-    </fieldset>
-  );
+  return <FieldChoicePicker choices={CUSTOM_FIELD_TYPES} value={value} onChange={onChange} labelledBy={labelledBy} disabled={disabled} />;
 }

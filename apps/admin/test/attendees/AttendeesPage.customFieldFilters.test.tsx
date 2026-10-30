@@ -68,6 +68,25 @@ describe("AttendeesPage filters of the free-input field types", () => {
   );
 });
 
+describe("AttendeesPage and the questions about a companion", () => {
+  it("offers a filter for the questions about the guest only: the list holds the guests' own answers", async () => {
+    fetchEventCustomFields.mockResolvedValue([
+      textField("dietary", "Dietary requirements"),
+      { ...textField("badge", "Badge name"), applies_to: "companion" },
+      { ...textField("shirt_notes", "Shirt notes"), applies_to: "guest" },
+    ]);
+    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+
+    renderPage();
+    await waitFor(() => expect(fetchEventCustomFields).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("button", { name: "Filters" }));
+
+    expect(screen.getByLabelText("Dietary requirements")).toBeTruthy();
+    expect(screen.getByLabelText("Shirt notes")).toBeTruthy();
+    expect(screen.queryByLabelText("Badge name")).toBeNull();
+  });
+});
+
 describe("AttendeesPage custom-field text filter debounce", () => {
   it("debounces two text custom fields independently - typing in one does not reset the other's timer", async () => {
     fetchEventCustomFields.mockResolvedValue([

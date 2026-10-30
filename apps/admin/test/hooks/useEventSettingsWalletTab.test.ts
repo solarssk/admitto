@@ -52,6 +52,18 @@ describe("useWalletCustomFields", () => {
     expect(fetchEventCustomFields).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
   });
 
+  it("leaves out the questions about a companion: a pass is made from the attendee's own fields", async () => {
+    vi.mocked(fetchEventCustomFields).mockResolvedValueOnce([
+      makeField(),
+      makeField({ id: "cf-2", source_field: "badge", label: "Badge name", applies_to: "companion" }),
+      makeField({ id: "cf-3", source_field: "shirt", label: "Shirt", applies_to: "guest" }),
+    ]);
+
+    const { result } = renderHook(() => useWalletCustomFields("evt-1", WALLET_TAB));
+
+    await waitFor(() => expect(result.current?.map((field) => field.source_field)).toEqual(["t_shirt_size", "shirt"]));
+  });
+
   it("does not re-fetch on a re-render for the same event", async () => {
     vi.mocked(fetchEventCustomFields).mockResolvedValueOnce([]);
     const { result, rerender } = renderHook(
@@ -88,6 +100,26 @@ describe("useWalletCustomFields", () => {
 
     act(() => resolveB([makeField({ source_field: "b_field" })]));
     await waitFor(() => expect(result.current).toEqual([makeField({ source_field: "b_field" })]));
+  });
+
+  it("drops the answer of the event it was asked for when the event has changed meanwhile", async () => {
+    let resolveA: (items: EventCustomFieldDto[]) => void = () => {};
+    vi.mocked(fetchEventCustomFields).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveA = resolve;
+      }),
+    );
+    vi.mocked(fetchEventCustomFields).mockResolvedValueOnce([makeField({ source_field: "b_field" })]);
+    const { result, rerender } = renderHook(
+      ({ eventId }: { eventId: string }) => useWalletCustomFields(eventId, WALLET_TAB),
+      { initialProps: { eventId: "evt-A" } },
+    );
+    rerender({ eventId: "evt-B" });
+    await waitFor(() => expect(result.current).toEqual([makeField({ source_field: "b_field" })]));
+
+    await act(async () => resolveA([makeField({ source_field: "a_field" })]));
+
+    expect(result.current).toEqual([makeField({ source_field: "b_field" })]);
   });
 
   it("leaves the result undefined when the fetch fails (preview-only, no error surfaced)", async () => {

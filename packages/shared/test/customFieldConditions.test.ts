@@ -172,6 +172,48 @@ describe("findShowWhenProblem: whose answer a field asks for", () => {
   });
 });
 
+/** The save of `applies_to` (PATCH on a field): the field is judged as it will be once saved, among the fields as they are now. */
+describe("findShowWhenProblem: moving a field to the other recipient", () => {
+  const plate = field("plate", "text", { rules: whenParking });
+
+  it("refuses to move a question that others are shown by, to either recipient, and leaves the way back open", () => {
+    expect(findShowWhenProblem({ ...parking, applies_to: "companion" }, [parking, plate])).toBe("field_controls_others");
+    const companionEvent = [{ ...parking, applies_to: "companion" as const }, { ...plate, applies_to: "companion" as const }];
+    expect(findShowWhenProblem({ ...companionEvent[0]!, applies_to: "guest" }, companionEvent)).toBe("field_controls_others");
+    // Saved as it is, it is nothing to refuse.
+    expect(findShowWhenProblem(parking, [parking, plate])).toBeNull();
+    expect(findShowWhenProblem(companionEvent[0]!, companionEvent)).toBeNull();
+  });
+
+  it("refuses to move a question that waits for another to the recipient the other is not", () => {
+    expect(findShowWhenProblem({ ...plate, applies_to: "companion" }, [parking, plate])).toBe("invalid_show_when");
+    const companionEvent = [{ ...parking, applies_to: "companion" as const }, { ...plate, applies_to: "companion" as const }];
+    expect(findShowWhenProblem({ ...companionEvent[1]!, applies_to: "guest" }, companionEvent)).toBe("invalid_show_when");
+  });
+
+  it("lets a question that nothing depends on and that waits for nothing move, either way", () => {
+    const notes = field("notes", "long_text");
+    expect(findShowWhenProblem({ ...notes, applies_to: "companion" }, [notes, parking])).toBeNull();
+    expect(findShowWhenProblem({ ...notes, applies_to: "guest" }, [{ ...notes, applies_to: "companion" }, parking])).toBeNull();
+  });
+
+  it("lets two questions that wait for each other move together once the condition is out of the way", () => {
+    // The question with the condition has to lose it first: neither can move while the other stays.
+    expect(findShowWhenProblem({ ...parking, applies_to: "companion" }, [parking, plate])).toBe("field_controls_others");
+    expect(findShowWhenProblem({ ...plate, rules: null, applies_to: "companion" }, [parking, plate])).toBeNull();
+    const freed = [parking, { ...plate, rules: null, applies_to: "companion" as const }];
+    expect(findShowWhenProblem({ ...parking, applies_to: "companion" }, freed)).toBeNull();
+    const bothMoved = [{ ...parking, applies_to: "companion" as const }, { ...plate, rules: null, applies_to: "companion" as const }];
+    expect(findShowWhenProblem({ ...bothMoved[1]!, rules: whenParking }, bothMoved)).toBeNull();
+  });
+
+  it("judges the form flag of the moved question as before: a question with a condition is on the form with the one it waits for", () => {
+    const onForm = { show_on_form: true };
+    const companionParking = field("parking", "boolean", { applies_to: "companion", show_on_form: false });
+    expect(findShowWhenProblem({ ...plate, ...onForm, applies_to: "companion" }, [companionParking])).toBe("show_when_not_on_form");
+  });
+});
+
 describe("findShowWhenProblem: the form", () => {
   const dependent = (on: boolean) => field("plate", "text", { show_on_form: on, rules: whenParking });
   const controller = (on: boolean) => field("parking", "boolean", { show_on_form: on });

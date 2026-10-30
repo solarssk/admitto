@@ -89,6 +89,11 @@
   overflow-wrap: anywhere;
 }
 
+/* "Companion", under the name of a question about the person the guest brings. */
+.requirements-item-recipient {
+  margin-top: 2px;
+}
+
 .requirements-item-desc-col {
   /* Flexible middle column - status + actions stay content-sized on the right. */
   width: auto;

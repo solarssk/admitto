@@ -196,6 +196,33 @@ describe.each([
     expect(marker.querySelector(`i.${icon}`)).not.toBeNull();
   });
 
+  it("marks a question about the companion with a Companion badge under its name, and none on a question about the guest", () => {
+    const badgeField: EventCustomFieldDto = { ...dietaryField, id: "field-badge", source_field: "badge", label: "Badge name", applies_to: "companion" };
+    renderCard([dietaryField, badgeField], placement);
+
+    const companionRow = screen.getByText("Badge name").closest("tr")!;
+    const mark = within(companionRow).getByText("Companion");
+    expect(mark.closest(".at-badge")).not.toBeNull();
+    expect(mark.closest(".requirements-item-recipient")).not.toBeNull();
+    expect(within(screen.getByText("Dietary requirements").closest("tr")!).queryByText("Companion")).toBeNull();
+    // The name stays the question's own, without the word.
+    expect(rowNames()).toEqual(["Dietary requirements", "Badge name"]);
+  });
+
+  it("marks a field that says nothing of its recipient as the guest's: no badge", () => {
+    renderCard([dietaryField, { ...shirtField, applies_to: "guest" }], placement);
+    expect(screen.queryByText("Companion")).toBeNull();
+  });
+
+  it("opens the edit modal of a question about the companion with Companion pressed", () => {
+    const badgeField: EventCustomFieldDto = { ...dietaryField, id: "field-badge", source_field: "badge", label: "Badge name", applies_to: "companion" };
+    renderCard([dietaryField, badgeField], placement);
+    fireEvent.click(within(screen.getByText("Badge name").closest("tr")!).getByRole("button", { name: "Edit field" }));
+    const recipients = screen.getByRole("group", { name: "Applies to" });
+    expect(within(recipients).getByRole("button", { name: "Companion" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(recipients).getByRole("button", { name: "Guest" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("disambiguates two fields that share a display label with their slug", () => {
     const shirtA: EventCustomFieldDto = { ...dietaryField, id: "f-shirt-a", source_field: "shirt_size", label: "Shirt size" };
     const shirtB: EventCustomFieldDto = { ...dietaryField, id: "f-shirt-b", source_field: "shirt_size_2", label: "Shirt size" };

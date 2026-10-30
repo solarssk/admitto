@@ -17,7 +17,8 @@ const registrationQueueKey = (eventId: string): Prisma.Sql => {
  *   delete never runs without it: a caller still takes it first);
  * - the permanent deletion of an event, before it locks the event row (the registrations go with the event);
  * - every transaction that inserts, changes or deletes a registration or its mail: a submission, a confirmation, an
- *   admission or a rejection, a deletion by staff, the clean-up of expired ones, and the last check before a
+ *   admission or a rejection, a deletion by staff, the removal of a companion by staff (removeAttendeeCompanion, which
+ *   clears the companion's copy in the registration), the clean-up of expired ones, and the last check before a
  *   registration mail is sent (a short transaction of its own, never held across the send);
  * - not the write of a send's result: one conditional update of the mail's own row, after the send, which waits for
  *   nothing else and finds no row when the registration went meanwhile.

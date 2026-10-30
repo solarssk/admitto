@@ -617,6 +617,31 @@ describe("GET /api/admin/events/:eventId/custom-fields/:fieldId/option-usage", (
     expect(body.counts.L).toBeUndefined();
   });
 
+  it("counts the answers of the companions for a question about the companion, and not the answers of the guests", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF, source_field: "usage_meal", label: "Meal", type: "select", options: ["Meat", "Veg", "Fish"], applies_to: "companion" },
+    });
+    const guests = await Promise.all(
+      ["usage-c1", "usage-c2", "usage-c3"].map((email) =>
+        prisma.attendee.create({ data: { event_id: EVENT_CF, email: `${email}@example.com`, name: email, custom_data: { usage_meal: "Fish" } } }),
+      ),
+    );
+    await prisma.attendeeCompanion.createMany({
+      data: [
+        { attendee_id: guests[0]!.id, slot: 1, name: "Companion One", custom_data: { usage_meal: "Veg" } },
+        { attendee_id: guests[1]!.id, slot: 1, name: "Companion Two", custom_data: { usage_meal: "Veg" } },
+        { attendee_id: guests[2]!.id, slot: 1, name: "Companion Three", custom_data: { usage_meal: "Meat" } },
+      ],
+    });
+    // A companion of another event answering the same key is not counted.
+    const elsewhere = await prisma.attendee.create({ data: { event_id: EVENT_CF_OTHER, email: "usage-c-other@example.com", name: "Elsewhere" } });
+    await prisma.attendeeCompanion.create({ data: { attendee_id: elsewhere.id, slot: 1, name: "Elsewhere Companion", custom_data: { usage_meal: "Meat" } } });
+
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields/${created.id}/option-usage`, { headers: { Cookie: adminCookie } });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { counts: Record<string, number> }).counts).toEqual({ Veg: 2, Meat: 1 });
+  });
+
   it("never counts an attendee from a different event", async () => {
     const created = await prisma.eventCustomField.create({
       data: {
@@ -1551,7 +1576,7 @@ const DAYS = ["Day 1", "Day 2", "Both"];
 /** What the stored rows say about the field: its rules and its flags, for a check that a refusal changed nothing. */
 async function stored(fieldId: string) {
   const row = await prisma.eventCustomField.findUniqueOrThrow({ where: { id: fieldId } });
-  return { type: row.type, options: row.options, rules: row.rules, show_on_form: row.show_on_form };
+  return { type: row.type, options: row.options, rules: row.rules, show_on_form: row.show_on_form, applies_to: row.applies_to };
 }
 
 /** The status and the error code of an answer. */
@@ -1896,7 +1921,7 @@ describe("a condition between fields, on PATCH", () => {
 describe("a condition between a question about the guest and one about their companion", () => {
   beforeEach(resetFormFixtures);
 
-  /** A question about the companion, made in the database: the field editor cannot ask for one yet. */
+  /** A question about the companion, made straight in the database (the API makes them too: see the next block). */
   const makeCompanionField = (source_field: string, type = "boolean") =>
     prisma.eventCustomField.create({ data: { event_id: EVENT_CF_ORDER, source_field, label: source_field, type, show_on_form: true, applies_to: "companion" } });
   const whenPet = { show_when: { field: "pet", value: true } };
@@ -1941,6 +1966,205 @@ describe("a condition between a question about the guest and one about their com
     await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean", show_on_form: true });
     const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate", show_on_form: true, rules: whenParking });
     expect(plate.rules).toEqual(whenParking);
+  });
+});
+
+describe("whose answer a question asks for", () => {
+  beforeEach(resetFormFixtures);
+
+  type Recipient = { applies_to: string };
+  const recipientOf = async (res: Response): Promise<string> => ((await res.json()) as Recipient).applies_to;
+  const makeCompanionQuestion = (body: Record<string, unknown>) => makeField(EVENT_CF_ORDER, { applies_to: "companion", ...body });
+
+  it("is the guest's, and listed so, when the request names no recipient", async () => {
+    const created = await createField(EVENT_CF_ORDER, { source_field: "shirt" });
+    expect(created.status).toBe(201);
+    expect(await recipientOf(created)).toBe("guest");
+    expect((await prisma.eventCustomField.findFirstOrThrow({ where: { event_id: EVENT_CF_ORDER } })).applies_to).toBe("guest");
+  });
+
+  it("is the companion's when the request says so: stored, answered, and listed next to the guest's own", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "shirt" });
+    const created = await createField(EVENT_CF_ORDER, { source_field: "badge", applies_to: "companion" });
+    expect(created.status).toBe(201);
+    const field = (await readField(created)) as TypedFieldItem & Recipient;
+    expect(field.applies_to).toBe("companion");
+    expect((await stored(field.id)).applies_to).toBe("companion");
+
+    const listed = (await listItems(EVENT_CF_ORDER)) as (FieldItem & Recipient)[];
+    expect(listed.map((item) => [item.source_field, item.applies_to])).toEqual([
+      ["shirt", "guest"],
+      ["badge", "companion"],
+    ]);
+  });
+
+  it.each([["someone_else"], [null], [7], [""]])("refuses the recipient %j with 400, and creates nothing", async (appliesTo) => {
+    const res = await createField(EVENT_CF_ORDER, { source_field: "badge", applies_to: appliesTo });
+    expect(await refusal(res)).toEqual([400, "validation_failed"]);
+    expect(await fieldCount()).toBe(0);
+  });
+
+  it("moves a question that nothing depends on to the other recipient, and back", async () => {
+    const field = await makeField(EVENT_CF_ORDER, { source_field: "badge" });
+
+    expect(await recipientOf(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "companion" }))).toBe("companion");
+    expect((await stored(field.id)).applies_to).toBe("companion");
+    expect(await recipientOf(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "guest" }))).toBe("guest");
+    expect((await stored(field.id)).applies_to).toBe("guest");
+  });
+
+  it("refuses to move a question that an item shows to the companion, with 409 field_in_use, and lets it move once no item shows it", async () => {
+    const field = await makeField(EVENT_CF_ORDER, { source_field: "badge_name" });
+    await prisma.eventItem.upsert({
+      where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } },
+      create: { event_id: EVENT_CF_ORDER, key: "badge_item", label: "Badge", config: { content_fields: ["badge_name"] } },
+      update: { config: { content_fields: ["badge_name"] } },
+    });
+
+    expect(await refusal(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "companion" }))).toEqual([409, "field_in_use"]);
+    expect((await stored(field.id)).applies_to).toBe("guest");
+
+    await prisma.eventItem.update({ where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } }, data: { config: { content_fields: [] } } });
+    expect(await recipientOf(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "companion" }))).toBe("companion");
+    await prisma.eventItem.delete({ where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } } });
+  });
+
+  it("does not look at the items when the recipient stays the same, or when a question moves back to the guest", async () => {
+    const field = await makeField(EVENT_CF_ORDER, { source_field: "badge_name" });
+    await prisma.eventItem.upsert({
+      where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } },
+      create: { event_id: EVENT_CF_ORDER, key: "badge_item", label: "Badge", config: { content_fields: ["badge_name"] } },
+      update: { config: { content_fields: ["badge_name"] } },
+    });
+
+    expect(await recipientOf(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "guest", label: "Badge name" }))).toBe("guest");
+    await prisma.eventCustomField.update({ where: { id: field.id }, data: { applies_to: "companion" } });
+    expect(await recipientOf(await patchField(EVENT_CF_ORDER, field.id, { applies_to: "guest" }))).toBe("guest");
+    await prisma.eventItem.delete({ where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } } });
+  });
+
+  it("changes nothing else when only the recipient is sent, and keeps the recipient when the same one is sent again", async () => {
+    const field = await makeField(EVENT_CF_ORDER, { source_field: "badge", label: "Badge name", description: "On the badge", required: true, show_on_form: true });
+    const kept = async () => {
+      const { label, description, type, required, show_on_form, options, rules, display_order } = await prisma.eventCustomField.findUniqueOrThrow({ where: { id: field.id } });
+      return { label, description, type, required, show_on_form, options, rules, display_order };
+    };
+    const before = await kept();
+
+    expect((await patchField(EVENT_CF_ORDER, field.id, { applies_to: "guest" })).status).toBe(200);
+    expect((await stored(field.id)).applies_to).toBe("guest");
+    expect(await kept()).toEqual(before);
+
+    expect((await patchField(EVENT_CF_ORDER, field.id, { applies_to: "companion" })).status).toBe(200);
+    expect((await stored(field.id)).applies_to).toBe("companion");
+    expect(await kept()).toEqual(before);
+  });
+
+  it("refuses to move a question that others are shown by, with 409 field_controls_others, and changes nothing", async () => {
+    const parking = await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    await makeField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking });
+    const before = await stored(parking.id);
+
+    expect(await refusal(await patchField(EVENT_CF_ORDER, parking.id, { applies_to: "companion" }))).toEqual([409, "field_controls_others"]);
+    expect(await stored(parking.id)).toEqual(before);
+  });
+
+  it("refuses it for a question of the companion that other questions of the companion wait for, and lets it move once they are free", async () => {
+    const parking = await makeCompanionQuestion({ source_field: "parking", type: "boolean", show_on_form: true });
+    const plate = await makeCompanionQuestion({ source_field: "plate", show_on_form: true, rules: whenParking });
+
+    expect(await refusal(await patchField(EVENT_CF_ORDER, parking.id, { applies_to: "guest" }))).toEqual([409, "field_controls_others"]);
+    expect((await stored(parking.id)).applies_to).toBe("companion");
+
+    expect((await patchField(EVENT_CF_ORDER, plate.id, { rules: null })).status).toBe(200);
+    expect(await recipientOf(await patchField(EVENT_CF_ORDER, parking.id, { applies_to: "guest" }))).toBe("guest");
+  });
+
+  it("refuses to move a question that waits for another to the other recipient, with 422 invalid_show_when, and changes nothing", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean" });
+    const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate", rules: whenParking });
+    const before = await stored(plate.id);
+
+    expect(await refusal(await patchField(EVENT_CF_ORDER, plate.id, { applies_to: "companion" }))).toEqual([422, "invalid_show_when"]);
+    expect(await stored(plate.id)).toEqual(before);
+  });
+
+  it("moves a question and its condition together to the other recipient when the same save does both", async () => {
+    await makeCompanionQuestion({ source_field: "parking", type: "boolean" });
+    const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate" });
+
+    expect(await refusal(await patchField(EVENT_CF_ORDER, plate.id, { rules: whenParking }))).toEqual([422, "invalid_show_when"]);
+    expect((await patchField(EVENT_CF_ORDER, plate.id, { applies_to: "companion", rules: whenParking })).status).toBe(200);
+    expect(await stored(plate.id)).toMatchObject({ applies_to: "companion", rules: whenParking });
+  });
+
+  it("judges the condition of a new question by its recipient: one about the companion may wait for another about the companion, and not for one about the guest", async () => {
+    await makeField(EVENT_CF_ORDER, { source_field: "parking", type: "boolean", show_on_form: true });
+    await makeCompanionQuestion({ source_field: "pet", type: "boolean", show_on_form: true });
+    const whenPet = { show_when: { field: "pet", value: true } };
+
+    expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "plate", applies_to: "companion", show_on_form: true, rules: whenParking }))).toEqual([422, "invalid_show_when"]);
+    expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "leash", show_on_form: true, rules: whenPet }))).toEqual([422, "invalid_show_when"]);
+    expect(await fieldCount()).toBe(2);
+
+    const leash = await makeField(EVENT_CF_ORDER, { source_field: "leash", applies_to: "companion", show_on_form: true, rules: whenPet });
+    expect(leash.rules).toEqual(whenPet);
+    const plate = await makeField(EVENT_CF_ORDER, { source_field: "plate", show_on_form: true, rules: whenParking });
+    expect(plate.rules).toEqual(whenParking);
+  });
+
+  it("asks of a question about the companion what it asks of any question: a Required one must be on the form", async () => {
+    for (const body of [
+      { source_field: "needed", required: true, applies_to: "companion" },
+      { source_field: "needed", required: true, show_on_form: false, applies_to: "companion" },
+    ]) {
+      expect(await refusal(await createField(EVENT_CF_REG, body))).toEqual([422, "required_field_not_on_form"]);
+    }
+    expect(await prisma.eventCustomField.count({ where: { event_id: EVENT_CF_REG } })).toBe(0);
+    expect((await createField(EVENT_CF_REG, { source_field: "asked", required: true, show_on_form: true, applies_to: "companion" })).status).toBe(201);
+
+    const hidden = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_REG, source_field: "hidden", label: "Hidden", show_on_form: false, applies_to: "companion" },
+    });
+    expect(await refusal(await patchField(EVENT_CF_REG, hidden.id, { required: true }))).toEqual([422, "required_field_not_on_form"]);
+    // Moving it to the guest does not make it ask for what it does not ask for.
+    expect((await patchField(EVENT_CF_REG, hidden.id, { applies_to: "guest" })).status).toBe(200);
+  });
+
+  it("counts the questions of both recipients against the limit of the event", async () => {
+    const rows = Array.from({ length: 19 }, (_, index) => ({
+      event_id: EVENT_CF_ORDER,
+      source_field: `q${index}`,
+      label: `Question ${index}`,
+      applies_to: index % 2 === 0 ? "guest" : "companion",
+    }));
+    await prisma.eventCustomField.createMany({ data: rows });
+
+    expect((await createField(EVENT_CF_ORDER, { source_field: "twentieth", applies_to: "companion" })).status).toBe(201);
+    expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "twenty_first", applies_to: "companion" }))).toEqual([422, "field_limit_reached"]);
+    expect(await refusal(await createField(EVENT_CF_ORDER, { source_field: "twenty_first", applies_to: "guest" }))).toEqual([422, "field_limit_reached"]);
+  });
+
+  it("is refused for an operator, and on an archived event, as every change of a field is", async () => {
+    const field = await makeField(EVENT_CF_ORDER, { source_field: "badge" });
+    const asOperator = await app.request(`/api/admin/events/${EVENT_CF_ORDER}/custom-fields/${field.id}`, {
+      method: "PATCH",
+      headers: { Cookie: opCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ applies_to: "companion" }),
+    });
+    expect(asOperator.status).toBe(403);
+    expect((await stored(field.id)).applies_to).toBe("guest");
+
+    const archived = await prisma.eventCustomField.create({ data: { event_id: EVENT_CF_ARCHIVED, source_field: "badge", label: "Badge" } });
+    try {
+      const refused = await patchField(EVENT_CF_ARCHIVED, archived.id, { applies_to: "companion" });
+      expect([refused.status, await refused.json()]).toEqual([403, { code: "event_archived" }]);
+      expect((await stored(archived.id)).applies_to).toBe("guest");
+      const createdThere = await createField(EVENT_CF_ARCHIVED, { source_field: "other", applies_to: "companion" });
+      expect(createdThere.status).toBe(403);
+    } finally {
+      await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_CF_ARCHIVED } });
+    }
   });
 });
 

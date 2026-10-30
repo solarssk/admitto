@@ -53,6 +53,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   cannot_revoke_current: "You cannot revoke your current session.",
   cannot_revoke_own_session: "You cannot revoke your current session.",
   challenge_expired: "This passkey/security key setup request expired. Start again.",
+  companion_not_found: "This guest has no companion any more. Reload the page.",
   consent_not_published:
     "One of the extra consents you chose is not published for this event. Publish its text first, or leave it out.",
   content_field_in_use: "This field is already shown on another item. Uncheck it there first.",

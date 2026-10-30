@@ -1072,6 +1072,33 @@ export async function deleteAttendeeNote(
   return parseJson<AttendeeDetailDto>(res);
 }
 
+/** Corrects the name and the answers of the person the guest brings (D-E5). The body is the whole companion as the form shows it:
+ * an answer to a question about the companion that is left out is cleared. An answer to a question that is not asked of the
+ * companion any more stays, and a question about the guest is not one of them. 404 `companion_not_found` for a guest who brings
+ * nobody (it never adds one), 409 `attendee_erased`, 403 `event_archived`, 400 `validation_failed` for a name or an answer the
+ * registration form would refuse too. Returns the refreshed detail DTO, matching addAttendeeNote's convention. */
+export async function updateAttendeeCompanion(
+  eventId: string,
+  attendeeId: string,
+  body: { name: string; custom_data?: Record<string, string> },
+): Promise<AttendeeDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/companion`,
+    jsonPatchInit(body),
+  );
+  return parseJson<AttendeeDetailDto>(res);
+}
+
+/** Removes the person the guest brings: their name and answers, the copy in the guest's registration, and the seat. Returns the
+ * refreshed detail DTO. 404 `companion_not_found` when there is nobody to remove, 409 `attendee_erased`, 403 `event_archived`. */
+export async function removeAttendeeCompanion(eventId: string, attendeeId: string): Promise<AttendeeDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/companion`,
+    jsonDeleteInit(),
+  );
+  return parseJson<AttendeeDetailDto>(res);
+}
+
 export async function fetchCheckInHistory(
   eventId: string,
   limit = 8,

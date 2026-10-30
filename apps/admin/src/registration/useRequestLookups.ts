@@ -1,8 +1,9 @@
 import { useCallback, useRef } from "react";
 import { fetchLegalDocuments } from "../api/client.js";
-import { fetchAttendeeCustomFields, type CustomDataFieldDef } from "../attendees/customData.js";
+import { fetchAnswerFields, type CustomDataFieldDef } from "../attendees/customData.js";
 
-/** What a request's answers and consents are named by: the questions of the event, and the titles of its extra consents. */
+/** What a request's answers and consents are named by: the questions of the event, the guest's and the companion's, and the titles of its
+ * extra consents. */
 export interface RequestLookups {
   fields: CustomDataFieldDef[];
   /** The title of each extra consent, by the key a request stored it under. */
@@ -11,7 +12,7 @@ export interface RequestLookups {
 
 /** Reads both, and says whether both came: a name that could not be read falls back to the key of the answer, and is read again at the next opening. */
 async function readLookups(eventId: string): Promise<{ lookups: RequestLookups; complete: boolean }> {
-  const [fields, documents] = await Promise.allSettled([fetchAttendeeCustomFields(eventId), fetchLegalDocuments(eventId)]);
+  const [fields, documents] = await Promise.allSettled([fetchAnswerFields(eventId), fetchLegalDocuments(eventId)]);
   const titles = documents.status === "fulfilled" ? documents.value.items.flatMap((doc) => (doc.key ? [[doc.key, doc.title] as const] : [])) : [];
   return {
     lookups: { fields: fields.status === "fulfilled" ? fields.value : [], consentTitles: new Map(titles) },

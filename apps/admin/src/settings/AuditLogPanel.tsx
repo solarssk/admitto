@@ -56,6 +56,8 @@ const ACTION_LABELS: Record<string, string> = {
   account_password_changed: "Password changed (self-service)",
   account_session_revoked: "Session revoked (self-service)",
   account_sso_unlinked: "SSO unlinked (self-service)",
+  attendee_companion_removed: "Companion removed",
+  attendee_companion_updated: "Companion updated",
   attendee_created_manual: "Attendee created manually",
   // Erase and Remove from event share these two types, so that one filter finds every attendee who is gone;
   // an entry's own label tells them apart (entryActionLabel).
@@ -159,6 +161,7 @@ function entryActionLabel(entry: Pick<AuditLogEntryDto, "action_type" | "metadat
  * the Badge default `neutral` and isn't listed here. */
 const TONE_BY_ADMIN_ACTION: Record<string, BadgeVariant> = {
   account_session_revoked: "error",
+  attendee_companion_removed: "error",
   attendee_erased: "error",
   attendees_bulk_erased: "error",
   emergency_session_purge: "error",

@@ -2,11 +2,13 @@
  * What erasing, removing and deleting a registration do to the companion of an attendee, against a real, fully
  * migrated database. The companion is a third party: the name and the answers go like the attendee's own, the row
  * stays (the seat of an admitted guest is still taken), and the seat goes with the attendee, so an erasure that
- * cancels the attendee frees both seats and one that does not frees none.
+ * cancels the attendee frees both seats and one that does not frees none. Staff removing only the companion take the
+ * person out of every table too, the copy in the guest's registration included.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@admitto/db";
+import { removeAttendeeCompanion } from "../src/attendee-companion.js";
 import { ERASED_COMPANION_NAME, eraseAttendees } from "../src/erase-attendees.js";
 import { countSeatsInUse } from "../src/event-seats.js";
 import { deleteRegistrations } from "../src/registration-deletion.js";
@@ -209,5 +211,105 @@ describe("deleting the registration of an accepted guest who has a companion", (
     expect(await seats(eventId)).toBe(0);
     expect(await companionsOf(guest.id)).toEqual([expect.objectContaining({ name: ERASED_COMPANION_NAME, custom_data: null })]);
     expect(await tablesHolding(marker)).toEqual([]);
+  });
+});
+
+describe("removing only the companion (staff)", () => {
+  const removeCompanion = (eventId: string, attendeeId: string) =>
+    db.$transaction((tx) => removeAttendeeCompanion(tx, { eventId, attendeeId }));
+  const copyOf = async (registrationId: string) => (await db.registration.findUniqueOrThrow({ where: { id: registrationId } })).companions;
+
+  it("takes the name and the answers out of every table: the copy in the registration of the guest goes with the row, and the seat is freed", async () => {
+    const marker = uniqueMarker();
+    const eventId = await make.event({ capacity: 2 });
+    const { guest } = await guestWithCompanion(eventId, { marker });
+    const registration = await make.registration(eventId, {
+      status: "accepted",
+      attendeeId: guest.id,
+      companions: [{ name: `Companion ${marker}`, custom_data: { diet: `vegan ${marker}` } }],
+    });
+    const before = await db.registration.findUniqueOrThrow({ where: { id: registration.id } });
+    expect(await tablesHolding(marker)).toEqual(["AttendeeCompanion", "Registration"]);
+    expect(await seats(eventId)).toBe(2);
+
+    expect(await removeCompanion(eventId, guest.id)).toEqual({ outcome: "removed", seats_freed: 1 });
+
+    expect(await tablesHolding(marker)).toEqual([]);
+    expect(await seats(eventId)).toBe(1);
+    // The registration is the guest's own record and stays, as it was but for the companion.
+    const after = await db.registration.findUniqueOrThrow({ where: { id: registration.id } });
+    expect(after).toMatchObject({ status: "accepted", attendee_id: guest.id, first_name: before.first_name, last_name: before.last_name, email: before.email });
+    expect(after.companions).toEqual([]);
+  });
+
+  it("leaves the registration of every other guest as it is, the companion they bring included", async () => {
+    const marker = uniqueMarker();
+    const otherMarker = uniqueMarker();
+    const eventId = await make.event({ capacity: 4 });
+    const { guest } = await guestWithCompanion(eventId, { marker });
+    const other = await guestWithCompanion(eventId, { marker: otherMarker });
+    const otherCopy = [{ name: `Companion ${otherMarker}`, custom_data: { diet: `vegan ${otherMarker}` } }];
+    // The other guest's registration is written first, so a removal that took "the first registration of the event" would clear it.
+    const otherRegistration = await make.registration(eventId, { status: "accepted", attendeeId: other.guest.id, companions: otherCopy });
+    await make.registration(eventId, { status: "accepted", attendeeId: guest.id, companions: [{ name: `Companion ${marker}`, custom_data: null }] });
+
+    await removeCompanion(eventId, guest.id);
+
+    expect(await tablesHolding(marker)).toEqual([]);
+    expect(await tablesHolding(otherMarker)).toEqual(["AttendeeCompanion", "Registration"]);
+    expect(await copyOf(otherRegistration.id)).toEqual(otherCopy);
+  });
+
+  it("removes the companion of an attendee who has no registration (added by hand or imported), and has nothing else to clear", async () => {
+    const eventId = await make.event({ capacity: 2 });
+    const { guest } = await guestWithCompanion(eventId);
+    expect(await seats(eventId)).toBe(2);
+
+    expect(await removeCompanion(eventId, guest.id)).toEqual({ outcome: "removed", seats_freed: 1 });
+
+    expect(await companionsOf(guest.id)).toEqual([]);
+    expect(await seats(eventId)).toBe(1);
+  });
+
+  it("drops the entry the row was written from, counted among the entries shaped like a companion, and keeps the rest of the list", async () => {
+    const marker = uniqueMarker();
+    const eventId = await make.event();
+    const { guest } = await guestWithCompanion(eventId, { marker });
+    const registration = await make.registration(eventId, {
+      status: "accepted",
+      attendeeId: guest.id,
+      companions: [{ note: "not shaped like a companion" }, { name: `Companion ${marker}`, custom_data: null }],
+    });
+
+    await removeCompanion(eventId, guest.id);
+
+    expect(await copyOf(registration.id)).toEqual([{ note: "not shaped like a companion" }]);
+  });
+
+  it("leaves the registration alone when the attendee has no companion to remove", async () => {
+    const eventId = await make.event();
+    const guest = await make.attendee(eventId);
+    const registration = await make.registration(eventId, { status: "accepted", attendeeId: guest.id, companions: [{ note: "kept" }] });
+
+    expect(await removeCompanion(eventId, guest.id)).toEqual({ outcome: "no_companion" });
+
+    expect(await copyOf(registration.id)).toEqual([{ note: "kept" }]);
+  });
+
+  it("clears the copy in the transaction of the removal: a rollback brings back the row and the copy together", async () => {
+    const marker = uniqueMarker();
+    const eventId = await make.event({ capacity: 2 });
+    const { guest } = await guestWithCompanion(eventId, { marker });
+    await make.registration(eventId, { status: "accepted", attendeeId: guest.id, companions: [{ name: `Companion ${marker}`, custom_data: null }] });
+
+    await expect(
+      db.$transaction(async (tx) => {
+        await removeAttendeeCompanion(tx, { eventId, attendeeId: guest.id });
+        throw new Error("Synthetic rollback after the removal");
+      }),
+    ).rejects.toThrow("Synthetic rollback after the removal");
+
+    expect(await tablesHolding(marker)).toEqual(["AttendeeCompanion", "Registration"]);
+    expect(await seats(eventId)).toBe(2);
   });
 });

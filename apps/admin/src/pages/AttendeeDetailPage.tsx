@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useOutletContext, useParams, useSearchParams } from "react-router";
 import {
   WALLET_RELEVANT_ATTENDEE_FIELDS,
@@ -76,6 +76,7 @@ import {
   getTimelineTone,
   humanizeFieldKey,
 } from "../attendees/attendeeTimeline.js";
+import { CompanionCard } from "../attendees/CompanionCard.js";
 import { EraseAttendeeDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
 import { ErasedAttendeeView } from "../attendees/ErasedAttendeeView.js";
 import {
@@ -985,6 +986,7 @@ function AttendeeOverviewTab({
   ticketTypes,
   attendeeSource,
   customDataEntries,
+  companionCard,
   eventItems,
   event,
   walletPlatforms,
@@ -993,6 +995,8 @@ function AttendeeOverviewTab({
   ticketTypes: TicketTypeDto[];
   attendeeSource: string | null;
   customDataEntries: Array<[string, string, string]>;
+  /** The card of the person the guest brings, or nothing for a guest who brings nobody. */
+  companionCard: ReactNode;
   eventItems: AttendeeDetailDto["event_items"];
   event: EventDto;
   walletPlatforms: EnabledWalletPlatforms;
@@ -1063,6 +1067,10 @@ function AttendeeOverviewTab({
             </div>
           </div>
         </Card>
+
+        {/* Right after the profile: the person the guest brings is part of who is coming, and the card should not sit below an empty
+            "Additional information" on a phone. */}
+        {companionCard}
 
         <Card title="Additional information">
           {customDataEntries.length === 0 ? (
@@ -1919,7 +1927,7 @@ function AttendeeStatusStrip({
 
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
-  const { event } = useOutletContext<{ event: EventDto }>();
+  const { event, refreshEvent } = useOutletContext<{ event: EventDto; refreshEvent?: () => Promise<unknown> }>();
   // Stable across re-renders that don't change the event's own wallet toggles - enabledWalletPlatforms
   // returns a fresh object each call, and this reference flows down to AttendeeOverviewTab (a plain
   // function component, not memoized, so this doesn't currently gate a re-render skip either way -
@@ -1974,6 +1982,8 @@ export function AttendeeDetailPage() {
     );
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
+  // The questions about the person the guest brings, read with the guest's own in one request.
+  const [companionFields, setCompanionFields] = useState<CustomDataFieldDef[]>([]);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const ticketTypesRetry = useRetry();
@@ -2035,6 +2045,11 @@ export function AttendeeDetailPage() {
   // The detail on screen, for applyDetail: an answer can come from a request started long ago, in a closure that
   // rendered before the detail it would replace, so the state it sees would be stale.
   const heldDetailRef = useRef<AttendeeDetailDto | null>(null);
+  const pageRef = useRef<HTMLElement>(null);
+  const [tabFocusRequests, setTabFocusRequests] = useState(0);
+  useEffect(() => {
+    if (tabFocusRequests > 0) pageRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+  }, [tabFocusRequests]);
   // Every whole-detail replacement (edit, note, wallet action, reload) also reseeds the Activity log,
   // which invalidates any page request still in flight. The one answer that is refused is an older one
   // than the erasure (see isOlderThanErasure): nothing of an erased person comes back, by any path.
@@ -2104,13 +2119,14 @@ export function AttendeeDetailPage() {
     setNoteDeleting(false);
     setNoteDeleteError(null);
     try {
-      const { detail: d, attributeFields: fields, itemsWarning: warn } = await rejectOnAbort(
+      const { detail: d, attributeFields: fields, companionFields: companion, itemsWarning: warn } = await rejectOnAbort(
         loadAttendeeDetailData(eventId, attendeeId, notesPage, limit.signal),
         limit.signal,
       );
       if (!isCurrentRequest()) return;
       applyDetail(d);
       setAttributeFields(fields);
+      setCompanionFields(companion);
       setForm(toAttendeeForm(d, fields));
       setInitialEmail(d.email);
       setItemsWarning(warn);
@@ -2246,6 +2262,20 @@ export function AttendeeDetailPage() {
     }
   }
 
+  /** The server answered a change of the guest's companion with the attendee as it is now. A read that started before the change is
+   * older than this answer and must not put back the companion it took away or corrected, so it is dropped (`loadSeqRef`). */
+  function handleCompanionChanged(next: AttendeeDetailDto, target: { eventId: string; attendeeId: string }): boolean {
+    // The card, and the hook that calls this, go with the attendee they were made for (an answer after they are gone never gets here),
+    // so this only guards the moment between the route changing and the card going. The hook says nothing for an answer dropped here.
+    /* v8 ignore if */
+    if (!isStillSelected(target)) return false;
+    loadSeqRef.current += 1;
+    // A removal takes the card, and the button the keyboard was on, away: the focus goes to the tab that is open.
+    if (heldDetailRef.current?.companion && !next.companion) setTabFocusRequests((count) => count + 1);
+    applyDetail(next);
+    return true;
+  }
+
   function handleCancelEdit() {
     if (isDirty) {
       setDiscardIntent("cancel-edit");
@@ -2267,10 +2297,11 @@ export function AttendeeDetailPage() {
     setReloading(true);
     setError(null);
     try {
-      const { detail: d, attributeFields: fields, itemsWarning: warn } =
+      const { detail: d, attributeFields: fields, companionFields: companion, itemsWarning: warn } =
         await loadAttendeeDetailData(eventId, attendeeId);
       if (!isStillSelected(target)) return;
       setAttributeFields(fields);
+      setCompanionFields(companion);
       setForm((currentForm) => {
         if (!currentForm || !previousDetail) return toAttendeeForm(d, fields);
         return mergeFormAfterReload(currentForm, previousDetail, d, fields);
@@ -2839,7 +2870,7 @@ export function AttendeeDetailPage() {
   }
 
   return (
-    <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
+    <section ref={pageRef} key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
       <PageHeader
         title={
           <span className="attendee-detail-title">
@@ -2969,6 +3000,22 @@ export function AttendeeDetailPage() {
           ticketTypes={ticketTypes}
           attendeeSource={attendeeSource}
           customDataEntries={customDataEntries}
+          companionCard={
+            detail.companion ? (
+              <CompanionCard
+                key={detail.id}
+                eventId={event.id}
+                attendeeId={detail.id}
+                event={event}
+                companion={detail.companion}
+                fields={companionFields}
+                fieldsLoaded={itemsWarning === null}
+                onChanged={handleCompanionChanged}
+                onArchived={() => void refreshEvent?.()}
+                onOutOfDate={() => void loadDetail()}
+              />
+            ) : null
+          }
           eventItems={eventItems}
           event={event}
           walletPlatforms={walletPlatforms}

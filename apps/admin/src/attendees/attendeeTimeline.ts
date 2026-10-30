@@ -99,6 +99,7 @@ const TONE_BY_ACTION: Record<string, TimelineTone> = {
   pass_revoked: "error",
   mail_bounced: "error",
   item_revoked: "error",
+  attendee_companion_removed: "error",
   wallet_pass_voided: "error",
   wallet_pass_restored: "ok",
   wallet_pass_reissued: "ok",
@@ -149,6 +150,8 @@ export function getTimelineIcon(actionType: string): string {
     pass_revoked: "ban",
     pass_restored: "refresh",
     attendee_edited: "pencil",
+    attendee_companion_updated: "users",
+    attendee_companion_removed: "user-minus",
     scan_preview: "scan",
     wallet_pass_voided: "wallet-off",
     wallet_pass_restored: "refresh",
@@ -207,6 +210,10 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
       return "Item reset to pending";
     case "attendee_edited":
       return "Profile updated";
+    case "attendee_companion_updated":
+      return "Companion updated";
+    case "attendee_companion_removed":
+      return "Companion removed";
     case "pass_revoked":
       return "Pass revoked";
     case "pass_restored":
