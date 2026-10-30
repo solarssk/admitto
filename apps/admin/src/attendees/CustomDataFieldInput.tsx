@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { CONTACT_PHONE_MAX_LENGTH, sanitizeContactPhoneInput } from "@admitto/shared";
+import { composePhoneE164, splitPhoneForPicker } from "@admitto/shared/phone-countries";
 import { Input, type InputProps } from "@admitto/ui";
 import { DatePicker } from "../components/DatePicker.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { attendeeFieldAttrs } from "../utils/no-autofill.js";
-import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.js";
 import { answerHint, codePointLength, joinDateTime, longTextLimit, splitDateTime } from "./answerFormat.js";
 import { customDataFieldLabel, type CustomDataFieldDef } from "./customData.js";
 import "./custom-data-field-input.css";

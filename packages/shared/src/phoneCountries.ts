@@ -1,11 +1,13 @@
 import { getCountryDataList, getEmojiFlag } from "countries-list";
 
-/** Country calling codes for the internal staff phone number field (Edit user modal), derived
- * from `countries-list` (already a transitive dependency via ip-location-api, so this adds no
- * new package to the tree) - covers every ISO 3166-1 country/territory with its flag emoji and
- * dial code, not a small hand-picked subset. This field isn't validated or formatted beyond
- * "digits the operator typed", so a full phone-number-parsing library is still more than it
- * needs; this is reference data only. */
+/** Country calling codes for the phone fields that offer a country picker: the staff app's phone fields and the guest
+ * registration form's styled phone box (D-E9). Derived from `countries-list` (already in the tree through ip-location-api,
+ * so this adds no new package) - covers every ISO 3166-1 country/territory with its flag emoji and dial code, not a small
+ * hand-picked subset. A number is not validated or formatted beyond "digits the person typed", so a full phone-number-parsing
+ * library is still more than it needs; this is reference data only.
+ *
+ * Its own subpath (`@admitto/shared/phone-countries`), not part of the package root: the data is built when the module is
+ * loaded, and a browser bundle that only wants the root's small helpers should not pay for it. */
 export interface PhoneCountry {
   iso2: string;
   name: string;

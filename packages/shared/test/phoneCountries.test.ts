@@ -4,7 +4,7 @@ import {
   findPhoneCountryByDialCode,
   PHONE_COUNTRIES,
   splitPhoneForPicker,
-} from "../../src/utils/phoneCountries.js";
+} from "../src/phoneCountries.js";
 
 describe("PHONE_COUNTRIES", () => {
   it("covers well over a hand-picked subset of countries", () => {

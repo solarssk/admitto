@@ -57,7 +57,6 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
-import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.js";
 import {
   CONTACT_EMAIL_MAX_LENGTH,
   CONTACT_PHONE_MAX_LENGTH,
@@ -65,6 +64,7 @@ import {
   isValidContactPhone,
   sanitizeContactPhoneInput,
 } from "@admitto/shared";
+import { composePhoneE164, splitPhoneForPicker } from "@admitto/shared/phone-countries";
 import { isValidEmailFormat } from "../utils/email.js";
 import { mailtoHref, telHref } from "../utils/contactLinks.js";
 import { assertPresent } from "../utils/assert-present.js";
