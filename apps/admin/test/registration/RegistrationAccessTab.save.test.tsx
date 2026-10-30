@@ -106,6 +106,7 @@ describe("RegistrationAccessTab: what a save sends", () => {
     ["the company", "Ask for the company", { ask_company: true }],
     ["the department", "Ask for the department", { ask_department: true }],
     ["a person to bring", "Guests can bring one person", { max_companions: 1 }],
+    ["the styled boxes", "Styled date, time and phone boxes", { styled_form_controls: true }],
   ])("sends %s as its own setting", async (_label, name, patch) => {
     await renderLoaded();
     api.saveRegistrationSettings.mockResolvedValue(settings());
@@ -237,6 +238,7 @@ describe("RegistrationAccessTab: what a save sends", () => {
     expect(button.hasAttribute("disabled")).toBe(false);
     expect(document.activeElement).toBe(button);
     expect(toggle("Waiting list").disabled).toBe(true);
+    expect(toggle("Styled date, time and phone boxes").disabled).toBe(true);
     expect(radio("Automatic").hasAttribute("disabled")).toBe(true);
     expect(isOff(screen.getByRole("button", { name: "Reset" }))).toBe(true);
     fireEvent.click(button);
@@ -245,6 +247,7 @@ describe("RegistrationAccessTab: what a save sends", () => {
     await act(async () => answer.resolve(settings({ waitlist_enabled: false })));
     await waitFor(() => expect(button.getAttribute("aria-busy")).not.toBe("true"));
     expect(toggle("Waiting list").disabled).toBe(false);
+    expect(toggle("Styled date, time and phone boxes").disabled).toBe(false);
   });
 });
 

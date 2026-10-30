@@ -1629,6 +1629,8 @@ export interface RegistrationSettingsDto {
   ask_company: boolean;
   ask_department: boolean;
   consent_keys: string[];
+  /** The guest form draws its date, time and phone boxes in the product's style, not the browser's. */
+  styled_form_controls: boolean;
   password_set: boolean;
   guest_url: string | null;
   readiness: RegistrationReadinessCheckDto[];
@@ -1645,6 +1647,7 @@ export interface SaveRegistrationSettingsBody {
   ask_company?: boolean;
   ask_department?: boolean;
   consent_keys?: string[];
+  styled_form_controls?: boolean;
 }
 
 /** What the request list is asked for; a left-out filter selects every request. */

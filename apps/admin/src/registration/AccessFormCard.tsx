@@ -5,7 +5,7 @@ import { MultiSelect } from "../components/MultiSelect.js";
 import { consentOptions, type AccessDraft } from "./accessSettings.js";
 import "./registration-access.css";
 
-type ToggleKey = "waitlist_enabled" | "verify_email" | "ask_company" | "ask_department" | "companion";
+type ToggleKey = "waitlist_enabled" | "verify_email" | "ask_company" | "ask_department" | "companion" | "styled_form_controls";
 
 const TOGGLES: ReadonlyArray<{ key: ToggleKey; title: string; text: string }> = [
   {
@@ -21,6 +21,11 @@ const TOGGLES: ReadonlyArray<{ key: ToggleKey; title: string; text: string }> = 
   { key: "ask_company", title: "Ask for the company", text: "Adds a company question to the form." },
   { key: "ask_department", title: "Ask for the department", text: "Adds a department question to the form." },
   { key: "companion", title: "Guests can bring one person", text: "A guest can add one more person. That person takes a place too." },
+  {
+    key: "styled_form_controls",
+    title: "Styled date, time and phone boxes",
+    text: "The form shows its own boxes for the date, the time and the phone number (with a list of countries) instead of the ones in the guest's browser. Turned off, guests get their browser's boxes.",
+  },
 ];
 
 /**

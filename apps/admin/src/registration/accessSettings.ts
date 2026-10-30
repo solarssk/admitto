@@ -18,6 +18,7 @@ export interface AccessDraft {
   ask_department: boolean;
   companion: boolean;
   consent_keys: string[];
+  styled_form_controls: boolean;
 }
 
 /** The way in an event has chosen, when it is exactly one that this screen offers. Any other state is no choice, as it is to the server. */
@@ -37,6 +38,7 @@ export function draftFromSettings(settings: RegistrationSettingsDto): AccessDraf
     ask_department: settings.ask_department,
     companion: settings.max_companions > 0,
     consent_keys: [...settings.consent_keys],
+    styled_form_controls: settings.styled_form_controls,
   };
 }
 
@@ -60,6 +62,7 @@ export function settingsPatch(draft: AccessDraft, base: AccessDraft): SaveRegist
   if (draft.ask_department !== base.ask_department) patch.ask_department = draft.ask_department;
   if (draft.companion !== base.companion) patch.max_companions = draft.companion ? 1 : 0;
   if (!sameKeys(draft.consent_keys, base.consent_keys)) patch.consent_keys = draft.consent_keys;
+  if (draft.styled_form_controls !== base.styled_form_controls) patch.styled_form_controls = draft.styled_form_controls;
   return patch;
 }
 
