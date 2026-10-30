@@ -20,11 +20,12 @@ export function RegistrationFieldsTab() {
 }
 
 /**
- * The questions guests answer: the event's custom attendee fields, the same ones as on Requirements (one read of the same
- * list, one card, one editor), with the "On the form" switch and the arrows that order them. It follows the loading standard
- * of a card with a list (`useListLoad` and `useCardLoad`): a placeholder in the card's own shape for the first read, an error
- * with a busy Retry that stays on screen until the answer is in, and the card kept, blocked and dimmed, while the read that
- * follows an add, an edit or a delete runs. What a switch or an arrow has just saved is shown at once, from the server's answer.
+ * The questions guests answer: the event's custom attendee fields, the one place to add, edit, order and delete them (the
+ * Requirements page reads the same list for the hints of its items), with the "On the form" switch and the arrows that order
+ * them. It follows the loading standard of a card with a list (`useListLoad` and `useCardLoad`): a placeholder in the card's
+ * own shape for the first read, an error with a busy Retry that stays on screen until the answer is in, and the card kept,
+ * blocked and dimmed, while the read that follows an add, an edit or a delete runs. What a switch or an arrow has just saved
+ * is shown at once, from the server's answer.
  */
 function RegistrationFieldsBody({ eventId }: Readonly<{ eventId: string }>) {
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -67,7 +68,6 @@ function RegistrationFieldsBody({ eventId }: Readonly<{ eventId: string }>) {
           eventId={eventId}
           event={event}
           fields={list.data}
-          placement="registration"
           // A field that was added, changed or deleted is somewhere in the list that the tab cannot tell, so a read that fails
           // replaces the card with the error (it may be wrong); the card stays, blocked and dimmed, while it runs.
           onChanged={() => void list.reload({ keepRowsOnFailure: false })}

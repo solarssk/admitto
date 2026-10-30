@@ -242,7 +242,7 @@ export interface AttendeesTableProps {
   onRetryTicketTypes?: () => void;
   /** The ticket-type Retry is working (its own flag, see useRetry). */
   ticketTypesRetrying?: boolean;
-  /** One filter row per event-defined custom field (Requirements page), rendered after the four
+  /** One filter row per event-defined custom field (Registration page, Fields tab), rendered after the four
    * fixed filters - `select`/`boolean` as a MultiSelect over that field's own options, `text` as
    * a contains-text input. Empty array renders no divider/rows at all. */
   customFields?: EventCustomFieldDto[];

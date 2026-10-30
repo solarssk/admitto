@@ -17,27 +17,12 @@ import { moveKey, useFieldFormControls, type FieldsChange, type MoveDirection } 
 import "../attendees/attendees.css";
 import "./requirements.css";
 
-/** Where the card is shown: on Requirements, as it always was, or on the Registration page, where each field also has an
- * "On the form" switch and the arrows that order the fields, and a field that is added starts on the form. */
-export type EventCustomFieldsPlacement = "requirements" | "registration";
-
-const CARD_TEXT: Record<
-  EventCustomFieldsPlacement,
-  { readonly title: string; readonly hint: string; readonly emptyTitle: string; readonly emptyText: string }
-> = {
-  requirements: {
-    title: "Custom attendee fields",
-    hint: "Also used in the attendee form, CSV import, and exports. A field marked Companion is asked about the person a guest brings, so it is not part of those. Fields used as item hints can't be deleted until removed from the item.",
-    emptyTitle: "No custom fields yet",
-    emptyText: "Add one to collect extra attendee data, like dietary requirements or shirt size.",
-  },
-  registration: {
-    title: "Attendee fields",
-    hint: "Guests answer the fields that are on the form. A field marked Companion is asked about the person a guest brings, when the event lets a guest bring someone. The other fields are also used in the attendee form, CSV import, and exports. Fields used as item hints can't be deleted until removed from the item.",
-    emptyTitle: "No attendee fields yet",
-    emptyText: "Add a field to ask guests a question on the registration form, like dietary requirements or shirt size.",
-  },
-};
+const CARD_TEXT = {
+  title: "Attendee fields",
+  hint: "Guests answer the fields that are on the form. A field marked Companion is asked about the person a guest brings, when the event lets a guest bring someone. The other fields are also used in the attendee form, CSV import, and exports. Fields used as item hints can't be deleted until removed from the item.",
+  emptyTitle: "No attendee fields yet",
+  emptyText: "Add a field to ask guests a question on the registration form, like dietary requirements or shirt size.",
+} as const;
 
 export interface EventCustomFieldsCardProps {
   readonly eventId: string;
@@ -45,13 +30,12 @@ export interface EventCustomFieldsCardProps {
   readonly fields: EventCustomFieldDto[];
   /** A field was added, changed or deleted, or the list is out of date: the host reads it again. */
   readonly onChanged: () => void;
-  readonly placement?: EventCustomFieldsPlacement;
-  /** Registration only: shows what the server answered to a switch or an arrow on the list the host has now, at once. Left
-   * out, the host reads the list again (`onChanged`) instead. */
+  /** Shows what the server answered to a switch or an arrow on the list the host has now, at once. Left out, the host reads
+   * the list again (`onChanged`) instead. */
   readonly onUpdated?: (change: FieldsChange) => void;
 }
 
-/** What a row of the Registration page's card does besides what every row does. */
+/** What a row does besides showing its field: the "On the form" switch and the arrows that order the fields. */
 interface RowFormControls {
   readonly switchBusy: boolean;
   readonly first: boolean;
@@ -141,8 +125,7 @@ function CustomFieldRow({
   readonly fields: readonly EventCustomFieldDto[];
   readonly event: EventDto;
   readonly duplicateLabels: ReadonlySet<string>;
-  /** Only on the Registration page. */
-  readonly formControls: RowFormControls | null;
+  readonly formControls: RowFormControls;
   readonly onEdit: () => void;
   readonly onDelete: () => void;
 }) {
@@ -186,25 +169,21 @@ function CustomFieldRow({
         ) : null}
       </td>
       <td className="requirements-item-status-col">{field.required ? "Yes" : "No"}</td>
-      {formControls ? (
-        <OnFormCell field={field} event={event} name={name} busy={formControls.switchBusy} onToggle={formControls.onToggleOnForm} />
-      ) : null}
+      <OnFormCell field={field} event={event} name={name} busy={formControls.switchBusy} onToggle={formControls.onToggleOnForm} />
       <td className="requirements-item-actions">
         <div className="requirements-item-actions__wrap">
-          {formControls
-            ? (["up", "down"] as const).map((direction) => (
-                <MoveButton
-                  key={direction}
-                  field={field}
-                  event={event}
-                  name={name}
-                  direction={direction}
-                  atEnd={direction === "up" ? formControls.first : formControls.last}
-                  moving={formControls.moving}
-                  onMove={formControls.onMove}
-                />
-              ))
-            : null}
+          {(["up", "down"] as const).map((direction) => (
+            <MoveButton
+              key={direction}
+              field={field}
+              event={event}
+              name={name}
+              direction={direction}
+              atEnd={direction === "up" ? formControls.first : formControls.last}
+              moving={formControls.moving}
+              onMove={formControls.onMove}
+            />
+          ))}
           <ArchivedGuard event={event} reasonId={`edit-custom-field-reason-${field.id}`}>
             {(guard) => (
               <IconButton
@@ -235,9 +214,9 @@ function CustomFieldRow({
 
 /** The card that manages the event's custom attendee data field registry (dietary, shirt size, ...): the single source of
  * truth consumed by attendee edit/create, import, export, the registration form, and referenced by items as operator hints
- * (see EventItemDrawer). It is on Requirements and, with the form controls, on the Registration page: the same fields,
- * the same editor. */
-export function EventCustomFieldsCard({ eventId, event, fields, onChanged, placement = "requirements", onUpdated }: EventCustomFieldsCardProps) {
+ * (see EventItemDrawer). It is on the Fields tab of the Registration page, with an "On the form" switch and the arrows that
+ * order the fields, and a field that is added starts on the form. */
+export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpdated }: EventCustomFieldsCardProps) {
   const { addToast } = useToast();
   const sectionRef = useRef<HTMLElement>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -255,8 +234,6 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
     if (suggestFocusBack > 0) suggestButtonRef.current?.focus();
   }, [suggestFocusBack]);
 
-  const onRegistrationPage = placement === "registration";
-  const text = CARD_TEXT[placement];
   const deleteBlocked = deleteTarget ? deleteBlockedMessage(deleteTarget, fields) : "";
   const showTable = fields.length > 0;
 
@@ -287,7 +264,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
       onChanged();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "field_in_use")) {
-        addToast("This field is used as a hint on an item. Remove it there first.", "warning");
+        addToast(operatorApiErrorMessage(err, "Failed to delete field."), "warning");
       } else {
         addToast(operatorApiErrorMessage(err, "Failed to delete field."), "error");
       }
@@ -302,8 +279,8 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
       return (
         <EmptyState
           icon={<i className="ti ti-forms" aria-hidden="true" />}
-          title={text.emptyTitle}
-          description={text.emptyText}
+          title={CARD_TEXT.emptyTitle}
+          description={CARD_TEXT.emptyText}
         />
       );
     }
@@ -316,7 +293,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
               <th>Field</th>
               <th className="requirements-item-desc-col">Description</th>
               <th className="requirements-item-status-col">Required</th>
-              {onRegistrationPage ? <th className="requirements-item-form-col">On the form</th> : null}
+              <th className="requirements-item-form-col">On the form</th>
               <th className="requirements-item-actions" aria-label="Actions" />
             </tr>
           </thead>
@@ -328,19 +305,15 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
                 fields={fields}
                 event={event}
                 duplicateLabels={duplicateLabels}
-                formControls={
-                  onRegistrationPage
-                    ? {
-                        // Also while a move is on its way: a switch made then is ignored.
-                        switchBusy: form.switching.has(field.id) || form.moving !== null,
-                        first: index === 0,
-                        last: index === fields.length - 1,
-                        moving: form.moving,
-                        onToggleOnForm: () => void form.toggleOnForm(field),
-                        onMove: (direction) => void form.move(index, direction),
-                      }
-                    : null
-                }
+                formControls={{
+                  // Also while a move is on its way: a switch made then is ignored.
+                  switchBusy: form.switching.has(field.id) || form.moving !== null,
+                  first: index === 0,
+                  last: index === fields.length - 1,
+                  moving: form.moving,
+                  onToggleOnForm: () => void form.toggleOnForm(field),
+                  onMove: (direction) => void form.move(index, direction),
+                }}
                 onEdit={() => setEditField(field)}
                 onDelete={() => setDeleteTarget(field)}
               />
@@ -352,29 +325,27 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
   }
 
   return (
-    <section ref={sectionRef} className={`requirements-section${onRegistrationPage ? " requirements-section--registration" : ""}`}>
+    <section ref={sectionRef} className="requirements-section requirements-section--registration">
       <Card
         /* Table bleeds edge-to-edge; the empty state keeps the normal card padding (Import history). */
         padded={!showTable}
-        title={<HintLabel hint={text.hint}>{text.title}</HintLabel>}
+        title={<HintLabel hint={CARD_TEXT.hint}>{CARD_TEXT.title}</HintLabel>}
         actions={
           <>
-            {onRegistrationPage ? (
-              <ArchivedGuard event={event} reasonId="add-suggested-questions-reason">
-                {(guard) => (
-                  <Button
-                    ref={suggestButtonRef}
-                    variant="secondary"
-                    size="sm"
-                    icon={<i className="ti ti-wand" />}
-                    {...guard}
-                    onClick={() => setSuggestOpen(true)}
-                  >
-                    Add suggested questions
-                  </Button>
-                )}
-              </ArchivedGuard>
-            ) : null}
+            <ArchivedGuard event={event} reasonId="add-suggested-questions-reason">
+              {(guard) => (
+                <Button
+                  ref={suggestButtonRef}
+                  variant="secondary"
+                  size="sm"
+                  icon={<i className="ti ti-wand" />}
+                  {...guard}
+                  onClick={() => setSuggestOpen(true)}
+                >
+                  Add suggested questions
+                </Button>
+              )}
+            </ArchivedGuard>
             <ArchivedGuard event={event} reasonId="add-custom-field-reason">
               {(guard) => (
                 <Button
@@ -399,7 +370,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, place
           eventId={eventId}
           field={editField}
           fields={fields}
-          showOnForm={onRegistrationPage}
+          showOnForm
           onClose={closeModal}
           onSaved={() => {
             closeModal();

@@ -49,6 +49,17 @@
   line-height: var(--lh-normal);
 }
 
+/* The same line when it sits on the page itself, not in a card (the note under Event items): there --text-muted is 4.34:1 on the page
+   background, below the 4.5:1 that text of this size needs, so it takes --text-secondary, and its link is underlined so that it does not
+   rest on its colour alone. */
+.requirements-section-hint--page {
+  color: var(--text-secondary);
+}
+
+.requirements-section-hint--page a {
+  text-decoration: underline;
+}
+
 .requirements-config-summary {
   display: inline-block;
   font-size: var(--fs-sm);

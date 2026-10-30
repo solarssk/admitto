@@ -211,6 +211,8 @@ describe("CustomFieldsReportsTab", () => {
     renderWithToast(<CustomFieldsReportsTab eventId="evt-1" isActive />);
 
     expect(await screen.findByText("No custom fields yet")).toBeTruthy();
+    // It says where the fields are added: the Fields tab of the Registration page, not the Requirements page.
+    expect(screen.getByText("Add custom fields on the Fields tab of the Registration page to see a chart for each one here.")).toBeTruthy();
   });
 
   it("renders a fill-rate gauge for a text field, and a category donut + breakdown list (with a trailing not-answered bucket) for select/boolean fields", async () => {

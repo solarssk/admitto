@@ -73,6 +73,16 @@ describe("operatorApiErrorMessage", () => {
     );
   });
 
+  it("says where to look when a field cannot be deleted because an item shows it: the item on the Requirements page, and what to uncheck", () => {
+    const err = new ApiError(409, "field_in_use", "field_in_use");
+    const message = operatorApiErrorMessage(err, "Failed to delete field.");
+    expect(message).toBe(
+      "An item on the Requirements page still shows this field at check-in. Open the item and uncheck the field under Attendee data field first.",
+    );
+    // The place is named by the page of the items, and the old pointer to "there" (a card that is not on that page) is gone.
+    expect(message).not.toMatch(/Remove it there/);
+  });
+
   it("explains the bulk-send rate limit", () => {
     expect(
       operatorApiErrorMessage(new ApiError(429, "bulk_send_rate_limited", "bulk_send_rate_limited"), "Send failed."),

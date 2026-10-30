@@ -280,38 +280,27 @@ describe("RegistrationFieldsTab: what the read answers", () => {
     expect(screen.getByRole("button", { name: "Add field" })).toBeTruthy();
   });
 
-  it("shows the same fields as the Requirements page, read the same way", async () => {
-    const answer = [dietary, shirt, parking];
-    fetchEventCustomFields.mockResolvedValue(answer);
-    const requirements = render(
+  it("is where the note on the Requirements page leads: the Fields tab of the same event, with the card and its fields", async () => {
+    fetchEventCustomFields.mockResolvedValue([dietary, shirt, parking]);
+    render(
       <ToastProvider>
         <MemoryRouter initialEntries={["/admin/events/evt-1/requirements"]}>
           <Routes>
             <Route element={<EventFrame />}>
               <Route path="/admin/events/:eventId/requirements" element={<RequirementsPage />} />
+              <Route path="/admin/events/:eventId/registration" element={<RegistrationPage />} />
             </Route>
           </Routes>
         </MemoryRouter>
       </ToastProvider>,
     );
-    await screen.findByText("Custom attendee fields");
-    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading requirements" })).toBeNull());
-    const onRequirements = within(screen.getByText("Custom attendee fields").closest("section")!)
-      .getAllByRole("row")
-      .slice(1)
-      .map((row) => row.querySelector(".requirements-item-name")?.textContent);
-    const requirementsCall = fetchEventCustomFields.mock.calls[0] as [string, AbortSignal];
-    requirements.unmount();
-    fetchEventCustomFields.mockClear();
 
-    renderTab();
+    fireEvent.click(await screen.findByRole("link", { name: "Fields tab of the Registration page" }));
+
+    await screen.findByRole("tabpanel", { name: "Fields" });
     await cardLoaded();
-    const registrationCall = fetchEventCustomFields.mock.calls[0] as [string, AbortSignal];
-
-    expect(rowNames()).toEqual(onRequirements);
+    expect(within(fieldsPanel()).getByText("Attendee fields")).toBeTruthy();
     expect(rowNames()).toEqual(["Dietary requirements", "Shirt size", "Needs parking"]);
-    expect(registrationCall[0]).toBe(requirementsCall[0]);
-    expect(registrationCall[1]).toBeInstanceOf(AbortSignal);
   });
 });
 

@@ -260,9 +260,21 @@ describe("EventItemDrawer", () => {
     expect(screen.queryByText(/Failed to delete item/)).toBeNull();
   });
 
-  it("shows a hint instead of a picker when the event has no custom fields yet", () => {
+  it("shows a hint instead of a picker when the event has no custom fields yet, and says where to add them", () => {
     renderDrawer(giftbagItem, []);
-    expect(screen.getByText(/No custom fields defined for this event yet/)).toBeTruthy();
+    const notice = screen.getByText(/No custom fields defined for this event yet/);
+    expect(notice.textContent).toContain(
+      'Add fields in the "Attendee fields" card on the Fields tab of the Registration page, then link them here.',
+    );
+    expect(notice.textContent).not.toMatch(/above/);
+  });
+
+  it("says where the fields themselves are managed: the Attendee fields card of the Registration page, not a card on this page", () => {
+    renderDrawer(giftbagItem, [shirtSizeField]);
+    const hint = screen.getByText(/Show one or more custom attendee fields next to this item at check-in/);
+    expect(hint.textContent).toContain('Manage the fields themselves in the "Attendee fields" card on the Fields tab of the Registration page.');
+    expect(hint.textContent).not.toMatch(/Custom attendee fields" card|above/);
+    expect(screen.getByRole("checkbox", { name: "Shirt size" })).toBeTruthy();
   });
 
   it("disambiguates two custom fields that share a display label", () => {
