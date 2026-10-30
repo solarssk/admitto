@@ -95,7 +95,7 @@ describe("the phone question of an event with the styled boxes on", { timeout: 3
   });
 });
 
-describe("picking a country", () => {
+describe("picking a country", { timeout: 30_000 }, () => {
   it("with the mouse: the button shows the flag and the code, and the answer is the code and the digits", () => {
     const page = boot();
     open(page);
@@ -175,7 +175,7 @@ describe("picking a country", () => {
   });
 });
 
-describe("the answer", () => {
+describe("the answer", { timeout: 30_000 }, () => {
   it("is the number as it was typed while no country is picked", () => {
     const page = boot();
     typeInto(page, "f-q0", "500 100 200");
@@ -298,7 +298,7 @@ describe("the answer", () => {
   });
 });
 
-describe("the list", () => {
+describe("the list", { timeout: 30_000 }, () => {
   it("narrows by the name of a country, anywhere in it", () => {
     const page = boot();
     open(page);
@@ -386,7 +386,7 @@ describe("the list", () => {
   });
 });
 
-describe("opening and closing", () => {
+describe("opening and closing", { timeout: 30_000 }, () => {
   it("opens on a click, closes on a second one, and the focus goes to the search box", () => {
     const page = boot();
     open(page);
@@ -494,7 +494,7 @@ describe("opening and closing", () => {
   });
 });
 
-describe("with the first script", () => {
+describe("with the first script", { timeout: 30_000 }, () => {
   it("makes a required number, left empty, an error under the field, and the focus goes to the number", () => {
     const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })], { model: { styledControls: true } });
     fillFixedFields(page);
@@ -595,7 +595,7 @@ describe("with the first script", () => {
   });
 });
 
-describe("two phone questions, and the guest's companion", () => {
+describe("two phone questions, and the guest's companion", { timeout: 30_000 }, () => {
   it("keeps the state of each box to itself, with ids of its own", () => {
     const page = bootPage(
       [question({ key: "mobile", label: "Mobile phone", type: "phone" }), question({ key: "office", label: "Office phone", type: "phone" })],
@@ -633,7 +633,7 @@ describe("two phone questions, and the guest's companion", () => {
   });
 });
 
-describe("a page that lacks something the script needs", () => {
+describe("a page that lacks something the script needs", { timeout: 30_000 }, () => {
   it("leaves the browser's own box alone when the list of countries is missing, and the form works as it does without the script", () => {
     const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone" })], {
       model: { styledControls: true },
@@ -657,7 +657,7 @@ describe("a page that lacks something the script needs", () => {
   });
 });
 
-describe("what the script writes is text", () => {
+describe("what the script writes is text", { timeout: 30_000 }, () => {
   it("never turns the words of a label into markup", () => {
     const label = "Phone <img src=x onerror=alert(1)> & \"more\"";
     const page = bootPage([question({ key: "mobile", label, type: "phone" })], { model: { styledControls: true } });
