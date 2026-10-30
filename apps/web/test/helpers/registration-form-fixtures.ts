@@ -35,6 +35,7 @@ export function formModel(overrides: Partial<RegistrationFormModel> = {}): Regis
     contact: { name: "Anna Kowalska", email: "events@northwind.example" },
     turnstileSiteKey: "1x00000000000000000000AA",
     needsPassword: false,
+    styledControls: false,
     ...overrides,
   };
 }

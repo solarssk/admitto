@@ -2,7 +2,6 @@ import { JSDOM } from "jsdom";
 import { vi } from "vitest";
 import { renderRegistrationFormPage } from "../../src/registration/form-page.js";
 import type { FormQuestion, RegistrationFormModel } from "../../src/registration/form-model.js";
-import { REGISTRATION_FORM_SCRIPT } from "../../src/registration/form-script.js";
 import { formModel, type Dom } from "./registration-form-fixtures.js";
 
 export const PAGE_URL = "https://tickets.example.com/r/northwind-summit";
@@ -25,7 +24,8 @@ function stubFetch() {
  * its real script run, a fetch that records, and a fake Turnstile. `edit` can change the page's HTML first, to build a
  * page the server would not write (a condition that names no question, say). `before` runs on the document before the
  * script does, the way a browser restores what a guest had ticked. `model` changes the form's model, to ask for the password
- * of the event, say.
+ * of the event, say, or to switch the styled boxes on. The scripts that run are the ones the page carries, in its order: the
+ * first alone, or the first and then the second of an event with the styled boxes.
  */
 export function bootPage(
   questions: readonly FormQuestion[],
@@ -38,7 +38,7 @@ export function bootPage(
   win.fetch = fetchMock;
   win.turnstile = { reset: vi.fn() };
   options.before?.(win.document);
-  win.eval(REGISTRATION_FORM_SCRIPT);
+  for (const script of win.document.querySelectorAll("script[nonce]")) win.eval(script.textContent ?? "");
   return { win, doc: win.document as Dom, fetchMock };
 }
 

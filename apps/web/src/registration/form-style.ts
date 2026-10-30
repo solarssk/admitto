@@ -132,6 +132,30 @@ export const REGISTRATION_PAGE_CSS = `
 }
 `;
 
+/**
+ * What the styled boxes add (D-E9), only to the page of an event that switched them on: the page of every other event does not
+ * carry a byte of it. The phone box is the country button beside the number, laid out as the staff app lays out its phone fields
+ * (the phone row of `apps/admin/src/attendees/custom-data-field-input.css`: the button keeps 8.5rem and the number takes the rest).
+ * The button is the product's searchable-select trigger and the list under it its panel, so they come from the product's own rules
+ * (above); these rules place them. Every colour is a token.
+ */
+export const REGISTRATION_STYLED_CONTROLS_CSS = `
+.reg-phone { display: flex; gap: var(--space-2); align-items: flex-start; }
+.reg-phone > .at-control, .reg-phone > .at-inputgroup { flex: 1; min-width: 0; }
+.reg-phone__code { position: relative; flex: 0 0 8.5rem; min-width: 0; }
+.reg-phone__flag { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+.reg-phone__dial { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reg-phone__dial--empty { color: var(--text-muted); }
+/* The list opens under the button over what follows, wider than the button (a country's name needs the room) and never wider than the screen. */
+.reg-phone__panel { position: absolute; left: 0; top: calc(100% + 4px); width: 17.5rem; max-width: calc(100vw - 2.25rem); margin: 0; }
+.reg-phone__option[aria-selected="true"] { background: var(--surface-hover, var(--surface-sunken)); }
+.reg-phone__option[aria-current="true"] .searchable-select__name { font-weight: var(--fw-semibold); }
+.reg-phone__option-code { flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+@media (pointer: coarse) {
+  .reg-phone .searchable-select__search { font-size: 16px; }
+}
+`;
+
 /** WCAG 2.x relative luminance of `#rrggbb`. */
 function relativeLuminance(hex: string): number {
   const value = Number.parseInt(hex.slice(1), 16);
@@ -188,9 +212,16 @@ export function inkOnPrimaryRule(theme?: BrandingTheme | null): string {
   return `:root { --text-on-primary: ${ink}; --primary-hover: ${towardWhite(primary, 0.12)}; --primary-active: ${towardWhite(primary, 0.22)}; }`;
 }
 
-/** The whole stylesheet of a guest page, for the instance branding `theme`. */
-export function buildRegistrationPageStyles(theme?: BrandingTheme | null): string {
-  return [GUEST_PAGE_PRODUCT_CSS, buildTicketPageStyles(theme), inkOnPrimaryRule(theme), REGISTRATION_PAGE_CSS]
+/** The whole stylesheet of a guest page, for the instance branding `theme`. `styledControls`: the page of an event that
+ * switched the styled boxes on, which is the only one that has their rules. */
+export function buildRegistrationPageStyles(theme?: BrandingTheme | null, styledControls = false): string {
+  return [
+    GUEST_PAGE_PRODUCT_CSS,
+    buildTicketPageStyles(theme),
+    inkOnPrimaryRule(theme),
+    REGISTRATION_PAGE_CSS,
+    styledControls ? REGISTRATION_STYLED_CONTROLS_CSS : "",
+  ]
     .filter((part) => part !== "")
     .join("\n");
 }

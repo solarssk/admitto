@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
-import { REGISTRATION_FORM_SCRIPT } from "../../src/registration/form-script.js";
 import { closedModel, formModel, panelModel, question, requiredNewKinds, type Dom } from "../helpers/registration-form-fixtures.js";
 
 // axe-core checks the markup of the page the way an audit tool does: labels, ARIA attributes and
@@ -25,12 +24,13 @@ function open(html: string) {
   return dom.window;
 }
 
-/** The page with its own script running, a fetch that answers `status` and `body`, and a fake widget. */
+/** The page with its own scripts running (the first, and the second of an event with the styled boxes), a fetch that answers
+ * `status` and `body`, and a fake widget. */
 function running(html: string, answer: { status: number; body: unknown } = { status: 200, body: { ok: true } }) {
   const window = open(html);
   window.fetch = vi.fn(async () => ({ status: answer.status, json: async () => answer.body }));
   window.turnstile = { reset: vi.fn() };
-  window.eval(REGISTRATION_FORM_SCRIPT);
+  for (const script of window.document.querySelectorAll("script[nonce]")) window.eval(script.textContent ?? "");
   return window;
 }
 
@@ -296,6 +296,55 @@ describe("axe-core finds nothing to report on the part of the form for a guest's
     (window.document.getElementById("f-c1") as Dom).value = "Vegan";
     window.document.getElementById("reg-submit").click();
     await vi.waitFor(() => expect(window.document.querySelector("[data-field='companions']").classList.contains("has-error")).toBe(true), { timeout: 4000 });
+    expect(await violations(window)).toEqual([]);
+  });
+});
+
+describe("axe-core finds nothing to report on the styled phone box of an event that switched the styled boxes on", () => {
+  const phones = [
+    question({ key: "mobile", label: "Mobile phone", type: "phone", required: true, icon: "phone", rules: { example: "+1 555 0100" } }),
+    question({ key: "office", label: "Office phone", type: "phone" }),
+  ];
+  const styled = (overrides = {}) => renderRegistrationFormPage(formModel({ styledControls: true, questions: phones, ...overrides }), { nonce: NONCE });
+  const listOf = (window: ReturnType<typeof open>, id: string): Dom => window.document.getElementById(id);
+
+  it("in the page as the server writes it, before the script runs", async () => {
+    expect(await violations(open(styled()))).toEqual([]);
+  });
+
+  it("with the script running and the lists closed", async () => {
+    expect(await violations(running(styled()))).toEqual([]);
+  });
+
+  it("with the list of countries open, its rows built and one of them active", async () => {
+    const window = running(styled());
+    listOf(window, "f-q0-country").click();
+    const search = listOf(window, "f-q0-search");
+    search.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    expect(search.getAttribute("aria-activedescendant")).toBe("f-q0-opt-AF");
+    expect(window.document.querySelectorAll("#f-q0-list [role=option]").length).toBeGreaterThan(200);
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with a country picked and the number box marked as an error", async () => {
+    const window = running(styled());
+    listOf(window, "f-q0-country").click();
+    listOf(window, "f-q0-opt-PL").click();
+    window.document.getElementById("reg-submit").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(listOf(window, "f-q0").getAttribute("aria-invalid")).toBe("true");
+    expect(listOf(window, "f-q0-country").getAttribute("aria-label")).toBe("Mobile phone country code, Poland +48");
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("in the companion's panel", async () => {
+    const companion = { max: 1, questions: [question({ key: "guest_phone", label: "Guest phone", type: "phone" })] };
+    const window = running(styled({ companion }));
+    const toggle = listOf(window, "f-companion");
+    toggle.checked = true;
+    toggle.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    listOf(window, "f-c0-country").click();
     expect(await violations(window)).toEqual([]);
   });
 });

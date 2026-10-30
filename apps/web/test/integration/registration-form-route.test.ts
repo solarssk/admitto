@@ -8,6 +8,7 @@ import { setEnabledAccessMethods } from "../../src/registration/access-methods.j
 import { patchTurnstileSettings, TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { renderRegistrationNotFound } from "../../src/registration-page-security.js";
+import { REGISTRATION_STYLED_CONTROLS_SCRIPT } from "../../src/registration/form-controls-script.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { documentOf, type Dom } from "../helpers/registration-form-fixtures.js";
 import { directive, headersOf } from "../helpers/response-headers.js";
@@ -677,5 +678,89 @@ describe("limits and failures", () => {
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret-host");
     expect(res.headers.getSetCookie()).toEqual([]);
     consoleError.mockRestore();
+  });
+});
+
+describe("the styled boxes of the guest form (D-E9)", { timeout: 30_000 }, () => {
+  async function addPhoneEvent(slug: string, styled: boolean): Promise<string> {
+    const id = await addEvent(slug, { settings: { styled_form_controls: styled } });
+    await addField(id, { source_field: "mobile", label: "Mobile phone", type: "phone" });
+    return id;
+  }
+
+  const headersWithoutNonce = (res: Response) => {
+    const headers = headersOf(res);
+    return {
+      policy: headers["content-security-policy"]?.replace(/'nonce-[^']+'/, "'nonce-N'"),
+      rest: Object.fromEntries(Object.entries(headers).filter(([name]) => name !== "content-security-policy" && name !== "content-length")),
+    };
+  };
+
+  it("serves the plain form of an event that has not switched them on: one script of ours, no marker, no list of countries", async () => {
+    await addPhoneEvent("reg113g-plain", false);
+
+    const res = await get("/r/reg113g-plain");
+
+    expect(res.status).toBe(200);
+    const doc = documentOf(await res.text());
+    expect(doc.querySelectorAll("script:not([src])[nonce]")).toHaveLength(1);
+    expect(doc.querySelector("[data-controls], [data-styled], template, #reg-phone-countries")).toBeNull();
+  });
+
+  it("serves the marked form of an event that has: the second script under the nonce of the response, the kit and the countries", async () => {
+    await addPhoneEvent("reg113g-styled", true);
+
+    const res = await get("/r/reg113g-styled");
+
+    expect(res.status).toBe(200);
+    const nonce = /script-src 'nonce-([^']+)'/.exec(res.headers.get("content-security-policy") ?? "")?.[1];
+    const doc = documentOf(await res.text());
+    expect(doc.getElementById("reg-form").getAttribute("data-controls")).toBe("styled");
+    const scripts = [...doc.querySelectorAll("script:not([src])[nonce]")] as Dom[];
+    expect(scripts).toHaveLength(2);
+    expect(scripts.map((script) => script.getAttribute("nonce"))).toEqual([nonce, nonce]);
+    expect(scripts[1].textContent).toBe(REGISTRATION_STYLED_CONTROLS_SCRIPT);
+    expect(doc.querySelector('[data-custom="mobile"]').getAttribute("data-styled")).toBe("phone");
+    expect(doc.getElementById("reg-phone-kit")).not.toBeNull();
+    expect(doc.getElementById("reg-phone-countries").children.length).toBeGreaterThan(200);
+  });
+
+  it("sends the same headers as the plain form: the second script and the list need no new source, and no cookie", async () => {
+    await addPhoneEvent("reg113g-headers-plain", false);
+    await addPhoneEvent("reg113g-headers-styled", true);
+
+    const [plain, styled] = [await get("/r/reg113g-headers-plain"), await get("/r/reg113g-headers-styled")];
+
+    expect([plain.status, styled.status]).toEqual([200, 200]);
+    expect(headersWithoutNonce(styled)).toEqual(headersWithoutNonce(plain));
+    expect(directive(styled.headers.get("content-security-policy") ?? "", "script-src")).toMatch(/^script-src 'nonce-[^']+' https:\/\/challenges\.cloudflare\.com$/);
+    expect(directive(styled.headers.get("content-security-policy") ?? "", "style-src")).toBe("style-src 'unsafe-inline'");
+    expect(styled.headers.getSetCookie()).toEqual([]);
+  });
+
+  it("follows the setting at once: switched off again, the form is the plain one", async () => {
+    const id = await addPhoneEvent("reg113g-toggle", true);
+    expect((await (await get("/r/reg113g-toggle")).text()).includes("data-controls")).toBe(true);
+
+    await prisma.eventRegistrationSettings.update({ where: { event_id: id }, data: { styled_form_controls: false } });
+
+    expect((await (await get("/r/reg113g-toggle")).text()).includes("data-controls")).toBe(false);
+  });
+
+  it("does not change the one 404 or the closed page: an event that is off or over answers as it did", async () => {
+    await addEvent("reg113g-off", { settings: { mode: null, styled_form_controls: true } });
+    await addEvent("reg113g-over", { date: PAST, settings: { styled_form_controls: true } });
+
+    const off = await get("/r/reg113g-off");
+    const over = await get("/r/reg113g-over");
+    const unknown = await get("/r/reg113g-nobody");
+
+    expect(off.status).toBe(404);
+    expect(await off.text()).toBe(await unknown.text());
+    expect(over.status).toBe(200);
+    const closed = await over.text();
+    expect(closed).toContain("Registration is closed");
+    expect(closed.includes("data-controls")).toBe(false);
+    expect(documentOf(closed).querySelectorAll("script")).toHaveLength(0);
   });
 });
