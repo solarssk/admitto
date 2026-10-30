@@ -87,7 +87,7 @@ The rules on the form are hints. The form does not stop a guest from sending bec
 
 ## Styled boxes
 
-An Administrator can switch **Styled date, time and phone boxes** on for the event, on the **Access** tab. See [Registration Access](Registration-Access#styled-boxes). With it on, a phone question shows the button of a country beside the number. The guest opens the list, searches by the name or the code of a country, and picks one with the mouse, a tap or the keys. The answer is the code and the digits of the number.
+An Administrator can switch **Styled form boxes** on for the event, on the **Access** tab. See [Registration Access](Registration-Access#styled-boxes). With it on, a phone question shows the button of a country beside the number. The guest opens the list, searches by the name or the code of a country, and picks one with the mouse, a tap or the keys. The answer is the code and the digits of the number.
 
 A phone question with a digits-only rule or a length rule keeps the browser's box, because a country code would break the rule.
 

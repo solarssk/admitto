@@ -34,7 +34,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 1. Under **Form**, switch on what you need: **Ask for the company**, **Ask for the department** or **Guests can bring one person**.
 2. Switch **Waiting list** and **Confirm email addresses** off only when you do not need them.
-3. Switch **Styled date, time and phone boxes** on if you want the form to draw its own boxes instead of the browser's. See [Styled boxes](#styled-boxes).
+3. Switch **Styled form boxes** on if you want the form to draw its own boxes instead of the browser's. See [Styled boxes](#styled-boxes).
 4. Under **Extra consents**, tick each consent that guests must accept. The list holds the consents that you published on the **Legal** tab.
 5. Select **Save**.
 
@@ -80,7 +80,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 
 **Styled boxes**
 
-By default the guest's browser draws the boxes of the form. With **Styled date, time and phone boxes** on, the form draws its own, in the style of Admitto. The switch is for the whole event, not for one question.
+By default the guest's browser draws the boxes of the form. With **Styled form boxes** on, the form draws its own, in the style of Admitto. For now that is the phone box, with a list of countries beside the number; date and time boxes stay the browser's. The switch is for the whole event, not for one question.
 
 | Box | Switch off | Switch on |
 |---|---|---|
@@ -127,7 +127,7 @@ By default the guest's browser draws the boxes of the form. With **Styled date, 
 | Turn registration on | The form opens at once. It is refused while a row of the checklist is not done |
 | Change the way in or the consents of an event that is on | Refused while a row is not done, like turning on |
 | Move between **Automatic** and **With approval** | The new mode applies to new requests |
-| Switch **Styled date, time and phone boxes** on or off | The next guest who opens the form gets the boxes you chose. A form that is already open keeps the boxes it has |
+| Switch **Styled form boxes** on or off | The next guest who opens the form gets the boxes you chose. A form that is already open keeps the boxes it has |
 | Turn registration off | The form answers "not found" at once |
 | Set, change or remove the password | The password is saved or removed at once. Removing it closes the form until you set a new one |
 

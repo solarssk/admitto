@@ -23,8 +23,8 @@ const TOGGLES: ReadonlyArray<{ key: ToggleKey; title: string; text: string }> = 
   { key: "companion", title: "Guests can bring one person", text: "A guest can add one more person. That person takes a place too." },
   {
     key: "styled_form_controls",
-    title: "Styled date, time and phone boxes",
-    text: "The form shows its own boxes for the date, the time and the phone number (with a list of countries) instead of the ones in the guest's browser. Turned off, guests get their browser's boxes.",
+    title: "Styled form boxes",
+    text: "A phone number gets the product's own box, with a list of countries beside it, instead of the one in the guest's browser. Date and time boxes stay the browser's. Turned off, guests get their browser's boxes.",
   },
 ];
 

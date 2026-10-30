@@ -14,6 +14,7 @@ import { documentOf, formModel, panelModel, question, requiredNewKinds, type Dom
 import { bootPage } from "../helpers/registration-script-page.js";
 
 const NONCE = "bm9uY2U=";
+// codeql[js/insufficient-password-hash]: a fingerprint of generated page text, to see that it did not change; nothing here is a password
 const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
 const withoutStyle = (html: string): string => html.replace(/<style>[\s\S]*?<\/style>/, "");
 
@@ -352,7 +353,7 @@ describe("the styles of the styled boxes", () => {
   });
 
   it("open the list under the button, over what follows, wider than the button and never wider than the screen", () => {
-    expect(css).toContain(".reg-phone__panel { position: absolute; left: 0; top: calc(100% + 4px); width: 17.5rem; max-width: calc(100vw - 2.25rem); margin: 0; }");
+    expect(css).toContain(".reg-phone__panel { position: absolute; left: 0; top: calc(100% + 4px); width: 17.5rem; max-width: calc(100vw - 4.5rem); margin: 0; }");
   });
 
   it("keep the 16 px of the search box on a phone, which stops the zoom on focus", () => {

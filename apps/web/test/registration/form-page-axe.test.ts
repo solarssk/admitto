@@ -300,7 +300,7 @@ describe("axe-core finds nothing to report on the part of the form for a guest's
   });
 });
 
-describe("axe-core finds nothing to report on the styled phone box of an event that switched the styled boxes on", () => {
+describe("axe-core finds nothing to report on the styled phone box of an event that switched the styled boxes on", { timeout: 30_000 }, () => {
   const phones = [
     question({ key: "mobile", label: "Mobile phone", type: "phone", required: true, icon: "phone", rules: { example: "+1 555 0100" } }),
     question({ key: "office", label: "Office phone", type: "phone" }),

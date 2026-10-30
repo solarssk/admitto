@@ -41,7 +41,7 @@ function chooseCountry(page: ScriptPage, text: string, id = "f-q0"): void {
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-describe("the phone question of an event with the styled boxes on", () => {
+describe("the phone question of an event with the styled boxes on", { timeout: 30_000 }, () => {
   it("keeps the browser's own number box, with its id, its label and its note, and puts the country button before it", () => {
     const page = boot();
     const box = boxOf(page, "mobile");

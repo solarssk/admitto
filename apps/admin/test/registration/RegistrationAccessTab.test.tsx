@@ -179,12 +179,12 @@ describe("RegistrationAccessTab: the settings", () => {
   it("has the switch for the styled boxes in the Form card: a switch named by its title, off by default, with its words in the same row", async () => {
     await renderLoaded();
 
-    const styled = within(card("Form")).getByRole("switch", { name: "Styled date, time and phone boxes" }) as HTMLInputElement;
+    const styled = within(card("Form")).getByRole("switch", { name: "Styled form boxes" }) as HTMLInputElement;
     expect(styled.type).toBe("checkbox");
     expect(styled.checked).toBe(false);
     expect(styled.disabled).toBe(false);
     const row = styled.closest(".settings-row") as HTMLElement;
-    expect(within(row).getByText("Styled date, time and phone boxes").tagName).toBe("STRONG");
+    expect(within(row).getByText("Styled form boxes").tagName).toBe("STRONG");
     expect(row.textContent).toContain("Turned off, guests get their browser's boxes.");
     expect(screen.queryByText("Unsaved changes")).toBeNull();
   });
@@ -214,7 +214,7 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(toggle("Ask for the company").checked).toBe(true);
     expect(toggle("Ask for the department").checked).toBe(false);
     expect(toggle("Guests can bring one person").checked).toBe(true);
-    expect(toggle("Styled date, time and phone boxes").checked).toBe(true);
+    expect(toggle("Styled form boxes").checked).toBe(true);
     expect(screen.getByRole("button", { name: "Extra consents, Photos and video" })).toBeTruthy();
     expect(isOff(saveButton())).toBe(true);
     expect(screen.queryByText("Unsaved changes")).toBeNull();
@@ -528,7 +528,7 @@ describe("RegistrationAccessTab: an archived event", () => {
 
   it("locks every control that would change a setting, and has no Save or Reset", () => {
     for (const name of ["Off", "Automatic", "With approval", "Link", "Password"]) expect(radio(name).hasAttribute("disabled"), name).toBe(true);
-    for (const name of ["Waiting list", "Confirm email addresses", "Ask for the company", "Ask for the department", "Guests can bring one person", "Styled date, time and phone boxes"]) {
+    for (const name of ["Waiting list", "Confirm email addresses", "Ask for the company", "Ask for the department", "Guests can bring one person", "Styled form boxes"]) {
       expect(toggle(name).disabled, name).toBe(true);
     }
     expect(screen.getByRole("button", { name: /^Extra consents/ }).hasAttribute("disabled")).toBe(true);

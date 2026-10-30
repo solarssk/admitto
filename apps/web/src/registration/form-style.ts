@@ -146,8 +146,9 @@ export const REGISTRATION_STYLED_CONTROLS_CSS = `
 .reg-phone__flag { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
 .reg-phone__dial { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reg-phone__dial--empty { color: var(--text-muted); }
-/* The list opens under the button over what follows, wider than the button (a country's name needs the room) and never wider than the screen. */
-.reg-phone__panel { position: absolute; left: 0; top: calc(100% + 4px); width: 17.5rem; max-width: calc(100vw - 2.25rem); margin: 0; }
+/* The list opens under the button over what follows, wider than the button (a country's name needs the room) and never wider than the screen,
+   also for a question two panels deep (a companion's conditional question starts 44px in): 4.5rem is that offset and a margin. */
+.reg-phone__panel { position: absolute; left: 0; top: calc(100% + 4px); width: 17.5rem; max-width: calc(100vw - 4.5rem); margin: 0; }
 .reg-phone__option[aria-selected="true"] { background: var(--surface-hover, var(--surface-sunken)); }
 .reg-phone__option[aria-current="true"] .searchable-select__name { font-weight: var(--fw-semibold); }
 .reg-phone__option-code { flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
