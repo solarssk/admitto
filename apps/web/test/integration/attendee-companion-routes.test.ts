@@ -14,7 +14,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
-import { countSeatsInUse, ERASED_COMPANION_NAME, eraseAttendees } from "@admitto/tickets";
+import { countSeatsInUse, ERASED_COMPANION_NAME, eraseAttendees, lockRegistrationQueue } from "@admitto/tickets";
+import { MAX_COMPANION_BODY_BYTES } from "../../src/admin/attendee-companion-routes.js";
 import { subscribe } from "../../src/admin/sse-channel.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
@@ -458,6 +459,19 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id/companion", () => {
     }
   });
 
+  it("refuses a body over the limit with 400 request too large, after the checks of who is asking, and changes nothing", async () => {
+    const guest = await guestWithCompanion();
+    const before = await companionOf(guest.id);
+    const rawBody = JSON.stringify({ name: "Anna", custom_data: { plate: "x".repeat(MAX_COMPANION_BODY_BYTES) } });
+
+    const res = await patch(guest.id, { rawBody });
+
+    expect([res.status, await res.json()]).toEqual([400, { error: "request too large" }]);
+    expect((await patch(guest.id, { rawBody, cookie: null })).status).toBe(401);
+    expect(await companionOf(guest.id)).toEqual(before);
+    expect(await prisma.attendeeActionLog.count({ where: { attendee_id: guest.id } })).toBe(0);
+  });
+
   it("does not echo the name or an answer of a refused request, writes none of it to a log, and stores none of it", async () => {
     const guest = await guestWithCompanion();
     const marker = uniqueMarker();
@@ -559,6 +573,23 @@ describe("DELETE /api/admin/events/:eventId/attendees/:id/companion", () => {
     ]);
     expect(await tablesHolding(guest.marker)).toEqual([]);
     expect(written()).not.toContain(guest.marker.toLowerCase());
+  });
+
+  it("says that no seat was freed when the guest holds none: a revoked guest is out of the count already", async () => {
+    const guest = await guestWithCompanion({ status: "revoked" });
+    const before = await seats();
+
+    expect((await remove(guest.id)).status).toBe(200);
+
+    expect(await seats()).toBe(before);
+    expect(await companionOf(guest.id)).toBeNull();
+    const logs = await prisma.attendeeActionLog.findMany({ where: { event_id: EVENT_ID, attendee_id: guest.id, action_type: "attendee_companion_removed" } });
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ metadata: { slot: 1, seats_freed: 0 } });
+    const audit = await prisma.adminAuditLog.findMany({ where: { organization_id: ORG_A, action_type: "attendee_companion_removed" } });
+    expect(audit.filter((entry) => (entry.metadata as { attendee_id?: string }).attendee_id === guest.id)).toEqual([
+      expect.objectContaining({ metadata: expect.objectContaining({ seats_freed: 0 }) }),
+    ]);
   });
 
   it("frees the seat for the next guest: the Overview of the event counts it", async () => {
@@ -668,6 +699,32 @@ describe("DELETE /api/admin/events/:eventId/attendees/:id/companion", () => {
     const res = await remove(guest.id);
 
     expect([res.status, await res.json()]).toEqual([404, { error: "companion_not_found" }]);
+  });
+
+  it("refuses a removal that waited at the registration queue while the event was archived, with 403 event_archived, and removes nothing", async () => {
+    const guest = await guestWithCompanion();
+    const writer = holdOpen((tx) => lockRegistrationQueue(tx, EVENT_ID));
+    await writer.started;
+    try {
+      let finished = false;
+      const request = remove(guest.id).then((res) => {
+        finished = true;
+        return res;
+      });
+      await waitForALockWaiter();
+      expect(finished).toBe(false);
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { archived_at: new Date() } });
+
+      await writer.commit();
+
+      const res = await request;
+      expect([res.status, await res.json()]).toEqual([403, { code: "event_archived" }]);
+      expect(await companionOf(guest.id)).not.toBeNull();
+      expect(await copyOf(guest.registrationId)).toHaveLength(1);
+      expect(await prisma.attendeeActionLog.count({ where: { attendee_id: guest.id } })).toBe(0);
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { archived_at: null } });
+    }
   });
 
   it("waits behind an erasure that is open, at the registration queue, and then answers 409 attendee_erased", async () => {

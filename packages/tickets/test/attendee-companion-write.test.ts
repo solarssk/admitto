@@ -125,6 +125,32 @@ describe("writeAttendeeCompanion", () => {
     expect(await countSeatsInUse(db, eventId)).toBe(before);
   });
 
+  it("keeps an answer to a question that is not asked of the companion any more, and replaces the answers to those that are", async () => {
+    const eventId = await eventWithQuestions();
+    const guest = await make.attendee(eventId);
+    await make.companion(guest.id, { name: "Old Name", customData: { diet: "none", dropped_question: "Keep me", shirt: "M", __proto__x: "skip" } });
+
+    expect(await write(eventId, guest.id, { customData: { diet: "vegan" } })).toEqual({ outcome: "written" });
+
+    // `diet` is asked of the companion and is replaced; `plate` is asked and was not answered, so it holds nothing; `dropped_question`
+    // (a question that was deleted) and `shirt` (asked of the guest) are not the form's to drop.
+    expect((await companionOf(guest.id))?.custom_data).toEqual({ diet: "vegan", dropped_question: "Keep me", shirt: "M", __proto__x: "skip" });
+  });
+
+  it("keeps the answers to questions that are no longer asked when it is given none, and never copies a hostile key from stored data", async () => {
+    const eventId = await eventWithQuestions();
+    const guest = await make.attendee(eventId);
+    await db.attendeeCompanion.create({
+      data: { attendee_id: guest.id, slot: 1, name: "Old Name", custom_data: JSON.parse('{"diet": "none", "gone": "kept", "__proto__": "x", "constructor": "y", "number": 5}') },
+    });
+
+    expect(await write(eventId, guest.id, { customData: undefined })).toEqual({ outcome: "written" });
+
+    const row = await companionOf(guest.id);
+    expect(row?.custom_data).toEqual({ gone: "kept" });
+    expect(Object.keys(row?.custom_data as object)).toEqual(["gone"]);
+  });
+
   it("holds no answers when it is given none: the old ones go", async () => {
     const eventId = await eventWithQuestions();
     const guest = await guestWithCompanion(eventId);
@@ -257,7 +283,7 @@ describe("writeAttendeeCompanion", () => {
     await write(eventId, guest.id, {}, recording);
 
     expect(statements[0]).toMatch(/FROM "Attendee"[\s\S]*FOR KEY SHARE/);
-    expect(statements.slice(1)).toEqual(["eventCustomField", "attendeeCompanion"]);
+    expect(statements.slice(1)).toEqual(["eventCustomField", "attendeeCompanion", "attendeeCompanion"]);
   });
 
   it("takes no registration queue: the registration keeps the companion as the guest sent it, and an edit never waits for the queue", async () => {
@@ -282,12 +308,36 @@ describe("removeAttendeeCompanion", () => {
     const other = await guestWithCompanion(eventId);
     expect(await countSeatsInUse(db, eventId)).toBe(4);
 
-    expect(await remove(eventId, guest.id)).toEqual({ outcome: "removed" });
+    expect(await remove(eventId, guest.id)).toEqual({ outcome: "removed", seats_freed: 1 });
 
     expect(await companionOf(guest.id)).toBeNull();
     expect(await companionOf(other.id)).not.toBeNull();
     expect(await countSeatsInUse(db, eventId)).toBe(3);
     expect(await remove(eventId, guest.id)).toEqual({ outcome: "no_companion" });
+  });
+
+  it("frees a seat only for an attendee who holds seats: a revoked or cancelled one is out of the count already", async () => {
+    const eventId = await eventWithQuestions({ capacity: 5 });
+    const active = await guestWithCompanion(eventId);
+    const revoked = await guestWithCompanion(eventId, { status: "revoked" });
+    const cancelled = await guestWithCompanion(eventId, { status: "cancelled" });
+    const before = await countSeatsInUse(db, eventId);
+
+    expect(await remove(eventId, revoked.id)).toEqual({ outcome: "removed", seats_freed: 0 });
+    expect(await remove(eventId, cancelled.id)).toEqual({ outcome: "removed", seats_freed: 0 });
+    expect(await countSeatsInUse(db, eventId)).toBe(before);
+    expect(await remove(eventId, active.id)).toEqual({ outcome: "removed", seats_freed: 1 });
+    expect(await countSeatsInUse(db, eventId)).toBe(before - 1);
+  });
+
+  it("refuses to remove a companion once the event is archived, which archiving does while a removal waits for the registration queue, and changes nothing", async () => {
+    const eventId = await eventWithQuestions();
+    const guest = await guestWithCompanion(eventId);
+    await db.event.update({ where: { id: eventId }, data: { archived_at: new Date() } });
+
+    expect(await remove(eventId, guest.id)).toEqual({ outcome: "event_archived" });
+
+    expect(await companionOf(guest.id)).not.toBeNull();
   });
 
   it("refuses a slot that cannot exist, and an attendee who is gone, and leaves the companion of an erased attendee as it is", async () => {
@@ -313,7 +363,7 @@ describe("removeAttendeeCompanion", () => {
 
     expect(statements[0]).toBe("registration queue");
     expect(statements[1]).toMatch(/FROM "Attendee"[\s\S]*FOR KEY SHARE/);
-    expect(statements.slice(2)).toEqual(["attendeeCompanion", "registration", "registration"]);
+    expect(statements.slice(2)).toEqual(["event", "attendeeCompanion", "registration", "registration"]);
   });
 
   it("takes the registration queue and the attendee row even when it finds nothing to remove, and clears nothing then", async () => {
@@ -325,7 +375,7 @@ describe("removeAttendeeCompanion", () => {
     await recording.$transaction((tx) => removeAttendeeCompanion(tx, { eventId, attendeeId: guest.id }));
 
     expect(statements.slice(0, 2)).toEqual(["registration queue", expect.stringMatching(/FROM "Attendee"[\s\S]*FOR KEY SHARE/)]);
-    expect(statements.slice(2)).toEqual(["attendeeCompanion"]);
+    expect(statements.slice(2)).toEqual(["event", "attendeeCompanion"]);
     expect(await copyOf(registration.id)).toEqual([]);
   });
 
@@ -346,7 +396,7 @@ describe("removeAttendeeCompanion", () => {
 
     await writer.commit();
 
-    expect(await removal).toEqual({ outcome: "removed" });
+    expect(await removal).toEqual({ outcome: "removed", seats_freed: 1 });
     expect(await companionOf(guest.id)).toBeNull();
     expect(await copyOf(registration.id)).toEqual([]);
   });
@@ -358,7 +408,7 @@ describe("removeAttendeeCompanion", () => {
     const writer = holdTransaction(db, (tx) => lockRegistrationQueue(tx, otherEventId));
     await writer.started;
 
-    expect(await remove(eventId, guest.id)).toEqual({ outcome: "removed" });
+    expect(await remove(eventId, guest.id)).toEqual({ outcome: "removed", seats_freed: 1 });
 
     await writer.commit();
   });
@@ -368,7 +418,7 @@ describe("removeAttendeeCompanion", () => {
     const guest = await guestWithCompanion(eventId);
     const registration = await acceptedRegistration(eventId, guest.id);
     const first = holdTransaction(db, (tx) => removeAttendeeCompanion(tx, { eventId, attendeeId: guest.id }));
-    expect(await first.started).toEqual({ outcome: "removed" });
+    expect(await first.started).toEqual({ outcome: "removed", seats_freed: 1 });
     const second = remove(eventId, guest.id);
     await waitUntilWaitingForRegistrationQueue(db, eventId);
 
@@ -394,7 +444,7 @@ describe("removeAttendeeCompanion", () => {
 
     await edit.commit();
 
-    expect(await removal).toEqual({ outcome: "removed" });
+    expect(await removal).toEqual({ outcome: "removed", seats_freed: 1 });
     expect(await companionOf(guest.id)).toBeNull();
     expect(await copyOf(registration.id)).toEqual([]);
   });
@@ -455,7 +505,7 @@ describe("a removal of the companion against an erasure, a removal or a deletion
   it.each(others)("is waited for by %s that comes after it, which then finds no companion to empty", async (_label, action) => {
     const target = await subject();
     const removal = holdTransaction(db, (tx) => removeAttendeeCompanion(tx, { eventId: target.eventId, attendeeId: target.guestId }));
-    expect(await removal.started).toEqual({ outcome: "removed" });
+    expect(await removal.started).toEqual({ outcome: "removed", seats_freed: 1 });
     let finished = false;
     const other = db.$transaction(action(target), { timeout: 30_000 }).then((result) => {
       finished = true;
@@ -559,7 +609,7 @@ describe("an edit against an erasure or a removal that is open", () => {
     const eventId = await eventWithQuestions();
     const guest = await guestWithCompanion(eventId);
     const removal = holdTransaction(db, (tx) => removeAttendeeCompanion(tx, { eventId, attendeeId: guest.id }));
-    expect(await removal.started).toEqual({ outcome: "removed" });
+    expect(await removal.started).toEqual({ outcome: "removed", seats_freed: 1 });
     const edit = write(eventId, guest.id);
     await waitForALockWaiter();
     await removal.commit();

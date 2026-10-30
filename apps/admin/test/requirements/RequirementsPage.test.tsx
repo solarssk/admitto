@@ -427,23 +427,28 @@ describe("RequirementsPage — Add item and Edit item", () => {
     expect(screen.getByRole("heading", { name: "Badge" })).toBeTruthy();
   });
 
+  const hintField = (source_field: string, label: string, applies_to?: "guest" | "companion") => ({
+    id: source_field,
+    source_field,
+    label,
+    description: null,
+    type: "text",
+    required: false,
+    show_on_form: true,
+    display_order: null,
+    options: null,
+    rules: null,
+    ...(applies_to ? { applies_to } : {}),
+    created_at: "2026-01-01T00:00:00.000Z",
+  });
+
   it("offers the questions about the guest as hints for an item, and not the questions about a companion: the hint shows the attendee's own answer", async () => {
     fetchEventItems.mockResolvedValue([badgeItem]);
-    const field = (source_field: string, label: string, applies_to?: "guest" | "companion") => ({
-      id: source_field,
-      source_field,
-      label,
-      description: null,
-      type: "text",
-      required: false,
-      show_on_form: true,
-      display_order: null,
-      options: null,
-      rules: null,
-      ...(applies_to ? { applies_to } : {}),
-      created_at: "2026-01-01T00:00:00.000Z",
-    });
-    fetchEventCustomFields.mockResolvedValue([field("shirt", "Shirt size"), field("badge_name", "Badge name", "companion"), field("diet", "Diet", "guest")]);
+    fetchEventCustomFields.mockResolvedValue([
+      hintField("shirt", "Shirt size"),
+      hintField("badge_name", "Badge name", "companion"),
+      hintField("diet", "Diet", "guest"),
+    ]);
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Edit item" }));
@@ -454,6 +459,22 @@ describe("RequirementsPage — Add item and Edit item", () => {
     expect(within(drawer).queryByRole("checkbox", { name: "Badge name" })).toBeNull();
     // The card above the drawer lists all three, the companion's with its mark.
     expect(within(requirementsRegion()).getByText("Companion")).toBeTruthy();
+  });
+
+  it("saves the hint about a companion that an item already holds as it was read, next to the hints about the guest that are ticked", async () => {
+    fetchEventItems.mockResolvedValue([{ ...badgeItem, config: { ...badgeItem.config, content_fields: ["shirt", "badge_name"] } }]);
+    fetchEventCustomFields.mockResolvedValue([hintField("shirt", "Shirt size"), hintField("badge_name", "Badge name", "companion"), hintField("diet", "Diet")]);
+    updateEventItem.mockResolvedValueOnce(badgeItem);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit item" }));
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).queryByRole("checkbox", { name: "Badge name" })).toBeNull();
+    fireEvent.click(within(drawer).getByRole("checkbox", { name: "Diet" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateEventItem).toHaveBeenCalledTimes(1));
+    expect(updateEventItem).toHaveBeenCalledWith("evt-1", "item-badge", expect.objectContaining({ config: expect.objectContaining({ content_fields: ["shirt", "badge_name", "diet"] }) }));
   });
 
   it("closes the Add item modal on Escape", async () => {

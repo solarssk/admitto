@@ -190,7 +190,7 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
-import { handleDeleteAttendeeCompanion, handlePatchAttendeeCompanion } from "./admin/attendee-companion-routes.js";
+import { MAX_COMPANION_BODY_BYTES, handleDeleteAttendeeCompanion, handlePatchAttendeeCompanion } from "./admin/attendee-companion-routes.js";
 import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "./admin/attendee-erase-routes.js";
 import {
   handleDeleteEventRegistrations,
@@ -916,6 +916,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const registrationSettingsBodyLimit = bodyLimit({
     maxSize: MAX_REGISTRATION_SETTINGS_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const companionBodyLimit = bodyLimit({
+    maxSize: MAX_COMPANION_BODY_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const templateTestSendBodyLimit = bodyLimit({
@@ -2344,6 +2348,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminAttendeePatchRateLimit,
+    companionBodyLimit,
     guardArchivedEvent((c) => handlePatchAttendeeCompanion(c, db)),
   );
   app.delete(

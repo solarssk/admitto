@@ -32,6 +32,10 @@ import { publishActivityChanged } from "./checkin-sse-publish.js";
  * holds it, so the transaction waits that long too. */
 const COMPANION_TRANSACTION_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
 
+/** The most a request to correct a companion may hold: the name, and an answer for each of the event's questions at the longest a
+ * long text may be (20 questions, 1000 characters of up to four bytes each), with room for the keys. */
+export const MAX_COMPANION_BODY_BYTES = 131_072;
+
 /** The one companion of an attendee (MAX_COMPANION_SLOTS is 1): the slot of the audit entries. */
 const COMPANION_SLOT = 1;
 
@@ -54,7 +58,9 @@ const REFUSALS = {
   invalid_slot: [400, "validation_failed"],
 } as const;
 
-function refusal(c: Context, outcome: keyof typeof REFUSALS): Response {
+function refusal(c: Context, outcome: keyof typeof REFUSALS | "event_archived"): Response {
+  // Archived while the removal waited for the registration queue: the answer of every other write on an archived event.
+  if (outcome === "event_archived") return c.json({ code: "event_archived" }, 403);
   const [status, code] = REFUSALS[outcome];
   return c.json({ error: code }, status);
 }
@@ -147,7 +153,7 @@ export async function handleDeleteAttendeeCompanion(c: Context, db: PrismaClient
       eventId,
       attendeeId,
       actionType: "attendee_companion_removed",
-      metadata: { slot: COMPANION_SLOT, seats_freed: 1 },
+      metadata: { slot: COMPANION_SLOT, seats_freed: removed.seats_freed },
     });
     return "removed";
   }, COMPANION_TRANSACTION_OPTIONS);

@@ -150,6 +150,24 @@ describe("EventCustomFieldModal: Applies to", { timeout: 30_000 }, () => {
     expect(screen.getByText("This condition can't be kept. Choose another question and answer, or remove the condition.")).toBeTruthy();
     expect(saveButton().disabled).toBe(true);
   });
+
+  it("lets the condition of a moved question be removed when the companion has no question to wait for, and then allows the save", async () => {
+    await openEditor(plate, [parking, plate]);
+    fireEvent.click(recipientButton("Companion"));
+    const question = screen.getByRole("button", { name: "Question, none selected" }) as HTMLButtonElement;
+    expect(question.disabled).toBe(false);
+    expect(saveButton().disabled).toBe(true);
+
+    fireEvent.click(question);
+    expect(within(screen.getByRole("list", { name: "Question" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["No condition"]);
+    fireEvent.click(within(screen.getByRole("list", { name: "Question" })).getByRole("button", { name: "No condition" }));
+
+    expect(screen.queryByText("This condition can't be kept. Choose another question and answer, or remove the condition.")).toBeNull();
+    expect(saveButton().disabled).toBe(false);
+    fireEvent.click(saveButton());
+    await act(() => Promise.resolve());
+    expect(api.update.mock.calls[0]![2]).toMatchObject({ applies_to: "companion", rules: null });
+  });
 });
 
 describe("EventCustomFieldModal: the questions a condition may wait for", { timeout: 30_000 }, () => {

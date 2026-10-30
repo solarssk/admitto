@@ -292,7 +292,7 @@ describe("who is offered the companion item", () => {
     const attendee = await guest(eventId, { companion: "Companion Example" });
     expect(await cardKeys(eventId, attendee.id)).toContain("companion");
 
-    expect(await db.$transaction((tx) => removeAttendeeCompanion(tx, { eventId, attendeeId: attendee.id }))).toEqual({ outcome: "removed" });
+    expect(await db.$transaction((tx) => removeAttendeeCompanion(tx, { eventId, attendeeId: attendee.id }))).toEqual({ outcome: "removed", seats_freed: 1 });
 
     expect(await cardKeys(eventId, attendee.id)).toEqual(["badge"]);
     await expect(issue(eventId, attendee.id)).rejects.toBeInstanceOf(IllegalItemTransitionError);

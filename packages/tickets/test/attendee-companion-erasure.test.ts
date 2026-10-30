@@ -232,7 +232,7 @@ describe("removing only the companion (staff)", () => {
     expect(await tablesHolding(marker)).toEqual(["AttendeeCompanion", "Registration"]);
     expect(await seats(eventId)).toBe(2);
 
-    expect(await removeCompanion(eventId, guest.id)).toEqual({ outcome: "removed" });
+    expect(await removeCompanion(eventId, guest.id)).toEqual({ outcome: "removed", seats_freed: 1 });
 
     expect(await tablesHolding(marker)).toEqual([]);
     expect(await seats(eventId)).toBe(1);
@@ -265,7 +265,7 @@ describe("removing only the companion (staff)", () => {
     const { guest } = await guestWithCompanion(eventId);
     expect(await seats(eventId)).toBe(2);
 
-    expect(await removeCompanion(eventId, guest.id)).toEqual({ outcome: "removed" });
+    expect(await removeCompanion(eventId, guest.id)).toEqual({ outcome: "removed", seats_freed: 1 });
 
     expect(await companionsOf(guest.id)).toEqual([]);
     expect(await seats(eventId)).toBe(1);

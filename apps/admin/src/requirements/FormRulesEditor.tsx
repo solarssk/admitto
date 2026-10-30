@@ -76,6 +76,8 @@ function ConditionControls({
   const controller = candidates.find((field) => field.source_field === draft.showWhen?.field);
   const noCandidates = candidates.length === 0;
   const reason = blockedReason || (noCandidates ? noCandidatesMessage(appliesTo) : "");
+  // A held condition can always be removed, unless the question has dependents of its own that hold it back.
+  const removable = blockedReason === "" && draft.showWhen !== null;
   const questionOptions: SearchableSelectOption[] = [
     NO_CONDITION,
     ...candidates.map((field) => ({
@@ -116,7 +118,9 @@ function ConditionControls({
           emptyLabel="No questions found"
           value={draft.showWhen?.field ?? ""}
           options={questionOptions}
-          disabled={disabled || reason !== ""}
+          // With no question to choose, the box still takes "No condition" while a condition is held (one a move of the question to the
+          // other person left behind): it is the only way to remove it.
+          disabled={disabled || (reason !== "" && !removable)}
           invalid={conditionError !== ""}
           describedBy="cf-show-when-note"
           onChange={chooseQuestion}

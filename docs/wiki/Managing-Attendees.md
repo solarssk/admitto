@@ -98,7 +98,7 @@ A guest can bring one companion when the event allows it (see [A guest's compani
 
 | Action | What it does |
 |---|---|
-| **Edit** | Replaces the name and the answers of the companion with what you saved. An answer you clear is removed. It takes no place and adds none |
+| **Edit** | Replaces the name and the answers to the questions asked of the companion with what you saved. An answer you clear is removed. An answer to a question that is not asked of the companion any more (the question was deleted, or is asked of the guest now) stays as it is. It takes no place and adds none |
 | **Remove** | Deletes the companion's name and answers, also the copy in the guest's registration, and frees the place they held |
 
 - The dialog asks the event's questions about a companion, including the ones that are not on the registration form. A required question must be answered. A question that is shown only for a certain answer follows the same rule as on the registration form.

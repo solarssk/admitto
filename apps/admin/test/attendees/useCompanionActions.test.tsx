@@ -36,7 +36,7 @@ function setup(overrides: Partial<CompanionActionsInput> = {}) {
     eventId: "evt-1",
     attendeeId: "att-1",
     fields: [answerField("diet", "Diet", "text", { applies_to: "companion" })],
-    onChanged: vi.fn(),
+    onChanged: vi.fn(() => true),
     onArchived: vi.fn(),
     onOutOfDate: vi.fn(),
     ...overrides,
@@ -208,6 +208,46 @@ describe("a request that is on its way", () => {
 
     await act(() => hook.result.current.edit.save(FORM));
 
+    expect(updateAttendeeCompanion).toHaveBeenCalledWith("evt-9", "att-9", expect.anything());
     expect(input.onChanged).toHaveBeenCalledWith(DETAIL, { eventId: "evt-9", attendeeId: "att-9" });
+  });
+});
+
+describe("an answer that the page did not take", () => {
+  // The page has moved on to another attendee in the moment before the card goes: the dialog closes, but the toast would be said on the wrong screen.
+  it("closes the Edit dialog and says nothing", async () => {
+    updateAttendeeCompanion.mockResolvedValueOnce(DETAIL);
+    const { input, hook } = setup({ onChanged: vi.fn(() => false) });
+    act(() => hook.result.current.edit.show());
+
+    await act(() => hook.result.current.edit.save(FORM));
+
+    expect(input.onChanged).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.edit.open).toBe(false);
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("closes the Remove confirmation and says nothing", async () => {
+    removeAttendeeCompanion.mockResolvedValueOnce(DETAIL);
+    const { input, hook } = setup({ onChanged: vi.fn(() => false) });
+    act(() => hook.result.current.removal.show());
+
+    await act(() => hook.result.current.removal.confirm());
+
+    expect(input.onChanged).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.removal.open).toBe(false);
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("says the change was saved or removed when the page took the answer", async () => {
+    updateAttendeeCompanion.mockResolvedValueOnce(DETAIL);
+    removeAttendeeCompanion.mockResolvedValueOnce(DETAIL);
+    const { hook } = setup();
+
+    await act(() => hook.result.current.edit.save(FORM));
+    await act(() => hook.result.current.removal.confirm());
+
+    expect(addToast).toHaveBeenNthCalledWith(1, "Companion saved", "success");
+    expect(addToast).toHaveBeenNthCalledWith(2, "Companion removed", "success");
   });
 });

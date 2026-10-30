@@ -15,8 +15,8 @@ export interface CompanionTarget {
 export interface CompanionActionsInput extends CompanionTarget {
   /** The questions about the companion, which the form is checked against. */
   fields: readonly CustomDataFieldDef[];
-  /** The server answered a change with the attendee as it is now. */
-  onChanged: (detail: AttendeeDetailDto, target: CompanionTarget) => void;
+  /** The server answered a change with the attendee as it is now. Says whether the page took the answer: it does not once it has moved on. */
+  onChanged: (detail: AttendeeDetailDto, target: CompanionTarget) => boolean;
   /** The event turned out to be archived, which the page did not know: it reads the event again, so that everything locks. */
   onArchived: () => void;
   /** The guest was erased or has no companion any more, which the page did not know: it reads the attendee again. */
@@ -76,9 +76,9 @@ export function useCompanionActions({ eventId, attendeeId, fields, onChanged, on
     try {
       const detail = await updateAttendeeCompanion(eventId, attendeeId, companionBody(form, fields));
       if (!alive.current) return;
-      onChanged(detail, target());
+      const applied = onChanged(detail, target());
       setEditOpen(false);
-      addToast("Companion saved", "success");
+      if (applied) addToast("Companion saved", "success");
     } catch (err) {
       if (alive.current) fail(err, setEditError, "Could not save the companion. Try again.");
     } finally {
@@ -92,9 +92,9 @@ export function useCompanionActions({ eventId, attendeeId, fields, onChanged, on
     try {
       const detail = await removeAttendeeCompanion(eventId, attendeeId);
       if (!alive.current) return;
-      onChanged(detail, target());
+      const applied = onChanged(detail, target());
       setRemoveOpen(false);
-      addToast("Companion removed", "success");
+      if (applied) addToast("Companion removed", "success");
     } catch (err) {
       if (alive.current) fail(err, setRemoveError, "Could not remove the companion. Try again.");
     } finally {

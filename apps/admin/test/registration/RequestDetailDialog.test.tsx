@@ -45,6 +45,8 @@ async function openRequest(id: string, name: string): Promise<HTMLElement> {
 }
 /** The value that stands under a label in the window. */
 const valueOf = (box: HTMLElement, label: string) => within(box).getByText(label, { selector: "dt" }).parentElement?.querySelector("dd")?.textContent;
+/** The part of the window that stands under one heading: its labels and values, and no other part's. */
+const sectionOf = (box: HTMLElement, title: string) => within(box).getByRole("heading", { name: title }).parentElement as HTMLElement;
 const press = (box: HTMLElement, name: string | RegExp) => fireEvent.click(within(box).getByRole("button", { name }));
 const checkbox = (name: string) => screen.getByRole("checkbox", { name: `Select ${name}` });
 
@@ -270,8 +272,9 @@ describe("what a request says", () => {
     const box = await openRequest("r1", "Ann Kowalska");
     await within(box).findByText("Companion");
 
-    expect(valueOf(box, "Name")).toBe("Wiktoria Kowalska");
-    expect(valueOf(box, "Diet")).toBe("Vegan");
+    const companion = sectionOf(box, "Companion");
+    expect(valueOf(companion, "Name")).toBe("Wiktoria Kowalska");
+    expect(valueOf(companion, "Diet")).toBe("Vegan");
   });
 
   it("names the answers about the companion by the questions about a companion, which an attendee's own form leaves out", async () => {
@@ -285,8 +288,12 @@ describe("what a request says", () => {
     const box = await openRequest("r1", "Ann Kowalska");
     await within(box).findByText("Companion");
 
-    expect(valueOf(box, "Badge name")).toBe("Wika");
-    expect(valueOf(box, "Diet")).toBe("None");
+    const companion = sectionOf(box, "Companion");
+    const guest = sectionOf(box, "Answers");
+    expect(valueOf(companion, "Badge name")).toBe("Wika");
+    expect(within(companion).queryByText("Diet", { selector: "dt" })).toBeNull();
+    expect(valueOf(guest, "Diet")).toBe("None");
+    expect(within(guest).queryByText("Badge name", { selector: "dt" })).toBeNull();
   });
 
   it("numbers the companions when there are several, and shows one without answers as a name only", async () => {

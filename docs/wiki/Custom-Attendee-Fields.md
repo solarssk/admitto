@@ -22,7 +22,7 @@ Decide which information is necessary for this event. Choose a stable field name
 8. For a Single choice field, select **+ Add option** for each value attendees can choose, and drag a row's handle (or, with it focused, use the up/down arrow keys) to reorder the list.
 9. For a Text, Long text or Phone field, you can limit the answer under **Format rules**. See [Format rules](#format-rules).
 10. Under **Registration form**, you can give the question an icon, show it only for a certain answer to another question, and, for a Text field, offer suggestions. See [Icon, condition and suggestions](#icon-condition-and-suggestions).
-11. Mark the field **Required** only when every attendee must have a valid value.
+11. Mark the field **Required** only when everyone who is asked the question must have a valid value. A question about a companion is asked only when the guest brings one.
 12. Create the field and test it with a synthetic attendee or dry-run import.
 
 ## Expected result
@@ -114,7 +114,7 @@ When an event lets a guest bring a companion (the setting on the **Access** tab 
 | Can wait for | A Yes / No or Single choice question about the guest | A Yes / No or Single choice question about the companion |
 
 - A question never waits for a question about the other person. The list under **Show only when** holds only the questions about the same person.
-- A question about the companion follows the other rules of a field: a **Required** one must be on the registration form, and it counts toward the limit of 20 fields.
+- A question about the companion follows the other rules of a field: a **Required** one must be on the registration form, and it counts toward the limit of 20 fields. A **Required** question about the companion has to be answered only by a guest who brings a companion; a guest who comes alone is not asked it.
 - You can move an existing question to the other person. Answers already given are not moved: they stay with the person who gave them, and the question is not asked of the other any more. Use this only before guests have answered.
 - You cannot move a question that other questions are shown for, or a question that is shown for an answer to a question about the other person. The editor says why and keeps **Save** off.
 - A question about the companion cannot be used as a hint on an event item, because a hint shows the attendee's own answer.
