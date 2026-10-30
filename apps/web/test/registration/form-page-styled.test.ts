@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,8 +13,17 @@ import { documentOf, formModel, panelModel, question, requiredNewKinds, type Dom
 import { bootPage } from "../helpers/registration-script-page.js";
 
 const NONCE = "bm9uY2U=";
-// codeql[js/insufficient-password-hash]: a fingerprint of generated page text, to see that it did not change; nothing here is a password
-const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
+/**
+ * A fingerprint of a text, to see that generated page text did not change: the 64-bit FNV-1a hash of its bytes and its length.
+ * It is not a cryptographic hash, and needs none: nothing here is secret, and a change that leaves both the hash and the length as
+ * they were is not one a test can meet by accident. (A SHA-256 of a page that holds the box of the password gate is reported by
+ * CodeQL as a password hashed with too little effort, which it is not.)
+ */
+const fingerprint = (text: string): string => {
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of Buffer.from(text, "utf8")) hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 0x100000001b3n);
+  return `${hash.toString(16).padStart(16, "0")}-${text.length}`;
+};
 const withoutStyle = (html: string): string => html.replace(/<style>[\s\S]*?<\/style>/, "");
 
 const render = (model: RegistrationFormModel): string => renderRegistrationFormPage(model, { nonce: NONCE });
@@ -38,26 +46,26 @@ const NATIVE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFormModel
 ];
 
 /**
- * SHA-256 of the fixed script of the page and of each model's page without its stylesheet (the stylesheet is tested apart, in
+ * Fingerprint of the fixed script of the page and of each model's page without its stylesheet (the stylesheet is tested apart, in
  * guest-page-css.test.ts, and follows the product's own CSS), as they were at the base of PR 113g-1, before the styled boxes
  * existed. The page of an event that has not switched them on is to stay byte for byte what it was: if one of these changes on
  * purpose, the PR that does it records the new value, and the reviewer sees the page it changed.
  */
 const NATIVE_HASH = {
-  script: "c3dfeedc83a5f0e669df3e8a4dfbdcef654c7646bdbb74b005878595de0aa6db",
-  default: "5906ccb2f27bc625b88c8fa2026875f0ca581ef39233e46e1fb9a21d8c4e69d2",
-  panels: "184c6a4b534667e26cb965c032d6c734c459a175adef7f98d571a27f25b08013",
-  gate: "76cfcc0ed199ef2d4efd1ada112da399478f764a5d65679c0c39b94a9ac572dc",
-  required: "d1cb0790acdf790ca3045ccf37e8a8143650529604557ce8ea0de16bcaaa8b68",
+  script: "fd4e7e41d681d7b5-26848",
+  default: "c3e1d32059ce9555-48952",
+  panels: "30baf454f7d312f7-50176",
+  gate: "85cee41b8e2d2591-53752",
+  required: "46cc95506c591fd5-43727",
 } as const;
 
 describe("the page of an event that has not switched the styled boxes on", () => {
   it("has the fixed script it had, byte for byte", () => {
-    expect(sha(REGISTRATION_FORM_SCRIPT), "the fixed script of the registration page changed").toBe(NATIVE_HASH.script);
+    expect(fingerprint(REGISTRATION_FORM_SCRIPT), "the fixed script of the registration page changed").toBe(NATIVE_HASH.script);
   });
 
   it.each(NATIVE_MODELS)("is the page it was, byte for byte (%s)", (name, build) => {
-    const hash = sha(withoutStyle(render(build())));
+    const hash = fingerprint(withoutStyle(render(build())));
     expect(hash, `the page of an event without the styled boxes changed (${name}); the new value is ${hash}`).toBe(NATIVE_HASH[name as keyof typeof NATIVE_HASH]);
   });
 
