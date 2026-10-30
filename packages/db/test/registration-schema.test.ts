@@ -122,6 +122,7 @@ describe("EventRegistrationSettings", () => {
       ask_company: false,
       ask_department: false,
       consent_keys: [],
+      styled_form_controls: false,
     });
   });
 

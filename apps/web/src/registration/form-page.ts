@@ -23,6 +23,7 @@ import type { BrandingTheme } from "@admitto/auth";
 import { renderAdmittoFaviconLink } from "../favicon.js";
 import { TURNSTILE_ORIGIN } from "../registration-page-security.js";
 import { esc } from "../ticket-page.js";
+import { renderStyledControls } from "./form-controls.js";
 import { renderAgreement, renderCompanion, renderPasswordField, renderPersonalFields, renderQuestions } from "./form-fields.js";
 import { icon, renderIconSprite } from "./form-icons.js";
 import type { ClosedFormModel, FormContact, FormEvent, RegistrationFormModel } from "./form-model.js";
@@ -40,7 +41,7 @@ const TURNSTILE_SCRIPT_URL = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
 /** Both pages tell iOS not to turn what looks like a phone number into a call link: an organiser's example of a phone
  * answer ("For example: +1 555 0100") would become one, and so would any other run of digits in a note. */
-export function renderDocument(title: string, content: string, scripts: string, theme?: BrandingTheme | null): string {
+export function renderDocument(title: string, content: string, scripts: string, theme?: BrandingTheme | null, styledControls = false): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -49,7 +50,7 @@ export function renderDocument(title: string, content: string, scripts: string, 
   <meta name="format-detection" content="telephone=no">
   <title>${esc(title)}</title>
   ${renderAdmittoFaviconLink()}
-  <style>${buildRegistrationPageStyles(theme)}</style>
+  <style>${buildRegistrationPageStyles(theme, styledControls)}</style>
 </head>
 <body class="ticket-page">
   ${renderIconSprite()}
@@ -144,9 +145,12 @@ export function renderFoot(contact: FormContact | null, gate = ""): string {
 /** The form page, for the nonce of one response. */
 export function renderRegistrationFormPage(model: RegistrationFormModel, options: RegistrationPageOptions): string {
   const gate = behindPassword(model);
-  const form = `<form class="reg-form" id="reg-form" method="post" action="/r/${esc(model.event.slug)}" novalidate data-hide-when-done${gate}>
+  // An event that switched the styled boxes on marks its form; the page of every other event has not a byte of it.
+  const controls = model.styledControls ? ' data-controls="styled"' : "";
+  const questions = renderQuestions(model.questions, { timeZone: model.event.timezone, styledControls: model.styledControls });
+  const form = `<form class="reg-form" id="reg-form" method="post" action="/r/${esc(model.event.slug)}" novalidate${controls} data-hide-when-done${gate}>
       <p class="reg-legend"><span class="reg-req" aria-hidden="true">*</span> Required</p>
-      ${renderPersonalFields(model)}${renderQuestions(model.questions, { timeZone: model.event.timezone })}${renderCompanion(model)}${renderAgreement(model)}
+      ${renderPersonalFields(model)}${questions}${renderCompanion(model)}${renderAgreement(model)}
     </form>`;
   const content = [
     renderHeader(model.event),
@@ -154,13 +158,14 @@ export function renderRegistrationFormPage(model: RegistrationFormModel, options
     renderHero(model.event, gate),
     renderNotices(model),
     form,
+    renderStyledControls(model),
     renderInbox(model),
     renderFoot(model.contact, gate),
   ]
     .filter((part) => part !== "")
     .join("\n    ");
-  const scripts = `${renderFormScript(options.nonce)}\n  <script src="${TURNSTILE_SCRIPT_URL}" async defer></script>`;
-  return renderDocument(`Registration - ${model.event.title}`, content, scripts, options.theme);
+  const scripts = `${renderFormScript(options.nonce, model.styledControls)}\n  <script src="${TURNSTILE_SCRIPT_URL}" async defer></script>`;
+  return renderDocument(`Registration - ${model.event.title}`, content, scripts, options.theme, model.styledControls);
 }
 
 /** The page of an event that is over. No form, no script, no widget. */

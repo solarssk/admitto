@@ -45,6 +45,7 @@ const row = {
     ask_department: false,
     consent_keys: [],
     max_companions: 0,
+    styled_form_controls: false,
   },
 };
 
@@ -568,5 +569,35 @@ describe("the password as the way in (D-C3)", () => {
     for (const access_methods of [["sso"], [], ["password", "link"], ["link", "password"], ["unknown"]]) {
       expect(await resolveRegistration(withSettings({ access_methods }), "northwind-summit", NOW), access_methods.join()).toEqual({ kind: "not_found" });
     }
+  });
+});
+
+describe("the styled boxes switch (D-E9)", () => {
+  const formOf = async (settings: Record<string, unknown>) => {
+    const fake = { event: { findUnique: vi.fn(async () => ({ ...row, registration_settings: { ...row.registration_settings, ...settings } })) } };
+    const state = await loadRegistrationPage(fake as unknown as PrismaClient, "northwind-summit", NOW);
+    if (state.kind !== "open") throw new Error(`the form is ${state.kind}`);
+    return state.form;
+  };
+
+  beforeEach(() => {
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(true));
+  });
+
+  it("is off for the form of an event that has not switched it on", async () => {
+    expect((await formOf({})).styledControls).toBe(false);
+    expect((await formOf({ styled_form_controls: false })).styledControls).toBe(false);
+  });
+
+  it("is on for the form of an event that has", async () => {
+    expect((await formOf({ styled_form_controls: true })).styledControls).toBe(true);
+  });
+
+  it("reads the column with the rest of the settings, in the one read of the event", async () => {
+    const fake = { event: { findUnique: vi.fn(async () => row) } };
+    await loadRegistrationPage(fake as unknown as PrismaClient, "northwind-summit", NOW);
+    expect(fake.event.findUnique).toHaveBeenCalledTimes(1);
+    const select = (fake.event.findUnique.mock.calls[0] as unknown as [{ select: { registration_settings: { select: Record<string, boolean> } } }])[0].select;
+    expect(select.registration_settings.select.styled_form_controls).toBe(true);
   });
 });

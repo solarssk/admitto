@@ -51,6 +51,8 @@ export type SettingsValues = {
   ask_company: boolean;
   ask_department: boolean;
   consent_keys: string[];
+  /** The guest form draws its date, time and phone boxes in the product's style, not the browser's (D-E9). */
+  styled_form_controls: boolean;
 };
 
 /** What an event without a settings row has: registration off, and everything else as the columns default. A test keeps the
@@ -65,6 +67,7 @@ export function defaultSettings(): SettingsValues {
     ask_company: false,
     ask_department: false,
     consent_keys: [],
+    styled_form_controls: false,
   };
 }
 
@@ -123,6 +126,7 @@ const SETTINGS_SELECT = {
   ask_company: true,
   ask_department: true,
   consent_keys: true,
+  styled_form_controls: true,
 } as const satisfies Prisma.EventRegistrationSettingsSelect;
 
 type StoredRow = Prisma.EventRegistrationSettingsGetPayload<{ select: typeof SETTINGS_SELECT }>;
@@ -138,6 +142,7 @@ function valuesOf(row: StoredRow): SettingsValues {
     ask_company: row.ask_company,
     ask_department: row.ask_department,
     consent_keys: [...row.consent_keys],
+    styled_form_controls: row.styled_form_controls,
   };
 }
 
@@ -161,6 +166,7 @@ function mergeSettings(current: SettingsValues, patch: RegistrationSettingsPatch
     ask_company: patch.ask_company ?? current.ask_company,
     ask_department: patch.ask_department ?? current.ask_department,
     consent_keys: patch.consent_keys === undefined ? current.consent_keys : [...new Set(patch.consent_keys)],
+    styled_form_controls: patch.styled_form_controls ?? current.styled_form_controls,
   };
 }
 
@@ -183,7 +189,7 @@ function sameMembers(a: readonly string[], b: readonly string[]): boolean {
 /**
  * Whether a save has to find the event ready: when it turns registration on, and when it changes the way in or the
  * consents of an event that has it on. Turning registration off is never judged, and neither is a switch that does not
- * touch what the form needs (the waiting list, the check of the address, the companion, the company and department).
+ * touch what the form needs (the waiting list, the check of the address, the companion, the company and department, the styled boxes).
  */
 function needsReadiness(before: SettingsValues, after: SettingsValues): boolean {
   if (after.mode === null) return false;

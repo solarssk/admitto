@@ -41,9 +41,14 @@
  *   What is sent is `companions: [{ name, answers }]`, read from the fields of the panel. The companion is kept nowhere else.
  *
  * Nothing the guest typed is put in an address, and the page has no cookie.
+ *
+ * An event that switched the styled boxes on (D-E9) gets a second script after this one (./form-controls-script.ts). This one does
+ * not know it and is the same text with or without it: the two meet only in the page, where the second leaves the answer of a
+ * styled box in a hidden `data-control` that this one reads like any other.
  */
 
 import { esc } from "../ticket-page.js";
+import { REGISTRATION_STYLED_CONTROLS_SCRIPT } from "./form-controls-script.js";
 
 /** The script, without its `<script>` tag. */
 export const REGISTRATION_FORM_SCRIPT = String.raw`
@@ -700,7 +705,12 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
 })();
 `;
 
-/** The `<script>` element, under the nonce of this response. */
-export function renderFormScript(nonce: string): string {
-  return `<script nonce="${esc(nonce)}">${REGISTRATION_FORM_SCRIPT}</script>`;
+/**
+ * The `<script>` element, under the nonce of this response. For an event that switched the styled boxes on there is a second
+ * element after it, with the script of ./form-controls-script.ts under the same nonce. Without the switch the answer is the one
+ * element it always was, byte for byte.
+ */
+export function renderFormScript(nonce: string, styledControls = false): string {
+  const first = `<script nonce="${esc(nonce)}">${REGISTRATION_FORM_SCRIPT}</script>`;
+  return styledControls ? `${first}\n  <script nonce="${esc(nonce)}">${REGISTRATION_STYLED_CONTROLS_SCRIPT}</script>` : first;
 }

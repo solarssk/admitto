@@ -874,28 +874,31 @@ model BounceIngestSettings {
 // names the extra consents this event asks for. Constraints in migration SQL:
 // EventRegistrationSettings_mode_check, _access_methods_check, _consent_keys_not_null, _max_companions_check.
 model EventRegistrationSettings {
-  id               String   @id @default(cuid())
-  event_id         String   @unique
-  event            Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  id                   String   @id @default(cuid())
+  event_id             String   @unique
+  event                Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
   // null = off, "automatic" (accepted while seats are free) or "approval" (staff decide).
-  mode             String?
+  mode                 String?
   // "link" | "password" | "sso". Exactly one in 0.8, but the column holds a list so that a later
   // release can offer several without a migration (D-C1).
-  access_methods   String[] @default([])
+  access_methods       String[] @default([])
   // argon2id hash of the event password (method "password"); never the password itself.
-  password_hash    String?
-  waitlist_enabled Boolean  @default(true)
+  password_hash        String?
+  waitlist_enabled     Boolean  @default(true)
   // Mail a confirmation link before the guest counts (methods "link" and "password"; D-C5).
-  verify_email     Boolean  @default(true)
+  verify_email         Boolean  @default(true)
   // How many companions one guest may bring. 0 = off. The application allows 0 or 1 (D-E5); the
   // column does not hard-code "one".
-  max_companions   Int      @default(0)
-  ask_company      Boolean  @default(false)
-  ask_department   Boolean  @default(false)
+  max_companions       Int      @default(0)
+  ask_company          Boolean  @default(false)
+  ask_department       Boolean  @default(false)
   // Keys of the extra consents this event's form asks for (D-F2). Event-scoped.
-  consent_keys     String[] @default([])
-  created_at       DateTime @default(now())
-  updated_at       DateTime @updatedAt
+  consent_keys         String[] @default([])
+  // The guest form draws its date, time and phone boxes in the product's own style instead of the browser's (D-E9).
+  // One switch for the event, not one per field; off until an organiser turns it on.
+  styled_form_controls Boolean  @default(false)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
 }
 
 // A guest's submission through the public form, before (and after) it becomes an Attendee.

@@ -23,7 +23,7 @@ The form opens for an event only when registration is turned on for it, on the *
 | Long text | A box four lines tall that can be pulled taller | Up to 1000 characters, with line breaks |
 | Date | The browser's date picker | One day |
 | Date and time | The browser's date and time picker | One day and a time on the clock |
-| Phone | A one-line box. A phone opens its number keypad | 3 to 15 digits, with an optional `+` at the start |
+| Phone | A one-line box. A phone opens its number keypad. With the styled boxes on, a button with a flag and a country code, and a list of countries, sits beside it | 3 to 15 digits, with an optional `+` at the start |
 | Single choice | A button that opens a list, with a search box past six options, as in the admin | One of your options |
 | Yes / No | A tick box. A required one is a list of Yes and No instead, drawn like a single choice | Yes or No |
 
@@ -84,6 +84,12 @@ Rules apply to **Text**, **Long text** and **Phone** fields. This is how they re
 | Example | `For example: 1234` |
 
 The rules on the form are hints. The form does not stop a guest from sending because of a rule. Admitto checks every answer when it arrives, and the guest sees a message under the box that did not pass.
+
+## Styled boxes
+
+An Administrator can switch **Styled form boxes** on for the event, on the **Access** tab. See [Registration Access](Registration-Access#styled-boxes). With it on, a phone question shows the button of a country beside the number. The guest opens the list, searches by the name or the code of a country, and picks one with the mouse, a tap or the keys. The answer is the code and the digits of the number.
+
+A phone question with a digits-only rule or a length rule keeps the browser's box, because a country code would break the rule.
 
 ## Date and time
 
@@ -161,6 +167,7 @@ A guest who sends the form twice at the same moment is registered once. An addre
 | The form says "not found" although registration is on | A required question that the form cannot show keeps it closed, for example a required Single choice field with no options. Add the options, or clear **Required** |
 | A question never appears under the tick box or the list it waits for | The question it waits for must be on the form, and must be a Yes / No or a Single choice field. For a list, the condition must name an option that exists, written exactly |
 | A field has suggestions, but the guest sees no list | Suggestions fit Text fields only. Check that the field is a Text field, and that its own condition is met |
+| A phone question has no list of countries although the styled boxes are on | The question has a digits-only rule or a length rule. Remove the rule, or keep the browser's box for a number such as a desk extension |
 | A field has an icon, but the guest sees none | A Single choice, a Long text and a required Yes / No have no place for an icon |
 | The form has no part for a companion | Only an event that takes a companion shows it. A required question about the companion that the form cannot show (for example a required single choice with no options) also leaves the part out. The rest of the form stays open |
 | A guest registered but got no mail | Admitto sends at most 3 registration mails a day to one address, and a daily number of mails for one event (1000, or 3 per seat if that is more). Over the limit the registration is saved without its mail. Ask the administrator of the system to raise the limit |

@@ -125,6 +125,9 @@ export interface RegistrationFormModel {
   /** Whether the way in is the event's password: the page then asks for it first and keeps the form behind it. Only that:
    * the hash of the password is never part of what the page is built from. */
   needsPassword: boolean;
+  /** Whether the event draws the phone box (and, in a later step, the date and time boxes) in the product's own style
+   * instead of the browser's (D-E9). One switch for the event. Off: the page is the native one, byte for byte. */
+  styledControls: boolean;
 }
 
 export interface ClosedFormModel {
@@ -174,6 +177,7 @@ const EVENT_SELECT = {
       ask_department: true,
       consent_keys: true,
       max_companions: true,
+      styled_form_controls: true,
     },
   },
 } as const;
@@ -350,6 +354,7 @@ async function loadOpenForm(
       contact,
       turnstileSiteKey: keys.siteKey,
       needsPassword: access.method === "password",
+      styledControls: settings.styled_form_controls,
     },
   };
 }

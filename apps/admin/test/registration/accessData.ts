@@ -41,6 +41,7 @@ export function settings(overrides: Partial<RegistrationSettingsDto> = {}): Regi
     ask_company: false,
     ask_department: false,
     consent_keys: [],
+    styled_form_controls: false,
     password_set: false,
     guest_url: "https://admitto.example.com/r/demo",
     readiness: checks(),

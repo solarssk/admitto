@@ -31,7 +31,7 @@ export const MAX_REGISTRATION_SETTINGS_BODY_BYTES = 4_096;
  *
  * - `mode`: `null` (off), `"automatic"` or `"approval"`;
  * - `access_methods`: `[]` or exactly one of `"link"` and `"password"` (the company sign-in comes with PR 118);
- * - `waitlist_enabled`, `verify_email`, `ask_company`, `ask_department`: switches;
+ * - `waitlist_enabled`, `verify_email`, `ask_company`, `ask_department`, `styled_form_controls`: switches;
  * - `max_companions`: 0 to `MAX_COMPANION_SLOTS`;
  * - `consent_keys`: keys of the event's published extra consents (a key it has not published is a 422).
  */
@@ -44,6 +44,7 @@ const putBodySchema = z
     max_companions: z.number().int().min(0).max(MAX_COMPANION_SLOTS).optional(),
     ask_company: z.boolean().optional(),
     ask_department: z.boolean().optional(),
+    styled_form_controls: z.boolean().optional(),
     consent_keys: z.array(z.string().regex(LEGAL_CONSENT_KEY_PATTERN)).max(MAX_CONSENT_DOCUMENTS_PER_EVENT).optional(),
   })
   .strict();
