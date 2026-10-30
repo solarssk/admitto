@@ -212,7 +212,7 @@ A phone number is saved as a + and its digits. A number saved earlier in another
 | **The field ID is not what you need** | Delete and recreate the unused field before importing data. It cannot be renamed later |
 | **A Select field cannot be saved** | Add at least one option |
 | **An import value is invalid** | Use the field ID as the column and match the selected type or option |
-| **The field cannot be deleted** | Open the event item that shows it, on the **Requirements** page, and uncheck the field under **Attendee data field**. Also change or remove the condition of any field that is shown only for an answer to it |
+| **The field cannot be deleted** | Open the event item that uses it, on the **Requirements** page, and uncheck the field under **Attendee data field**. Also change or remove the condition of any field that is shown only for an answer to it |
 | **A Required field cannot be saved because of the registration form** | The event accepts registrations, and a guest cannot answer a field that is not on the form. Put the field on the form, or clear **Required** |
 | **The editor says a change can't be saved when you move a question to the other person** | Other questions are shown for an answer to it, or it is shown for an answer to a question about the other person. Open those questions and set **Show only when** to **No condition**, or undo the move |
 | **The editor says a change can't be saved because other questions are shown for an answer to this field** | Open each of those questions and set **Show only when** to **No condition**, or undo the change. The same applies to deleting the field |

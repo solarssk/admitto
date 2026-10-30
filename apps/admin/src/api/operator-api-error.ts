@@ -74,7 +74,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   field_controls_others:
     "Other fields are shown only for an answer to this one. Change or remove their condition first.",
   field_in_use:
-    "An item on the Requirements page still shows this field at check-in. Open the item and uncheck the field under Attendee data field first.",
+    "An item on the Requirements page still uses this field. Open the item and uncheck the field under Attendee data field first.",
   field_limit_reached: "This event has reached its custom field limit.",
   file_required: "Choose a file to upload.",
   file_too_large: "File exceeds the 2 MB limit.",

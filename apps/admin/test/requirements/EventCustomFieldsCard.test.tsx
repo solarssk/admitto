@@ -252,7 +252,7 @@ describe("EventCustomFieldsCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
-        expect.stringMatching(/item on the Requirements page still shows this field/),
+        expect.stringMatching(/item on the Requirements page still uses this field/),
         "warning",
       );
     });
