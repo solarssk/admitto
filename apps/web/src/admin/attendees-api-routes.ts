@@ -3,7 +3,13 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
-import { WALLET_RELEVANT_ATTENDEE_FIELDS, eventEndsAtUtc, isWalletAddClosed, type EventEndInput } from "@admitto/shared";
+import {
+  EVENT_CUSTOM_FIELD_LONG_TEXT_MAX,
+  WALLET_RELEVANT_ATTENDEE_FIELDS,
+  eventEndsAtUtc,
+  isWalletAddClosed,
+  type EventEndInput,
+} from "@admitto/shared";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import {
   listDeliveries,
@@ -28,6 +34,7 @@ import {
   type WalletPassProvider,
 } from "@admitto/wallet";
 import {
+  eventCustomFieldOrderBy,
   loadEventCustomDataFields,
   buildCustomDataFromInput,
   validateCustomDataPatch,
@@ -77,6 +84,7 @@ import {
   UnknownTicketTypeError,
   acquireEventTicketTypesLock,
   REVOCABLE_ITEM_STATES,
+  filterItemsForAttendee,
   type AdmitResult,
   type AttendeeCustomFieldFilter,
   type AttendeeMailStatusFilter,
@@ -121,7 +129,13 @@ import { loadAttendeeErasureRecordForViewer, type AttendeeErasureRecord } from "
 import { loadEventAdminJob } from "./admin-job-http.js";
 import { enqueueWalletPushJob } from "./wallet-push-routes.js";
 import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
-import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation, runEventCapacityTransaction } from "./event-capacity.js";
+import {
+  assertEventCapacityForIncoming,
+  acquireEventCapacityLock,
+  countSeatsOfAttendee,
+  isCapacityReactivation,
+  runEventCapacityTransaction,
+} from "./event-capacity.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
@@ -181,14 +195,22 @@ const RSVP_STATUSES = ATTENDEE_EXPORT_RSVP_STATUSES;
 type RsvpStatus = (typeof RSVP_STATUSES)[number];
 const rsvpStatusSchema = z.enum(RSVP_STATUSES);
 
-/** An attendee's email: a valid address that is not in the namespace reserved for the placeholders
- * of erased attendees (see isErasedPlaceholderEmail). */
+/** An attendee's email: a valid address, in lower case like the import and the registration form store
+ * it (the unique index on (event, email) tells apart only the same spelling), that is not in the
+ * namespace reserved for the placeholders of erased attendees (see isErasedPlaceholderEmail). */
 const attendeeEmailSchema = z
   .string()
   .trim()
+  .toLowerCase()
   .email()
   .max(254)
   .refine((value) => !isErasedPlaceholderEmail(value), "reserved address");
+
+/** The most one custom_data value may hold in a staff request: what the longest type takes, a long text
+ * of 1000 characters at up to two UTF-16 units each. How much a given field takes is decided against
+ * the event's own fields (validateCustomDataPatch and buildCustomDataFromInput in @admitto/tickets):
+ * 100 characters for every type but long text. */
+const CUSTOM_DATA_VALUE_REQUEST_MAX = EVENT_CUSTOM_FIELD_LONG_TEXT_MAX * 2;
 
 const patchAttendeeFieldsSchema = z
   .object({
@@ -206,7 +228,7 @@ const patchAttendeeFieldsSchema = z
           .min(1)
           .max(60)
           .regex(/^[a-z0-9_]+$/),
-        z.string().trim().max(100).nullable(),
+        z.string().trim().max(CUSTOM_DATA_VALUE_REQUEST_MAX).nullable(),
       )
       .optional(),
     rsvp_status: rsvpStatusSchema.optional(),
@@ -259,7 +281,7 @@ export type BulkResendDto = {
   failed: number;
 };
 
-const customDataFieldValueSchema = z.string().trim().max(100).nullable();
+const customDataFieldValueSchema = z.string().trim().max(CUSTOM_DATA_VALUE_REQUEST_MAX).nullable();
 
 const customDataFieldsRecordSchema = z.record(
   z
@@ -386,6 +408,15 @@ export type AttendeeNoteDto = {
   created_at: string;
 };
 
+/** The person a guest brings, as the staff page shows and edits them (D-E5): a third party whose data is the guest's to
+ * give and the organiser's to correct, and to remove. `custom_data` holds the answers to the event's questions about a
+ * companion, key to text; null when there are none. */
+export type AttendeeCompanionDto = {
+  slot: number;
+  name: string;
+  custom_data: Record<string, string> | null;
+};
+
 export type AttendeeDetailDto = {
   id: string;
   /** Set once the attendee's personal data has been erased: the name and email are placeholders and
@@ -431,6 +462,9 @@ export type AttendeeDetailDto = {
    * (isWalletFieldMappingRelevant, @admitto/wallet/passcreator-mapper). */
   wallet_field_mapping: Record<string, string> | null;
   custom_data: unknown;
+  /** The companion the guest brings, or null: none, or the attendee is erased (the row stays with a placeholder, which
+   * the page never shows). */
+  companion: AttendeeCompanionDto | null;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
   event_items: AttendeeDetailItemDto[];
@@ -451,9 +485,10 @@ export type AttendeeDetailDto = {
 };
 
 /** Read-only event-day item summary for the attendee detail page — same source data as the
- * check-in AttendeeCardDto (enabled EventItems + this attendee's AttendeeItemState rows), but
- * without getAttendeeCard's ensureAttendeeItemStates write-on-read side effect: a plain detail
- * view has no reason to create pending-state rows the operator card would lazily backfill.
+ * check-in AttendeeCardDto (enabled EventItems that apply to the attendee + this attendee's
+ * AttendeeItemState rows), but without getAttendeeCard's ensureAttendeeItemStates write-on-read
+ * side effect: a plain detail view has no reason to create pending-state rows the operator card
+ * would lazily backfill.
  * Deliberately doesn't surface each item's configured content_fields (e.g. shirt size) inline -
  * with several fields configured that reads as clutter next to the item name and duplicates the
  * Additional information card, which already lists every custom_data field on its own (PO review). */
@@ -462,10 +497,11 @@ async function loadAttendeeItemsSummary(
   eventId: string,
   attendeeId: string,
 ): Promise<AttendeeDetailItemDto[]> {
-  const items = await db.eventItem.findMany({
+  const enabled = await db.eventItem.findMany({
     where: { event_id: eventId, enabled: true },
     orderBy: { key: "asc" },
   });
+  const items = await filterItemsForAttendee(db, attendeeId, enabled);
   if (items.length === 0) return [];
 
   const states = await db.attendeeItemState.findMany({
@@ -542,14 +578,14 @@ async function loadAttendeeInEvent(
   return row;
 }
 
-type ManagedEventAttendee = {
+export type ManagedEventAttendee = {
   attendee: NonNullable<Awaited<ReturnType<typeof loadAttendeeInEvent>>>;
   attendeeId: string;
   eventId: string;
 };
 
 /** Resolve, authorize, and load an attendee scoped to the requested event. */
-async function requireManagedEventAttendee(
+export async function requireManagedEventAttendee(
   c: Context,
   db: PrismaClient,
 ): Promise<ManagedEventAttendee | Response> {
@@ -621,6 +657,9 @@ function allowedCustomFieldValues(field: { type: string; options: Prisma.JsonVal
   return new Set(field.options.filter((o): o is string => typeof o === "string"));
 }
 
+/** The types filtered by the text they contain (a contains match): every type that is free input. */
+const TEXT_FILTER_FIELD_TYPES = new Set(["text", "long_text", "date", "datetime", "phone"]);
+
 /** One field's own `cf_<source_field>` value(s), or `null` when the field has no active filter -
  * see parseCustomFieldFilters's own doc comment for the validation this applies. */
 function parseOneCustomFieldFilter(
@@ -628,9 +667,11 @@ function parseOneCustomFieldFilter(
   field: { source_field: string; type: string; options: Prisma.JsonValue },
 ): AttendeeCustomFieldFilter | null {
   const key = `cf_${field.source_field}`;
-  if (field.type === "text") {
+  if (TEXT_FILTER_FIELD_TYPES.has(field.type)) {
     const raw = searchParams.get(key)?.trim();
-    return raw ? { source_field: field.source_field, type: "text", text: raw.slice(0, 200) } : null;
+    // A phone number is stored as an optional + and its digits, so what is looked for is cut down to that too.
+    const text = field.type === "phone" ? raw?.replaceAll(/[^\d+]/g, "") : raw;
+    return text ? { source_field: field.source_field, type: "text", text: text.slice(0, 200) } : null;
   }
   if (field.type !== "select" && field.type !== "boolean") return null;
   const allowed = allowedCustomFieldValues(field);
@@ -680,9 +721,11 @@ async function parseListQuery(
   const ticket_type = parseCommaSeparatedTicketTypes(c.req.query("ticket_type"));
   const rsvp_status = parseCommaSeparatedEnum(c.req.query("rsvp_status"), RSVP_STATUSES);
   const mail_status = parseCommaSeparatedEnum(c.req.query("mail_status"), ATTENDEE_MAIL_STATUS_FILTERS);
+  // The attendee's own fields: a question about a companion is answered into the companion's row, which no filter reads.
   const customFieldDefs = await db.eventCustomField.findMany({
-    where: { event_id: eventId },
+    where: { event_id: eventId, applies_to: "guest" },
     select: { source_field: true, type: true, options: true },
+    orderBy: eventCustomFieldOrderBy(),
   });
   const customFields = parseCustomFieldFilters(c, customFieldDefs);
   const sortByRaw = c.req.query("sortBy");
@@ -1088,8 +1131,29 @@ async function resolveAttendeeWalletLinksForDto(
   }
 }
 
+/** The answers of a companion as the page reads them: the entries that are text, key to text; null when there are none. */
+function companionAnswers(raw: Prisma.JsonValue): Record<string, string> | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const answers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string") answers[key] = value;
+  }
+  return Object.keys(answers).length > 0 ? answers : null;
+}
+
+/** The companion of an attendee, or null for one who has none or was erased: an erased attendee's page is read-only and
+ * shows nothing of the person they brought, whose row stays only to keep the seat. The attendee's state is judged in the
+ * same read, so a page built from a row that was read before an erasure still shows nothing of the person. */
+async function loadAttendeeCompanion(db: PrismaClient, attendeeId: string): Promise<AttendeeCompanionDto | null> {
+  const row = await db.attendeeCompanion.findFirst({
+    where: { attendee_id: attendeeId, attendee: { erased_at: null } },
+    orderBy: { slot: "asc" },
+  });
+  return row ? { slot: row.slot, name: row.name, custom_data: companionAnswers(row.custom_data) } : null;
+}
+
 /** Build attendee detail DTO including delivery log and activity. */
-async function buildAttendeeDetailDto(
+export async function buildAttendeeDetailDto(
   db: PrismaClient,
   eventId: string,
   row: {
@@ -1118,13 +1182,14 @@ async function buildAttendeeDetailDto(
   activityPageSize: number = ATTENDEE_ACTIVITY_DEFAULT_PAGE_SIZE,
   activitySnapshot: ActivitySnapshot | null = null,
 ): Promise<AttendeeDetailDto> {
-  const [deliveriesResult, actionLog, event_items, notes, walletLinks, event] = await Promise.all([
+  const [deliveriesResult, actionLog, event_items, notes, walletLinks, event, companion] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
     loadAttendeeActionLogEntries(db, row.id, activityPage, activityPageSize, activitySnapshot),
     loadAttendeeItemsSummary(db, eventId, row.id),
     loadAttendeeNotes(db, eventId, row.id, notesPage),
     resolveAttendeeWalletLinksForDto(db, row.id),
     db.event.findUnique({ where: { id: eventId }, select: { wallet_field_mapping: true } }),
+    loadAttendeeCompanion(db, row.id),
   ]);
   const { company, department } = resolveCompanyDepartment(row);
 
@@ -1155,6 +1220,7 @@ async function buildAttendeeDetailDto(
     wallet_google_link: walletLinks.google,
     wallet_field_mapping: parseWalletFieldMapping(event?.wallet_field_mapping),
     custom_data: row.custom_data ?? null,
+    companion,
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log: actionLog.items,
     action_log_total: actionLog.total,
@@ -1815,21 +1881,61 @@ async function guardPatchTicketTypeChange(
   if (ticketTypeError) throw new TransactionResponseError(c.json(ticketTypeError, 400));
 }
 
+/** Whether an attendee of the event (other than `exceptAttendeeId`) holds this address in any letters.
+ * The unique index tells apart only the same spelling, and an address saved before addresses were
+ * lower-cased can still have capitals. The address is compared as text, the way the admission of a
+ * registration compares it (`lower(btrim(email))`), not as a pattern: a case-insensitive Prisma
+ * `equals` is an ILIKE on PostgreSQL, where an `_` in the address stands for any character. */
+async function attendeeAddressIsTaken(
+  client: Prisma.TransactionClient,
+  eventId: string,
+  address: string,
+  exceptAttendeeId?: string,
+): Promise<boolean> {
+  const except = exceptAttendeeId === undefined ? Prisma.empty : Prisma.sql`AND "id" <> ${exceptAttendeeId}`;
+  const rows = await client.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "Attendee"
+    WHERE "event_id" = ${eventId} AND lower(btrim("email")) = lower(btrim(${address}::text)) ${except}
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+/** A changed address must not be another attendee's address in other letters, which the create route
+ * refuses the same way. Throws a TransactionResponseError for the transaction's catch to surface as
+ * the same 409 the unique index gives for the same spelling. */
+async function guardPatchEmailChange(
+  c: Context,
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  attendeeId: string,
+  profileChanges: ReturnType<typeof computePatchChanges>,
+  nextEmail: string | undefined,
+): Promise<void> {
+  if (!profileChanges?.fields.includes("email") || nextEmail === undefined) return;
+  if (await attendeeAddressIsTaken(tx, eventId, nextEmail, attendeeId)) {
+    throw new TransactionResponseError(c.json({ error: "email_conflict" }, 409));
+  }
+}
+
 /** Re-checks event capacity when a PATCH restores a previously non-admittable attendee to an
  * admittable status (capacity_reactivation), under the same advisory lock the create/check-in
  * paths use — returns the forced-admit detail for the audit log, or undefined when nothing
- * needed forcing (or no restore happened at all). Throws a TransactionResponseError carrying the
- * capacity response for the transaction's catch to surface. */
+ * needed forcing (or no restore happened at all). The attendee takes a seat again and so does each of
+ * their companions (a companion holds a seat only while the attendee is active), counted under the lock.
+ * Throws a TransactionResponseError carrying the capacity response for the transaction's catch to surface. */
 async function guardPatchCapacityRestore(
   c: Context,
   tx: Prisma.TransactionClient,
   eventId: string,
+  attendeeId: string,
   existingStatus: string,
   statusChange: PatchAttendeeStatusChange,
 ): Promise<{ forced: true; capacity: number; current: number } | undefined> {
   if (!isCapacityReactivation(existingStatus, statusChange)) return undefined;
   await acquireEventCapacityLock(tx, eventId);
-  const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
+  const seatsNeeded = await countSeatsOfAttendee(tx, attendeeId);
+  const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, seatsNeeded, { restoring: true });
   if (capacityResult instanceof Response) throw new TransactionResponseError(capacityResult);
   if (capacityResult && "forced" in capacityResult) return capacityResult;
   return undefined;
@@ -1886,6 +1992,7 @@ async function runPatchAttendeeTransaction(
     attendeeId: string;
     existing: { status: string; admitted_at: Date | null };
     profileChanges: ReturnType<typeof computePatchChanges>;
+    profilePatchEmail: string | undefined;
     profilePatchTicketType: string | null | undefined;
     rsvpChange: ReturnType<typeof computeRsvpChange>;
     statusChange: PatchAttendeeStatusChange;
@@ -1899,6 +2006,7 @@ async function runPatchAttendeeTransaction(
     attendeeId,
     existing,
     profileChanges,
+    profilePatchEmail,
     profilePatchTicketType,
     rsvpChange,
     statusChange,
@@ -1906,12 +2014,14 @@ async function runPatchAttendeeTransaction(
     updateData,
   } = ctx;
 
+  await guardPatchEmailChange(c, tx, eventId, attendeeId, profileChanges, profilePatchEmail);
   await guardPatchTicketTypeChange(c, tx, eventId, profileChanges, profilePatchTicketType);
 
   const restoreCapacityForced = await guardPatchCapacityRestore(
     c,
     tx,
     eventId,
+    attendeeId,
     existing.status,
     statusChange,
   );
@@ -2059,6 +2169,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       attendeeId,
       existing,
       profileChanges,
+      profilePatchEmail: profilePatch.email,
       profilePatchTicketType: profilePatch.ticket_type,
       rsvpChange,
       statusChange,
@@ -3488,7 +3599,7 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
  * event has wallet configured (see assertWalletBulkSelectionWithinLimit below) - same profile as
  * these 3 routes once that's true, so they're held to the same cap conditionally rather than
  * unconditionally, to avoid capping the common non-wallet case down from 500 for no reason. */
-const WALLET_BULK_SEND_LIMIT = 100;
+export const WALLET_BULK_SEND_LIMIT = 100;
 
 const bulkWalletAttendeesBodySchema = z
   .object({
@@ -3861,11 +3972,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
   const { email, first_name, last_name, company, department, ticket_type, custom_data } = parsed.data;
   const name = [first_name, last_name].filter(Boolean).join(" ");
 
-  const duplicate = await db.attendee.findFirst({
-    where: { event_id: eventId, email: { equals: email, mode: "insensitive" } },
-    select: { id: true },
-  });
-  if (duplicate) {
+  if (await attendeeAddressIsTaken(db, eventId, email)) {
     return c.json(
       { code: "email_taken", error: "This email is already registered for this event." },
       409,

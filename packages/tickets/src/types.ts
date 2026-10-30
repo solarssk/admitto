@@ -1,3 +1,6 @@
+import type { EventCustomFieldRules, EventCustomFieldType } from "@admitto/shared";
+import type { EventItemAudience } from "./item-audience.js";
+
 export type TicketMode = "internal" | "agency";
 
 export type ResolveTicketContext = {
@@ -60,9 +63,12 @@ export type CheckInScanParams = {
 export type EventItemContent = {
   label: string;
   source_field: string;
-  type?: "text" | "select" | "boolean";
+  type?: EventCustomFieldType;
   required?: boolean;
   options?: string[];
+  /** The rules of the field (`EventCustomField.rules`); absent = none: format rules for a `text`, `long_text` or
+   * `phone` field, and the icon, condition (`show_when`) and suggestions of the registration form. */
+  rules?: EventCustomFieldRules;
 };
 
 /** Per-item JSON config: operator hints and issuance behaviour flags (ADR 0025).
@@ -73,6 +79,9 @@ export type EventItemConfig = {
   content_fields?: string[];
   requires_return?: boolean;
   issue_on_checkin?: boolean;
+  /** Who is offered the item: every attendee (`all`, also when absent) or only those who bring a companion
+   * (`with_companion`). Read through `itemAppliesToAttendee` (item-audience.ts), nowhere else. */
+  audience?: EventItemAudience;
 };
 
 export type AttendeeCardItemDto = {

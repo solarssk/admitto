@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { REGISTRATION_PASSWORD_MAX, REGISTRATION_PASSWORD_MIN } from "@admitto/shared";
 import { ApiError } from "../../src/api/client.js";
 import {
   apiErrorCode,
@@ -50,6 +51,36 @@ describe("operatorApiErrorMessage", () => {
       fieldErrors: { note: ["x".repeat(201)] },
     });
     expect(operatorApiErrorMessage(err, "Failed.")).toBe("Check the form and try again.");
+  });
+
+  it("says what an event password has to be when the server refuses its length, with the numbers of the rule itself", () => {
+    const err = new ApiError(400, "registration_password_length", "registration_password_length");
+    expect(operatorApiErrorMessage(err, "Failed to save the password.")).toBe(
+      `The event password needs ${REGISTRATION_PASSWORD_MIN} to ${REGISTRATION_PASSWORD_MAX} characters.`,
+    );
+    expect(operatorApiErrorMessage(err, "Failed to save the password.")).toBe("The event password needs 8 to 128 characters.");
+  });
+
+  it("does not leave the answer of the guest route to a wrong event password as a bare code", () => {
+    const err = new ApiError(403, "access_denied", "access_denied");
+    expect(operatorApiErrorMessage(err, "Failed.")).toBe("The event password did not work.");
+  });
+
+  it("explains a Required field that the registration form does not ask, and what to do", () => {
+    const err = new ApiError(422, "required_field_not_on_form", "required_field_not_on_form");
+    expect(operatorApiErrorMessage(err, "Failed to save field.")).toBe(
+      "A required field must also be on the registration form, or guests cannot answer it. Turn it on for the form, or make the field optional.",
+    );
+  });
+
+  it("says where to look when a field cannot be deleted because an item shows it: the item on the Requirements page, and what to uncheck", () => {
+    const err = new ApiError(409, "field_in_use", "field_in_use");
+    const message = operatorApiErrorMessage(err, "Failed to delete field.");
+    expect(message).toBe(
+      "An item on the Requirements page still uses this field. Open the item and uncheck the field under Attendee data field first.",
+    );
+    // The place is named by the page of the items, and the old pointer to "there" (a card that is not on that page) is gone.
+    expect(message).not.toMatch(/Remove it there/);
   });
 
   it("explains the bulk-send rate limit", () => {

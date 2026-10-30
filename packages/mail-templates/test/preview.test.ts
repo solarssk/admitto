@@ -129,6 +129,18 @@ describe("sanitizeSampleLinksForTestSend", () => {
     expect(sanitized.html).not.toContain(DEFAULT_SAMPLE_VARS.ticket_url);
   });
 
+  it("replaces the sample confirmation link of a registration mail too, so a test mail carries no link to a page that does not exist", () => {
+    const rendered = {
+      subject: "Confirm",
+      html: `<a href="${DEFAULT_SAMPLE_VARS.confirm_url}">Confirm email address</a>`,
+    };
+
+    const sanitized = sanitizeSampleLinksForTestSend(rendered);
+
+    expect(sanitized.html).toBe('<a href="#">Confirm email address</a>');
+    expect(sanitized.html).not.toContain("example.com");
+  });
+
   it("leaves html untouched when no sample URLs are present", () => {
     const rendered = {
       subject: "Your ticket",

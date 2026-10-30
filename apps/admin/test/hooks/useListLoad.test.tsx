@@ -590,6 +590,70 @@ describe("useListLoad poll (the live refresh of a list)", () => {
     expect(result.current.data).toBe("rows C");
   });
 
+  it("takes over from the tick that is on its way when it is asked to supersede: that request is cancelled and its answer dropped, and a plain tick still waits for the new one", async () => {
+    const signals: AbortSignal[] = [];
+    const stale = deferred<string>();
+    const fresh = deferred<string>();
+    const fetcher = vi.fn<Fetcher>((signal) => {
+      signals.push(signal);
+      if (signals.length === 1) return Promise.resolve("rows A");
+      return signals.length === 2 ? stale.promise : fresh.promise;
+    });
+    const { result } = setup(fetcher);
+    await settle();
+
+    act(() => {
+      void result.current.poll();
+    });
+    act(() => {
+      void result.current.poll(undefined, { supersede: true });
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(signals[1]?.aborted).toBe(true);
+    expect(signals[2]?.aborted).toBe(false);
+
+    await act(async () => stale.resolve("rows from before the change"));
+    expect(result.current.data).toBe("rows A");
+
+    // The tick that was taken over has ended, and has not cleared the one that took over: that one is still on its way.
+    act(() => {
+      void result.current.poll();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+
+    await act(async () => fresh.resolve("rows after the change"));
+    expect(result.current.data).toBe("rows after the change");
+  });
+
+  it("starts a tick that supersedes when none is on its way, as a plain one does", async () => {
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockResolvedValueOnce("rows B");
+    const { result } = setup(fetcher);
+    await settle();
+
+    await act(async () => {
+      await result.current.poll(undefined, { supersede: true });
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toBe("rows B");
+  });
+
+  it("does not take over from a read somebody waits for, even when it is asked to supersede", async () => {
+    const next = deferred<string>();
+    const fetcher = vi.fn<Fetcher>().mockResolvedValueOnce("rows A").mockReturnValueOnce(next.promise);
+    const { result } = setup(fetcher);
+    await settle();
+
+    act(() => {
+      void result.current.reload();
+    });
+    await act(async () => {
+      await result.current.poll(undefined, { supersede: true });
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("does not end the error of a load that failed with the answer of a tick that was abandoned", async () => {
     const slow = deferred<string>();
     const fetcher = vi.fn<Fetcher>().mockRejectedValueOnce(new ApiError(500, "boom")).mockReturnValueOnce(slow.promise);

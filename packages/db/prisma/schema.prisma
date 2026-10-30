@@ -118,6 +118,10 @@ model Event {
   bounce_ingest_processed_uids BounceIngestProcessedUid[]
   bounce_ingest_runs           BounceIngestRun[]
   admin_jobs                   AdminJob[]
+  registration_settings        EventRegistrationSettings?
+  registrations                Registration[]
+  registration_mails           RegistrationMail[]
+  legal_documents              LegalDocument[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -186,17 +190,37 @@ model EventImageAsset {
 // an EventItem now only holds `content_fields: string[]` referencing rows here, used purely to
 // say "show this field as an operator hint on this item" (packages/tickets/event-item-contents.ts).
 model EventCustomField {
-  id           String   @id @default(cuid())
-  event_id     String
-  event        Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  source_field String
-  label        String
-  description  String?
-  type         String   @default("text")
-  options      Json?
-  required     Boolean  @default(false)
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  event_id      String
+  event         Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  source_field  String
+  label         String
+  description   String?
+  type          String   @default("text")
+  options       Json?
+  required      Boolean  @default(false)
+  // Whether the public registration form (v0.8) asks guests this question (D-E1). False for every
+  // field that existed before the form; the field editor on the Registration page creates new
+  // ones with true. A field off the form is still part of the attendee record.
+  show_on_form  Boolean  @default(false)
+  // Position among the event's fields, counted from 0. Null = not placed yet, listed after every
+  // placed field (oldest first). Only the reorder endpoint writes it: it renumbers the whole list
+  // under the event's custom-fields lock. Readers sort through eventCustomFieldOrderBy in
+  // @admitto/tickets, never with their own orderBy.
+  display_order Int?
+  // Format rules of the field (min_length, max_length, digits_only, example), read literally by the code: there is no
+  // pattern an organiser types. SQL NULL = none, so write Prisma.DbNull, never JsonNull (a CHECK refuses a JSON null).
+  // The keys are checked in the application (a strict Zod object in @admitto/tickets), so a new rule needs no migration.
+  // Only `text`, `long_text` and `phone` fields take rules.
+  rules         Json?
+  // Whose answer the question asks for: "guest" (the attendee, which is what every field was until now) or "companion"
+  // (the guest's +1, D-E5). An answer to a companion question lives in AttendeeCompanion.custom_data, never in
+  // Attendee.custom_data, so every reader of the attendee's answers reads the guest fields only
+  // (loadEventCustomDataFields). Values: CUSTOM_FIELD_APPLIES_TO in packages/db/src/status.ts, backed by the CHECK
+  // constraint EventCustomField_applies_to_check (migration SQL).
+  applies_to    String   @default("guest")
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
   @@unique([event_id, source_field])
   @@index([event_id])
@@ -346,6 +370,10 @@ model Attendee {
   item_states               AttendeeItemState[]
   notes                     AttendeeNote[]
   action_logs               AttendeeActionLog[]
+  // The guest registration this attendee was accepted from (null for an import or a manual add).
+  registration              Registration?
+  // The attendee's companions (+1, D-E5); each holds a seat while the attendee is active.
+  companions                AttendeeCompanion[]
 
   @@unique([event_id, email])
   // Enforce agency-UUID uniqueness per event for idempotent re-import.
@@ -357,6 +385,32 @@ model Attendee {
   // Composite key for CheckIn FK — attendee_id + event_id must match the same row.
   @@unique([id, event_id])
   @@index([external_uuid])
+}
+
+// A companion (+1) of an attendee (v0.8, D-B3, D-E5): the person who comes with a guest and takes a seat of the event's
+// limit but is not an attendee, and has no ticket of their own. One table and a slot, not columns on Attendee, so that "one
+// companion" is a rule of the application (MAX_COMPANION_SLOTS in @admitto/tickets) and not of the schema (D-E5). Personal
+// data of a third party: the erasure inventory decides every column (packages/tickets/test/erasure-inventory.test.ts).
+// The seat goes with the attendee: a companion counts only while the attendee is active (status outside revoked and
+// cancelled), so erasing an attendee who was not admitted frees both seats, and one who was admitted frees none (the
+// row stays, with a placeholder name and no answers). Deleting the attendee deletes the rows (cascade).
+// Rows are made by createAttendeeFromRegistration (the admission of a registration that brings one), emptied by
+// eraseAttendees, and changed by staff only through writeAttendeeCompanion and removeAttendeeCompanion, which take
+// lockAttendeeRow first. Constraints in migration SQL (not expressible here): AttendeeCompanion_slot_check (slot >= 1)
+// and AttendeeCompanion_custom_data_is_object (SQL NULL or a JSON object; write Prisma.DbNull, never JsonNull).
+model AttendeeCompanion {
+  id          String   @id @default(cuid())
+  attendee_id String
+  attendee    Attendee @relation(fields: [attendee_id], references: [id], onDelete: Cascade)
+  // 1-based position among the attendee's companions; 1 in 0.8.
+  slot        Int
+  name        String
+  // Answers to the event's companion questions (applies_to = "companion"), key to text, like Attendee.custom_data.
+  custom_data Json?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@unique([attendee_id, slot])
 }
 
 model WalletPass {
@@ -812,6 +866,154 @@ model BounceIngestSettings {
   last_run_summary       Json? // compact IngestSummary snapshot for this event
   created_at             DateTime  @default(now())
   updated_at             DateTime  @updatedAt
+}
+
+// Guest registration through the public form (v0.8), 1:1 with Event. No row, or mode = null, means
+// registration is off for the event: every public route answers as if the event had no form.
+// Consent and legal texts belong to the event, never to the organisation (D-F2): consent_keys
+// names the extra consents this event asks for. Constraints in migration SQL:
+// EventRegistrationSettings_mode_check, _access_methods_check, _consent_keys_not_null, _max_companions_check.
+model EventRegistrationSettings {
+  id                   String   @id @default(cuid())
+  event_id             String   @unique
+  event                Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  // null = off, "automatic" (accepted while seats are free) or "approval" (staff decide).
+  mode                 String?
+  // "link" | "password" | "sso". Exactly one in 0.8, but the column holds a list so that a later
+  // release can offer several without a migration (D-C1).
+  access_methods       String[] @default([])
+  // argon2id hash of the event password (method "password"); never the password itself.
+  password_hash        String?
+  waitlist_enabled     Boolean  @default(true)
+  // Mail a confirmation link before the guest counts (methods "link" and "password"; D-C5).
+  verify_email         Boolean  @default(true)
+  // How many companions one guest may bring. 0 = off. The application allows 0 or 1 (D-E5); the
+  // column does not hard-code "one".
+  max_companions       Int      @default(0)
+  ask_company          Boolean  @default(false)
+  ask_department       Boolean  @default(false)
+  // Keys of the extra consents this event's form asks for (D-F2). Event-scoped.
+  consent_keys         String[] @default([])
+  // The guest form draws its date, time and phone boxes in the product's own style instead of the browser's (D-E9).
+  // One switch for the event, not one per field; off until an organiser turns it on.
+  styled_form_controls Boolean  @default(false)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+}
+
+// A guest's submission through the public form, before (and after) it becomes an Attendee.
+// status (D-B2): awaiting_email | pending | waitlist | accepted | rejected; a deleted registration
+// is a deleted row, not a status. Personal data of a person who may never become an attendee, so
+// erasure inventory decides every column here: all are deleted with the row.
+// Constraints and the partial index live in migration SQL (not expressible here):
+// Registration_status_check, Registration_email_normalized, Registration_email_not_erased_placeholder,
+// Registration_accepted_iff_attendee, Registration_awaiting_email_iff_expiry,
+// Registration_companions_is_array, Registration_consents_is_object and
+// Registration_awaiting_email_expiry_idx (confirm_expires_at WHERE status = 'awaiting_email').
+model Registration {
+  id                 String             @id @default(cuid())
+  event_id           String
+  event              Event              @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  // Always lower(btrim(email)); one registration per address and event whatever the source (D-B14).
+  email              String
+  first_name         String
+  last_name          String
+  name               String
+  company            String?
+  department         String?
+  custom_data        Json?
+  // Array of { name, custom_data }; at most one element in 0.8. A list, not a "+1" column (D-E5).
+  companions         Json               @default("[]")
+  status             String
+  // Set exactly while status = awaiting_email: created_at + 24 h.
+  confirm_expires_at DateTime?
+  email_verified_at  DateTime?
+  decided_at         DateTime?
+  // Staff user id (no FK, like AdminAuditLog.actor_user_id); null for an automatic decision.
+  decided_by         String?
+  // Reserved for translated mails (D-D3).
+  locale             String?
+  // Proof of consent (D-F3): when the terms were accepted, and when each extra consent was
+  // given (consent key -> ISO time). No text version is stored.
+  accepted_at        DateTime?
+  consents           Json               @default("{}")
+  // Set exactly while status = accepted. Named attendee_id on purpose: the erasure inventory
+  // test finds every table that points at an attendee by this column and relation. The key is
+  // composite with event_id, so the attendee must belong to the registration's own event.
+  attendee_id        String?
+  attendee           Attendee?          @relation(fields: [attendee_id, event_id], references: [id, event_id], onDelete: Cascade)
+  created_at         DateTime           @default(now())
+  updated_at         DateTime           @updatedAt
+  mails              RegistrationMail[]
+
+  @@unique([event_id, email])
+  // One registration per attendee (the composite key above already pins the attendee to this event).
+  @@unique([attendee_id, event_id])
+  // Target of RegistrationMail's composite key: a mail row cannot name another event's registration.
+  @@unique([id, event_id])
+  @@index([event_id, status, created_at, id])
+}
+
+// Outgoing mail queue for registrations (D-D1, D-D2). Rows are inserted in the transaction that
+// changes the registration, the worker sends them; nothing is mailed from a request. Holds no
+// address and no text: both are read from the Registration row when the mail is sent, so deleting
+// the registration leaves nothing behind. `error` is a sanitised category (never a raw exception). template_name is one of registration-confirm,
+// registration-received, registration-waitlist, registration-rejected or ticket (the ticket row
+// only triggers the normal ticket send; its delivery is an EmailDelivery).
+// Constraints and the partial index in migration SQL: RegistrationMail_status_check,
+// RegistrationMail_template_name_check, RegistrationMail_pending_idx.
+model RegistrationMail {
+  id                  String       @id @default(cuid())
+  registration_id     String
+  registration        Registration @relation(fields: [registration_id, event_id], references: [id, event_id], onDelete: Cascade)
+  event_id            String
+  event               Event        @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  template_name       String
+  // Same vocabulary as EmailDelivery.status.
+  status              String       @default("queued")
+  // Send attempts made so far (0 before the first one).
+  attempts            Int          @default(0)
+  retryable           Boolean?
+  queued_at           DateTime     @default(now())
+  attempted_at        DateTime?
+  sent_at             DateTime?
+  provider_message_id String?
+  error_code          String?
+  error               String?
+  updated_at          DateTime     @updatedAt
+
+  @@unique([registration_id, template_name])
+  // Per-event daily cap on queued mail.
+  @@index([event_id, queued_at])
+}
+
+// A legal text of ONE event (v0.8, D-F2): the privacy notice a guest reads, the event terms a guest
+// accepts, and any extra consent the event asks for. Never organisation-wide and never inherited:
+// every event configures its own. One current text per (event, kind, key) and no history (D-F1);
+// a Registration records only when its terms were accepted (D-F3), not which text. A text is not
+// personal data, so it has no attendee_id and no erasure inventory entry.
+// kind: privacy_notice | event_terms | consent. key is the consent key (what
+// EventRegistrationSettings.consent_keys and Registration.consents name) and empty for the other two.
+// Constraints in migration SQL: LegalDocument_kind_check, _key_iff_consent, _key_format,
+// _title_not_blank, _published_not_blank.
+model LegalDocument {
+  id           String    @id @default(cuid())
+  event_id     String
+  event        Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  kind         String
+  key          String    @default("")
+  title        String
+  // HTML after apps/web/src/legal/sanitize-legal-html.ts. The only writer sanitises, so this is
+  // never the markup as received.
+  content_html String    @db.Text
+  // null = a draft: /legal/* answers 404 for it. Set when published, kept while the text is edited.
+  published_at DateTime?
+  // Staff user id (no FK, like AdminAuditLog.actor_user_id).
+  updated_by   String?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  @@unique([event_id, kind, key])
 }
 
 // Dedup marker for processed IMAP messages (source of truth — not IMAP \Seen).

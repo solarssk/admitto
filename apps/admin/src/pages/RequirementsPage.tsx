@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { useOutletContext, useParams } from "react-router";
+import { Link, useOutletContext, useParams } from "react-router";
 import { Button, Card, HintLabel, IconButton, ModalBackdrop, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -21,22 +21,23 @@ import { useListLoad } from "../hooks/useListLoad.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { orLoginRedirect } from "../identity/loginRedirect.js";
 import { disambiguatedLabel, findDuplicateLabels } from "../requirements/duplicateLabels.js";
-import { EventCustomFieldsCard } from "../requirements/EventCustomFieldsCard.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
 import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
 import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
 import { RequirementsSkeleton } from "../requirements/RequirementsSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
+import { guestQuestions } from "../utils/questionRecipient.js";
 import "../requirements/requirements.css";
 
 const EVENT_ITEMS_HINT =
   "Once an item has been issued to attendees, you can't disable it until its returns are recorded.";
 
-/** The region that stays whatever the read is doing (the placeholder, the error or the cards), and where the keyboard focus
+/** The region that stays whatever the read is doing (the placeholder, the error or the card), and where the keyboard focus
  * goes when a Retry that held it works. */
 const REQUIREMENTS_REGION = ".requirements-body";
 
-/** What the page's first read answers: the event's items and its custom fields, together (the edit drawer needs both). */
+/** What the page's first read answers: the event's items and its attendee fields, together (the edit drawer offers the fields
+ * as hints next to its items). The fields are edited on the Registration page, not here. */
 interface RequirementsData {
   readonly items: EventItemDto[];
   readonly fields: EventCustomFieldDto[];
@@ -44,6 +45,9 @@ interface RequirementsData {
 
 const NO_ITEMS: EventItemDto[] = [];
 const NO_FIELDS: EventCustomFieldDto[] = [];
+
+/** Where the event's attendee fields are edited: the Fields tab of its Registration page (`registrationTabs.ts`). */
+const attendeeFieldsPath = (eventId: string) => `/admin/events/${encodeURIComponent(eventId)}/registration?tab=fields`;
 
 function EventItemsTableBody({
   items,
@@ -247,11 +251,11 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const [adding, setAdding] = useState(false);
   const addPanelRef = useRef<HTMLDivElement>(null);
 
-  // The first read is one answer for both cards: the edit drawer offers the fields of the event next to its items, so an
-  // answer with one of them missing would be a wrong one. A failure is told to the connection state when the answer is
-  // in, never when a Retry starts, so the wording of the error on screen does not change while a Retry runs; a 401 hands
-  // the browser to the login page instead (`orLoginRedirect`, once the connection state has heard of it), and no error
-  // flashes up first.
+  // The first read is one answer for the items and the fields: the edit drawer offers the fields of the event next to its
+  // items, so an answer with one of them missing would be a wrong one, and a read of the fields that fails is a failed page
+  // with a Retry. A failure is told to the connection state when the answer is in, never when a Retry starts, so the wording
+  // of the error on screen does not change while a Retry runs; a 401 hands the browser to the login page instead
+  // (`orLoginRedirect`, once the connection state has heard of it), and no error flashes up first.
   const fetchRequirements = useMemo(
     () =>
       orLoginRedirect(async (signal: AbortSignal): Promise<RequirementsData> => {
@@ -270,6 +274,9 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const card = useCardLoad(list);
   const items = list.data?.items ?? NO_ITEMS;
   const customFields = list.data?.fields ?? NO_FIELDS;
+  // An item's hint shows the attendee's own answer, so the drawer offers the questions about the guest; the server refuses a hint
+  // that names a question about a companion.
+  const hintFields = useMemo(() => guestQuestions(customFields), [customFields]);
 
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
@@ -283,9 +290,9 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
 
   useModalFocusTrap(addPanelRef, addOpen, closeAddModal);
 
-  // An item or a field that was added, changed or deleted is somewhere in the list that the page cannot tell, so a refresh
-  // that fails replaces the cards with the error (they may be wrong), as the page always did; the rows stay on screen,
-  // blocked and dimmed, while it runs.
+  // An item that was added or changed is somewhere in the list that the page cannot tell, so a refresh that fails replaces
+  // the card with the error (it may be wrong), as the page always did; the rows stay on screen, blocked and dimmed, while it
+  // runs.
   function refreshRequirements() {
     void list.reload({ keepRowsOnFailure: false });
   }
@@ -412,9 +419,11 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
               </div>
             </Card>
           </section>
-
-          <EventCustomFieldsCard eventId={eventId} event={event} fields={customFields} onChanged={refreshRequirements} />
         </RefetchRegion>
+        {/* Outside the refetch region: it says where something is, not what the read answered, so a refresh does not block it. */}
+        <p className="requirements-section-hint requirements-section-hint--page">
+          Attendee fields are on the <Link to={attendeeFieldsPath(eventId)}>Fields tab of the Registration page</Link>.
+        </p>
       </div>
     );
   }
@@ -464,7 +473,7 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
         <EventItemDrawer
           eventId={eventId}
           item={selectedItem}
-          customFields={customFields}
+          customFields={hintFields}
           items={items}
           onClose={() => setSelectedItem(null)}
           onUpdated={() => {

@@ -21,6 +21,7 @@ This page lists **categories of third parties** that *may* process personal data
 | **Map tiles** | OpenStreetMap, CARTO, or a self-hosted tile server | Maps is enabled (Organisation Settings → External services) |
 | **Alert webhook** (optional) | Discord, Slack, or any HTTPS endpoint you choose | A superadmin saves a webhook URL (Organisation Settings → Notifications) |
 | **Weather forecast** | MET Norway, Open-Meteo | Weather is enabled (Organisation Settings → External services) |
+| **Bot protection** (optional) | Cloudflare Turnstile | A superadmin saves the Turnstile site key and secret key for the public registration form (Organisation Settings → External services → Guest registration) |
 | **CI and dev tooling** (repository only) | Codecov, SonarCloud, GitHub Actions, Anthropic (Claude), Sigstore | Project CI only. Not part of your production stack |
 
 ---
@@ -88,6 +89,15 @@ This page lists **categories of third parties** that *may* process personal data
 - **Data:** event coordinates and date. MET Norway also receives the same User-Agent as the address lookup.
 - **No attendee data.**
 
+### Bot protection (Cloudflare Turnstile)
+
+- **Purpose:** tells people from bots on the public registration form, so that automated sign-ups cannot fill the event or send mail to addresses they do not own.
+- **Data from the guest's browser:** when the form opens, the browser loads Cloudflare's script and sends Cloudflare the visitor's IP address, user agent and other browser and connection details, and the result of the challenge. This happens before the guest has typed anything.
+- **Data from the server:** the secret key and the challenge token, to check the result. The server does not send the visitor's IP address.
+- **Not sent to Turnstile:** the form itself. Turnstile receives no name, email or answers. If the instance sits behind a Cloudflare CDN, proxy or access gateway, the whole form passes through that service instead, name, email and answers included. List it under Edge / CDN or Zero Trust / access gateway.
+- **When:** only for forms that guests reach by a public link or a password, and only while both keys are saved. Without the keys those forms are closed and nothing loads from Cloudflare.
+- **Your duty:** name Cloudflare in the privacy notice shown on the registration form, and have the agreement with Cloudflare that your legal team requires, for example a DPA.
+
 ### CI and dev tooling (repository only)
 
 - **Purpose:** test coverage reports, static analysis, an automated review of pull requests, and signatures for release assets.
@@ -117,7 +127,8 @@ This page lists **categories of third parties** that *may* process personal data
 2. Write down the region and the subprocessors in your internal privacy register.
 3. Sign a DPA with the wallet pass provider (PassCreator, or an alternative) before you enable wallet passes for any event.
 4. Sign a DPA with whichever service receives the alert webhook, or leave the webhook unset. Alerts still reach admins in the app and by email.
-5. Keep this page in line with your live deployment.
+5. Before you turn on guest registration, agree the terms with Cloudflare for Turnstile (for example a DPA) and name Cloudflare in the privacy notice of the registration form.
+6. Keep this page in line with your live deployment.
 
 ---
 

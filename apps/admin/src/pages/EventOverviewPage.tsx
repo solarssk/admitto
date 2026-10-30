@@ -29,6 +29,7 @@ import type {
   EventContactDto,
   EventRecentActivityEntry,
   EventResourceDto,
+  RegistrationCountsDto,
   TicketTypeDto,
 } from "../api/types.js";
 import {
@@ -56,7 +57,6 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
-import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.js";
 import {
   CONTACT_EMAIL_MAX_LENGTH,
   CONTACT_PHONE_MAX_LENGTH,
@@ -64,12 +64,16 @@ import {
   isValidContactPhone,
   sanitizeContactPhoneInput,
 } from "@admitto/shared";
+import { composePhoneE164, splitPhoneForPicker } from "@admitto/shared/phone-countries";
 import { isValidEmailFormat } from "../utils/email.js";
 import { mailtoHref, telHref } from "../utils/contactLinks.js";
 import { assertPresent } from "../utils/assert-present.js";
+import { peopleOnSiteBreakdown } from "../utils/peopleOnSite.js";
 import { OverviewKpiTile } from "../overview/OverviewKpiTile.js";
 import { OverviewSkeleton } from "../overview/OverviewSkeleton.js";
 import { PanelLoadError } from "../settings/PanelLoadError.js";
+import { registrationReadiness } from "../registration/registrationReadiness.js";
+import { useRegistrationCounts } from "../registration/useRegistrationCounts.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 /** The region the page, its placeholder and its error sit in: where the focus goes when a Retry that held it works. */
@@ -191,7 +195,11 @@ function ticketsSentReadiness(overview: EventOverviewDto): Pick<ReadinessItem, "
 
 // Extracted out of SetupChecklistCard (SonarCloud S3776: keeps the branching/pluralization logic
 // out of the component's own cognitive-complexity count, which the JSX below also contributes to).
-function buildReadinessItems(overview: EventOverviewDto, eventId: string): ReadinessItem[] {
+function buildReadinessItems(
+  overview: EventOverviewDto,
+  eventId: string,
+  registration: ReadinessItem | null,
+): ReadinessItem[] {
   const eventPath = `/admin/events/${eventId}`;
   const failed = overview.email_failed + overview.email_bounced;
   const ticketsSent = ticketsSentReadiness(overview);
@@ -213,6 +221,8 @@ function buildReadinessItems(overview: EventOverviewDto, eventId: string): Readi
     overview.requirements_count > 0 ? `${overview.requirements_count} configured.` : "None configured.";
 
   return [
+    // Only for an event that takes registrations: requests come before the attendees they become.
+    ...(registration ? [registration] : []),
     {
       label: "Attendees imported",
       status: overview.attendee_count > 0 ? "ok" : "warn",
@@ -272,11 +282,19 @@ function checklistTone(items: ReadinessItem[]): "ok" | "warn" | "error" {
 function SetupChecklistCard({
   overview,
   eventId,
+  registration,
 }: Readonly<{
   overview: EventOverviewDto;
   eventId: string;
+  /** The numbers of the event's guest requests; the "Registrations" row is there only while registration is on. */
+  registration: RegistrationCountsDto | null;
 }>) {
-  const items = buildReadinessItems(overview, eventId);
+  // The seats come with the overview, so a refresh of the page refreshes them: the layout's copy of the event is read once.
+  const registrationRow = registrationReadiness(registration, `/admin/events/${eventId}`, {
+    used: overview.seats_in_use,
+    capacity: overview.event.capacity,
+  });
+  const items = buildReadinessItems(overview, eventId, registrationRow);
   const okCount = items.filter((i) => i.status === "ok").length;
   const total = items.filter((i) => i.status !== "neutral").length;
   const tone = checklistTone(items);
@@ -320,6 +338,25 @@ function SetupChecklistCard({
   );
 }
 
+/** The people on site: the guests checked in and the companions let in with them. The ring and the checked-in figure
+ * stay on the guests (the heads); this tile adds the companions, and tells the two apart. */
+function PeopleOnSiteTile({ guests, companions }: Readonly<{ guests: number; companions: number }>) {
+  return (
+    <div className="overview-glance__tile overview-glance__tile--wide">
+      <span className="overview-glance__icon" aria-hidden="true">
+        <i className="ti ti-users" />
+      </span>
+      <span className="overview-glance__text">
+        <span className="overview-glance__label">People on site</span>
+        <span className="overview-glance__value">
+          {guests + companions}{" "}
+          <span className="overview-glance__aside">({peopleOnSiteBreakdown(guests, companions)})</span>
+        </span>
+      </span>
+    </div>
+  );
+}
+
 /** Check-in progress card: the ring and the one number that matters (how many are in, and how
  * many are not), plus two small facts. The second fact is the wallet install count when the event
  * uses wallets, otherwise the busiest hour. Anything more detailed (by ticket type, by hour)
@@ -336,6 +373,7 @@ function CheckInProgressCard({
 }>) {
   const total = overview.attendee_count;
   const admitted = Math.min(admittedCount, total);
+  const companions = overview.companions_admitted;
   const notYet = Math.max(total - admitted, 0);
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
   // --border-strong (~1.5:1 against white) rather than a --text-muted-based mix: a clearly lighter,
@@ -415,6 +453,8 @@ function CheckInProgressCard({
               </span>
             </div>
           )}
+          {/* Only once a companion has been let in: an event without companions looks as it always did. */}
+          {companions > 0 && <PeopleOnSiteTile guests={admitted} companions={companions} />}
         </div>
       </div>
     );
@@ -1523,6 +1563,12 @@ function EventOverviewPageBody() {
   const overview = list.data;
   const pollOverview = list.poll;
 
+  // The numbers of the guest requests are an extra with a read of their own, as on the Registration page: one that is slow,
+  // stalls or fails leaves the "Registrations" row out (or as the last answer had it) and never holds the overview back.
+  const requestCounts = useRegistrationCounts(event.id);
+  const registration = requestCounts.data;
+  const pollRequestCounts = requestCounts.poll;
+
   // Bounded, not a plain reset-on-every-call debounce: a pending timer is left alone rather than
   // restarted, so a steady stream of signals (busy handout desk issuing items back-to-back) still
   // reconciles within ~3s of the *first* one instead of only after a quiet gap - important since
@@ -1644,6 +1690,11 @@ function EventOverviewPageBody() {
     };
   }, [pollOverview]);
 
+  useEffect(() => {
+    const intervalId = setInterval(() => void pollRequestCounts(), OVERVIEW_REFRESH_MS);
+    return () => clearInterval(intervalId);
+  }, [pollRequestCounts]);
+
   const eventTimezone = overview?.event.timezone ?? event.timezone;
   const eventDateIso = overview?.event.date ?? event.date;
   const countdownLabel = useCountdown(eventDateIso, eventTimezone);
@@ -1748,7 +1799,7 @@ function EventOverviewPageBody() {
             />
           </div>
           <div className="overview-row overview-row--stretch">
-            <SetupChecklistCard overview={overview} eventId={event.id} />
+            <SetupChecklistCard overview={overview} eventId={event.id} registration={registration} />
             <NotesAndContactsCard
               pinnedNote={pinnedNote}
               archived={!!event.archived_at}

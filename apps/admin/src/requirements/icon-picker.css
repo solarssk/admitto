@@ -1,4 +1,9 @@
+/* A fieldset (the icons are a group of buttons, named by the label above): its browser margin, padding and minimum width are taken
+   off, and the border is the picker's own. */
 .icon-picker {
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -41,4 +46,9 @@
 
 .icon-picker__item i {
   font-size: 1.1rem;
+}
+
+.icon-picker__item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

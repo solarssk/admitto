@@ -1,0 +1,56 @@
+/* The inputs of the custom fields that take a longer answer or a date and a time (CustomDataFieldInput). */
+
+/* The date and time answer is a fieldset (a group of two inputs, named by its label): its browser border, margin, padding and
+   minimum width are taken off. */
+.custom-data-field__group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+/* A date and a time of day side by side, the date a little wider, since its text is longer. At a phone's width they stack, so that
+   neither is squeezed. */
+.custom-data-field__datetime {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-2);
+  align-items: start;
+}
+
+@media (max-width: 480px) {
+  .custom-data-field__datetime {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A phone number: the country picker keeps its width and the number takes the rest of the row, as in the staff phone fields
+   (.overview-contact-modal__phone-row). */
+.custom-data-field__phone-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.custom-data-field__phone-row > .phone-country-select {
+  flex: 0 0 8.5rem;
+}
+
+.custom-data-field__phone-row > .at-field:not(.phone-country-select) {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The hint (what the field asks for) on the left and the count on the right of one line. With no hint, the count is still at the
+   right. When both do not fit, the hint wraps in its own column and the count keeps its width. */
+.custom-data-field__meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.custom-data-field__count {
+  margin-left: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

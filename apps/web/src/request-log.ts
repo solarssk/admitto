@@ -11,6 +11,13 @@ import { resolveClientIp } from "./rate-limit/client-ip.js";
 const TOKEN_PATH_PREFIXES = ["/t/", "/q/"] as const;
 
 /**
+ * The link in the confirmation mail of a guest registration, `/r/<event slug>/confirm/<id>.<signature>`, is the
+ * credential of the address for 24 hours, so its remainder is redacted like a ticket token. The slug stays: it is in the
+ * public address of the form. An empty slug matches too, so that a path with nothing to route to is redacted as well.
+ */
+const CONFIRM_LINK_PREFIX = /^\/r\/[^/]*\/confirm\//;
+
+/**
  * Short, one-way identifier for the token-bearing remainder of a `/t/*`/`/q/*` path — lets
  * two log lines be recognized as "the same participant's link" without exposing the raw
  * ticket/QR token or the underlying secret's entropy. Same truncated-SHA-256 pattern as
@@ -53,13 +60,15 @@ export function redactRequestPath(pathname: string): string {
   for (const prefix of TOKEN_PATH_PREFIXES) {
     if (pathname.startsWith(prefix)) return `${prefix}[redacted]`;
   }
-  return pathname;
+  const confirmPrefix = CONFIRM_LINK_PREFIX.exec(pathname)?.[0];
+  return confirmPrefix === undefined ? pathname : `${confirmPrefix}[redacted]`;
 }
 
 /**
- * For a `/t/*`/`/q/*` path, a short hash of the redacted remainder — same input always
- * yields the same ref, so repeated hits on one participant's link are recognizable across
- * log lines without the raw token ever reaching stdout. `undefined` for any other path.
+ * For a `/t/*`/`/q/*` path or the link of a registration's confirmation mail, a short hash of the redacted
+ * remainder. The same input always yields the same ref, so repeated hits on one participant's link are
+ * recognizable across log lines (the page and the button of a confirmation link, say) without the raw
+ * token ever reaching stdout. `undefined` for any other path.
  */
 export function requestPathRef(pathname: string): string | undefined {
   for (const prefix of TOKEN_PATH_PREFIXES) {
@@ -67,7 +76,8 @@ export function requestPathRef(pathname: string): string | undefined {
       return pathRemainderRef(normalizeTokenRemainder(prefix, pathname.slice(prefix.length)));
     }
   }
-  return undefined;
+  const confirmPrefix = CONFIRM_LINK_PREFIX.exec(pathname)?.[0];
+  return confirmPrefix === undefined ? undefined : pathRemainderRef(pathname.slice(confirmPrefix.length));
 }
 
 /** `LOG_HTTP_REQUESTS=1|true` enables the per-request access log (off by default). */
@@ -78,8 +88,8 @@ export function resolveLogHttpRequests(env: NodeJS.ProcessEnv = process.env): bo
 
 /**
  * One JSON access-log line per request: method, redacted path, status, duration, client IP,
- * and (for `/t/*`/`/q/*`) a short non-reversible `ref` identifying which participant's link
- * was hit, without ever putting the raw token in the log. IP is logged for every request,
+ * and (for `/t/*`/`/q/*` and a registration's confirmation link) a short non-reversible `ref` identifying which
+ * participant's link was hit, without ever putting the raw token in the log. IP is logged for every request,
  * not only authenticated staff actors: the app already reads it for every anonymous
  * ticket/QR/check-in request to key its rate limiter (see `rate-limit/policies.ts`), so this
  * adds no new category of processing — it only surfaces, for the traffic most worth watching

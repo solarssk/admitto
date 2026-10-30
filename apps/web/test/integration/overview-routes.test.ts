@@ -8,7 +8,7 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import type { EventOverviewResponse } from "../../src/admin/overview-routes.js";
-import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
+import { CAPACITY_EXCLUDED_STATUSES, countActiveAttendees, countSeatsInUse } from "../../src/admin/event-capacity.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 
@@ -27,6 +27,7 @@ const EVENT_WALLET = "evt-overview-wallet";
 const EVENT_WALLET_OFF = "evt-overview-wallet-off";
 const EVENT_WALLET_NO_GOOGLE_APPLE = "evt-overview-wallet-samsung-only";
 const EVENT_WALLET_BLANK = "evt-overview-wallet-blank";
+const EVENT_COMPANIONS = "evt-overview-companions";
 
 const EMAIL_SUPER = "overview-super@example.com";
 const EMAIL_ADMIN = "overview-admin@example.com";
@@ -79,6 +80,7 @@ async function seed(client: PrismaClient) {
     EVENT_WALLET_OFF,
     EVENT_WALLET_NO_GOOGLE_APPLE,
     EVENT_WALLET_BLANK,
+    EVENT_COMPANIONS,
   ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -224,6 +226,14 @@ async function seed(client: PrismaClient) {
         organization_id: ORG_OV,
         wallet_template_id: "",
         wallet_api_key_enc: "",
+      },
+      {
+        id: EVENT_COMPANIONS,
+        title: "Overview Companions Event",
+        slug: "overview-companions",
+        date: new Date("2027-09-01T12:00:00.000Z"),
+        timezone: "UTC",
+        organization_id: ORG_OV,
       },
     ],
   });
@@ -889,12 +899,43 @@ describe("GET /api/admin/events/:eventId/overview", () => {
         }),
       );
       expect(body.admitted_count).toBeLessThanOrEqual(body.attendee_count);
+      // A revoked attendee holds no seat either, and the overview says so with the same count the limit is checked with.
+      expect(body.seats_in_use).toBe(await countSeatsInUse(prisma, EVENT_MAIN));
     } finally {
       await prisma.attendee.update({
         where: { id: ATT_MAIN[0] },
         data: { status: prior.status },
       });
     }
+  });
+
+  it("counts seats equal to the old active head count, with revoked and cancelled excluded", async () => {
+    const legacyCount = () =>
+      prisma.attendee.count({
+        where: { event_id: EVENT_MAIN, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
+      });
+    const before = await legacyCount();
+    expect(before).toBeGreaterThan(0);
+    expect(await countSeatsInUse(prisma, EVENT_MAIN)).toBe(before);
+    expect(await countActiveAttendees(prisma, EVENT_MAIN)).toBe(before);
+
+    const prior = await prisma.attendee.findMany({
+      where: { id: { in: [ATT_MAIN[0]!, ATT_MAIN[1]!] } },
+      select: { id: true, status: true },
+    });
+    try {
+      await prisma.attendee.update({ where: { id: ATT_MAIN[0]! }, data: { status: "revoked" } });
+      await prisma.attendee.update({ where: { id: ATT_MAIN[1]! }, data: { status: "cancelled" } });
+      expect(await countSeatsInUse(prisma, EVENT_MAIN)).toBe(before - 2);
+      expect(await countSeatsInUse(prisma, EVENT_MAIN)).toBe(await legacyCount());
+      // Heads and seats are separate functions that agree until a companion holds a second seat.
+      expect(await countActiveAttendees(prisma, EVENT_MAIN)).toBe(before - 2);
+    } finally {
+      for (const row of prior) {
+        await prisma.attendee.update({ where: { id: row.id }, data: { status: row.status } });
+      }
+    }
+    expect(await countSeatsInUse(prisma, EVENT_EMPTY)).toBe(0);
   });
 
   it("aggregates email delivery stats", async () => {
@@ -939,6 +980,16 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     const body = (await res.json()) as EventOverviewResponse;
     expect(body.event.capacity).toBe(200);
     expect(body.attendee_count).toBe(150);
+  });
+
+  it("returns the seats the event holds beside the heads, counted as countSeatsInUse counts them", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CAP}/overview`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventOverviewResponse;
+    expect(body.seats_in_use).toBe(await countSeatsInUse(prisma, EVENT_CAP));
+    expect(body.seats_in_use).toBe(150);
   });
 
   it("returns archived_at for archived event", async () => {
@@ -1105,5 +1156,70 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     // Length 10 (not 11) confirms the 23:00 ALREADY_CHECKED_IN noise row was excluded - a VALID-only
     // check-in there would otherwise sort first, ahead of the 11:00 entry asserted above.
     expect(body.recent_activity).toHaveLength(10);
+  });
+});
+
+describe("companions_admitted (the companions let in with their guests)", () => {
+  const overviewFor = async (eventId: string) => {
+    const res = await app.request(`/api/admin/events/${eventId}/overview`, { headers: { Cookie: adminCookie } });
+    expect(res.status).toBe(200);
+    return (await res.json()) as EventOverviewResponse;
+  };
+
+  /** An attendee of the companions event, with a companion and the state of the companion item when `state` is given. */
+  async function guest(
+    label: string,
+    options: { admitted?: boolean; status?: string; companion?: boolean; state?: string; itemId: string },
+  ) {
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: `att-overview-companions-${label}`,
+        event_id: EVENT_COMPANIONS,
+        email: `overview-companions-${label}@example.com`,
+        name: `Guest ${label}`,
+        status: options.status ?? "registered",
+        admitted_at: options.admitted === false ? null : new Date("2027-09-01T12:30:00.000Z"),
+      },
+    });
+    if (options.companion !== false) {
+      await prisma.attendeeCompanion.create({ data: { attendee_id: attendee.id, slot: 1, name: `Companion of ${label}` } });
+    }
+    if (options.state) {
+      await prisma.attendeeItemState.create({ data: { attendee_id: attendee.id, event_item_id: options.itemId, state: options.state } });
+    }
+    return attendee;
+  }
+
+  it("is 0 when the event has no companions, and so is it for an event that has a companion item and nobody let in", async () => {
+    expect((await overviewFor(EVENT_MAIN)).companions_admitted).toBe(0);
+    expect((await overviewFor(EVENT_EMPTY)).companions_admitted).toBe(0);
+    expect((await overviewFor(EVENT_COMPANIONS)).companions_admitted).toBe(0);
+  });
+
+  it("counts the companions issued to admitted guests who are active, and leaves the heads and the seats as they are", async () => {
+    const item = await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_COMPANIONS,
+        key: "companion",
+        label: "Companion",
+        config: { audience: "with_companion", requires_return: false, issue_on_checkin: false },
+      },
+    });
+    await guest("in", { state: "issued", itemId: item.id });
+    await guest("waiting", { state: "pending", itemId: item.id });
+    await guest("not-admitted", { admitted: false, state: "issued", itemId: item.id });
+    await guest("cancelled", { status: "cancelled", state: "issued", itemId: item.id });
+    await guest("alone", { companion: false, itemId: item.id });
+    await guest("removed", { companion: false, state: "issued", itemId: item.id });
+
+    const body = await overviewFor(EVENT_COMPANIONS);
+
+    expect(body.companions_admitted).toBe(1);
+    // The guests: the four admitted and active (in, waiting, alone, removed), as before; the seats add the two companions
+    // of guests who are active.
+    expect(body.admitted_count).toBe(4);
+    expect(body.attendee_count).toBe(5);
+    expect(body.seats_in_use).toBe(await countSeatsInUse(prisma, EVENT_COMPANIONS));
+    expect(body.seats_in_use).toBe(5 + 3);
   });
 });

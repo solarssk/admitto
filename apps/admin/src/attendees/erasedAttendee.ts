@@ -208,6 +208,8 @@ export function redactedAfterErasure(
     company: null,
     department: null,
     custom_data: null,
+    // The person the guest brought is erased with them: the page never shows the placeholder that stays in the row.
+    companion: null,
     deliveries: detail.deliveries.map((delivery) => ({
       ...delivery,
       ...(waitingToGoOut(delivery.status, delivery.retryable) ? { status: "cancelled", retryable: false } : {}),

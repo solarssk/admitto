@@ -92,6 +92,10 @@
   width: min(94vw, 640px);
 }
 
+.add-attendee-modal__panel--w720 {
+  width: min(94vw, 720px);
+}
+
 /* Vertical field stack for a Card body's own form fields (distinct from .users-modal__roles,
  * which is a list of role rows) - users-page.css, imported by the same modal. */
 .users-modal__profile-fields {
@@ -128,11 +132,9 @@
   line-height: 1.4;
 }
 
+/* The layout of the fields is attendee-fields-grid.css. */
 .add-attendee-modal__fields {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
 }
 
 /* Drawn over the fields while they load. The fields themselves are hidden (.at-loading-hold), and
@@ -142,10 +144,12 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
   visibility: visible;
+}
+
+/* The first field of the form, the email, takes the whole row, so its placeholder does too. */
+.add-attendee-modal__fields-skeleton > :first-child {
+  grid-column: 1 / -1;
 }
 
 /* The placeholder's status region (the label for assistive tech, and the 8 second note under the fields): in the page's flow, so it

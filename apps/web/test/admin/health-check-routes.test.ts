@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/pro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PrismaClient } from "@admitto/db";
+import { encryptToString, SECRET_CONTEXTS } from "@admitto/crypto";
 import { MailConfigError } from "@admitto/mailer-config";
 
 const { writeFileMock, setRealWriteFile, restoreWriteFile } = vi.hoisted(() => {
@@ -114,6 +115,7 @@ vi.mock("@admitto/auth", async (importOriginal) => {
 import { canManageInstance } from "@admitto/auth";
 import type { Context } from "hono";
 import { readAdminBuildMeta } from "../../src/admin/admin-build-meta.js";
+import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import {
   canCreateUploadDir,
   collectAdminHealth,
@@ -481,6 +483,18 @@ function healthDb(overrides: Record<string, unknown> = {}): PrismaClient {
       }),
     },
     event: {
+      count: vi.fn().mockResolvedValue(0),
+    },
+    // Guest registration: no Turnstile keys saved and no event with registration on, so its row is
+    // "not configured" and leaves the overall verdict alone.
+    systemSettings: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    eventRegistrationSettings: {
+      count: vi.fn().mockResolvedValue(0),
+    },
+    // Guest registration mail: an empty queue, so its row is "Queue empty" and leaves the overall verdict alone.
+    registrationMail: {
       count: vi.fn().mockResolvedValue(0),
     },
     // Batch form only: the wallet counts run as [count, count] in one transaction.
@@ -1325,6 +1339,247 @@ describe("collectAdminHealth", () => {
     const wallet = report.groups[1]!.checks.find((c) => c.id === "wallet_passes");
     expect(wallet?.status).toBe("degraded");
     expect(wallet?.summary).toBe("Could not evaluate wallet configuration");
+  });
+
+  describe("registration_mail row", () => {
+    async function registrationMailRow(registrationMail: { count: ReturnType<typeof vi.fn> }, now?: () => Date) {
+      collectSetupChecks.mockResolvedValue(okSetup);
+      collectGauges.mockResolvedValue({
+        email_deliveries_queued: 0,
+        email_deliveries_failed_retryable: 0,
+        bounce_ingest_enabled: 0,
+        bounce_ingest_problem: 0,
+      });
+      stubHappyPathMailAndIdp();
+      const report = await collectAdminHealth({
+        db: healthDb({ registrationMail }),
+        rateLimitStore: {} as never,
+        env: envWithUpload(),
+        ...(now ? { now } : {}),
+      });
+      const core = report.groups[0]!.checks;
+      return { report, core, row: core.find((c) => c.id === "registration_mail")! };
+    }
+
+    /** Answers the three counts the row asks for: waiting rows, failed rows that will be tried again, and failed rows that will not. */
+    const counts = (queued: number, failedRetryable: number, failedTerminal = 0) => ({
+      count: vi.fn(async ({ where }: { where: { status: string; retryable?: boolean } }) => {
+        if (where.status === "queued") return queued;
+        return where.retryable === false ? failedTerminal : failedRetryable;
+      }),
+    });
+
+    it("is an empty queue next to the ticket mail queue, and says nothing while nothing waits", async () => {
+      const { row, core, report } = await registrationMailRow(counts(0, 0));
+
+      expect(row).toMatchObject({ label: "Registration mail queue", status: "ok", summary: "Queue empty" });
+      expect(core.map((c) => c.id).slice(core.findIndex((c) => c.id === "mail_delivery_queue"))[1]).toBe("registration_mail");
+      expect(row.details).toEqual(
+        expect.arrayContaining([
+          { key: "queued", value: "0" },
+          { key: "failed_retryable", value: "0" },
+          { key: "failed_terminal", value: "0" },
+          { key: "degraded_threshold", value: String(MAIL_QUEUE_DEGRADED_THRESHOLD) },
+        ]),
+      );
+      expect(report.overall).toBe("ok");
+    });
+
+    it("counts the waiting rows, the failed rows that will be tried again, and the ones that failed for good in the last week", async () => {
+      const registrationMail = counts(3, 0);
+
+      const { row } = await registrationMailRow(registrationMail, () => new Date("2026-10-21T12:00:00.000Z"));
+
+      expect(row).toMatchObject({ status: "ok", summary: "Running · 3 queued" });
+      expect(registrationMail.count).toHaveBeenCalledTimes(3);
+      expect(registrationMail.count).toHaveBeenCalledWith({ where: { status: "queued" } });
+      expect(registrationMail.count).toHaveBeenCalledWith({ where: { status: "failed", retryable: true } });
+      expect(registrationMail.count).toHaveBeenCalledWith({
+        where: { status: "failed", retryable: false, updated_at: { gte: new Date("2026-10-14T12:00:00.000Z") } },
+      });
+    });
+
+    it("needs attention when a mail failed and will be tried again, even while others wait", async () => {
+      const { row, report } = await registrationMailRow(counts(4, 2));
+
+      expect(row.status).toBe("degraded");
+      expect(row.summary).toBe("Needs attention · 4 queued · 2 retryable failures");
+      expect(report.overall).toBe("degraded");
+    });
+
+    it("needs attention when a mail failed for good, even though the queue is empty: nothing else shows it", async () => {
+      const { row, report } = await registrationMailRow(counts(0, 0, 2));
+
+      expect(row.status).toBe("degraded");
+      expect(row.summary).toBe("Queue empty · 2 failed, not retried");
+      expect(row.details).toEqual(expect.arrayContaining([{ key: "failed_terminal", value: "2" }]));
+      expect(report.overall).toBe("degraded");
+    });
+
+    it("names every kind of failure, and what is queued, when there are several", async () => {
+      expect((await registrationMailRow(counts(4, 0, 1))).row.summary).toBe("Needs attention · 4 queued · 1 failed, not retried");
+      expect((await registrationMailRow(counts(0, 2, 1))).row.summary).toBe("Queue empty · 2 retryable failures · 1 failed, not retried");
+      expect((await registrationMailRow(counts(4, 2, 1))).row.summary).toBe(
+        "Needs attention · 4 queued · 2 retryable failures · 1 failed, not retried",
+      );
+    });
+
+    it("keeps the failures that were not retried in the details of a queue that is falling behind", async () => {
+      const { row } = await registrationMailRow(counts(MAIL_QUEUE_DEGRADED_THRESHOLD, 0, 0));
+
+      expect(row.details).toEqual(expect.arrayContaining([{ key: "failed_terminal", value: "0" }]));
+    });
+
+    it("falls behind at the queue depth where the ticket mail queue does", async () => {
+      const { row } = await registrationMailRow(counts(MAIL_QUEUE_DEGRADED_THRESHOLD, 0));
+
+      expect(row).toMatchObject({ status: "degraded", summary: `Falling behind · ${MAIL_QUEUE_DEGRADED_THRESHOLD} queued` });
+    });
+
+    it("says the depth could not be read when the counts fail, and does not fail the report", async () => {
+      const { row, report } = await registrationMailRow({ count: vi.fn().mockRejectedValue(new Error("db down")) });
+
+      expect(row).toMatchObject({ status: "degraded", summary: "Could not read queue depth" });
+      expect(row.details).not.toEqual(expect.arrayContaining([expect.objectContaining({ key: "queued" })]));
+      expect(report.groups.map((group) => group.id)).toEqual(["core", "external"]);
+    });
+
+    it("holds counts and nothing else: no address and no text of an error", async () => {
+      const { row } = await registrationMailRow(counts(1, 1));
+
+      expect(row.details.map((detail) => detail.key)).toEqual([
+        "status",
+        "queued",
+        "failed_retryable",
+        "failed_terminal",
+        "degraded_threshold",
+        "last_checked",
+      ]);
+    });
+  });
+
+  describe("registration_captcha row", () => {
+    const READY_KEYS = JSON.stringify({
+      siteKey: "0x4AAAAAAAsite",
+      secretEnc: encryptToString("0x4AAAAAAAsecret", SECRET_CONTEXTS.turnstileSecret),
+    });
+
+    async function captchaRow(overrides: Record<string, unknown>) {
+      collectSetupChecks.mockResolvedValue(okSetup);
+      collectGauges.mockResolvedValue({
+        email_deliveries_queued: 0,
+        email_deliveries_failed_retryable: 0,
+        bounce_ingest_enabled: 0,
+        bounce_ingest_problem: 0,
+      });
+      stubHappyPathMailAndIdp();
+      const report = await collectAdminHealth({
+        db: healthDb(overrides),
+        rateLimitStore: {} as never,
+        env: envWithUpload(),
+      });
+      const row = report.groups[1]!.checks.find((c) => c.id === "registration_captcha")!;
+      return { row, report };
+    }
+
+    // The settings table answers two keys here: the access methods the administrator enabled (both challenged
+    // ones by default), and the Turnstile keys for anything else.
+    const keys = (value: string | null, enabledMethods: string[] = ["link", "password"]) => ({
+      systemSettings: {
+        findUnique: vi.fn(async ({ where }: { where: { key: string } }) => {
+          if (where.key === ACCESS_METHODS_SETTINGS_KEY) return { key: where.key, value_json: JSON.stringify(enabledMethods) };
+          return value === null ? null : { key: where.key, value_json: value };
+        }),
+      },
+    });
+    const events = (count: number) => ({ eventRegistrationSettings: { count: vi.fn().mockResolvedValue(count) } });
+
+    it("is not configured, and says nothing, while no keys are saved and no event uses registration", async () => {
+      const { row, report } = await captchaRow({ ...keys(null), ...events(0) });
+      expect(row.label).toBe("Bot protection, Turnstile");
+      expect(row.status).toBe("not_configured");
+      expect(row.summary).toBe("Not configured");
+      expect(report.overall).toBe("ok");
+    });
+
+    it("warns when an event has registration on and the keys are not saved", async () => {
+      const { row, report } = await captchaRow({ ...keys(null), ...events(1) });
+      expect(row.status).toBe("degraded");
+      expect(row.summary).toBe("Registration by link or password is on for 1 event, but the keys are not set");
+      expect(row.details).toEqual(
+        expect.arrayContaining([
+          { key: "reason", value: "keys_missing" },
+          { key: "events_with_registration", value: "1" },
+        ]),
+      );
+      expect(report.overall).toBe("degraded");
+    });
+
+    it("counts events in the plural", async () => {
+      const { row } = await captchaRow({ ...keys(JSON.stringify({ siteKey: "0x4AAAAAAAsite" })), ...events(3) });
+      expect(row.status).toBe("degraded");
+      expect(row.summary).toBe("Registration by link or password is on for 3 events, but the keys are not set");
+    });
+
+    it("counts only events that are not archived, have a mode and offer a link or a password", async () => {
+      const count = vi.fn().mockResolvedValue(2);
+      await captchaRow({ ...keys(null), eventRegistrationSettings: { count } });
+      // SSO needs no challenge, so an event that offers only SSO is not waiting for the keys.
+      expect(count).toHaveBeenCalledWith({
+        where: { mode: { not: null }, access_methods: { hasSome: ["link", "password"] }, event: { archived_at: null } },
+      });
+    });
+
+    it("looks only at the challenged methods the administrator turned on, and at no event when none is on", async () => {
+      const count = vi.fn().mockResolvedValue(2);
+      const { row } = await captchaRow({ ...keys(null, ["password", "sso"]), eventRegistrationSettings: { count } });
+      expect(row.status).toBe("degraded");
+      expect(count).toHaveBeenCalledWith({
+        where: { mode: { not: null }, access_methods: { hasSome: ["password"] }, event: { archived_at: null } },
+      });
+
+      count.mockClear();
+      const off = await captchaRow({ ...keys(null, ["sso"]), eventRegistrationSettings: { count } });
+      expect(off.row.status).toBe("not_configured");
+      expect(off.row.summary).toBe("Not configured");
+      expect(count).not.toHaveBeenCalled();
+    });
+
+    it("is ok with both keys saved, and does not look at the events", async () => {
+      const count = vi.fn().mockResolvedValue(2);
+      const { row, report } = await captchaRow({ ...keys(READY_KEYS), eventRegistrationSettings: { count } });
+      expect(row.status).toBe("ok");
+      expect(row.summary).toBe("Configured");
+      expect(row.details).toEqual(expect.arrayContaining([{ key: "configured", value: "yes" }]));
+      expect(report.overall).toBe("ok");
+      expect(count).not.toHaveBeenCalled();
+    });
+
+    it("warns about a saved secret that cannot be read, even before any event uses registration", async () => {
+      const unreadable = JSON.stringify({ siteKey: "0x4AAAAAAAsite", secretEnc: encryptToString("s", "another-purpose") });
+      const { row } = await captchaRow({ ...keys(unreadable), ...events(0) });
+      expect(row.status).toBe("degraded");
+      expect(row.summary).toBe("The saved secret key cannot be read");
+      expect(row.details).toEqual(expect.arrayContaining([{ key: "reason", value: "secret_unreadable" }]));
+    });
+
+    it("never puts a key into the row", async () => {
+      const { row } = await captchaRow({ ...keys(READY_KEYS), ...events(1) });
+      const text = JSON.stringify(row);
+      expect(text).not.toContain("0x4AAAAAAAsecret");
+      expect(text).not.toContain("0x4AAAAAAAsite");
+      expect(text).not.toContain("secretEnc");
+    });
+
+    it("degrades to a could-not-evaluate row when the lookup fails, without breaking the report", async () => {
+      const { row, report } = await captchaRow({
+        systemSettings: { findUnique: vi.fn().mockRejectedValue(new Error("db down")) },
+      });
+      expect(row.status).toBe("degraded");
+      expect(row.summary).toBe("Could not evaluate bot protection");
+      expect(row.details).toEqual(expect.arrayContaining([{ key: "reason", value: "lookup_failed" }]));
+      expect(report.groups).toHaveLength(2);
+    });
   });
 
   it("keeps returning a report when individual collectors reject", async () => {

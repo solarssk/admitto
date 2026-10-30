@@ -11,10 +11,16 @@ import {
 } from "@admitto/shared";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
+  attendeeIdsWithCompanion,
   buildExportColumnLabels,
+  countCompanionsIssued,
   countPendingGraceInactivePasses,
+  eventCustomFieldOrderBy,
+  isCompanionAudience,
+  itemAppliesToAttendee,
   loadEventTicketTypes,
   writeBulkActionLog,
+  type EventItemConfig,
   type TicketTypeInfo,
 } from "@admitto/tickets";
 import {
@@ -71,6 +77,8 @@ export interface EventReportsResponse {
     admission_rate_pct: number;
     peak_hour: string | null;
     peak_hour_count: number;
+    /** Companions let in with their guests (countCompanionsIssued); people on site are `admitted` plus this. */
+    companions_admitted: number;
   };
   by_hour: Array<{ hour: string; count: number }>;
   /** Iterates the event's live TicketType catalog (batch 04 / #351) - a configured type with 0
@@ -248,7 +256,8 @@ async function loadDeviceIdsByAttendee(
 }
 
 /** Items currently in the attendee's hands - "issued" only, not "pending" (never handed out) or
- * "returned" (handed back). Ordered by the event's item key, same order as the Requirements tab. */
+ * "returned" (handed back). Ordered by the event's item key, same order as the Requirements tab.
+ * An item for guests with a companion is listed only for a guest who still has one (itemAppliesToAttendee). */
 async function loadIssuedItemLabelsByAttendee(
   db: PrismaClient,
   eventId: string,
@@ -264,10 +273,14 @@ async function loadIssuedItemLabelsByAttendee(
       event_item: { event_id: eventId },
     },
     orderBy: { event_item: { key: "asc" } },
-    select: { attendee_id: true, event_item: { select: { label: true } } },
+    select: { attendee_id: true, event_item: { select: { label: true, config: true } } },
   });
 
+  const withCompanion = states.some((row) => isCompanionAudience(row.event_item.config as EventItemConfig | null))
+    ? await attendeeIdsWithCompanion(db, attendeeIds)
+    : new Set<string>();
   for (const row of states) {
+    if (!itemAppliesToAttendee(row.event_item.config as EventItemConfig | null, withCompanion.has(row.attendee_id))) continue;
     const labels = map.get(row.attendee_id) ?? [];
     labels.push(row.event_item.label);
     map.set(row.attendee_id, labels);
@@ -1458,15 +1471,20 @@ async function loadCustomFieldReportsAggregates(
   const [totalAttendees, customFields] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
     db.eventCustomField.findMany({
-      where: { event_id: eventId },
-      // Same order as the Requirements page's own field list (event-custom-fields-routes.ts).
-      orderBy: [{ created_at: "asc" }, { id: "asc" }],
+      // The attendee's own fields: the answers charted here are Attendee.custom_data, which a question about a
+      // companion never writes to.
+      where: { event_id: eventId, applies_to: "guest" },
+      // Same order as the field list and every other reader (eventCustomFieldOrderBy).
+      orderBy: eventCustomFieldOrderBy(),
     }),
   ]);
 
   const fields = await Promise.all(
     customFields.map(async (field) => {
-      const type = field.type as EventCustomFieldReportsResponse["fields"][number]["type"];
+      // The chart kind, not the field's own type: every free-input type (text, long text, date, date and
+      // time, phone) is charted as `text`, by how many attendees answered it.
+      const type: EventCustomFieldReportsResponse["fields"][number]["type"] =
+        field.type === "select" || field.type === "boolean" ? field.type : "text";
       if (type === "text") {
         const answered = await countAttendeesWithCustomFieldAnswered(db, eventId, field.source_field);
         return {
@@ -1967,7 +1985,10 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
   if (!event) return c.json({ error: "not_found" }, 404);
 
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
-  const aggregates = await loadReportsAggregates(db, eventId, ADMISSION_LOG_LIMIT, timeZone);
+  const [aggregates, companionsAdmitted] = await Promise.all([
+    loadReportsAggregates(db, eventId, ADMISSION_LOG_LIMIT, timeZone),
+    countCompanionsIssued(db, eventId),
+  ]);
 
   const body: EventReportsResponse = {
     timezone: timeZone,
@@ -1984,6 +2005,7 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
       admission_rate_pct: oneDecimalPct(aggregates.admittedCount, aggregates.totalAttendees),
       peak_hour: aggregates.peak_hour,
       peak_hour_count: aggregates.peak_hour_count,
+      companions_admitted: companionsAdmitted,
     },
     by_hour: aggregates.byHour,
     by_ticket_type: aggregates.by_ticket_type,
@@ -3012,9 +3034,10 @@ async function exportCustomFieldReportsCsv(
       select: CUSTOM_FIELDS_EXPORT_ATTENDEE_SELECT,
     }),
     loadEventTicketTypes(db, eventId),
+    // The attendee's own fields, like the report above: their answers are the columns of this file.
     db.eventCustomField.findMany({
-      where: { event_id: eventId },
-      orderBy: [{ created_at: "asc" }, { id: "asc" }],
+      where: { event_id: eventId, applies_to: "guest" },
+      orderBy: eventCustomFieldOrderBy(),
     }),
   ]);
 

@@ -1,5 +1,7 @@
 import type {
   DeliveryDto,
+  EventCustomFieldRules,
+  EventCustomFieldType,
   EventWalletReportsResponse as EventWalletReportsDto,
   HealthOverallStatus,
   HealthRowStatus,
@@ -99,6 +101,9 @@ export interface EventDto {
   /** Active (non-revoked/cancelled) attendee count against `capacity` - only set on the
    * single-event fetch (GET /api/admin/events/:eventId), not the picker list. */
   active_attendee_count?: number;
+  /** Seats held against `capacity` (what "full" and "over the limit" compare against); same
+   * single-event-fetch scope as `active_attendee_count`. */
+  seats_in_use?: number;
   archived_at: string | null;
   created_at?: string;
   created_by_display_name?: string | null;
@@ -253,7 +258,15 @@ export interface CheckInStatsResponse {
 
 export type RsvpStatus = "none" | "confirmed" | "declined" | "tentative" | "cancelled";
 
-import type { AttendeeStatus } from "@admitto/db/status";
+import type {
+  AttendeeStatus,
+  EmailDeliveryStatus,
+  LegalDocumentKind,
+  RegistrationAccessMethod,
+  RegistrationMailTemplateName,
+  RegistrationMode,
+  RegistrationStatus,
+} from "@admitto/db/status";
 import type { WalletPassApiFields } from "@admitto/db/wallet-pass-fields";
 
 /** See WalletPassApiFields - shared with apps/web's own mirror of this same wire shape
@@ -343,6 +356,14 @@ export interface AttendeeErasureDto {
   location: IpLocationDto | null;
 }
 
+/** The person a guest brings, as the attendee's page shows and edits them (`PATCH` and `DELETE .../attendees/:id/companion`). */
+export interface AttendeeCompanionDto {
+  slot: number;
+  name: string;
+  /** The answers to the event's questions about a companion, key to text; null when there are none. */
+  custom_data: Record<string, string> | null;
+}
+
 export interface AttendeeDetailDto {
   id: string;
   /** Set once the attendee's personal data has been erased: the page is read-only. */
@@ -381,6 +402,9 @@ export interface AttendeeDetailDto {
    * actually reaches an already-issued pass. */
   wallet_field_mapping: Record<string, string> | null;
   custom_data: unknown;
+  /** The person the guest brings, or null (none, or the attendee is erased). The server always sends it; optional here so
+   * existing fixtures keep their shape. */
+  companion?: AttendeeCompanionDto | null;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
   action_log_total: number;
@@ -668,6 +692,8 @@ export interface EventItemConfigDto {
   content_fields?: string[];
   requires_return?: boolean;
   issue_on_checkin?: boolean;
+  /** Who is offered the item: every attendee (`all`, also when absent) or only the guests who bring a companion. */
+  audience?: "all" | "with_companion";
 }
 
 export interface EventItemDto {
@@ -704,7 +730,12 @@ export interface EventImageAssetsListResponse {
   items: EventImageAssetDto[];
 }
 
-export type EventCustomFieldType = "text" | "select" | "boolean";
+// The answer types of a custom field and its format rules come from @admitto/shared, the one list the
+// API, the import and the registration form read too.
+export type { EventCustomFieldRules, EventCustomFieldType };
+
+/** Whose answer a question asks for (`EventCustomField.applies_to`). */
+export type EventCustomFieldRecipient = "guest" | "companion";
 
 /** A definition in the event's custom attendee data field registry (dietary, shirt size, ...) -
  * the single source of truth for a field; EventItem.config.content_fields only references these
@@ -716,7 +747,17 @@ export interface EventCustomFieldDto {
   description: string | null;
   type: EventCustomFieldType;
   required: boolean;
+  /** Whether the public registration form asks guests this question. */
+  show_on_form: boolean;
+  /** Whose answer the question asks for: the guest's own, or the person the guest brings. The server always sends it; absent
+   * reads as the guest's, as it does there, and keeps the shape of existing fixtures. */
+  applies_to?: EventCustomFieldRecipient;
+  /** Position among the event's fields, from 0; null = not placed yet (listed last). The list
+   * endpoint already returns the fields in order, so a screen has no need to sort by this. */
+  display_order: number | null;
   options: string[] | null;
+  /** Format rules of a text, long text or phone field; null = none. */
+  rules: EventCustomFieldRules | null;
   created_at: string;
 }
 
@@ -737,7 +778,21 @@ export interface CreateEventCustomFieldBody {
   description?: string;
   type?: EventCustomFieldType;
   required?: boolean;
+  /** Left out = off. The Registration page sends true for the fields it creates. */
+  show_on_form?: boolean;
+  /** Left out = the guest's own question. */
+  applies_to?: EventCustomFieldRecipient;
   options?: string[];
+  /** Only for a text, long text or phone field; left out or null = none. */
+  rules?: EventCustomFieldRules | null;
+}
+
+/** What adding the suggested questions answers: the keys it created, in the order it created them, and those it left out (`exists`: the
+ * event has a field under that key already; `condition`: it depends on a field that cannot be what it depends on). Mirrors
+ * `AddSuggestedFieldsDto` of the server. */
+export interface AddSuggestedFieldsResponse {
+  added: string[];
+  skipped: { source_field: string; reason: "exists" | "condition" }[];
 }
 
 /** `source_field` is immutable after create - see EventCustomFieldDto. */
@@ -747,8 +802,15 @@ export interface UpdateEventCustomFieldPatch {
   description?: string | null;
   type?: EventCustomFieldType;
   required?: boolean;
+  show_on_form?: boolean;
+  /** Left out = unchanged. A question that others wait for cannot move to the other recipient (409 `field_controls_others`),
+   * nor can one that waits for a question of the first (422 `invalid_show_when`). */
+  applies_to?: EventCustomFieldRecipient;
   /** null clears a previous select's options; omit to leave options untouched. */
   options?: string[] | null;
+  /** null clears the rules (send it when the field becomes a type that takes none); omit to leave
+   * them untouched; an object replaces them. */
+  rules?: EventCustomFieldRules | null;
 }
 
 /** The 8 curated colors a ticket type may use - kept in sync by hand with
@@ -831,6 +893,13 @@ export interface EventTemplateDto {
   header_image_url: string;
 }
 
+/** What the editor opens a registration mail with (GET .../system-templates/:name): its source, and which text it is -
+ * the event's own, the organization's, or the built-in default. */
+export type EventTemplateSourceDto = Pick<
+  EventTemplateDto,
+  "subject_template" | "body_template" | "template_format" | "source"
+>;
+
 export interface SaveTemplateBody {
   subject_template: string;
   body_template: string;
@@ -893,6 +962,8 @@ export interface MailTemplateListItem {
   template_format: "mjml" | "html";
   subject_template: string;
   updated_at: string;
+  /** Registration system template: editable, but never offered for bulk send. */
+  is_system?: boolean;
 }
 
 /** Full template row from GET .../templates/:id. */
@@ -1369,6 +1440,311 @@ export interface SaveWeatherSettingsBody {
   provider?: WeatherProviderId;
   baseUrl?: string | null;
   apiKey?: string | null;
+}
+
+/** GET /api/admin/registration/turnstile: the Cloudflare Turnstile keys of guest registration. The
+ * secret key is write-only, so only whether one is saved comes back. `ready` means both keys are
+ * saved and readable, `incomplete` that one is missing, `unreadable` that a saved secret cannot be
+ * decrypted (the ENCRYPTION_KEY changed). */
+export type RegistrationTurnstileStatus = "ready" | "incomplete" | "unreadable";
+
+export interface RegistrationTurnstileDto {
+  site_key: string | null;
+  secret_set: boolean;
+  status: RegistrationTurnstileStatus;
+}
+
+/** `null` clears a key, a string sets it, leaving a key out keeps it. */
+export interface SaveRegistrationTurnstileBody {
+  site_key?: string | null;
+  secret_key?: string | null;
+}
+
+/** What a way in waits for when it is on but cannot be used: the Turnstile keys (`link`, `password`) or an enabled sign-in
+ * provider (`sso`). */
+export type RegistrationAccessMethodBlocker = "bot_protection" | "identity_provider";
+
+/** One way in to the guest registration form, as the superadmin has set it. `enabled` is the switch; `available` is whether
+ * a guest can use it right now (`enabled` and not `blocked_by` anything). */
+export interface RegistrationAccessMethodDto {
+  method: RegistrationAccessMethod;
+  enabled: boolean;
+  available: boolean;
+  blocked_by: RegistrationAccessMethodBlocker | null;
+}
+
+/** GET and PUT /api/admin/registration/access-methods: every way in, in the server's order (`link`, `password`, `sso`),
+ * whether or not it is enabled. Superadmin only. */
+export interface RegistrationAccessMethodsDto {
+  methods: RegistrationAccessMethodDto[];
+}
+
+/** PUT: the whole list of enabled ways in. A way left out is turned off, `[]` turns all off. */
+export interface SaveRegistrationAccessMethodsBody {
+  methods: RegistrationAccessMethod[];
+}
+
+/** One legal text of an event (`/api/admin/events/:eventId/legal-documents`): the privacy notice, the event
+ * terms or an extra consent. `ref` names it in the address (`privacy-notice`, `event-terms`, `consent-<key>`). */
+export interface LegalDocumentDto {
+  id: string;
+  ref: string;
+  kind: LegalDocumentKind;
+  /** The consent key; null for the privacy notice and the terms. */
+  key: string | null;
+  title: string;
+  published: boolean;
+  published_at: string | null;
+  updated_at: string;
+  /** The page a guest reads. It answers 404 until the text is published. */
+  public_path: string;
+  /** True for the privacy notice, the terms and a consent the event asks for. */
+  required: boolean;
+}
+
+/** One text with its cleaned HTML, which can differ from what was sent. */
+export interface LegalDocumentWithContentDto extends LegalDocumentDto {
+  content_html: string;
+}
+
+/** The limits an editor keeps to, from the server. */
+export interface LegalDocumentLimitsDto {
+  title_chars: number;
+  content_chars: number;
+  consents: number;
+}
+
+/** A text that registration still needs published before it can be turned on. */
+export interface LegalDocumentMissingDto {
+  ref: string;
+  kind: LegalDocumentKind;
+  key: string | null;
+}
+
+/** GET /api/admin/events/:eventId/legal-documents */
+export interface LegalDocumentsListResponse {
+  items: LegalDocumentDto[];
+  missing: LegalDocumentMissingDto[];
+  limits: LegalDocumentLimitsDto;
+}
+
+/** PUT /api/admin/events/:eventId/legal-documents/:ref */
+export interface SaveLegalDocumentBody {
+  title: string;
+  content_html: string;
+}
+
+/** The mail a request was last queued, as a row of the request list shows it (`last_mail`). */
+export interface RegistrationMailBriefDto {
+  template_name: RegistrationMailTemplateName;
+  status: EmailDeliveryStatus;
+  /** True while the worker still tries a failed mail again by itself. */
+  retryable: boolean | null;
+  /** True when staff may send it again. */
+  can_retry: boolean;
+}
+
+/** One guest's request to join an event (`GET /api/admin/events/:eventId/registrations`). Without the answers and the companions. */
+/** What a request says of its guest and where it stands: the head the list and the full record have in common. */
+export interface RegistrationHeadDto {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  company: string | null;
+  department: string | null;
+  status: RegistrationStatus;
+  created_at: string;
+}
+
+export interface RegistrationListItemDto extends RegistrationHeadDto {
+  /** The people the guest brings; each takes a seat. */
+  companions_count: number;
+  /** The mail queued last for this request; null when none was queued. */
+  last_mail: RegistrationMailBriefDto | null;
+}
+
+/** GET /api/admin/events/:eventId/registrations: one page of the requests, oldest first, and how many match in all. */
+export interface RegistrationListDto {
+  items: RegistrationListItemDto[];
+  /** The requests that match the filter, over all pages. */
+  total: number;
+  page: number;
+  pageSize: number;
+  /** The name of the requests a filter selects over all pages, which deleting by filter sends back; null without a filter, and for a filter that selects more than one deletion may take. */
+  selection_digest: string | null;
+}
+
+/** GET /api/admin/events/:eventId/registrations/counts: what the tab, its filter and the Overview show. */
+export interface RegistrationCountsDto {
+  /** The event's registration mode; null while registration is off. */
+  mode: RegistrationMode | null;
+  by_status: Record<RegistrationStatus, number>;
+  /** Requests that wait for a decision. The waiting list is counted apart. */
+  needs_decision: number;
+}
+
+/** The checks that decide whether an event may have registration on. The server holds the list (`READINESS_KEYS` in
+ * `apps/web/src/registration/readiness.ts`), and a test keeps the words of each key (`registration/accessReadiness.ts`) equal to it. */
+export type RegistrationReadinessKey =
+  | "access_method"
+  | "access_method_enabled"
+  | "bot_protection"
+  | "password"
+  | "legal_documents"
+  | "form_questions"
+  | "required_fields"
+  | "mail_provider"
+  | "instance_url"
+  | "event_not_archived"
+  | "event_not_ended";
+
+/** One check: a fixed key and whether it is met. Never a sentence, so the words are the screen's own. */
+export interface RegistrationReadinessCheckDto {
+  key: RegistrationReadinessKey;
+  ok: boolean;
+}
+
+/** A question the guest form asks (the ones the organiser wrote), as the form draws it. */
+export interface RegistrationPublicFieldDto {
+  key: string;
+  label: string;
+  type: EventCustomFieldType;
+  required: boolean;
+}
+
+/**
+ * GET and PUT /api/admin/events/:eventId/registration/settings: how guests may register for the event, with whether it is ready
+ * for registration to be on. `password_set` says whether an event password is stored and nothing else: the password is never
+ * sent back, not even its length. `guest_url` is null while the instance has no address.
+ */
+export interface RegistrationSettingsDto {
+  /** Null while registration is off. */
+  mode: RegistrationMode | null;
+  /** None or one way in. The server may hold a way this screen does not offer; it counts as no choice. */
+  access_methods: RegistrationAccessMethod[];
+  waitlist_enabled: boolean;
+  verify_email: boolean;
+  max_companions: number;
+  ask_company: boolean;
+  ask_department: boolean;
+  consent_keys: string[];
+  /** The guest form draws its date, time and phone boxes in the product's style, not the browser's. */
+  styled_form_controls: boolean;
+  password_set: boolean;
+  guest_url: string | null;
+  readiness: RegistrationReadinessCheckDto[];
+  public_fields: RegistrationPublicFieldDto[];
+}
+
+/** PUT of the settings: a part of them, and only the part that changed. An unknown key is refused (400). */
+export interface SaveRegistrationSettingsBody {
+  mode?: RegistrationMode | null;
+  access_methods?: Array<"link" | "password">;
+  waitlist_enabled?: boolean;
+  verify_email?: boolean;
+  max_companions?: number;
+  ask_company?: boolean;
+  ask_department?: boolean;
+  consent_keys?: string[];
+  styled_form_controls?: boolean;
+}
+
+/** What the request list is asked for; a left-out filter selects every request. */
+export interface RegistrationListParams {
+  status?: RegistrationStatus;
+  /** One of REGISTRATION_AGE_OPTIONS: only requests made more than this long ago. */
+  olderThan?: string;
+  /** Words of a name or an address. */
+  q?: string;
+  page: number;
+  pageSize: number;
+}
+
+/** One email of a request's history, as the detail lists it. */
+export interface RegistrationMailDto extends RegistrationMailBriefDto {
+  id: string;
+  attempts: number;
+  queued_at: string;
+  attempted_at: string | null;
+  sent_at: string | null;
+  /** A short code for why the email did not go out, never the text of an exception. */
+  error_code: string | null;
+  /** The sentence the worker stored for that code. */
+  error: string | null;
+}
+
+/** The person a guest brings: a name and their answers. */
+export interface RegistrationCompanionDto {
+  name: string;
+  custom_data: Record<string, unknown> | null;
+}
+
+/** GET /api/admin/events/:eventId/registrations/:id: one request in full. */
+export interface RegistrationDetailDto extends RegistrationHeadDto {
+  /** The answers as they were stored, by the key of the field they answer. */
+  custom_data: Record<string, unknown> | null;
+  companions: RegistrationCompanionDto[];
+  email_verified_at: string | null;
+  /** Set while the request waits for the guest to confirm the address. */
+  confirm_expires_at: string | null;
+  /** When the terms were accepted. */
+  accepted_at: string | null;
+  /** The key of each extra consent to the time it was given. */
+  consents: Record<string, string>;
+  decided_at: string | null;
+  /** The staff member who decided; null for an automatic decision or none yet. */
+  decided_by: { id: string; name: string } | null;
+  locale: string | null;
+  /** The attendee this request was accepted as; null for any other state. */
+  attendee_id: string | null;
+  /** Oldest first. */
+  mails: RegistrationMailDto[];
+}
+
+/** What became of one request of an acceptance. `accepted` carries the new attendee. */
+export type AcceptRegistrationResultDto =
+  | { id: string; outcome: "accepted"; attendee_id: string }
+  | { id: string; outcome: "already_decided" | "awaiting_email" | "already_attendee" | "gone" };
+
+/** POST .../registrations/accept */
+export interface AcceptRegistrationsDto {
+  results: AcceptRegistrationResultDto[];
+}
+
+/** POST .../registrations/reject */
+export interface RejectRegistrationsDto {
+  results: { id: string; outcome: "rejected" | "already_decided" | "awaiting_email" | "gone" }[];
+}
+
+/** POST .../registrations/retry-mail */
+export interface RetryRegistrationMailsDto {
+  results: { id: string; outcome: "retried" | "not_retryable" | "gone" }[];
+}
+
+export type DeleteRegistrationResultDto =
+  | { id: string; outcome: "deleted"; attendee_id?: string }
+  | { id: string; outcome: "gone" };
+
+/** POST .../registrations/delete and .../registrations/delete-by-filter */
+export interface DeleteRegistrationsDto {
+  results: DeleteRegistrationResultDto[];
+  deleted: number;
+  /** The accepted requests among them: their attendees were erased too. */
+  attendees_erased: number;
+  /** Erased attendees whose wallet pass is still to be deleted at the provider. */
+  wallet_pending: number;
+}
+
+/** What deleting everything a filter selects sends: the filter of the list, its `total` and its `selection_digest`. */
+export interface DeleteRegistrationsByFilterBody {
+  status?: RegistrationStatus;
+  olderThan?: string;
+  q?: string;
+  /** The `total` the list showed for the filter. */
+  expected: number;
+  /** The `selection_digest` the list gave for the filter. */
+  selectionDigest: string;
 }
 
 export interface SaveMapsSettingsBody {
@@ -2037,7 +2413,11 @@ export interface EventOverviewDto {
     pinned_note: string | null;
   };
   attendee_count: number;
+  /** Seats the event holds, which is what its limit is compared with; `attendee_count` is the number of heads. */
+  seats_in_use: number;
   admitted_count: number;
+  /** Companions let in with their guests; the people on site are `admitted_count` plus this. */
+  companions_admitted: number;
   email_sent: number;
   email_failed: number;
   email_bounced: number;
@@ -2069,6 +2449,8 @@ export interface EventReportsResponse {
     admission_rate_pct: number;
     peak_hour: string | null;
     peak_hour_count: number;
+    /** Companions let in with their guests; the people on site are `admitted` plus this. */
+    companions_admitted: number;
   };
   by_hour: Array<{ hour: string; count: number }>;
   /** One row per configured ticket type (catalog order), plus a trailing `key: null` "(none)"

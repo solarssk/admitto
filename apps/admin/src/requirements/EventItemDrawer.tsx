@@ -53,13 +53,16 @@ function toForm(item: EventItemDto): FormState {
 
 /** Build PATCH payload; `issue_on_checkin` is persisted only for the badge item.
  * content_fields is always included, even empty - omitting it when the operator unchecks
- * everything would leave the server unable to tell "clear it" apart from "don't touch it". */
-function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
+ * everything would leave the server unable to tell "clear it" apart from "don't touch it".
+ * What the drawer does not edit goes back as it was read, the audience above all (the Companion item is only for
+ * guests with a companion): the server replaces the whole config, so leaving it out would offer the item to every guest. */
+function toConfig(form: FormState, item: EventItemDto): EventItemConfigDto {
   const config: EventItemConfigDto = {
+    ...item.config,
     requires_return: form.requires_return,
     content_fields: form.content_fields,
   };
-  if (itemKey === "badge") {
+  if (item.key === "badge") {
     config.issue_on_checkin = form.issue_on_checkin;
   }
   return config;
@@ -120,7 +123,7 @@ export function EventItemDrawer({
         description: form.description.trim() || null,
         enabled: form.enabled,
         icon: form.icon,
-        config: toConfig(form, item.key),
+        config: toConfig(form, item),
       });
       onUpdated();
       onClose();
@@ -251,12 +254,12 @@ export function EventItemDrawer({
                 <p className="requirements-section-hint">
                   Show one or more custom attendee fields next to this item at check-in. Useful when
                   the item varies per person (e.g. shirt size on a gift bag). Manage the fields
-                  themselves in the "Custom attendee fields" card above.
+                  themselves in the "Attendee fields" card on the Fields tab of the Registration page.
                 </p>
                 {customFields.length === 0 ? (
                   <Notice variant="info">
-                    No custom fields defined for this event yet. Add fields in Custom attendee fields
-                    above, then link them here.
+                    No custom fields defined for this event yet. Add fields in the "Attendee fields" card
+                    on the Fields tab of the Registration page, then link them here.
                   </Notice>
                 ) : (
                   <div className="requirements-field-stack">

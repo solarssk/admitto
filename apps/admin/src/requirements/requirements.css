@@ -49,6 +49,17 @@
   line-height: var(--lh-normal);
 }
 
+/* The same line when it sits on the page itself, not in a card (the note under Event items): there --text-muted is 4.34:1 on the page
+   background, below the 4.5:1 that text of this size needs, so it takes --text-secondary, and its link is underlined so that it does not
+   rest on its colour alone. */
+.requirements-section-hint--page {
+  color: var(--text-secondary);
+}
+
+.requirements-section-hint--page a {
+  text-decoration: underline;
+}
+
 .requirements-config-summary {
   display: inline-block;
   font-size: var(--fs-sm);
@@ -70,6 +81,28 @@
 .requirements-item-info {
   min-width: 0;
   flex: 1 1 auto;
+}
+
+/* The icon a question carries on the registration form, before its name. */
+.requirements-item-form-icon {
+  display: inline-flex;
+  margin-right: var(--space-1);
+  vertical-align: -0.1em;
+  color: var(--primary);
+}
+
+/* "Shown only when Parking is Yes", under the name of a question that has a condition. It wraps, never cut: it names the question
+   the row depends on. */
+.requirements-item-condition {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* "Companion", under the name of a question about the person the guest brings. */
+.requirements-item-recipient {
+  margin-top: 2px;
 }
 
 .requirements-item-desc-col {
@@ -189,6 +222,105 @@
   color: var(--text-muted);
 }
 
+/* The Registration page's card has one more column, the "On the form" switch, and two more buttons in each row, the arrows
+   that order the fields; the others make room for them. */
+.requirements-item-form-col {
+  width: 7rem;
+  white-space: nowrap;
+  text-align: left;
+  vertical-align: middle;
+}
+
+/* The title and two buttons ("Add suggested questions", "Add field") do not fit one line on a phone, and the header has a fixed
+   height: it grows, with the title first and the buttons under it, instead of a button hanging out of the card. */
+@media (max-width: 640px) {
+  .requirements-section--registration .at-card__header {
+    flex-wrap: wrap;
+    height: auto;
+    padding-block: var(--space-3);
+  }
+
+  .requirements-section--registration .at-card__actions {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+}
+
+/* The two buttons are each a line of their own at this width, so they are as wide as the card instead of two different widths
+   (as on the Legal tab). */
+@media (max-width: 480px) {
+  .requirements-section--registration .at-card__actions > * {
+    flex: 1 1 100%;
+  }
+
+  .requirements-section--registration .at-card__actions .at-btn {
+    width: 100%;
+  }
+}
+
+.requirements-section--registration .requirements-item-status-col {
+  width: 6rem;
+}
+
+.requirements-section--registration .requirements-item-actions {
+  width: 9.25rem;
+}
+
+/* A field's name and description are the question a guest reads, so here they wrap and the row grows, never cut to an
+   ellipsis or to two lines as on Requirements. */
+.requirements-section--registration .requirements-item-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.requirements-section--registration .requirements-item-desc {
+  display: block;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+/* What the table can hold depends on the width of the card, not of the screen (the menu takes another share of the screen at
+   each width), so the table's wrap is a container, and the columns that matter least go as it narrows: Required first, then
+   the description (both are in the edit dialog). The container is the wrap, not the section: a container holds the fixed
+   dialogs of the card inside its own box. */
+.requirements-section--registration .attendees-table-wrap {
+  container-type: inline-size;
+}
+
+@container (max-width: 719px) {
+  .requirements-section--registration .requirements-item-status-col {
+    display: none;
+  }
+}
+
+@container (max-width: 559px) {
+  .requirements-section--registration .requirements-item-desc-col {
+    display: none;
+  }
+
+  /* The name takes what the switch and the buttons leave (it is 28% on a wide card, which here is a column of a few letters). */
+  .requirements-section--registration .table th:first-child,
+  .requirements-section--registration .table td:first-child {
+    width: auto;
+  }
+}
+
+@container (max-width: 439px) {
+  /* A phone: the switch is what this card is for, so it stays, and the four buttons go two by two next to it. */
+  .requirements-section--registration .requirements-item-form-col {
+    width: 4.5rem;
+  }
+
+  .requirements-section--registration .requirements-item-actions {
+    width: 5.5rem;
+  }
+
+  .requirements-section--registration .requirements-item-actions__wrap {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
 .requirements-contents-row {
   display: flex;
   flex-direction: column;
@@ -306,29 +438,6 @@
   align-self: flex-end;
 }
 
-.contents-row__type-picker--block {
-  align-self: stretch;
-  width: 100%;
-  height: auto;
-  min-height: var(--control-h);
-}
-
-.contents-row__type-picker--block > .at-tooltip-trigger {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-}
-
-.contents-row__type-picker--block .contents-row__type-btn {
-  flex: 1;
-  width: 100%;
-  justify-content: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-3);
-  font-size: var(--fs-sm);
-  white-space: nowrap;
-}
-
 .contents-row__type-btn {
   background: var(--surface-card);
   border: none;
@@ -366,9 +475,159 @@
   color: var(--text-on-primary, #fff);
 }
 
+/* The answer types of a custom field (FieldTypePicker): seven buttons that wrap in a grid, each with its icon and name, instead of a
+   row that a dialog is too narrow for. Two to a row on a phone, three in the dialog on a desktop, wide enough for "Date and time"
+   to stay on one line. */
+/* A fieldset (the types are a group of buttons, named by the label above): its browser border, margin, padding and minimum
+   width are taken off. */
+.custom-field-types {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.custom-field-types__btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--control-h);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.custom-field-types__btn i {
+  flex: none;
+  font-size: 1.1rem;
+}
+
+.custom-field-types__btn:hover:not(:disabled, .custom-field-types__btn--active) {
+  border-color: var(--at-gray-400);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.custom-field-types__btn:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.custom-field-types__btn--active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--text-on-primary);
+}
+
+.custom-field-types__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* The format rules of a text, long text or phone field (FieldRulesEditor): the boxes sit in one panel under their title. The line
+   under the two lengths holds what they take or what is wrong with them, and keeps the room of its longest text (one line, two on
+   a phone), so the dialog does not jump when an error comes and goes. */
+/* A fieldset as well, with the same four things taken off. */
+.field-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.field-rules__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+/* The panel is tinted, and the shared error red (#d63939) is 4.46:1 on that tint, under the 4.5:1 that small text needs; the darker
+   error foreground of the notices is 7:1. */
+.field-rules__panel .at-hint--error {
+  color: var(--status-error-fg);
+}
+
+.field-rules__lengths {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.field-rules__note {
+  min-height: calc(var(--fs-xs) * var(--lh-normal));
+  margin-top: calc(-1 * var(--space-2));
+}
+
+@media (max-width: 640px) {
+  .field-rules__note {
+    min-height: calc(2 * var(--fs-xs) * var(--lh-normal));
+  }
+}
+
 #cf-options {
   min-height: 4.5rem;
 }
+
+/* What a question carries on the registration form (FormRulesEditor): a fieldset named by its labelled break, with the icon, the
+   condition and the suggestions stacked. The condition is a group of its own, a fieldset again, with the same four things taken off. The
+   line under a control keeps the room of one line, so the dialog does not jump when an error comes and goes. */
+.form-rules,
+.form-rules__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.form-rules {
+  gap: var(--space-3);
+}
+
+.form-rules__condition {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+/* The question is a label that a guest reads (up to 60 characters), so it takes the row; the answer is short and takes half of the next. */
+.form-rules__condition > :first-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .form-rules__condition {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.form-rules__note {
+  min-height: calc(var(--fs-xs) * var(--lh-normal));
+}
+
 
 .contents-row__required {
   display: flex;
@@ -471,9 +730,22 @@
 
 .add-item-label-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: var(--space-2);
+  column-gap: var(--space-2);
+}
+
+/* The label keeps its width. A long key (the slug of a long name) goes on a line of its own under it, right-aligned, instead of
+   squeezing the label into two lines ("Display" / "label") beside it. */
+.add-item-label-row > .at-label {
+  flex: none;
+}
+
+.add-item-label-row > .at-hint {
+  min-width: 0;
+  margin-left: auto;
+  text-align: right;
 }
 
 .event-item-modal__body {

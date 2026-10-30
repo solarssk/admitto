@@ -41,7 +41,12 @@
 | `AttendeeActionLog.metadata` (admin audit trail) | Accountability: who changed an attendee's email, company, department or ticket type, from what, to what, and when | Personal data. See **Admin audit trail** below |
 | `AdminAuditLog.metadata` for attendee creation (central audit log) | Security and incident response: which attendee (name, email) was added by hand, to which event, by whom | Personal data. See **Central admin audit log** below, and the note under this table |
 | Wallet pass registration | Apple/Google Wallet ticket delivery, when Wallet is enabled | Personal data. See the note under this table and [SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md) |
-| `Attendee.custom_data` (event-specific custom fields, e.g. dietary, accessibility, shirt size, emergency contact) | Event-specific attendee data collection (Requirements page → Custom attendee fields), aggregated in Reports' **Custom fields** tab | Personal data. **May hold GDPR Art. 9 special-category data** if staff configure such a field. See **Admin audit trail** below for how edits to this field are (deliberately, only partially) audited |
+| `Attendee.custom_data` (event-specific custom fields, e.g. dietary, accessibility, shirt size, emergency contact) | Event-specific attendee data collection (Registration page → Fields tab → Attendee fields), aggregated in Reports' **Custom fields** tab | Personal data. **May hold GDPR Art. 9 special-category data** if staff configure such a field. See **Admin audit trail** below for how edits to this field are (deliberately, only partially) audited |
+| Answers to the suggested questions (`custom_data` keys `parking`, `parking_plate`, `travel`, `arrival`, `accommodation`) | Planning parking, transfers and rooms for an event. The questions are added to an event only when an administrator selects **Add suggested questions**, never when an event is created | Personal data (a car's registration number, how and when a guest arrives, whether they need a room). The set holds no question about health, disability or accessibility needs, so Admitto adds no special-category data (GDPR Art. 9) by itself. An administrator can change or delete every question afterwards. The answers are erased and deleted with the attendee or the registration, like every `custom_data` answer |
+| Guest registrations (`Registration`: name, email, company, department, answers to the event's questions, an optional companion's name and answers, when the terms and each extra consent were accepted) | Taking a guest's registration through the event form before, and whether, they become an attendee | Personal data, also of people who never become attendees (not confirmed, waiting, rejected) and of a third party (the companion), whose name and answers the guest types into the form (see [Legal basis](#legal-basis)). They are judged by the same rules as the guest's own input and are in no log, error or audit entry. Answers may hold GDPR Art. 9 special-category data if staff configure such a question. Erasure decision: every column is deleted with the row, see [the erasure rules](docs/dev/attendee-erasure.md#rules-for-code). Database backups hold these rows like any other attendee data |
+| Attendee companions (`AttendeeCompanion`: the name of a guest's companion and the answers to the event's companion questions) | Counting and welcoming the person a guest brings (the +1), after the guest was accepted | Personal data of a third party who is not an attendee and has no ticket. Answers may hold GDPR Art. 9 special-category data if staff configure such a question. Erasure decision: the name becomes a placeholder and the answers are cleared, and the row stays because the place of an admitted guest's companion is still taken; removing the attendee deletes the rows, see [the erasure rules](docs/dev/attendee-erasure.md#rules-for-code). An Administrator can correct a companion's name and answers, or remove the companion (which deletes the row and the copy in the guest's registration and frees the place), on the attendee's page; the audit log records the attendee's id and the action, never the name or an answer. Database backups hold these rows like any other attendee data |
+| Registration mail queue (`RegistrationMail`) | Sending the mails a registration triggers | Holds no address and no text, only the template name, status and a fixed error category (never the text of an exception or of the provider's reply). It is read together with the `Registration` row and deleted with it |
+| Legal texts of an event (`LegalDocument`: privacy notice, event terms, extra consents) | Showing guests what they read and accept before they register | Not personal data: written once for the event, no guest's data and no per-guest copy. Erasure decision: nothing to erase, see [the erasure rules](docs/dev/attendee-erasure.md#rules-for-code). Deleted with the event |
 
 **Central audit log, attendee creation**
 
@@ -71,6 +76,8 @@ contains only a random, unguessable identifier - no name, email, or other PII.
 
 - Legitimate interest (internal event management) - **LIA may be required** for external guests, or
 - Consent obtained at registration.
+
+**A guest's companion.** When an event takes a companion (`max_companions` above 0 in its registration settings), the registration form asks the guest for the companion's full name and the answers to the event's questions about a companion. The companion is a third party: Admitto holds no address of theirs, sends them nothing, and does not ask the guest to confirm that they were told. The guest accepts the event's terms for themselves only. The organisation decides how the companion is informed, for example in the event's privacy notice, which should say that a guest can register a companion and what is done with their data. The form says nothing about this.
 
 ## Logs
 
@@ -193,9 +200,10 @@ above is about:
   - *Erase personal data* (a privacy request) anonymises the entry in place.
   - *Remove from event* (a mistake: a duplicate, a test person, a wrong import file) deletes it.
   - Either way, every `AttendeeActionLog` row tied to the attendee is deleted, including any logged field values, and so are the notes. A removal does it with the `Attendee` row: `attendee_id` cascades (`onDelete: Cascade` in the Prisma schema).
-  - A removal also deletes the email deliveries (including stored rendered mail), check-ins and wallet pass rows in the same transaction. What an erasure keeps and clears is listed in [attendee-erasure.md](docs/dev/attendee-erasure.md).
+  - A removal also deletes the email deliveries (including stored rendered mail), check-ins, wallet pass rows and companions in the same transaction. What an erasure keeps and clears is listed in [attendee-erasure.md](docs/dev/attendee-erasure.md).
   - Admitto makes a best-effort call to delete the attendee's pass at the wallet provider (an erasure after its commit, a removal before it). A provider failure is logged and does not block either, so verify the provider side if it matters.
   - Each leaves one `attendee_erased` (bulk: `attendees_bulk_erased`) `AttendeeActionLog` row with no attendee link. It holds only the opaque attendee ids, the counts, the method (`erase` or `remove`) and, for a removal, a reason from a fixed list. It holds no free text, name or email, and neither does the central `AdminAuditLog` entry (see below).
+  - Deleting a guest registration (see [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md)) leaves a `registrations_deleted` row of the same kind: the registration ids, the attendee ids of the accepted ones, the counts, and for a filter its closed values (never the words of a search). An accepted registration erases its attendee, so it also leaves the erasure row above.
 - **IP address:** each row also stores the acting staff member's IP address (`ip`), session id and
   device id. This table is not purged by the worker; its rows (IP included) go when the attendee
   or the event is deleted.
@@ -207,10 +215,11 @@ above is about:
 
 ## Central admin audit log (`AdminAuditLog`)
 
-Separate from the per-attendee `AttendeeActionLog` above: a single, instance-wide, **superadmin-only** table (Organisation settings → Logs → **Audit**) that already records event/user/session/settings actions.
+Separate from the per-attendee `AttendeeActionLog` above: a single, instance-wide, **superadmin-only** table (Organisation settings → Logs → **Audit**) that already records event/user/session/settings actions. Saving, publishing, withdrawing and deleting a legal text of an event are among them (`legal_document_saved`, `legal_document_published`, `legal_document_unpublished`, `legal_document_deleted`); the entry holds the event id, the kind and the key of the text, never the text.
 
 - Attendee **creation** writes here too. Unlike the per-attendee log, it deliberately includes the attendee's name and email in `metadata`, plus the event's title (not just its opaque id).
 - An **erasure** or a **removal** (`attendee_erased` / `attendees_bulk_erased`, told apart by `metadata.method`) records the event, the attendee ids, the counts and, for a removal, a reason code, never a name or an email. It also blanks the name and email in that attendee's creation entry.
+- Deleting **guest registrations** (`registrations_deleted`) records the event, the registration ids, the attendee ids of the accepted ones and the counts, never a name, an address or a search text.
 
 This is a narrower, more deliberate exception than it looks:
 
@@ -324,6 +333,7 @@ policy). Different retention periods for different categories are intentional - 
 | Login sessions, trusted devices | Product - automatic | Best-effort purge on the worker when expired/revoked |
 | Email bodies (`rendered_html`, `rendered_subject`) | Product - automatic | Nullified **60 days** after terminal delivery by default; `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS` overrides it for the worker, `admitto retention run` and `nullify-delivery-snapshots` |
 | Files that jobs leave in storage: the file of an attendee export (CSV, XLSX or PDF) and the staged CSV of an import job that failed | Product - automatic | The worker (boot + ~24h) and `admitto retention run` delete an export file **7 days** after the export finished (`EXPORT_FILE_RETENTION_DAYS`) and the staged CSV of a finished import job **7 days** after it finished (`IMPORT_STAGED_FILE_RETENTION_DAYS`). The job's own row (counts, filename) stays. More detail under the table |
+| Guest registrations that were never confirmed (`Registration` in `awaiting_email`) | Product - automatic | The worker deletes them, with their queued mail, once their confirmation link has expired: **24 hours** after the submission. It is the only automatic deletion of guest registrations. Registrations in any other state stay until you delete them, one by one, by selection or by filter ([DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md#43-delete-a-guest-registration)) |
 | Durable security audit trail (`SecurityAuditLog` - login/MFA/logout/OIDC/access-denied) | Product - automatic | Best-effort purge on the worker (boot + ~24h); default **30 days** (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
 | In-app security alert inbox (`Notification` - a personal copy of alerts like "your password changed", shown via My Account's own notification bell; the underlying event is separately durable in `SecurityAuditLog` above regardless of this table) | Operator (primary) / Product (fallback) | A staff member can permanently clear their own notification history at any time (My Account's bell → **Clear all**); anything never cleared is auto-purged by the worker (boot + ~24h), default **30 days** (`NOTIFICATION_RETENTION_DAYS`) |
 | IP addresses in admin audit log and the `http_request` access log (every request, staff or anonymous) | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge. (An IP logged this way is never itself persisted in a purgeable table - it lives in the System logs live tail below (in-memory only) and wherever your container log driver keeps stdout.) |
@@ -366,7 +376,7 @@ framework:
 | Policy documented | Yes (this document + GDPR one-pager) |
 | Organizer export before purge | Admin UI - **Attendees → Export** (CSV/XLSX/PDF) |
 | Per-attendee erasure | Admin SPA (single and bulk): **Erase personal data** (anonymises the entry, Reports keep their numbers) and **Remove from event** (deletes the entry, for mistakes); each has an API endpoint for one attendee and one for a selection |
-| Automated purge job | Partial - auth-state, email delivery snapshot and export/import file cleanup on the Admitto worker; full attendee PII purge planned |
+| Automated purge job | Partial - auth-state, email delivery snapshot, export/import file cleanup and unconfirmed guest registrations on the Admitto worker; full attendee PII purge planned |
 
 **Import and export job failures**
 
@@ -395,6 +405,7 @@ The subprocessors depend on your configuration:
 - optional CDN/WAF
 - optional geocoding (Nominatim) and weather (MET Norway or Open-Meteo) lookups. These send venue coordinates or search text and a User-Agent carrying the instance's Support contact, but never attendee data.
 - when Wallet is enabled, the configured wallet pass provider (PassCreator, for Apple/Google Wallet)
+- when the public registration form is set up, Cloudflare Turnstile. A visitor's browser sends Cloudflare its IP address and browser signals when the form opens, and the server sends the secret key and the challenge token to check the result. Turnstile receives none of the form's content. Name Cloudflare in the privacy notice of the form.
 
 Template: [SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md).
 

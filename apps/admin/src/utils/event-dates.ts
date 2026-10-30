@@ -241,9 +241,40 @@ export function formatIsoCalendarDate(yyyyMmDd: string): string {
   return formatEventCalendarDate(`${yyyyMmDd}T12:00:00.000Z`);
 }
 
+const WALL_CLOCK_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+
+/**
+ * A date and time answer of a custom field (`YYYY-MM-DDTHH:mm`) as text. It is the time on the clock at the event, with no zone,
+ * so its own digits are formatted in the account's date format and nothing is converted: every viewer reads the same text. The
+ * event's zone is named when it is known, because it is what the time means. A value that is not in that form comes back as it is.
+ */
+export function formatWallClockDateTime(value: string, timezone?: string): string {
+  const match = WALL_CLOCK_DATE_TIME.exec(value);
+  if (!match) return value;
+  // Not `Date.UTC(year, ...)`, which reads the years 0 to 99 as 1900 to 1999.
+  const clock = new Date(0);
+  clock.setUTCFullYear(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  clock.setUTCHours(Number(match[4]), Number(match[5]), 0, 0);
+  const text = clock.toLocaleString(getPreferredLocale(), { ...DATETIME_OPTS, timeZone: "UTC" });
+  return timezone ? `${text} (${timezone})` : text;
+}
+
+/** A moment on the UTC calendar with the year as written. `Date.UTC` reads the years 0 to 99 as 1900 to 1999, which would turn the
+ * calendar of the year 50 into that of 1950. */
+export function utcCalendarDate(year: number, monthIndex: number, day: number): Date {
+  const date = new Date(0);
+  date.setUTCFullYear(year, monthIndex, day);
+  return date;
+}
+
+/** `YYYY-MM-DD` from its parts, the year always with four digits: an early year is `0050`, never `50`. */
+export function isoDateOfParts(year: number, month: number, day: number): string {
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 /** Month heading for the custom date picker (UTC calendar month). */
 export function formatCalendarMonth(year: number, month: number): string {
-  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(getPreferredLocale(), {
+  return utcCalendarDate(year, month - 1, 1).toLocaleDateString(getPreferredLocale(), {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
@@ -312,13 +343,13 @@ export function calendarDateValidationHint(pattern: string): string {
 
 function isValidCalendarDate(y: number, m: number, d: number): boolean {
   if (m < 1 || m > 12 || d < 1) return false;
-  const max = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const max = utcCalendarDate(y, m, 0).getUTCDate();
   return d <= max;
 }
 
 function toIsoDateParts(y: number, m: number, d: number): string | null {
   if (!isValidCalendarDate(y, m, d)) return null;
-  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return isoDateOfParts(y, m, d);
 }
 
 function resolveDayMonth(a: number, b: number): { d: number; m: number } | null {

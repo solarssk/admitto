@@ -64,6 +64,7 @@ Treat any secret exposed in logs, tickets or version control as **compromised**.
 | Redis password | Change `REDIS_PASSWORD` and the password inside `REDIS_URL` together. Then recreate `redis`, `app` and `worker` |
 | Wallet provider (PassCreator) API key | Rotate it at the provider. Then paste the new key in Event Settings → Wallet, for each event |
 | SSO client secret | Rotate it at the identity provider. Then update the provider under Settings → Identity |
+| Turnstile secret key | Rotate it in the Cloudflare dashboard, and make sure the old secret no longer works. Then save the new secret under Organisation Settings → External services → Guest registration. Until you do, forms that use a public link or a password cannot check guests and refuse them |
 | Alert webhook URL | Regenerate it at Discord, Slack or the receiving service. Then update Organisation Settings → Notifications. The URL is itself a bearer-style secret |
 | Emergency check-in token | Change `CHECKIN_OPERATOR_TOKEN` (or leave `ALLOW_CHECKIN_BEARER` unset). Recreate `app` |
 | Monitoring token | Regenerate it and update your observability tools |
@@ -94,6 +95,24 @@ Other options:
   ```bash
   docker compose run --rm app node apps/cli/dist/index.js sessions purge --all --yes --operator-email <superadmin email>
   ```
+
+### The guest registration form is being abused
+
+Signs: registrations nobody expects, registration mail going to addresses nobody owns (the Health row **Registration mail queue** grows), or `registration_mail_withheld` warnings in the System logs.
+
+1. **Close every form at once.** Clear the Turnstile keys under Organisation Settings → External services → Guest registration. With no keys, each registration form and each send answers the one not-found page. Registrations that are saved stay. A guest who already holds a confirmation link can still confirm: that link works for as long as the event has registration on. To stop confirmations too, turn registration off for the event.
+2. **Slow it down.** Tighten the limits with `RATE_LIMIT_OVERRIDES` and recreate `app`, for example `{"registration:submit":{"max":30},"registration:event":{"max":100},"registration:mail-event":{"max":200}}`. The mail cap of an event is the larger of that number and three per seat of the event.
+3. **Change the keys** if they may be known: create a new pair in the Cloudflare dashboard (see **Secret rotation**) and save it before you reopen the forms.
+4. **Look at what is saved.** A registration that never confirms its address is deleted after 24 hours. Others stay until staff delete them.
+5. **A confirmation link that may have leaked.** A link proves one address for 24 hours. Opening it changes nothing, and only its button confirms. If a link reached the wrong person, delete that registration, and the link then finds nothing. A reverse proxy keeps the path of the link in its access log, so redact `/r/*/confirm/*` there.
+
+**Turn registration off for one event.** Open the event's Registration page, go to the Access tab, choose **Off** for the mode, select **Save** and confirm. It is the same control that turns registration on, and it is never refused, however much is missing. Use it when one event is abused and the others are not, or when you also need to stop the confirmations of step 1.
+
+- The form and every route under `/r/<event slug>` answer the one not-found page at once. A guest who is already sending the form is told the form is closed as soon as their request holds its locks. A registration that was saved a moment before stays.
+- A confirmation link stops working while registration is off. It works again if you turn registration back on before it expires, 24 hours after the registration. A registration that waits for its address is deleted when its link has expired, whether registration is on or off.
+- The registrations that exist stay as they are. Staff can still accept, reject and delete them in the Requests tab.
+- **The worker still sends the mail that is already queued.** It does not look at whether registration is on. It skips a mail only when its registration has changed since (for example it was rejected without a notice) or its confirmation link has expired. To stop mail to addresses nobody owns, delete those registrations in the Requests tab: their queued mail is deleted with them. Do it before the worker's next tick, and check the Health row **Registration mail queue**.
+- Turning registration back on runs the checks again, so an event that has lost something since (the Turnstile keys, a published text, the mail provider) is refused and the answer names what is missing.
 
 ---
 

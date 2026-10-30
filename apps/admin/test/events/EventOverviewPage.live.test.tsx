@@ -9,6 +9,7 @@ import type {
   EventOverviewDto,
   EventRecentActivityEntry,
   EventResourceDto,
+  RegistrationCountsDto,
 } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 import {
@@ -26,6 +27,7 @@ import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 const fetchEventOverview = vi.fn();
 const fetchTicketTypes = vi.fn();
+const fetchRegistrationCounts = vi.fn();
 const reportApiError = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
@@ -89,6 +91,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
+  fetchRegistrationCounts: (...args: unknown[]) => fetchRegistrationCounts(...args),
   patchEventNote: vi.fn(),
   createEventContact: vi.fn(),
   updateEventContact: vi.fn(),
@@ -130,7 +133,9 @@ const overviewFixture = (
     pinned_note: null,
   },
   attendee_count: 50,
+  seats_in_use: 50,
   admitted_count: admitted,
+  companions_admitted: 0,
   email_sent: 40,
   email_failed: 0,
   email_bounced: 0,
@@ -211,6 +216,12 @@ async function notesSection(label: string): Promise<HTMLElement> {
   await loadedPage();
   return screen.getByText(label).closest(".overview-notes-section") as HTMLElement;
 }
+
+beforeEach(() => {
+  // Unless a test gives it numbers, the numbers of the guest requests cannot be read, as for an event that does not use registration.
+  fetchRegistrationCounts.mockReset();
+  fetchRegistrationCounts.mockRejectedValue(new Error("The numbers of the requests are not part of this test."));
+});
 
 afterEach(() => {
   cleanup();
@@ -859,6 +870,77 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     await screen.findByText("Busiest hour");
     expect(screen.queryByText("Wallet passes installed")).toBeNull();
+  });
+
+  describe("People on site (the companions let in with their guests)", () => {
+    /** The tile's label and its whole text, once the page is loaded. */
+    const peopleOnSiteTile = () => screen.queryByText("People on site")?.closest(".overview-glance__tile") as HTMLElement | null;
+
+    it("is not there while no companion has been let in: the card looks as it always did", async () => {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, companions_admitted: 0 }));
+
+      renderPage();
+
+      await screen.findByText("Last check-in");
+      expect(screen.queryByText("People on site")).toBeNull();
+      expect(document.querySelectorAll(".overview-glance__tile")).toHaveLength(2);
+    });
+
+    it("is not there either when the response does not carry the number at all (a stale apps/web dev process)", async () => {
+      const stale = overviewFixture(5);
+      delete (stale as Partial<EventOverviewDto>).companions_admitted;
+      fetchEventOverview.mockResolvedValue(stale);
+
+      renderPage();
+
+      await screen.findByText("Last check-in");
+      expect(screen.queryByText("People on site")).toBeNull();
+    });
+
+    it("adds the companions to the guests, and says how many of each, on a tile of its own", async () => {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, companions_admitted: 2 }));
+
+      renderPage();
+
+      await screen.findByText("People on site");
+      expect(peopleOnSiteTile()!.textContent).toBe("People on site7 (5 guests and 2 companions)");
+      // The tile adds to the two facts under the figure; it does not replace either.
+      expect(screen.getByText("Last check-in")).toBeTruthy();
+      expect(screen.getByText("Busiest hour")).toBeTruthy();
+      expect(peopleOnSiteTile()!.classList.contains("overview-glance__tile--wide")).toBe(true);
+    });
+
+    it("keeps the checked-in figure, the percentage and the arrivals still to come on the guests", async () => {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, companions_admitted: 2 }));
+
+      renderPage();
+
+      await screen.findByText("People on site");
+      expect(admittedLegendValue()).toBe("5");
+      // 45 of the 50 guests are still to come (or never did), whatever the day: companions do not shrink it.
+      expect(screen.getByText(/^45 (not yet arrived|no-shows)$/)).toBeTruthy();
+      expect(document.querySelector(".overview-ring__pct")!.textContent).toBe("10%");
+      expect(screen.getByRole("img", { name: "10% of attendees checked in" })).toBeTruthy();
+    });
+
+    it("says 'guest' and 'companion' for one of each", async () => {
+      fetchEventOverview.mockResolvedValue(overviewFixture(1, { attendee_count: 50, companions_admitted: 1 }));
+
+      renderPage();
+
+      await screen.findByText("People on site");
+      expect(peopleOnSiteTile()!.textContent).toBe("People on site2 (1 guest and 1 companion)");
+    });
+
+    it("counts the guests who just checked in, before the next read of the overview", async () => {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, companions_admitted: 2 }));
+      renderPage();
+      await screen.findByText("People on site");
+
+      act(() => streamHandler?.(liveEvent));
+
+      await waitFor(() => expect(peopleOnSiteTile()!.textContent).toBe("People on site8 (6 guests and 2 companions)"));
+    });
   });
 
   it("shows Setup checklist progress as 'N of M done' with an accessible progress bar, and no separate status notice", async () => {
@@ -2343,5 +2425,155 @@ describe("EventOverviewPage busy buttons", () => {
 
     await act(async () => answer.reject(new Error("boom")));
     await waitFor(() => expect(add.getAttribute("aria-busy")).toBeNull());
+  });
+});
+
+describe("EventOverviewPage: the Registrations row of the Setup checklist (D-B11)", () => {
+  const registrationCounts = (pending: number, waitlist = 0, mode: RegistrationCountsDto["mode"] = "approval"): RegistrationCountsDto => ({
+    mode,
+    by_status: { awaiting_email: 2, pending, waitlist, accepted: 30, rejected: 1 },
+    needs_decision: pending,
+  });
+  const registrationRow = () => within(checklistCard()).queryByRole("link", { name: /^Registrations/ });
+
+  beforeEach(() => {
+    fetchEventOverview.mockReset();
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    fetchTicketTypes.mockReset();
+    fetchTicketTypes.mockResolvedValue([]);
+  });
+
+  it("asks for attention and leads to the requests that wait for a decision, first among the rows that do", async () => {
+    fetchRegistrationCounts.mockResolvedValue(registrationCounts(3, 2));
+    renderPage();
+    await loadedPage();
+
+    const row = registrationRow() as HTMLElement;
+    expect(row.getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=requests&status=pending");
+    expect(row.textContent).toContain("3 requests waiting for a decision. 2 on the waiting list.");
+    expect(within(row).getByText("Needs attention")).toBeTruthy();
+    expect(row.querySelector(".ti-clipboard-check")).not.toBeNull();
+    // Problems come first, so what needs doing is never below the fold; this is the one row that does.
+    expect(within(checklistCard()).getAllByRole("link")[0]).toBe(row);
+    // The score counts it: the other four checks are done.
+    expect(within(checklistCard()).getByText("4 of 5 done")).toBeTruthy();
+    expect(fetchRegistrationCounts).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
+  });
+
+  it("is done when no request waits, and leads to the tab", async () => {
+    fetchRegistrationCounts.mockResolvedValue(registrationCounts(0));
+    renderPage();
+    await loadedPage();
+
+    const row = registrationRow() as HTMLElement;
+    expect(row.getAttribute("href")).toBe("/admin/events/evt-1/registration");
+    expect(row.textContent).toContain("No requests waiting for a decision.");
+    expect(within(row).getByText("Done")).toBeTruthy();
+    expect(within(checklistCard()).getByText("5 of 5 done")).toBeTruthy();
+    // Requests come before the attendees they become: first among the rows that are done.
+    expect(within(checklistCard()).getAllByRole("link")[0]).toBe(row);
+  });
+
+  it("is not there while registration is off, whatever is left in the list", async () => {
+    fetchRegistrationCounts.mockResolvedValue(registrationCounts(9, 0, null));
+    renderPage();
+    await loadedPage();
+
+    expect(registrationRow()).toBeNull();
+    expect(within(checklistCard()).getByText("4 of 4 done")).toBeTruthy();
+  });
+
+  it("is not there when the numbers cannot be read, and the page is whole", async () => {
+    renderPage();
+    await loadedPage();
+
+    expect(registrationRow()).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(admittedLegendValue()).toBe("5");
+  });
+
+  it("says that the event holds more seats than its limit (D-B7), by the seats the overview counts and not by the heads", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, seats_in_use: 104 }));
+    fetchRegistrationCounts.mockResolvedValue(registrationCounts(0));
+    renderPage();
+    await loadedPage();
+
+    const row = registrationRow() as HTMLElement;
+    expect(row.textContent).toContain("Over the limit: 104 seats taken, limit 100.");
+    expect(within(row).getByText("Needs attention")).toBeTruthy();
+  });
+
+  it("says nothing of the limit while the seats are within it, whatever the heads", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, seats_in_use: 100 }));
+    fetchRegistrationCounts.mockResolvedValue(registrationCounts(0));
+    renderPage();
+    await loadedPage();
+
+    expect(registrationRow()?.textContent).not.toContain("Over the limit");
+  });
+
+  it("takes the seats from the newest answer of the overview, never from the copy of the event the layout read once", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // The layout's copy says the event is well within its limit; the overview, read again every 30 seconds, says otherwise.
+      mockEventOverrides = { seats_in_use: 10 };
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { seats_in_use: 104 }));
+      fetchRegistrationCounts.mockResolvedValue(registrationCounts(0));
+      renderPage();
+      await waitFor(() => expect(registrationRow()?.textContent).toContain("Over the limit: 104 seats taken, limit 100."));
+
+      fetchEventOverview.mockResolvedValue(overviewFixture(5, { seats_in_use: 90 }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      await waitFor(() => expect(registrationRow()?.textContent).not.toContain("Over the limit"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the page while the numbers of the requests are still on their way, and keeps refreshing it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchRegistrationCounts.mockImplementation(hangUntilAborted);
+      renderPage();
+      await loadedPage();
+      expect(registrationRow()).toBeNull();
+      expect(admittedLegendValue()).toBe("5");
+
+      // A tick of the overview is applied whatever the read of the numbers is doing.
+      fetchEventOverview.mockResolvedValue(overviewFixture(8));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      await waitFor(() => expect(admittedLegendValue()).toBe("8"));
+      expect(registrationRow()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reads the numbers again with every refresh of the page, and keeps the last ones when one read of them fails", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchRegistrationCounts.mockResolvedValue(registrationCounts(3));
+      renderPage();
+      await waitFor(() => expect(registrationRow()?.textContent).toContain("3 requests waiting"));
+
+      fetchRegistrationCounts.mockResolvedValue(registrationCounts(1));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      await waitFor(() => expect(registrationRow()?.textContent).toContain("1 request waiting"));
+
+      fetchRegistrationCounts.mockRejectedValue(new Error("a missed read"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      await waitFor(() => expect(fetchRegistrationCounts).toHaveBeenCalledTimes(3));
+      expect(registrationRow()?.textContent).toContain("1 request waiting");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

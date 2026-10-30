@@ -103,6 +103,8 @@ export default defineConfig({
     // legitimately slower CI hardware, not to mask this.
     maxWorkers: 4,
     testTimeout: 10_000,
+    // The wait of `findBy*` and `waitFor`, for every project (they extend this config): test/asyncUtilTimeout.ts.
+    setupFiles: ["./test/asyncUtilTimeout.ts"],
     // Newer Node ships a webstorage global localStorage that (a) emits an
     // ExperimentalWarning on any access and (b) shadows jsdom's working
     // localStorage, because vitest skips window keys that already exist on

@@ -53,6 +53,21 @@ const badgeItem: EventItemDto = {
   config: { issue_on_checkin: true, requires_return: false },
 };
 
+const hintField = (source_field: string, label: string, applies_to?: "guest" | "companion") => ({
+  id: source_field,
+  source_field,
+  label,
+  description: null,
+  type: "text",
+  required: false,
+  show_on_form: true,
+  display_order: null,
+  options: null,
+  rules: null,
+  ...(applies_to ? { applies_to } : {}),
+  created_at: "2026-01-01T00:00:00.000Z",
+});
+
 function renderPage() {
   return render(
     <ToastProvider>
@@ -65,17 +80,36 @@ function renderPage() {
   );
 }
 
+/** The page next to the Registration page, so that a click on the note's link has somewhere to go and the router tells where. */
+function renderPageWithRegistration() {
+  const router = createMemoryRouter(
+    [
+      { path: "/admin/events/:eventId/requirements", element: <RequirementsPage /> },
+      { path: "/admin/events/:eventId/registration", element: <p>The Registration page</p> },
+    ],
+    { initialEntries: ["/admin/events/evt-1/requirements"] },
+  );
+  render(
+    <ToastProvider>
+      <RouterProvider router={router} />
+    </ToastProvider>,
+  );
+  return router;
+}
+
 const placeholder = () => screen.queryByRole("status", { name: "Loading requirements" });
 const requirementsRegion = () => screen.getByRole("region", { name: "Requirements" });
+const FIELDS_LINK = "Fields tab of the Registration page";
+const fieldsLink = () => screen.getByRole("link", { name: FIELDS_LINK });
 
-/** Waits until the cards are on screen: their placeholder draws the same titles and headings, so a title alone is not the answer. */
+/** Waits until the card is on screen: its placeholder draws the same title and headings, so a title alone is not the answer. */
 async function pageLoaded() {
   await waitFor(() => expect(placeholder()).toBeNull());
 }
 
 beforeEach(() => {
-  // Most tests here don't care about the custom field registry; give every test a working
-  // default so Promise.all in RequirementsPage's load() doesn't reject for unrelated tests.
+  // Most tests here don't care about the attendee fields (the page reads them for the hints of its items); give every test a
+  // working default so Promise.all in RequirementsPage's load() doesn't reject for unrelated tests.
   // Tests that do care override this before calling renderPage().
   fetchEventCustomFields.mockResolvedValue([]);
 });
@@ -111,19 +145,24 @@ describe("RequirementsPage: the first read", () => {
     fetchEventItems.mockImplementation(hangUntilAborted as never);
   });
 
-  it("holds the room of the cards invisibly for 200ms, then draws grey cards with their real titles and headings, and says it is taking longer after 8 seconds", async () => {
+  it("holds the room of the card invisibly for 200ms, then draws a grey Event items card with its real title and headings, and says it is taking longer after 8 seconds", async () => {
     renderPage();
     await advanceTimers(0);
 
     const held = placeholder() as HTMLElement;
     expect(held.classList.contains("at-loading-hold")).toBe(true);
-    for (const text of ["Event items", "Custom attendee fields", "Item", "Field", "Active", "Required"]) {
+    for (const text of ["Event items", "Item", "Description", "Active"]) {
       expect(within(held).getByText(text)).toBeTruthy();
     }
+    // The one card of the page: the attendee fields have no place in it, and the note about them comes with the answer.
+    expect(held.querySelectorAll(".at-card")).toHaveLength(1);
+    for (const text of ["Custom attendee fields", "Attendee fields", "Field", "Required"]) {
+      expect(within(held).queryByText(text)).toBeNull();
+    }
+    expect(screen.queryByRole("link", { name: FIELDS_LINK })).toBeNull();
     // The shapes are decoration; nothing claims that there is nothing yet, and there is nothing to add to before the read.
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByText(/No items yet/)).toBeNull();
-    expect(screen.queryByText(/No custom fields yet/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Add field" })).toBeNull();
     // The page's own header stays.
@@ -137,7 +176,7 @@ describe("RequirementsPage: the first read", () => {
     expect(screen.getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
   });
 
-  it("fades the cards in where the placeholder was once the read has answered", async () => {
+  it("fades the card in where the placeholder was once the read has answered", async () => {
     const answer = deferred<EventItemDto[]>();
     fetchEventItems.mockReturnValueOnce(answer.promise);
     renderPage();
@@ -427,6 +466,45 @@ describe("RequirementsPage — Add item and Edit item", () => {
     expect(screen.getByRole("heading", { name: "Badge" })).toBeTruthy();
   });
 
+  it("offers the questions about the guest as hints for an item, and not the questions about a companion: the hint shows the attendee's own answer", async () => {
+    fetchEventItems.mockResolvedValue([badgeItem]);
+    fetchEventCustomFields.mockResolvedValue([
+      hintField("shirt", "Shirt size"),
+      hintField("badge_name", "Badge name", "companion"),
+      hintField("diet", "Diet", "guest"),
+    ]);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit item" }));
+    const drawer = await screen.findByRole("dialog");
+
+    expect(within(drawer).getByRole("checkbox", { name: "Shirt size" })).toBeTruthy();
+    expect(within(drawer).getByRole("checkbox", { name: "Diet" })).toBeTruthy();
+    expect(within(drawer).queryByRole("checkbox", { name: "Badge name" })).toBeNull();
+    // The sentences of the drawer say where the fields are managed, and it is not on this page.
+    expect(within(drawer).getByText(/in the "Attendee fields" card on the Fields tab of the Registration page\./)).toBeTruthy();
+    expect(within(drawer).queryByText(/card above/)).toBeNull();
+    // The page has no list of the fields of its own: the companion's question, which the drawer leaves out, is nowhere on it.
+    expect(screen.queryByText("Badge name")).toBeNull();
+    expect(screen.queryByText("Companion")).toBeNull();
+  });
+
+  it("saves the hint about a companion that an item already holds as it was read, next to the hints about the guest that are ticked", async () => {
+    fetchEventItems.mockResolvedValue([{ ...badgeItem, config: { ...badgeItem.config, content_fields: ["shirt", "badge_name"] } }]);
+    fetchEventCustomFields.mockResolvedValue([hintField("shirt", "Shirt size"), hintField("badge_name", "Badge name", "companion"), hintField("diet", "Diet")]);
+    updateEventItem.mockResolvedValueOnce(badgeItem);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit item" }));
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).queryByRole("checkbox", { name: "Badge name" })).toBeNull();
+    fireEvent.click(within(drawer).getByRole("checkbox", { name: "Diet" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateEventItem).toHaveBeenCalledTimes(1));
+    expect(updateEventItem).toHaveBeenCalledWith("evt-1", "item-badge", expect.objectContaining({ config: expect.objectContaining({ content_fields: ["shirt", "badge_name", "diet"] }) }));
+  });
+
   it("closes the Add item modal on Escape", async () => {
     fetchEventItems.mockResolvedValue([]);
 
@@ -526,7 +604,7 @@ describe("RequirementsPage: after an action", () => {
     expect(screen.getByRole("switch", { name: "Disable Badge" })).toBeTruthy();
   });
 
-  it("keeps the cards on screen, blocked, while the refresh after an added item runs, and shows the new item when it is in", async () => {
+  it("keeps the card on screen, blocked, while the refresh after an added item runs, and shows the new item when it is in", async () => {
     const refresh = deferred<EventItemDto[]>();
     fetchEventItems.mockResolvedValueOnce([badgeItem]).mockReturnValueOnce(refresh.promise);
     createEventItem.mockResolvedValueOnce(giftBag);
@@ -535,7 +613,7 @@ describe("RequirementsPage: after an action", () => {
     await addGiftBag();
     await waitFor(() => expect(fetchEventItems).toHaveBeenCalledTimes(2));
 
-    // The rows stay (no placeholder, no error), and nothing in the cards reacts to a click until the answer is in.
+    // The rows stay (no placeholder, no error), and nothing in the card reacts to a click until the answer is in.
     expect(screen.getByRole("switch", { name: "Disable Badge" })).toBeTruthy();
     expect(placeholder()).toBeNull();
     expect(requirementsRegion().querySelector(".refetch-card--busy")?.getAttribute("aria-busy")).toBe("true");
@@ -547,7 +625,7 @@ describe("RequirementsPage: after an action", () => {
     expect(requirementsRegion().querySelector(".refetch-card--busy")).toBeNull();
   });
 
-  it("replaces the cards with the error when the refresh after an added item fails, since they may be wrong", async () => {
+  it("replaces the card with the error when the refresh after an added item fails, since it may be wrong", async () => {
     fetchEventItems.mockResolvedValueOnce([badgeItem]).mockRejectedValueOnce(new Error("offline"));
     createEventItem.mockResolvedValueOnce(giftBag);
 
@@ -573,20 +651,98 @@ describe("RequirementsPage: what refreshes the page", () => {
     await waitFor(() => expect(fetchEventItems).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+});
 
-  it("reads the page again after a custom field is deleted", async () => {
-    const { deleteEventCustomField } = await import("../../src/api/client.js");
-    vi.mocked(deleteEventCustomField).mockResolvedValueOnce(undefined);
+describe("RequirementsPage: the attendee fields", () => {
+  it("draws no card for them, though it reads them for the hints of its items", async () => {
     fetchEventItems.mockResolvedValue([badgeItem]);
-    fetchEventCustomFields.mockResolvedValue([
-      { id: "f1", source_field: "dietary", label: "Dietary", description: null, type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
-    ]);
+    fetchEventCustomFields.mockResolvedValue([hintField("shirt", "Shirt size"), hintField("badge_name", "Badge name", "companion")]);
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Delete field" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByRole("switch", { name: "Disable Badge" });
 
+    expect(fetchEventCustomFields).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Custom attendee fields")).toBeNull();
+    expect(screen.queryByText("Attendee fields")).toBeNull();
+    for (const name of ["Add field", "Edit field", "Delete field", "Add suggested questions"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+    expect(screen.queryByText("Shirt size")).toBeNull();
+    expect(within(requirementsRegion()).getAllByRole("table")).toHaveLength(1);
+  });
+
+  it("says where they are, below the items: a link to the Fields tab of this event's Registration page", async () => {
+    fetchEventItems.mockResolvedValue([badgeItem]);
+
+    renderPage();
+    const link = await screen.findByRole("link", { name: FIELDS_LINK });
+
+    expect(link.getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
+    const note = link.closest("p") as HTMLElement;
+    expect(note.textContent).toBe("Attendee fields are on the Fields tab of the Registration page.");
+    const order = [...requirementsRegion().querySelectorAll("section.requirements-section, p.requirements-section-hint")];
+    expect(order.map((element) => element.tagName)).toEqual(["SECTION", "P"]);
+    expect(order[1]).toBe(note);
+  });
+
+  it("is a link like any other for the keyboard: in the tab order, after the controls of the items, and it opens the Fields tab", async () => {
+    fetchEventItems.mockResolvedValue([badgeItem]);
+
+    const router = renderPageWithRegistration();
+    const link = await screen.findByRole("link", { name: FIELDS_LINK });
+
+    expect(link.tagName).toBe("A");
+    expect(link.hasAttribute("tabindex")).toBe(false);
+    const tabStops = [...requirementsRegion().querySelectorAll<HTMLElement>("a[href], button, input, [tabindex]")];
+    expect(tabStops.at(-1)).toBe(link);
+    link.focus();
+    expect(document.activeElement).toBe(link);
+
+    fireEvent.click(link);
+
+    expect(router.state.location.pathname).toBe("/admin/events/evt-1/registration");
+    expect(router.state.location.search).toBe("?tab=fields");
+    expect(await screen.findByText("The Registration page")).toBeTruthy();
+  });
+
+  it("keeps the link usable while a refresh runs: it says where something is, not what the read answered", async () => {
+    const refresh = deferred<EventItemDto[]>();
+    fetchEventItems.mockResolvedValueOnce([badgeItem]).mockReturnValueOnce(refresh.promise);
+    createEventItem.mockResolvedValueOnce(giftBag);
+
+    const router = renderPageWithRegistration();
+    await addGiftBag();
     await waitFor(() => expect(fetchEventItems).toHaveBeenCalledTimes(2));
+    expect(requirementsRegion().querySelector(".refetch-card--busy")).not.toBeNull();
+
+    expect(fieldsLink().closest(".refetch-card")).toBeNull();
+    fireEvent.click(fieldsLink());
+
+    expect(router.state.location.pathname).toBe("/admin/events/evt-1/registration");
+    await act(async () => refresh.resolve([badgeItem, giftBag]));
+  });
+
+  it("is a failed page, not a page without hints, when only the read of the fields fails: Retry reads both again", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventItems.mockResolvedValue([badgeItem]);
+    fetchEventCustomFields
+      .mockRejectedValueOnce(new ApiError(500, "server error"))
+      .mockResolvedValueOnce([hintField("shirt", "Shirt size")]);
+
+    renderPage();
+
+    await screen.findByText("Could not load requirements");
+    expect(screen.getByText("Something went wrong. Try again.")).toBeTruthy();
+    expect(reportApiError).toHaveBeenCalledWith(500);
+    expect(screen.queryByRole("switch", { name: "Disable Badge" })).toBeNull();
+    expect(screen.queryByRole("link", { name: FIELDS_LINK })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit item" }));
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("checkbox", { name: "Shirt size" })).toBeTruthy();
+    expect(fetchEventItems).toHaveBeenCalledTimes(2);
     expect(fetchEventCustomFields).toHaveBeenCalledTimes(2);
   });
 });

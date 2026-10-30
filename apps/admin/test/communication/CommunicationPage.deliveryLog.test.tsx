@@ -437,6 +437,42 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
     });
   });
 
+  it("leaves a registration mail out of the Template filter: it is never in the Delivery log", async () => {
+    fetchEventTemplates.mockResolvedValue([
+      {
+        id: "tmpl-1",
+        name: "vip",
+        label: "VIP invite",
+        template_format: "mjml",
+        subject_template: "You're on the list",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "tmpl-confirm",
+        name: "registration-confirm",
+        label: "Registration: confirm email",
+        template_format: "mjml",
+        subject_template: "Confirm",
+        updated_at: "2026-01-02T00:00:00.000Z",
+        is_system: true,
+      },
+    ]);
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    const templateList = screen.getByRole("list", { name: "Template" });
+    expect(within(templateList).getAllByRole("button").map((o) => o.textContent)).toEqual([
+      "All templates",
+      "Default ticket template",
+      "VIP invite",
+    ]);
+  });
+
   it("Live toggles to Paused and back, and stops the count from going stale (regression: it used to stay blank until the tab was opened)", async () => {
     fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
 

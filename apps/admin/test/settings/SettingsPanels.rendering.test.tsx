@@ -1155,6 +1155,140 @@ describe("AuditLogPanel rendering", () => {
     expect(screen.queryByRole("button", { name: /GDPR/ })).toBeNull();
   });
 
+  it("names the changes of staff to a guest's companion, shows only the ids and the slot of an entry, and offers both in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "audit-updated", action_type: "attendee_companion_updated", metadata: { event_id: "evt-1", event_title: "Demo", attendee_id: "att-1", slot: 1 } }),
+        makeAuditEntry({ id: "audit-removed", action_type: "attendee_companion_removed", metadata: { event_id: "evt-1", event_title: "Demo", attendee_id: "att-1", slot: 1, seats_freed: 1 } }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Companion updated").className).toContain("at-badge--neutral");
+    expect(within(table).getByText("Companion removed").className).toContain("at-badge--error");
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    for (const label of ["Companion updated", "Companion removed"]) {
+      expect(screen.getByRole("button", { name: label })).toBeTruthy();
+    }
+  });
+
+  it("names the decisions of staff on guest registrations and their deletion, and offers them in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "audit-accepted", action_type: "registration_accepted" }),
+        makeAuditEntry({ id: "audit-rejected", action_type: "registration_rejected" }),
+        makeAuditEntry({ id: "audit-deleted", action_type: "registrations_deleted" }),
+      ],
+      total: 3,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Guest registration accepted").className).toContain("at-badge--neutral");
+    expect(within(table).getByText("Guest registration rejected").className).toContain("at-badge--neutral");
+    expect(within(table).getByText("Guest registrations deleted").className).toContain("at-badge--error");
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    for (const label of ["Guest registration accepted", "Guest registration rejected", "Guest registrations deleted"]) {
+      expect(screen.getByRole("button", { name: label })).toBeTruthy();
+    }
+  });
+
+  it("names a change of the password of a guest registration, as a plain entry, and offers it in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          id: "audit-password",
+          action_type: "registration_password_changed",
+          metadata: { event_id: "evt-1", event_title: "Summit", change: "cleared" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Guest registration password changed").className).toContain("at-badge--neutral");
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    expect(screen.getByRole("button", { name: "Guest registration password changed" })).toBeTruthy();
+  });
+
+  it("names a change to the ways in of the whole instance, lists the ways that are on in Details (or None), and offers it in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "audit-ways-on", action_type: "registration_access_methods_updated", metadata: { methods: ["link", "password"] } }),
+        makeAuditEntry({ id: "audit-ways-off", action_type: "registration_access_methods_updated", metadata: { methods: [] } }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    const labels = within(table).getAllByText("Guest registration access methods updated");
+    expect(labels).toHaveLength(2);
+    expect(labels[0]!.className).toContain("at-badge--neutral");
+    const [onRow, offRow] = within(table).getAllByRole("row").slice(1);
+    fireEvent.click(within(onRow!).getByText("View"));
+    expect(within(onRow!).getByText("Methods")).toBeTruthy();
+    expect(within(onRow!).getByText("link, password")).toBeTruthy();
+    fireEvent.click(within(offRow!).getByText("View"));
+    expect(within(offRow!).getByText("None")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    expect(screen.getByRole("button", { name: "Guest registration access methods updated" })).toBeTruthy();
+  });
+
+  it("names a change to the registration settings of an event, shows in Details what changed and to what, and offers it in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          id: "audit-settings",
+          action_type: "registration_settings_changed",
+          metadata: {
+            event_id: "evt-1",
+            event_title: "Summit",
+            fields_changed: ["mode", "waitlist_enabled", "access_methods"],
+            mode: "automatic",
+            waitlist_enabled: false,
+            access_methods: ["link"],
+            password_cleared: true,
+          },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Guest registration settings changed").className).toContain("at-badge--neutral");
+    fireEvent.click(within(table).getByText("View"));
+    expect(within(table).getByText("Mode, Waitlist enabled, Access methods")).toBeTruthy();
+    expect(within(table).getByText("automatic")).toBeTruthy();
+    expect(within(table).getByText("Password cleared")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    expect(screen.getByRole("button", { name: "Guest registration settings changed" })).toBeTruthy();
+  });
+
   it("shows the reason of a removal in words, in Details and in the copied row", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [

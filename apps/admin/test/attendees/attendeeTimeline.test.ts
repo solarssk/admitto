@@ -95,6 +95,8 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     ["note_deleted", "Note deleted"],
     ["item_returned", "Item returned"],
     ["attendee_edited", "Profile updated"],
+    ["attendee_companion_updated", "Companion updated"],
+    ["attendee_companion_removed", "Companion removed"],
     ["pass_revoked", "Pass revoked"],
     ["pass_restored", "Pass restored"],
     ["wallet_pass_voided", "Wallet pass voided"],
@@ -132,6 +134,8 @@ describe("getTimelineIcon — unrecognized action_type (Codecov review)", () => 
     ["note_deleted", "trash"],
     ["ticket_link_retrieved", "link"],
     ["wallet_pass_removed", "cloud-off"],
+    ["attendee_companion_updated", "users"],
+    ["attendee_companion_removed", "user-minus"],
   ])("maps %s to %s", (actionType, expected) => {
     expect(getTimelineIcon(actionType)).toBe(expected);
   });
@@ -590,6 +594,8 @@ describe("getTimelineTone (PO review — colored icons to distinguish outcomes)"
 
   it("marks a negative outcome error", () => {
     expect(getTimelineTone(entry("check_in_revoked"))).toBe("error");
+    expect(getTimelineTone(entry("attendee_companion_removed"))).toBe("error");
+    expect(getTimelineTone(entry("attendee_companion_updated"))).toBe("neutral");
     expect(getTimelineTone(entry("pass_revoked"))).toBe("error");
     expect(getTimelineTone(entry("mail_bounced"))).toBe("error");
     expect(getTimelineTone(entry("wallet_pass_voided"))).toBe("error");

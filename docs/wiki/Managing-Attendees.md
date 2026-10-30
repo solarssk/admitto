@@ -9,6 +9,7 @@
   - [Find attendees on the list](#find-attendees-on-the-list)
   - [Bulk actions](#bulk-actions)
   - [Review or update one attendee](#review-or-update-one-attendee)
+  - [Correct or remove a guest's companion](#correct-or-remove-a-guests-companion)
   - [Erase personal data (privacy requests)](#erase-personal-data-privacy-requests)
   - [Remove from event (mistakes)](#remove-from-event-mistakes)
 - [Expected result](#expected-result)
@@ -32,8 +33,8 @@ Open the correct event. Check its ticket types and custom attendee fields before
 1. Open **Attendees**.
 2. Select **Add attendee**.
 3. Enter the required first name, last name, and email. Last name is required even for a single-name attendee.
-4. Select a ticket type and complete any event-specific fields when needed.
-5. Save the attendee.
+4. Select a ticket type and complete any event-specific fields when needed. The event's own fields are under the heading **Custom fields**. A line under a field says what it asks for. A date has a date picker. A date and time has a date picker and a time field, and names the event's time zone under them. A long text has a box with a count of the characters, and a phone number has a telephone field. A question that is shown only for a certain answer to another question appears right after that question once the answer is chosen. Until then it is hidden, not required and not saved.
+5. Save the attendee. A field that breaks its type or rules is named in a message, and nothing is saved until you fix it.
 6. Open the new record and check the displayed details.
 
 ### Find attendees on the list
@@ -63,10 +64,11 @@ Open the correct event. Check its ticket types and custom attendee fields before
 
 ### Review or update one attendee
 
-1. Open the attendee detail page.
-2. The profile is read-only until you open **Edit** in the header. Save profile changes from that dialog.
+1. Open the attendee detail page. The header shows the attendee's initials in an avatar before the name. On a phone the avatar is left out.
+2. The profile is read-only until you open **Edit** in the header. Save profile changes from that dialog. The event's own fields are under the heading **Custom fields**, as in the Filters panel. A question that is shown only for a certain answer follows the same rule as in **Add attendee**.
 3. Review the status strip: **Pass**, Attendance, Ticket delivery, Check-in, and Wallet.
-4. Use **Additional information** for custom fields, **Notes** for shared operator notes, and **Activity** for a plain-language history of changes, newest first.
+4. Use **Additional information** for custom fields, **Companion** for the person the guest brings (see [Correct or remove a guest's companion](#correct-or-remove-a-guests-companion)), **Notes** for shared operator notes, and **Activity** for a plain-language history of changes, newest first.
+   - **Additional information** shows a date in your date format. A date and time shows the time at the event, with the event's time zone named, so every colleague reads the same text. A long answer shows under its label with its line breaks.
    - Activity is paged like the other tables. Pick **Rows per page** (10, 25, 50, or 100) and use **Previous** and **Next** at the bottom to reach older entries.
    - While you browse older pages, the list stays fixed even if colleagues add entries. Go back to page 1 to see the newest.
    - The tab you are on is kept in the page address (`?tab=activity` or `?tab=notes`), so you can bookmark or share a link that opens straight to it.
@@ -85,6 +87,27 @@ Open the correct event. Check its ticket types and custom attendee fields before
    | Wallet actions | Offered once the attendee has added a wallet pass: **Void wallet pass**, **Push updates**, **Refresh status**, **Delete wallet pass**, and **Remove from provider** (greyed out until the pass is voided or expired). A pass that has expired only offers **Delete wallet pass** and **Remove from provider**. Expiry is permanent, so there is no Restore, Push updates or Refresh status for it |
 
    **Restore wallet pass** is only offered until the event is over (and never on an archived event), because a pass must not become valid again after it. **Restore wallet pass** asks for confirmation before applying. **Refresh status** does not, because it only reads from the provider. Revoking the attendee's pass also voids their wallet pass automatically, if they have one. Restoring it does the same in reverse.
+
+### Correct or remove a guest's companion
+
+A guest can bring one companion when the event allows it (see [A guest's companion](Registration-Form-Fields#a-guests-companion)). The companion is a person of their own, with a name and answers to your questions about a companion. Use this when something about them is wrong, or when the guest comes alone after all.
+
+1. Open the attendee. A guest who has a companion has a **Companion** card on the **Overview** tab, under **Profile**. It shows the companion's name and answers.
+2. To correct them, select **Edit** on the card, change the name or an answer, and select **Save**. The **Edit** in the page header is for the attendee's own profile and does not touch the companion.
+3. To take the person out, select **Remove** on the card and confirm. It cannot be undone.
+
+| Action | What it does |
+|---|---|
+| **Edit** | Replaces the name and the answers to the questions asked of the companion with what you saved. An answer you clear is removed. An answer to a question that is not asked of the companion any more (the question was deleted, or is asked of the guest now) stays as it is. It takes no place and adds none |
+| **Remove** | Deletes the companion's name and answers, also the copy in the guest's registration, and frees the place they held |
+
+- The dialog asks the event's questions about a companion, including the ones that are not on the registration form. A required question must be answered. A question that is shown only for a certain answer follows the same rule as on the registration form.
+- The name follows the same rules as on the form: up to 100 characters, with no link and no email address.
+- Both actions are for an Administrator or a Superadmin. They are turned off on an archived event, and an erased attendee has no companion card.
+- You cannot add a companion here. A companion takes a place, so only the guest adds one, on the registration form.
+- **Edit** is off, with the reason on hover, when the page could not read the event's questions. Reload the page and try again.
+- **Activity** on the attendee's page and the **Audit** log show **Companion updated** and **Companion removed**. They record which attendee and which action, never the companion's name or an answer.
+- The request window on the **Requests** tab keeps showing the companion as the guest sent them, until you remove the companion. Editing a companion does not change that copy.
 
 ### Erase personal data (privacy requests)
 

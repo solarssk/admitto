@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 const mockFetchAttendeeDetail = vi.fn();
-const mockFetchAttendeeCustomFields = vi.fn();
+const mockFetchAnswerFields = vi.fn();
 
 vi.mock("../../src/api/client.js", () => ({
   fetchAttendeeDetail: (...args: unknown[]) => mockFetchAttendeeDetail(...args),
@@ -10,7 +10,7 @@ vi.mock("../../src/attendees/customData.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/attendees/customData.js")>();
   return {
     ...actual,
-    fetchAttendeeCustomFields: (...args: unknown[]) => mockFetchAttendeeCustomFields(...args),
+    fetchAnswerFields: (...args: unknown[]) => mockFetchAnswerFields(...args),
   };
 });
 
@@ -60,28 +60,43 @@ const sizeField: CustomDataFieldDef = {
 describe("loadAttendeeDetailData", () => {
   it("returns the detail and attribute fields when both requests succeed", async () => {
     mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
-    mockFetchAttendeeCustomFields.mockResolvedValueOnce([sizeField]);
+    mockFetchAnswerFields.mockResolvedValueOnce([sizeField]);
 
     const result = await loadAttendeeDetailData("evt-1", "att-1");
 
     expect(result.detail.id).toBe("att-1");
     expect(result.attributeFields).toEqual([sizeField]);
+    expect(result.companionFields).toEqual([]);
     expect(result.itemsWarning).toBeNull();
+  });
+
+  it("splits the questions of the event, read once, into those about the guest and those about the companion", async () => {
+    const badgeField: CustomDataFieldDef = { ...sizeField, id: "f-badge", source_field: "badge", label: "Badge name", applies_to: "companion" };
+    const explicitGuest: CustomDataFieldDef = { ...sizeField, id: "f-shirt", source_field: "shirt", label: "Shirt", applies_to: "guest" };
+    mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
+    mockFetchAnswerFields.mockResolvedValueOnce([sizeField, badgeField, explicitGuest]);
+
+    const result = await loadAttendeeDetailData("evt-1", "att-1");
+
+    expect(result.attributeFields).toEqual([sizeField, explicitGuest]);
+    expect(result.companionFields).toEqual([badgeField]);
+    expect(mockFetchAnswerFields).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to an empty field list and a warning when the custom fields fetch fails", async () => {
     mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
-    mockFetchAttendeeCustomFields.mockRejectedValueOnce(new Error("network"));
+    mockFetchAnswerFields.mockRejectedValueOnce(new Error("network"));
 
     const result = await loadAttendeeDetailData("evt-1", "att-1");
 
     expect(result.attributeFields).toEqual([]);
+    expect(result.companionFields).toEqual([]);
     expect(result.itemsWarning).toBe(ITEMS_LOAD_WARNING);
   });
 
   it("passes an explicitly selected notes page to the detail request", async () => {
     mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
-    mockFetchAttendeeCustomFields.mockResolvedValueOnce([]);
+    mockFetchAnswerFields.mockResolvedValueOnce([]);
 
     await loadAttendeeDetailData("evt-1", "att-1", 3);
 
@@ -90,13 +105,13 @@ describe("loadAttendeeDetailData", () => {
 
   it("gives its signal to both requests, so the page's 30 second limit ends both", async () => {
     mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
-    mockFetchAttendeeCustomFields.mockResolvedValueOnce([]);
+    mockFetchAnswerFields.mockResolvedValueOnce([]);
     const { signal } = new AbortController();
 
     await loadAttendeeDetailData("evt-1", "att-1", 2, signal);
 
     expect(mockFetchAttendeeDetail).toHaveBeenCalledWith("evt-1", "att-1", signal, 2);
-    expect(mockFetchAttendeeCustomFields).toHaveBeenCalledWith("evt-1", signal);
+    expect(mockFetchAnswerFields).toHaveBeenCalledWith("evt-1", signal);
   });
 });
 

@@ -51,6 +51,26 @@ const INVENTORY: Record<string, ModelInventory> = {
   AttendeeActionLog: {
     deleted: "id event_id attendee_id action_type actor_user_id session_id device_id ip metadata created_at client_timezone",
   },
+  // The companion (+1) of an attendee: a third party, so the name and the answers go like the attendee's own. The row stays,
+  // because the seat of a companion goes with the attendee: one who was admitted keeps both seats (and the Reports count
+  // them), one who was not is cancelled by the erasure, which takes both out of the count. A removal deletes the rows with the
+  // attendee (cascade). `slot`, `id` and `created_at` identify nobody.
+  AttendeeCompanion: {
+    placeholder: "name",
+    cleared: "custom_data",
+    set: "updated_at",
+    kept: "id attendee_id slot created_at",
+  },
+  // A guest's submission through the registration form (the accepted one points at the attendee).
+  // The whole row goes with the person: name, address, answers and the companion are all personal
+  // data, and nothing else reads them once the attendee is erased.
+  // Deleted by attendee_id and, for a pending, waitlisted or rejected row of the same
+  // person, by the event and the normalised address (scrubAttendeeTraces). RegistrationMail hangs off the
+  // registration (no address or text of its own) and goes with it.
+  Registration: {
+    deleted:
+      "id event_id email first_name last_name name company department custom_data companions status confirm_expires_at email_verified_at decided_at decided_by locale accepted_at consents attendee_id created_at updated_at",
+  },
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

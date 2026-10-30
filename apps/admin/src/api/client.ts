@@ -1,4 +1,6 @@
+import type { SystemTemplateName } from "@admitto/mail-templates/systemTemplates";
 import type {
+  AddSuggestedFieldsResponse,
   AttendeeCardDto,
   AttendeeDetailDto,
   AttendeeMailStatusFilter,
@@ -44,6 +46,7 @@ import type {
   OpsConfigDto,
   UpdateOpsConfigPatch,
   EventTemplateDto,
+  EventTemplateSourceDto,
   SaveTemplateBody,
   UpdateTemplateMetadataBody,
   PreviewTemplateResponse,
@@ -87,6 +90,25 @@ import type {
   ExternalServicesConnectionTestResponse,
   SaveWeatherSettingsBody,
   SaveMapsSettingsBody,
+  RegistrationTurnstileDto,
+  SaveRegistrationTurnstileBody,
+  RegistrationAccessMethodsDto,
+  SaveRegistrationAccessMethodsBody,
+  LegalDocumentDto,
+  LegalDocumentsListResponse,
+  LegalDocumentWithContentDto,
+  SaveLegalDocumentBody,
+  AcceptRegistrationsDto,
+  DeleteRegistrationsByFilterBody,
+  DeleteRegistrationsDto,
+  RegistrationCountsDto,
+  RegistrationDetailDto,
+  RegistrationListDto,
+  RegistrationListParams,
+  RegistrationSettingsDto,
+  RejectRegistrationsDto,
+  RetryRegistrationMailsDto,
+  SaveRegistrationSettingsBody,
   NotificationSettingsResponse,
   SaveNotificationSettingsBody,
   NotificationSettingsTestResponse,
@@ -172,9 +194,9 @@ export type EventFullMeta = {
   capacity: number;
   /** Active attendee count at the time of the capacity check. */
   current: number;
-  /** New rows an import would add (import commit only). */
+  /** The seats the request needs: the new rows an import would add, or the attendee and each companion being restored. */
   incoming?: number;
-  /** Projected total after import (import commit only). */
+  /** The seats in use if the request went through (an import commit, or the restore of an attendee with companions). */
   projected?: number;
 };
 
@@ -184,11 +206,17 @@ export type ZodFlattenedDetails = {
   fieldErrors?: Record<string, unknown>;
 };
 
+/** What a 409 `not_enough_seats` says: the seats that are free and the seats the guests need (a companion takes one too). People are not seats. */
+export type NotEnoughSeatsMeta = {
+  free: number;
+  needed: number;
+};
+
 /** Thrown when an admin API request fails; may include structured `event_full` metadata on 409,
  * a `field` slug on 400s where the server identified which field caused the error (see
- * docs/dev/error-and-notice-copy.md rule 2), or `details` (a Zod `.flatten()` payload) on some
+ * docs/dev/error-and-notice-copy.md rule 2), `details` (a Zod `.flatten()` payload) on some
  * 400s carrying per-field validation reasons that would otherwise be computed server-side and
- * then discarded. */
+ * then discarded, or the free and needed `seats` of a 409 `not_enough_seats`. */
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -197,6 +225,9 @@ export class ApiError extends Error {
     public readonly eventFull?: EventFullMeta,
     public readonly field?: string,
     public readonly details?: ZodFlattenedDetails,
+    public readonly seats?: NotEnoughSeatsMeta,
+    /** The keys of what registration still needs, from a 409 `registration_not_ready`. */
+    public readonly blockers?: readonly string[],
   ) {
     super(message);
     this.name = "ApiError";
@@ -213,6 +244,9 @@ type ApiErrorBody = {
   current?: number;
   incoming?: number;
   projected?: number;
+  free?: unknown;
+  needed?: unknown;
+  blockers?: unknown;
 };
 
 /** Coerce an API error JSON field to a trimmed string when present. */
@@ -245,6 +279,25 @@ function eventFullFromBody(body: ApiErrorBody): EventFullMeta | undefined {
   };
 }
 
+/** A whole number of seats from an API error body field; anything else (missing, negative, fractional, text) is not one. */
+function seatCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+/** Parse the seats of a 409 `not_enough_seats` body: both numbers, or none (a half answer says nothing worth showing). */
+function seatsFromBody(body: ApiErrorBody): NotEnoughSeatsMeta | undefined {
+  if (apiErrorCodeFromBody(body) !== "not_enough_seats") return undefined;
+  const free = seatCount(body.free);
+  const needed = seatCount(body.needed);
+  return free === undefined || needed === undefined ? undefined : { free, needed };
+}
+
+/** The keys of a 409 `registration_not_ready` body: the strings that are in `blockers`, or none when it is not a list of them. */
+function blockersFromBody(body: ApiErrorBody): readonly string[] | undefined {
+  if (apiErrorCodeFromBody(body) !== "registration_not_ready" || !Array.isArray(body.blockers)) return undefined;
+  return body.blockers.filter((key): key is string => typeof key === "string");
+}
+
 async function parseJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;
@@ -252,6 +305,8 @@ async function parseJson<T>(res: Response): Promise<T> {
     let eventFull: EventFullMeta | undefined;
     let field: string | undefined;
     let details: ZodFlattenedDetails | undefined;
+    let seats: NotEnoughSeatsMeta | undefined;
+    let blockers: readonly string[] | undefined;
     try {
       const body = (await res.json()) as ApiErrorBody;
       message = messageFromApiErrorBody(body) ?? message;
@@ -259,12 +314,19 @@ async function parseJson<T>(res: Response): Promise<T> {
       eventFull = eventFullFromBody(body);
       field = stringField(body.field);
       details = body.details && typeof body.details === "object" ? body.details : undefined;
+      seats = seatsFromBody(body);
+      blockers = blockersFromBody(body);
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, message, code, eventFull, field, details);
+    throw new ApiError(res.status, message, code, eventFull, field, details, seats, blockers);
   }
   return (await res.json()) as T;
+}
+
+/** A call that answers 204 with no body when it works: a failure is read like any other, and nothing is read from a success. */
+async function parseNoContent(res: Response): Promise<void> {
+  if (!res.ok) await parseJson<never>(res);
 }
 
 function jsonPostInit(body: unknown): RequestInit {
@@ -696,6 +758,13 @@ export async function createEventCustomField(
   return parseJson<EventCustomFieldDto>(res);
 }
 
+/** Adds the suggested questions (parking, travel, accommodation) that the event does not have yet, all or none: 201 with the keys it
+ * added, or 200 with none when they are all there already. Throws ApiError, 422 `field_limit_reached` when they do not all fit. */
+export async function addSuggestedEventCustomFields(eventId: string): Promise<AddSuggestedFieldsResponse> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/custom-fields/suggested`, jsonPostInit({}));
+  return parseJson<AddSuggestedFieldsResponse>(res);
+}
+
 /** Update a custom field's label/type/required/options. source_field is immutable after create. */
 export async function updateEventCustomField(
   eventId: string,
@@ -707,6 +776,21 @@ export async function updateEventCustomField(
     jsonPatchInit(patch),
   );
   return parseJson<EventCustomFieldDto>(res);
+}
+
+/** Puts an event's custom fields in a new order: `ids` are the ids of ALL the event's fields, each once, in the order
+ * they should appear, and the answer is the fields in that order. Rejected with 409 `stale_write` when the event has
+ * other fields now (one was added or deleted since the list was read): read the list again. */
+export async function reorderEventCustomFields(
+  eventId: string,
+  ids: readonly string[],
+): Promise<EventCustomFieldDto[]> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/custom-fields/order`,
+    jsonPutInit({ ids }),
+  );
+  const data = await parseJson<EventCustomFieldsListResponse>(res);
+  return data.items;
 }
 
 /** How many attendees currently have each option value of a select-type custom field - fetched
@@ -983,6 +1067,33 @@ export async function deleteAttendeeNote(
 ): Promise<AttendeeDetailDto> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/notes/${encodeURIComponent(noteId)}`,
+    jsonDeleteInit(),
+  );
+  return parseJson<AttendeeDetailDto>(res);
+}
+
+/** Corrects the name and the answers of the person the guest brings (D-E5). The body is the whole companion as the form shows it:
+ * an answer to a question about the companion that is left out is cleared. An answer to a question that is not asked of the
+ * companion any more stays, and a question about the guest is not one of them. 404 `companion_not_found` for a guest who brings
+ * nobody (it never adds one), 409 `attendee_erased`, 403 `event_archived`, 400 `validation_failed` for a name or an answer the
+ * registration form would refuse too. Returns the refreshed detail DTO, matching addAttendeeNote's convention. */
+export async function updateAttendeeCompanion(
+  eventId: string,
+  attendeeId: string,
+  body: { name: string; custom_data?: Record<string, string> },
+): Promise<AttendeeDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/companion`,
+    jsonPatchInit(body),
+  );
+  return parseJson<AttendeeDetailDto>(res);
+}
+
+/** Removes the person the guest brings: their name and answers, the copy in the guest's registration, and the seat. Returns the
+ * refreshed detail DTO. 404 `companion_not_found` when there is nobody to remove, 409 `attendee_erased`, 403 `event_archived`. */
+export async function removeAttendeeCompanion(eventId: string, attendeeId: string): Promise<AttendeeDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/companion`,
     jsonDeleteInit(),
   );
   return parseJson<AttendeeDetailDto>(res);
@@ -1817,6 +1928,58 @@ export async function testSendEventTemplateById(
   return parseJson<TemplateTestSendResponse>(res);
 }
 
+/** What the editor opens a registration mail with: the event's own text, else the organization's, else the built-in default. */
+export async function fetchEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  signal?: AbortSignal,
+): Promise<EventTemplateSourceDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventTemplateSourceDto>(res);
+}
+
+/** Save the event's own text of a registration mail. The first save of a mail that runs on the default creates its row. */
+export async function saveEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  body: SaveTemplateBody,
+): Promise<MailTemplateDetail> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}`,
+    jsonPutInit(body),
+  );
+  return parseTemplateActionJson<MailTemplateDetail>(res);
+}
+
+/** Render a draft of a registration mail with sample data (no DB write). */
+export async function previewEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  body: SaveTemplateBody,
+): Promise<PreviewTemplateResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}/preview`,
+    jsonPostInit(body),
+  );
+  return parseTemplateActionJson<PreviewTemplateResponse>(res);
+}
+
+/** Send a test mail of a registration mail as the event has it now (its own text, else the default). */
+export async function testSendEventSystemTemplate(
+  eventId: string,
+  name: SystemTemplateName,
+  body: TestSendBody,
+): Promise<TemplateTestSendResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/system-templates/${encodeURIComponent(name)}/test-send`,
+    jsonPostInit(body),
+  );
+  return parseJson<TemplateTestSendResponse>(res);
+}
+
 /** Queue or dry-run a bulk send for selected attendees. */
 export async function sendEventBulk(
   eventId: string,
@@ -2425,6 +2588,179 @@ export async function saveMapsSettings(
   const res = await fetch("/api/admin/external-services/maps", jsonPutInit(body));
   const data = await parseJson<{ maps: ExternalServicesResponse["maps"] }>(res);
   return data.maps;
+}
+
+export async function fetchRegistrationTurnstile(signal?: AbortSignal): Promise<RegistrationTurnstileDto> {
+  const res = await fetch("/api/admin/registration/turnstile", { credentials: "same-origin", signal });
+  return parseJson<RegistrationTurnstileDto>(res);
+}
+
+export async function saveRegistrationTurnstile(body: SaveRegistrationTurnstileBody): Promise<RegistrationTurnstileDto> {
+  const res = await fetch("/api/admin/registration/turnstile", jsonPutInit(body));
+  return parseJson<RegistrationTurnstileDto>(res);
+}
+
+/** Every way in to the guest registration form and whether the superadmin has it on. Superadmin only. */
+export async function fetchRegistrationAccessMethods(signal?: AbortSignal): Promise<RegistrationAccessMethodsDto> {
+  const res = await fetch("/api/admin/registration/access-methods", { credentials: "same-origin", signal });
+  return parseJson<RegistrationAccessMethodsDto>(res);
+}
+
+/** Replaces the list of ways in that are on, and answers like the read. A way that is left out is turned off, which closes
+ * the registration form of every event that uses it. */
+export async function saveRegistrationAccessMethods(body: SaveRegistrationAccessMethodsBody): Promise<RegistrationAccessMethodsDto> {
+  const res = await fetch("/api/admin/registration/access-methods", jsonPutInit(body));
+  return parseJson<RegistrationAccessMethodsDto>(res);
+}
+
+function legalDocumentsUrl(eventId: string, ref?: string): string {
+  const base = `/api/admin/events/${encodeURIComponent(eventId)}/legal-documents`;
+  return ref === undefined ? base : `${base}/${encodeURIComponent(ref)}`;
+}
+
+/** The legal texts of an event, without their HTML, with what registration still lacks and the limits an editor keeps to. */
+export async function fetchLegalDocuments(eventId: string, signal?: AbortSignal): Promise<LegalDocumentsListResponse> {
+  const res = await fetch(legalDocumentsUrl(eventId), { credentials: "same-origin", signal });
+  return parseJson<LegalDocumentsListResponse>(res);
+}
+
+/** One legal text with its cleaned HTML. 404 `not_found` for a text that has not been written. */
+export async function fetchLegalDocument(eventId: string, ref: string, signal?: AbortSignal): Promise<LegalDocumentWithContentDto> {
+  const res = await fetch(legalDocumentsUrl(eventId, ref), { credentials: "same-origin", signal });
+  return parseJson<LegalDocumentWithContentDto>(res);
+}
+
+/** Creates the text or replaces it; its publication is not touched, so a published text changes on its public page at once.
+ * The answer carries the HTML as it was cleaned, which can differ from `content_html`. */
+export async function saveLegalDocument(
+  eventId: string,
+  ref: string,
+  body: SaveLegalDocumentBody,
+): Promise<LegalDocumentWithContentDto> {
+  const res = await fetch(legalDocumentsUrl(eventId, ref), jsonPutInit(body));
+  return parseJson<LegalDocumentWithContentDto>(res);
+}
+
+/** Makes the saved text readable on its public page. Idempotent. */
+export async function publishLegalDocument(eventId: string, ref: string): Promise<LegalDocumentDto> {
+  const res = await fetch(`${legalDocumentsUrl(eventId, ref)}/publish`, jsonPostInit({}));
+  return parseJson<LegalDocumentDto>(res);
+}
+
+/** Takes the text off its public page. Idempotent. 409 `legal_document_in_use` while registration is on and needs it. */
+export async function unpublishLegalDocument(eventId: string, ref: string): Promise<LegalDocumentDto> {
+  const res = await fetch(`${legalDocumentsUrl(eventId, ref)}/unpublish`, jsonPostInit({}));
+  return parseJson<LegalDocumentDto>(res);
+}
+
+/** Deletes the text. 409 `legal_document_in_use` while registration is on and needs it. */
+export async function deleteLegalDocument(eventId: string, ref: string): Promise<void> {
+  const res = await fetch(legalDocumentsUrl(eventId, ref), jsonDeleteInit());
+  await parseJson<{ ok: boolean }>(res);
+}
+
+function registrationsUrl(eventId: string, suffix = ""): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/registrations${suffix}`;
+}
+
+/**
+ * One page of the guest requests of an event, oldest first, with how many match in all. A left-out filter selects every
+ * request. 400 `validation_failed` for a search text the server cannot search for, 403 for someone who does not manage the event.
+ */
+export async function fetchRegistrations(
+  eventId: string,
+  params: RegistrationListParams,
+  signal?: AbortSignal,
+): Promise<RegistrationListDto> {
+  const query = new URLSearchParams({ page: String(params.page), pageSize: String(params.pageSize) });
+  if (params.status) query.set("status", params.status);
+  if (params.olderThan) query.set("older_than", params.olderThan);
+  if (params.q) query.set("q", params.q);
+  const res = await fetch(`${registrationsUrl(eventId)}?${query.toString()}`, { credentials: "same-origin", signal });
+  return parseJson<RegistrationListDto>(res);
+}
+
+/** How many requests an event has in each state, and the registration mode (null while registration is off). */
+export async function fetchRegistrationCounts(eventId: string, signal?: AbortSignal): Promise<RegistrationCountsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/counts"), { credentials: "same-origin", signal });
+  return parseJson<RegistrationCountsDto>(res);
+}
+
+/** One request in full: its answers, consents, companions and the history of the emails it was sent. 404 for a request of another event or one that is gone. */
+export async function fetchRegistration(eventId: string, id: string, signal?: AbortSignal): Promise<RegistrationDetailDto> {
+  const res = await fetch(registrationsUrl(eventId, `/${encodeURIComponent(id)}`), { credentials: "same-origin", signal });
+  return parseJson<RegistrationDetailDto>(res);
+}
+
+/**
+ * Accepts requests (up to 500): each becomes an attendee with a ticket. One answer per id. 409 `not_enough_seats` (with `seats`: the
+ * free seats and the seats the guests need) when they do not all fit, and then nobody is accepted. 403 `event_archived` on an archived event.
+ */
+export async function acceptRegistrations(eventId: string, ids: string[]): Promise<AcceptRegistrationsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/accept"), jsonPostInit({ ids }));
+  return parseJson<AcceptRegistrationsDto>(res);
+}
+
+/** Rejects requests (up to 500). The guests are emailed only with `notify`. 403 `event_archived` on an archived event. */
+export async function rejectRegistrations(eventId: string, ids: string[], notify: boolean): Promise<RejectRegistrationsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/reject"), jsonPostInit({ ids, notify }));
+  return parseJson<RejectRegistrationsDto>(res);
+}
+
+/** Sends again the last email of each request whose email failed for good (up to 500). 403 `event_archived` on an archived event. */
+export async function retryRegistrationMails(eventId: string, ids: string[]): Promise<RetryRegistrationMailsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/retry-mail"), jsonPostInit({ ids }));
+  return parseJson<RetryRegistrationMailsDto>(res);
+}
+
+/** Deletes requests (up to 500) in any state. An accepted one erases its attendee too. An archived event can be cleared. Irreversible. */
+export async function deleteRegistrations(eventId: string, ids: string[]): Promise<DeleteRegistrationsDto> {
+  const res = await fetch(registrationsUrl(eventId, "/delete"), jsonPostInit({ ids }));
+  return parseJson<DeleteRegistrationsDto>(res);
+}
+
+/**
+ * Deletes everything a filter of the list selects, when it is still exactly what the list showed: 409 `registration_count_changed` or
+ * `registration_selection_changed` (nothing is deleted) when it is not, 422 `too_many_registrations` or `too_many_accepted` above the caps.
+ * The filter is the list's own (at least one of state, age and search), with its `total` and its `selection_digest`. Irreversible.
+ */
+export async function deleteRegistrationsByFilter(eventId: string, body: DeleteRegistrationsByFilterBody): Promise<DeleteRegistrationsDto> {
+  // A part of the filter that is not set is left out of the JSON, as `undefined` always is.
+  const res = await fetch(
+    registrationsUrl(eventId, "/delete-by-filter"),
+    jsonPostInit({ status: body.status, older_than: body.olderThan, q: body.q, expected: body.expected, selection_digest: body.selectionDigest }),
+  );
+  return parseJson<DeleteRegistrationsDto>(res);
+}
+
+function eventRegistrationUrl(eventId: string, part: "settings" | "password"): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/registration/${part}`;
+}
+
+/** How guests may register for an event, with whether it is ready for registration to be on. 403 for someone who does not manage the event. */
+export async function fetchRegistrationSettings(eventId: string, signal?: AbortSignal): Promise<RegistrationSettingsDto> {
+  const res = await fetch(eventRegistrationUrl(eventId, "settings"), { credentials: "same-origin", signal });
+  return parseJson<RegistrationSettingsDto>(res);
+}
+
+/**
+ * Saves the settings that `patch` holds and no others, and answers like the read. 409 `registration_not_ready` (with the `blockers`) when
+ * the change turns registration on, or changes the way in or the consents of an event that has it on, and the event is not ready;
+ * 422 `consent_not_published` for a consent the event has not published; 403 `event_archived` on an archived event.
+ */
+export async function saveRegistrationSettings(eventId: string, patch: SaveRegistrationSettingsBody): Promise<RegistrationSettingsDto> {
+  const res = await fetch(eventRegistrationUrl(eventId, "settings"), jsonPutInit(patch));
+  return parseJson<RegistrationSettingsDto>(res);
+}
+
+/** Sets the password of the event, or changes it. It goes in the body of the request only, and is never read back. 400 `registration_password_length`. */
+export async function setRegistrationPassword(eventId: string, password: string): Promise<void> {
+  await parseNoContent(await fetch(eventRegistrationUrl(eventId, "password"), jsonPutInit({ password })));
+}
+
+/** Removes the password: guests cannot open the form until a new one is set. */
+export async function clearRegistrationPassword(eventId: string): Promise<void> {
+  await parseNoContent(await fetch(eventRegistrationUrl(eventId, "password"), jsonDeleteInit()));
 }
 
 /** Probe weather provider from a draft (no persist). */

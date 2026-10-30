@@ -35,6 +35,58 @@ function selectField(sourceField: string, label: string, options: string[]): Eve
   };
 }
 
+describe("AttendeesPage filters of the free-input field types", () => {
+  it.each(["long_text", "date", "datetime", "phone"] as const)(
+    "filters a %s field with a text box that sends a contains query, like a text field",
+    async (type) => {
+      fetchEventCustomFields.mockResolvedValue([{ ...textField("answer", "Answer"), type }]);
+      fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+
+      vi.useFakeTimers();
+      try {
+        renderPage();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+        });
+        fetchEventAttendees.mockClear();
+
+        fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+        fireEvent.change(screen.getByLabelText("Answer"), { target: { value: "abc" } });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(400);
+        });
+
+        expect(fetchEventAttendees).toHaveBeenCalledWith(
+          "evt-1",
+          expect.objectContaining({ customFieldParams: { cf_answer: ["abc"] } }),
+          expect.anything(),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+});
+
+describe("AttendeesPage and the questions about a companion", () => {
+  it("offers a filter for the questions about the guest only: the list holds the guests' own answers", async () => {
+    fetchEventCustomFields.mockResolvedValue([
+      textField("dietary", "Dietary requirements"),
+      { ...textField("badge", "Badge name"), applies_to: "companion" },
+      { ...textField("shirt_notes", "Shirt notes"), applies_to: "guest" },
+    ]);
+    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+
+    renderPage();
+    await waitFor(() => expect(fetchEventCustomFields).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("button", { name: "Filters" }));
+
+    expect(screen.getByLabelText("Dietary requirements")).toBeTruthy();
+    expect(screen.getByLabelText("Shirt notes")).toBeTruthy();
+    expect(screen.queryByLabelText("Badge name")).toBeNull();
+  });
+});
+
 describe("AttendeesPage custom-field text filter debounce", () => {
   it("debounces two text custom fields independently - typing in one does not reset the other's timer", async () => {
     fetchEventCustomFields.mockResolvedValue([

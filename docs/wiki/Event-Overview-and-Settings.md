@@ -31,6 +31,7 @@ Open the correct organisation and event. If another manager may be editing the s
    - Its bar and the **N of M done** count show progress.
    - The bar turns amber or red when a check needs attention.
    - Problems are listed first, and each row opens the page where you fix it.
+   - When registration is on for the event, the checklist also has a **Registrations** row. It counts the requests that wait for a decision and the guests on the waiting list, and says when the event holds more seats than its limit. It opens the requests that wait for a decision. See [Registration Requests](Registration-Requests).
 3. Review the KPI tiles (including attendees and **Failed delivery**), the **Check-in progress** card, and **Recent activity**. Recent activity covers check-ins, attendees added, item issue, return and revoke, mail failures, and imports.
 4. Use **Pinned note**, **Key contacts** and **Important links & files** when your event keeps that operational context on Overview.
 5. Follow a readiness prompt when it points to unfinished setup.
@@ -43,6 +44,7 @@ A key contact is checked when you save it:
 **What Check-in progress shows**
 
 - How many attendees have checked in.
+- **People on site** appears once a companion has been let in. It adds those companions to the attendees who have checked in, and says how many of each. The ring and the checked-in figure count attendees only.
 - The rest are **not yet arrived** while the event can still fill up, and **no-shows** once it is over. "Over" means after its end time when one is set in Event settings, otherwise at the end of its day.
 - Below it, **Last check-in** sits next to **Wallet passes installed** when the event uses wallets (a template and API key are saved, and Apple or Google is switched on). Without wallets, it sits next to **Busiest hour**.
 - **Wallet passes installed** counts attendees whose pass was confirmed on a device at any point. It does not drop if someone later removes the pass.

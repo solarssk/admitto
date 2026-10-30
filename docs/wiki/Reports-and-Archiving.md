@@ -21,9 +21,10 @@ Open **Reports**. It has these tabs: Event day, Wallets (only when the event off
 1. Review the compact KPI tiles, the hourly admissions chart, **Attendance confirmation**, **Check-in method**, **By device**, the ticket-type breakdowns, **By operator**, and the admission log (newest admission first).
 2. **By operator** and the admission log show the authenticated operator who performed the check-in (a staff account), not only a self-declared device label.
 3. The admission log and the CSV and PDF exports also show which event-day items were issued to each admitted attendee.
-4. Apply filters when you need a narrower result.
-5. Check the displayed times against the event time zone.
-6. Use the export control only for an approved event purpose.
+4. Once a companion has been let in, one line under the KPI tiles gives **People on site**: the admitted attendees plus those companions. The tiles count attendees only.
+5. Apply filters when you need a narrower result.
+6. Check the displayed times against the event time zone.
+7. Use the export control only for an approved event purpose.
 
 #### Wallets
 
@@ -52,7 +53,7 @@ Pass adoption always equals Registration state's registered plus previously regi
 
 #### Custom fields
 
-A chart for each custom field configured on the event's Requirements page:
+A chart for each custom field configured on the **Fields** tab of the event's **Registration** page:
 
 - A selector or yes/no field shows a donut: how many attendees hold each value, plus how many have not answered.
 - A free-text field shows a gauge: how many attendees have filled it in.

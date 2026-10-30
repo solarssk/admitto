@@ -54,10 +54,9 @@ describe("custom-data field-load failures never leak into the client response", 
       get: () => undefined,
     };
 
+    // The duplicate-address check is a raw query: no attendee holds the address.
     const db = {
-      attendee: {
-        findFirst: vi.fn().mockResolvedValue(null),
-      },
+      $queryRaw: vi.fn().mockResolvedValue([]),
     };
 
     const res = await handleCreateEventAttendee(c as never, db as never);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useOutletContext, useParams, useSearchParams } from "react-router";
 import {
   WALLET_RELEVANT_ATTENDEE_FIELDS,
@@ -76,6 +76,7 @@ import {
   getTimelineTone,
   humanizeFieldKey,
 } from "../attendees/attendeeTimeline.js";
+import { CompanionCard } from "../attendees/CompanionCard.js";
 import { EraseAttendeeDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
 import { ErasedAttendeeView } from "../attendees/ErasedAttendeeView.js";
 import {
@@ -98,11 +99,14 @@ import { hasWalletStatusChip } from "../attendees/walletStatusChip.js";
 import { walletRegistrationLabel } from "../attendees/walletRegistrationLabel.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
+import { SectionLabel } from "../attendees/SectionLabel.js";
 import {
   allCustomDataEntries,
   customDataApiErrorMessage,
   fetchAttendeeCustomFields,
+  isLongAnswer,
   readCustomDataField,
+  shownCustomFields,
   validateCustomFieldsForm,
 } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
@@ -129,11 +133,12 @@ import { formatDeliveryHistoryTimeParts, deliveryHistoryIcon, deliveryStatusBadg
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
 import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
-import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { attendeeFieldAttrs } from "../utils/no-autofill.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
 import { ACTIVITY_PAGE_SIZE_OPTIONS, useActivityLog } from "../attendees/useActivityLog.js";
 import "../attendees/attendees.css";
+import "../attendees/attendee-fields-grid.css";
 
 const TAB_IDS = ["overview", "activity", "notes"] as const;
 type TabId = (typeof TAB_IDS)[number];
@@ -928,7 +933,11 @@ function itemStateTone(state: string): "ok" | "muted" {
  * custom data) — extracted out of the component (SonarCloud S3776: keeps the comparison chain out
  * of the component's own cognitive-complexity count, the same way EventOverviewPage.tsx extracts
  * buildReadinessItems). */
-function isAttendeeFormDirty(form: AttendeeFormState | null, baseline: AttendeeFormState | null): boolean {
+function isAttendeeFormDirty(
+  form: AttendeeFormState | null,
+  baseline: AttendeeFormState | null,
+  attributeFields: CustomDataFieldDef[],
+): boolean {
   if (form === null || baseline === null) return false;
   return (
     form.first_name !== baseline.first_name ||
@@ -938,7 +947,10 @@ function isAttendeeFormDirty(form: AttendeeFormState | null, baseline: AttendeeF
     form.department !== baseline.department ||
     form.ticket_type !== baseline.ticket_type ||
     form.rsvp_status !== baseline.rsvp_status ||
-    JSON.stringify(form.customFields) !== JSON.stringify(baseline.customFields)
+    // An answer typed for a question that a condition now hides is not an edit: it is not saved.
+    shownCustomFields(attributeFields, form.customFields).some(
+      (field) => (form.customFields[field.source_field] ?? "") !== (baseline.customFields[field.source_field] ?? ""),
+    )
   );
 }
 
@@ -974,6 +986,7 @@ function AttendeeOverviewTab({
   ticketTypes,
   attendeeSource,
   customDataEntries,
+  companionCard,
   eventItems,
   event,
   walletPlatforms,
@@ -982,6 +995,8 @@ function AttendeeOverviewTab({
   ticketTypes: TicketTypeDto[];
   attendeeSource: string | null;
   customDataEntries: Array<[string, string, string]>;
+  /** The card of the person the guest brings, or nothing for a guest who brings nobody. */
+  companionCard: ReactNode;
   eventItems: AttendeeDetailDto["event_items"];
   event: EventDto;
   walletPlatforms: EnabledWalletPlatforms;
@@ -1053,6 +1068,10 @@ function AttendeeOverviewTab({
           </div>
         </Card>
 
+        {/* Right after the profile: the person the guest brings is part of who is coming, and the card should not sit below an empty
+            "Additional information" on a phone. */}
+        {companionCard}
+
         <Card title="Additional information">
           {customDataEntries.length === 0 ? (
             <EmptyState
@@ -1063,7 +1082,7 @@ function AttendeeOverviewTab({
           ) : (
             <div className="attendee-detail-readonly">
               {customDataEntries.map(([key, label, value]) => (
-                <div className="attendee-detail-row" key={key}>
+                <div className={`attendee-detail-row${isLongAnswer(value) ? " attendee-detail-row--long" : ""}`} key={key}>
                   <span>{label}</span>
                   <span>{value}</span>
                 </div>
@@ -1677,7 +1696,8 @@ function buildAttendeePatch(
   if (form.rsvp_status !== detail.rsvp_status) patch.rsvp_status = form.rsvp_status;
 
   const customDataPatch: Record<string, string | null> = {};
-  for (const field of attributeFields) {
+  // Only the questions that are asked: what is typed for one that a condition hides is not sent, and what is saved for it stays.
+  for (const field of shownCustomFields(attributeFields, form.customFields)) {
     const key = field.source_field;
     const next = form.customFields[key] ?? "";
     const current = readCustomDataField(detail.custom_data, key) ?? "";
@@ -1785,6 +1805,17 @@ function nextFormAfterPassStatusChange(
 ): AttendeeFormState {
   if (!currentForm) return toAttendeeForm(updated, attributeFields);
   return mergeFormAfterReload(currentForm, previousDetail, updated, attributeFields);
+}
+
+/** Why restoring a pass was refused for want of room: one seat for an attendee alone, and more (in places, not in
+ * people) when their companions come back with them. */
+function restoreCapacityMessage({ current, capacity, incoming }: EventFullMeta): string {
+  if (incoming != null && incoming > 1) {
+    const free = Math.max(0, capacity - current);
+    const companions = incoming === 2 ? "their companion" : "their companions";
+    return `Not enough free places: this attendee and ${companions} need ${incoming}, and ${free} ${free === 1 ? "is" : "are"} free. Free a place or increase capacity before restoring this pass.`;
+  }
+  return `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`;
 }
 
 /** Classifies a failed pass status change into the UI action it should trigger — extracted out
@@ -1896,7 +1927,7 @@ function AttendeeStatusStrip({
 
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
-  const { event } = useOutletContext<{ event: EventDto }>();
+  const { event, refreshEvent } = useOutletContext<{ event: EventDto; refreshEvent?: () => Promise<unknown> }>();
   // Stable across re-renders that don't change the event's own wallet toggles - enabledWalletPlatforms
   // returns a fresh object each call, and this reference flows down to AttendeeOverviewTab (a plain
   // function component, not memoized, so this doesn't currently gate a re-render skip either way -
@@ -1951,6 +1982,8 @@ export function AttendeeDetailPage() {
     );
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
+  // The questions about the person the guest brings, read with the guest's own in one request.
+  const [companionFields, setCompanionFields] = useState<CustomDataFieldDef[]>([]);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const ticketTypesRetry = useRetry();
@@ -2012,6 +2045,11 @@ export function AttendeeDetailPage() {
   // The detail on screen, for applyDetail: an answer can come from a request started long ago, in a closure that
   // rendered before the detail it would replace, so the state it sees would be stale.
   const heldDetailRef = useRef<AttendeeDetailDto | null>(null);
+  const pageRef = useRef<HTMLElement>(null);
+  const [tabFocusRequests, setTabFocusRequests] = useState(0);
+  useEffect(() => {
+    if (tabFocusRequests > 0) pageRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+  }, [tabFocusRequests]);
   // Every whole-detail replacement (edit, note, wallet action, reload) also reseeds the Activity log,
   // which invalidates any page request still in flight. The one answer that is refused is an older one
   // than the erasure (see isOlderThanErasure): nothing of an erased person comes back, by any path.
@@ -2081,13 +2119,14 @@ export function AttendeeDetailPage() {
     setNoteDeleting(false);
     setNoteDeleteError(null);
     try {
-      const { detail: d, attributeFields: fields, itemsWarning: warn } = await rejectOnAbort(
+      const { detail: d, attributeFields: fields, companionFields: companion, itemsWarning: warn } = await rejectOnAbort(
         loadAttendeeDetailData(eventId, attendeeId, notesPage, limit.signal),
         limit.signal,
       );
       if (!isCurrentRequest()) return;
       applyDetail(d);
       setAttributeFields(fields);
+      setCompanionFields(companion);
       setForm(toAttendeeForm(d, fields));
       setInitialEmail(d.email);
       setItemsWarning(warn);
@@ -2159,7 +2198,7 @@ export function AttendeeDetailPage() {
   const mailConfigured = useMailConfigured(eventId);
 
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
-  const isDirty = isAttendeeFormDirty(form, baseline);
+  const isDirty = isAttendeeFormDirty(form, baseline, attributeFields);
 
   /** Removes this attendee from the event for good, with the reason chosen in the dialog. The attendee's page is gone
    * after that, so the operator goes back to the list. */
@@ -2223,6 +2262,20 @@ export function AttendeeDetailPage() {
     }
   }
 
+  /** The server answered a change of the guest's companion with the attendee as it is now. A read that started before the change is
+   * older than this answer and must not put back the companion it took away or corrected, so it is dropped (`loadSeqRef`). */
+  function handleCompanionChanged(next: AttendeeDetailDto, target: { eventId: string; attendeeId: string }): boolean {
+    // The card, and the hook that calls this, go with the attendee they were made for (an answer after they are gone never gets here),
+    // so this only guards the moment between the route changing and the card going. The hook says nothing for an answer dropped here.
+    /* v8 ignore if */
+    if (!isStillSelected(target)) return false;
+    loadSeqRef.current += 1;
+    // A removal takes the card, and the button the keyboard was on, away: the focus goes to the tab that is open.
+    if (heldDetailRef.current?.companion && !next.companion) setTabFocusRequests((count) => count + 1);
+    applyDetail(next);
+    return true;
+  }
+
   function handleCancelEdit() {
     if (isDirty) {
       setDiscardIntent("cancel-edit");
@@ -2244,10 +2297,11 @@ export function AttendeeDetailPage() {
     setReloading(true);
     setError(null);
     try {
-      const { detail: d, attributeFields: fields, itemsWarning: warn } =
+      const { detail: d, attributeFields: fields, companionFields: companion, itemsWarning: warn } =
         await loadAttendeeDetailData(eventId, attendeeId);
       if (!isStillSelected(target)) return;
       setAttributeFields(fields);
+      setCompanionFields(companion);
       setForm((currentForm) => {
         if (!currentForm || !previousDetail) return toAttendeeForm(d, fields);
         return mergeFormAfterReload(currentForm, previousDetail, d, fields);
@@ -2389,10 +2443,7 @@ export function AttendeeDetailPage() {
       const outcome = classifyPassStatusError(err);
       if (outcome.kind === "capacity") {
         setRestoreCapacityBlocked(outcome.eventFull);
-        const { current, capacity } = outcome.eventFull;
-        setRevokeError(
-          `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`,
-        );
+        setRevokeError(restoreCapacityMessage(outcome.eventFull));
       } else if (outcome.kind === "stale_write") {
         addToast("Someone else updated this attendee. Page will reload.", "warning");
         void handleReload();
@@ -2736,7 +2787,7 @@ export function AttendeeDetailPage() {
   const attendeeSource = deriveAttendeeSource(detail.action_log_first_action_type);
   // Seeded together with `detail` by applyDetail, so it exists whenever a detail does.
   const activityLog = activity.log!;
-  const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
+  const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey, event.timezone);
   // Falls back to [] against a stale API response missing this field (e.g. an apps/web dev
   // server running from before event_items was added - it doesn't hot-reload) instead of
   // crashing the whole page on detail.event_items.length.
@@ -2819,9 +2870,14 @@ export function AttendeeDetailPage() {
   }
 
   return (
-    <section key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
+    <section ref={pageRef} key="page" className="attendee-detail-page screen at-fade-in" aria-label="Attendee">
       <PageHeader
-        title={detail.name}
+        title={
+          <span className="attendee-detail-title">
+            <Avatar name={detail.name} size="lg" aria-hidden="true" />
+            <span>{detail.name}</span>
+          </span>
+        }
         subtitle="Manage this attendee's profile, ticket, and check-in status."
         className="attendee-detail-pageheader"
         actions={
@@ -2944,6 +3000,22 @@ export function AttendeeDetailPage() {
           ticketTypes={ticketTypes}
           attendeeSource={attendeeSource}
           customDataEntries={customDataEntries}
+          companionCard={
+            detail.companion ? (
+              <CompanionCard
+                key={detail.id}
+                eventId={event.id}
+                attendeeId={detail.id}
+                event={event}
+                companion={detail.companion}
+                fields={companionFields}
+                fieldsLoaded={itemsWarning === null}
+                onChanged={handleCompanionChanged}
+                onArchived={() => void refreshEvent?.()}
+                onOutOfDate={() => void loadDetail()}
+              />
+            ) : null
+          }
           eventItems={eventItems}
           event={event}
           walletPlatforms={walletPlatforms}
@@ -3040,120 +3112,128 @@ export function AttendeeDetailPage() {
               className="attendee-form__fieldset-wrapper"
             >
               <fieldset className="attendee-form__fieldset" disabled={isEventArchived(event)}>
-                <div className="at-field">
-                  <label className="at-label" htmlFor="attendee-edit-rsvp-status">
-                    Attendance
-                  </label>
-                  <SearchableSelect
-                    id="attendee-edit-rsvp-status"
-                    label="Attendance"
-                    placeholder="Select attendance…"
-                    searchPlaceholder="Search attendance…"
-                    emptyLabel="No attendance options found"
-                    showLabel={false}
-                    value={form.rsvp_status}
-                    options={RSVP_STATUS_OPTIONS}
-                    onChange={(id) => setForm({ ...form, rsvp_status: id as RsvpStatus })}
+                <div className="attendee-fields-grid">
+                  <div className="at-field">
+                    <label className="at-label" htmlFor="attendee-edit-rsvp-status">
+                      Attendance
+                    </label>
+                    <SearchableSelect
+                      id="attendee-edit-rsvp-status"
+                      label="Attendance"
+                      placeholder="Select attendance…"
+                      searchPlaceholder="Search attendance…"
+                      emptyLabel="No attendance options found"
+                      showLabel={false}
+                      value={form.rsvp_status}
+                      options={RSVP_STATUS_OPTIONS}
+                      onChange={(id) => setForm({ ...form, rsvp_status: id as RsvpStatus })}
+                    />
+                  </div>
+                  <div className="at-field">
+                    <label className="at-label" htmlFor="attendee-edit-ticket-type">
+                      Ticket type
+                    </label>
+                    <SearchableSelect
+                      id="attendee-edit-ticket-type"
+                      label="Ticket type"
+                      placeholder="Select ticket type…"
+                      searchPlaceholder="Search ticket types…"
+                      emptyLabel="No ticket types found"
+                      showLabel={false}
+                      value={form.ticket_type}
+                      options={buildTicketTypeOptions(orphanedTicketType, ticketTypes)}
+                      onChange={(id) => setForm({ ...form, ticket_type: id })}
+                    />
+                  </div>
+                  {ticketTypesError && (
+                    <Notice
+                      variant="error"
+                      role="alert"
+                      className="attendee-fields-grid__full"
+                      actionBusy={ticketTypesRetry.busy}
+                      action={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          loading={ticketTypesRetry.busy}
+                          onClick={ticketTypesRetry.retry}
+                        >
+                          Retry
+                        </Button>
+                      }
+                    >
+                      {ticketTypesError}
+                    </Notice>
+                  )}
+                  <div className="attendee-fields-grid__full">
+                    <Input
+                      label="Email"
+                      type="text"
+                      inputMode="email"
+                      icon={<i className="ti ti-mail" aria-hidden="true" />}
+                      value={form.email}
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      required
+                      {...attendeeFieldAttrs("edit-attendee-contact")}
+                    />
+                  </div>
+                  {emailChanged && (
+                    <Notice variant="warning" className="attendee-form__warn">
+                      This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
+                    </Notice>
+                  )}
+                  {emailConflict && (
+                    <Notice variant="error" role="alert" className="attendee-fields-grid__full">
+                      This email is already used by another attendee in this event. Use a different email address.
+                    </Notice>
+                  )}
+                  <Input
+                    label="First name"
+                    icon={<i className="ti ti-user" aria-hidden="true" />}
+                    value={form.first_name}
+                    onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+                    required
+                    {...attendeeFieldAttrs("edit-attendee-given")}
                   />
+                  <Input
+                    label="Last name"
+                    icon={<i className="ti ti-user" aria-hidden="true" />}
+                    value={form.last_name}
+                    onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+                    required
+                    {...attendeeFieldAttrs("edit-attendee-family")}
+                  />
+                  <Input
+                    label="Company"
+                    icon={<i className="ti ti-building" aria-hidden="true" />}
+                    value={form.company}
+                    onChange={(e) => setForm({ ...form, company: e.target.value })}
+                    {...attendeeFieldAttrs("edit-attendee-org")}
+                  />
+                  <Input
+                    label="Department"
+                    icon={<i className="ti ti-sitemap" aria-hidden="true" />}
+                    value={form.department}
+                    onChange={(e) => setForm({ ...form, department: e.target.value })}
+                  />
+                  {attributeFields.length > 0 && <SectionLabel className="attendee-fields-grid__full">Custom fields</SectionLabel>}
+                  {shownCustomFields(attributeFields, form.customFields).map((field) => (
+                    <CustomDataFieldInput
+                      key={field.source_field}
+                      field={field}
+                      eventTimeZone={event.timezone}
+                      value={form.customFields[field.source_field] ?? ""}
+                      disabled={saving || reloading || staleWrite}
+                      onChange={(next) =>
+                        setForm({
+                          ...form,
+                          customFields: { ...form.customFields, [field.source_field]: next },
+                        })
+                      }
+                    />
+                  ))}
                 </div>
-                <Input
-                  label="Email"
-                  type="text"
-                  inputMode="email"
-                  icon={<i className="ti ti-mail" aria-hidden="true" />}
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  required
-                  {...NO_AUTOFILL_PROPS}
-                />
-                {emailChanged && (
-                  <Notice variant="warning" className="attendee-form__warn">
-                    This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
-                  </Notice>
-                )}
-                {emailConflict && (
-                  <Notice variant="error" role="alert">
-                    This email is already used by another attendee in this event. Use a different email address.
-                  </Notice>
-                )}
-                <Input
-                  label="First name"
-                  icon={<i className="ti ti-user" aria-hidden="true" />}
-                  value={form.first_name}
-                  onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-                  required
-                  {...NO_AUTOFILL_PROPS}
-                />
-                <Input
-                  label="Last name"
-                  icon={<i className="ti ti-user" aria-hidden="true" />}
-                  value={form.last_name}
-                  onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                  required
-                  {...NO_AUTOFILL_PROPS}
-                />
-                <Input
-                  label="Company"
-                  icon={<i className="ti ti-building" aria-hidden="true" />}
-                  value={form.company}
-                  onChange={(e) => setForm({ ...form, company: e.target.value })}
-                />
-                <Input
-                  label="Department"
-                  icon={<i className="ti ti-sitemap" aria-hidden="true" />}
-                  value={form.department}
-                  onChange={(e) => setForm({ ...form, department: e.target.value })}
-                />
-                <div className="at-field">
-                  <label className="at-label" htmlFor="attendee-edit-ticket-type">
-                    Ticket type
-                  </label>
-                  <SearchableSelect
-                    id="attendee-edit-ticket-type"
-                    label="Ticket type"
-                    placeholder="Select ticket type…"
-                    searchPlaceholder="Search ticket types…"
-                    emptyLabel="No ticket types found"
-                    showLabel={false}
-                    value={form.ticket_type}
-                    options={buildTicketTypeOptions(orphanedTicketType, ticketTypes)}
-                    onChange={(id) => setForm({ ...form, ticket_type: id })}
-                  />
-                </div>
-                {ticketTypesError && (
-                  <Notice
-                    variant="error"
-                    role="alert"
-                    actionBusy={ticketTypesRetry.busy}
-                    action={
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        loading={ticketTypesRetry.busy}
-                        onClick={ticketTypesRetry.retry}
-                      >
-                        Retry
-                      </Button>
-                    }
-                  >
-                    {ticketTypesError}
-                  </Notice>
-                )}
-                {attributeFields.map((field) => (
-                  <CustomDataFieldInput
-                    key={field.source_field}
-                    field={field}
-                    value={form.customFields[field.source_field] ?? ""}
-                    disabled={saving || reloading || staleWrite}
-                    onChange={(next) =>
-                      setForm({
-                        ...form,
-                        customFields: { ...form.customFields, [field.source_field]: next },
-                      })
-                    }
-                  />
-                ))}
               </fieldset>
             </Tooltip>
             <div className="attendee-form__actions">

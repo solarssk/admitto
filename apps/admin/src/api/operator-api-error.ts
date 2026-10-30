@@ -1,4 +1,9 @@
-import { CONTACT_PHONE_MAX_DIGITS, CONTACT_PHONE_MIN_DIGITS } from "@admitto/shared";
+import {
+  CONTACT_PHONE_MAX_DIGITS,
+  CONTACT_PHONE_MIN_DIGITS,
+  REGISTRATION_PASSWORD_MAX,
+  REGISTRATION_PASSWORD_MIN,
+} from "@admitto/shared";
 import { ApiError } from "./client.js";
 
 const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
@@ -13,6 +18,9 @@ export const CONTACT_PHONE_ERROR = `Enter a valid phone number: digits only, bet
  * code the server can emit has an entry here (or explicit inline handling). Not meant as a
  * general-purpose lookup elsewhere; call operatorApiErrorMessage()/hasApiErrorCode() instead. */
 export const CODE_MESSAGES: Record<string, string> = {
+  // The answer of the guest route to a password that does not open the event. A guest's page words it itself; it is mapped
+  // here so that nothing that reads this map is left with a bare code.
+  access_denied: "The event password did not work.",
   actor_mfa_required:
     "You need a confirmed authenticator app, passkey, or security key on your own account before you can reset another superadmin's two-factor or password, or revoke their sessions. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has one confirmed to do this instead.",
   api_key_required:
@@ -45,6 +53,9 @@ export const CODE_MESSAGES: Record<string, string> = {
   cannot_revoke_current: "You cannot revoke your current session.",
   cannot_revoke_own_session: "You cannot revoke your current session.",
   challenge_expired: "This passkey/security key setup request expired. Start again.",
+  companion_not_found: "This guest has no companion any more. Reload the page.",
+  consent_not_published:
+    "One of the extra consents you chose is not published for this event. Publish its text first, or leave it out.",
   content_field_in_use: "This field is already shown on another item. Uncheck it there first.",
   delivery_not_created: "Could not create the delivery.",
   delivery_not_found: "Delivery not found.",
@@ -60,11 +71,15 @@ export const CODE_MESSAGES: Record<string, string> = {
   event_archived: "This event is archived.",
   event_full: "Event is at capacity.",
   export_too_large: "Export is too large. Narrow filters or export in parts.",
-  field_in_use: "This field is used as a hint on an item. Remove it there first.",
+  field_controls_others:
+    "Other fields are shown only for an answer to this one. Change or remove their condition first.",
+  field_in_use:
+    "An item on the Requirements page still uses this field. Open the item and uncheck the field under Attendee data field first.",
   field_limit_reached: "This event has reached its custom field limit.",
   file_required: "Choose a file to upload.",
   file_too_large: "File exceeds the 2 MB limit.",
   forbidden: "You do not have access.",
+  full: "This event is full.",
   geocoding_rate_limited: "Too many address lookups right now. Wait a moment and try again.",
   geocoding_unavailable: "Address lookup is temporarily unavailable. Try again shortly.",
   health_live_rate_limited: "Too many live checks right now. Wait a moment and try again.",
@@ -73,7 +88,11 @@ export const CODE_MESSAGES: Record<string, string> = {
   incomplete_transport: "Fill in all required fields for this mail transport before saving.",
   internal_error: "Something went wrong. Try again. If it keeps happening, check System logs.",
   invalid_email: INVALID_EMAIL_MESSAGE,
+  invalid_field_rules:
+    "These rules do not fit the field. Length, digits-only and example rules fit text, long text and phone fields, suggestions fit text fields only, and a length cannot be longer than the field allows.",
   invalid_phone: CONTACT_PHONE_ERROR,
+  invalid_show_when:
+    "This condition cannot be kept. It must point at another yes/no or select field of this event that has no condition of its own, and name an answer that field can have. A field that other fields depend on cannot have a condition itself.",
   invalid_form_data: "Could not read the upload. Try again.",
   invalid_image: "That file is not a valid image. Try another PNG, JPG, or WebP.",
   invalid_code: "Invalid authenticator code.",
@@ -93,6 +112,15 @@ export const CODE_MESSAGES: Record<string, string> = {
   last_superadmin: "Cannot remove or deactivate the last superadmin.",
   legacy_name_requires_both_fields:
     "This attendee doesn't have separate first and last names yet. Set both fields together.",
+  legal_document_empty:
+    "There is no text left to save once unsupported formatting is removed. Write some text before saving.",
+  legal_document_in_use:
+    "Registration is on for this event and needs this text. Turn registration off first, then withdraw or delete it.",
+  legal_document_limit_reached: "This event has reached its limit of extra consents.",
+  legal_document_unsupported:
+    "This text has a structure that cannot be saved safely. Simplify its formatting, or paste it as plain text.",
+  legal_documents_missing:
+    "Registration needs a published privacy notice, published event terms and every extra consent you chose. Publish the missing texts first.",
   managed_by_idp: "This role is managed by an identity provider and cannot be removed.",
   mfa_recent_required: "Confirm your sign-in again to remember this device.",
   manual_lookup_disabled: "Manual lookup is disabled for this event. Use QR scan only.",
@@ -107,20 +135,35 @@ export const CODE_MESSAGES: Record<string, string> = {
   mappings_required: "Role mappings are required before enabling this provider.",
   no_local_password: "Password is managed by your identity provider.",
   not_admitted: "This attendee isn't currently checked in.",
+  not_enough_seats:
+    "There are not enough free seats for everyone selected. Select fewer guests, or raise the event's capacity first.",
   not_found: "The requested item was not found.",
   password_change_required:
     "You must change your password before continuing. Update it in Account or go to /change-password.",
   password_too_common: "This password is too common or predictable. Choose a different one.",
+  registration_count_changed:
+    "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
+  registration_not_ready:
+    "Registration needs something that is not set up yet. Set up what the list marks as missing, then try again.",
+  registration_password_length: `The event password needs ${REGISTRATION_PASSWORD_MIN} to ${REGISTRATION_PASSWORD_MAX} characters.`,
+  registration_selection_changed:
+    "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
   required_custom_data_field_missing: "A required custom field is missing.",
+  required_field_not_on_form:
+    "A required field must also be on the registration form, or guests cannot answer it. Turn it on for the form, or make the field optional.",
   reserved_token: "This name is already used as a built-in placeholder. Choose a different name.",
   resend_skipped: "Ticket email was not sent.",
   save_failed: "Save failed. Try again.",
   "server error": "Something went wrong. Try again.",
   setup_not_ready: "Complete the setup steps before finishing.",
+  show_when_not_on_form:
+    "A field with a condition can be on the registration form only when the field it depends on is on the form too.",
   source_field_conflict: "A custom field with this key already exists for this event.",
   source_provider_unavailable:
     "Select an enabled direct OIDC identity provider before enabling Cloudflare Access.",
   stale_write: "Someone else changed this record. Reload and try again.",
+  system_template_locked: "A system email keeps its name, icon and description.",
+  system_template_not_sendable: "This is a system email and cannot be sent in bulk.",
   template_in_use: "This template already has deliveries and cannot be deleted.",
   template_limit_reached: "Template limit reached for this event.",
   template_name_conflict: "A template with this name already exists.",
@@ -133,13 +176,19 @@ export const CODE_MESSAGES: Record<string, string> = {
   token_conflict: "This token is already used by another asset in this event.",
   too_many_attendees: "Too many attendees selected.",
   too_many_rows: "File exceeds the 50 000 row limit. Split the file and import in parts.",
+  too_many_accepted:
+    "Too many accepted guests are selected to delete at once while wallet passes are in use. Select fewer accepted guests and try again.",
+  too_many_registrations:
+    "Too many registrations match to delete them at once. Narrow the filter, or select fewer, and try again.",
   too_many_streams: "Too many live connections. Try again shortly.",
   "too many requests": "Too many requests. Wait a moment and try again.",
   totp_required: "Enter your authenticator app code to continue.",
+  try_again: "Try again in a moment.",
   unauthorized: "Your session has expired. Sign in again.",
   unknown_content_field: "That field no longer exists. Reload and try again.",
   unknown_custom_data_field: "Unknown custom field.",
   unsupported_file_type: "Unsupported file type. Upload a PNG, JPG, or WebP image.",
+  unsupported_media_type: "The request was not in a format the server accepts. Reload the page and try again.",
   "unsupported file type": "Unsupported file type. Upload a .csv or .xlsx file.",
   "unsupported file encoding":
     "This file is saved in a format Admitto cannot read, for example Unicode Text. Save it again as CSV UTF-8 and upload it.",

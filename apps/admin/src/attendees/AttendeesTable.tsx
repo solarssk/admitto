@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton, TopProgressBar } from "@admitto/ui";
-import type { EnabledWalletPlatforms } from "@admitto/shared";
+import { isFreeInputCustomFieldType, type EnabledWalletPlatforms } from "@admitto/shared";
 import type {
   AttendeeMailStatusFilter,
   AttendeeRowDto,
@@ -35,6 +35,7 @@ import { readRememberedRowCount, rememberRowCount } from "./rememberedRowCount.j
 import { WalletColumnCell } from "./walletColumnCell.js";
 import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
 import { SLOW_NOTICE_MS, SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
+import { SectionLabel } from "./SectionLabel.js";
 import "./attendees.css";
 
 /** Rows a skeleton draws when it does not know how many the list will have. */
@@ -241,7 +242,7 @@ export interface AttendeesTableProps {
   onRetryTicketTypes?: () => void;
   /** The ticket-type Retry is working (its own flag, see useRetry). */
   ticketTypesRetrying?: boolean;
-  /** One filter row per event-defined custom field (Requirements page), rendered after the four
+  /** One filter row per event-defined custom field (Registration page, Fields tab), rendered after the four
    * fixed filters - `select`/`boolean` as a MultiSelect over that field's own options, `text` as
    * a contains-text input. Empty array renders no divider/rows at all. */
   customFields?: EventCustomFieldDto[];
@@ -1289,7 +1290,7 @@ function FilterToolbar({
 }>) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const activeCustomFieldCount = customFields.filter((field) =>
-    field.type === "text"
+    isFreeInputCustomFieldType(field.type)
       ? Boolean(customFieldTextInputs[field.source_field]?.trim())
       : (customFieldSelectValues[field.source_field]?.length ?? 0) > 0,
   ).length;
@@ -1411,10 +1412,10 @@ function FilterToolbar({
           </div>
         )}
         {customFields.length > 0 && (
-          <p className="attendees-filters-menu__section-label">Custom fields</p>
+          <SectionLabel>Custom fields</SectionLabel>
         )}
         {customFields.map((field) => {
-          if (field.type === "text") {
+          if (isFreeInputCustomFieldType(field.type)) {
             return (
               <div className="attendees-toolbar__filter" key={field.id}>
                 <Input
