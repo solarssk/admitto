@@ -36,7 +36,7 @@ jobs:
         )
       }}
     steps:
-      - uses: The-PR-Agent/pr-agent@981344be2755e303df501e18e3f60b848a188a80  # v0.48.0
+      - uses: The-PR-Agent/pr-agent@efdde4afe14aa401a3889012c7f3e9ef3081a430  # v0.49.0
         env:
           ANTHROPIC__KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
