@@ -17,6 +17,7 @@
 import type { BrandingTheme } from "@admitto/auth";
 import { resolveThemeVars } from "@admitto/ui";
 import { buildTicketPageStyles } from "../ticket-inline-styles.js";
+import type { StyledNeeds } from "./form-controls.js";
 import { GUEST_PAGE_PRODUCT_CSS } from "./guest-page-css.generated.js";
 
 /** What the form adds. The state classes are set by the page script: `has-error` on a field whose
@@ -157,6 +158,74 @@ export const REGISTRATION_STYLED_CONTROLS_CSS = `
 }
 `;
 
+/**
+ * What the date box and the time box add (D-E9), only to the page of a form that asks a date or a date and time: the page of any
+ * other form does not carry a byte of it. A date is a text box with a square calendar button beside it, a date and time is two such
+ * boxes side by side (one under the other on a phone), and the month or the lists of times open under them in the flow of the form,
+ * the width of the row and no wider than a calendar needs. They are not laid over the form because the card of the page clips what
+ * sticks out of it, and an open panel in the flow reflows with the page at any width and zoom. The wrappers of the kits do not take
+ * part in the layout (`display: contents`), so the boxes and the panels are the cells of one grid. Every colour is a token.
+ *
+ * The cells of the month and the options of a list are 44 px high; the month is as wide as the row on a phone, which makes its cells
+ * 44 px wide on a screen of 390 px, and a compact month and list on a wide screen with a pointer.
+ */
+export const REGISTRATION_DATE_CONTROLS_CSS = `
+.reg-dt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: start; }
+.reg-dt > .at-control, .reg-dt > .at-inputgroup, .reg-dt__time > .at-control { min-width: 0; }
+.reg-dt__pop, .reg-dt__time { display: contents; }
+.reg-dt__button { position: relative; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: var(--control-h); height: var(--control-h); padding: 0; border: var(--border-width) solid var(--border-strong); border-radius: var(--radius); background: var(--surface-card); color: var(--text-secondary); font-size: 1.1rem; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
+.reg-dt__button:hover:not(:disabled) { border-color: var(--at-gray-400); color: var(--text-primary); }
+.reg-dt__button:focus-visible:not(:disabled), .reg-dt__button[aria-expanded="true"]:not(:disabled) { outline: none; border-color: var(--border-focus); box-shadow: var(--ring); }
+.reg-dt__button:disabled { cursor: not-allowed; opacity: 0.6; }
+.reg-dt__panel { grid-column: 1 / -1; box-sizing: border-box; width: 100%; max-width: 21rem; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card); box-shadow: var(--shadow-md); }
+.reg-date { padding: var(--space-2) var(--space-1); }
+.reg-date__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-1) var(--space-2); }
+.reg-date__month { flex: 1; min-width: 0; text-align: center; font-weight: var(--fw-semibold); color: var(--text-primary); }
+.reg-date__nav { flex: none; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 2.75rem; height: 2.75rem; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-card); color: var(--text-secondary); font-size: 1.1rem; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
+.reg-date__nav:hover { border-color: var(--at-gray-400); color: var(--text-primary); }
+.reg-date__nav:focus-visible { outline: none; border-color: var(--border-focus); box-shadow: var(--ring); }
+.reg-date__grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.reg-date__wd { padding: var(--space-1) 0; text-align: center; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-muted); }
+.reg-date__day { height: 2.75rem; padding: 0; text-align: center; vertical-align: middle; font-size: var(--fs-body); font-variant-numeric: tabular-nums; color: var(--text-primary); border-radius: var(--radius); cursor: pointer; transition: background-color 0.12s; }
+.reg-date__day--blank { cursor: default; }
+.reg-date__day[aria-selected="false"]:hover { background: var(--surface-hover); }
+.reg-date__day[aria-current="date"] { box-shadow: inset 0 0 0 1px var(--primary); }
+.reg-date__day[aria-selected="true"] { background: var(--primary); color: var(--text-on-primary); font-weight: var(--fw-semibold); }
+.reg-date__day:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.reg-date__foot { display: flex; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-2); padding: var(--space-1) var(--space-1) 0; border-top: 1px solid var(--border); }
+.reg-date__action { min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius); background: transparent; font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-link); cursor: pointer; }
+.reg-date__action:last-child { margin-left: auto; }
+.reg-date__action:hover { text-decoration: underline; }
+.reg-date__action:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.reg-time { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); max-width: 15rem; padding: var(--space-2); }
+.reg-time--twelve { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 19rem; }
+.reg-time__col { min-width: 0; }
+.reg-time__label { display: block; margin: 0 0 var(--space-1); padding: 0 var(--space-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-muted); }
+.reg-time__list { margin: 0; padding: 0; list-style: none; max-height: 13.75rem; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: var(--radius); }
+.reg-time__opt { display: flex; align-items: center; justify-content: center; min-height: 2.75rem; font-variant-numeric: tabular-nums; color: var(--text-primary); cursor: pointer; transition: background-color 0.12s; }
+.reg-time__opt[aria-selected="false"]:hover { background: var(--surface-hover); }
+.reg-time__opt[aria-selected="true"] { background: var(--primary); color: var(--text-on-primary); font-weight: var(--fw-semibold); }
+.reg-time__opt:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+@media (min-width: 481px) {
+  .reg-dt--pair { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }
+  .reg-dt--pair > .at-control, .reg-dt--pair > .at-inputgroup, .reg-dt--pair .reg-dt__time > .at-control, .reg-dt--pair .reg-dt__button { grid-row: 1; }
+  .reg-dt--pair .reg-dt__panel { grid-row: 2; }
+  .reg-dt--pair .reg-dt__time > .at-control { margin-left: var(--space-3); }
+}
+@media (min-width: 481px) and (pointer: fine) {
+  .reg-date__day, .reg-date__action { height: 2.25rem; min-height: 2.25rem; }
+  .reg-date__nav { width: 2rem; height: 2rem; }
+  .reg-time__opt { min-height: 2rem; }
+}
+@media (pointer: coarse) {
+  .reg-dt__button { min-width: 2.75rem; }
+  .reg-dt__button::after { content: ""; position: absolute; top: -4px; bottom: -4px; left: 0; right: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reg-dt__button, .reg-date__nav, .reg-date__day, .reg-time__opt { transition: none; }
+}
+`;
+
 /** WCAG 2.x relative luminance of `#rrggbb`. */
 function relativeLuminance(hex: string): number {
   const value = Number.parseInt(hex.slice(1), 16);
@@ -213,15 +282,17 @@ export function inkOnPrimaryRule(theme?: BrandingTheme | null): string {
   return `:root { --text-on-primary: ${ink}; --primary-hover: ${towardWhite(primary, 0.12)}; --primary-active: ${towardWhite(primary, 0.22)}; }`;
 }
 
-/** The whole stylesheet of a guest page, for the instance branding `theme`. `styledControls`: the page of an event that
- * switched the styled boxes on, which is the only one that has their rules. */
-export function buildRegistrationPageStyles(theme?: BrandingTheme | null, styledControls = false): string {
+/** The whole stylesheet of a guest page, for the instance branding `theme`. `styled`: what the form of an event that switched the
+ * styled boxes on needs (see `styledNeedsOf` of ./form-controls.ts); only that page has their rules, and the rules of the date and
+ * the time only when the form asks a date or a time. */
+export function buildRegistrationPageStyles(theme?: BrandingTheme | null, styled: StyledNeeds | null = null): string {
   return [
     GUEST_PAGE_PRODUCT_CSS,
     buildTicketPageStyles(theme),
     inkOnPrimaryRule(theme),
     REGISTRATION_PAGE_CSS,
-    styledControls ? REGISTRATION_STYLED_CONTROLS_CSS : "",
+    styled ? REGISTRATION_STYLED_CONTROLS_CSS : "",
+    styled?.date ? REGISTRATION_DATE_CONTROLS_CSS : "",
   ]
     .filter((part) => part !== "")
     .join("\n");

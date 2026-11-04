@@ -80,15 +80,19 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 
 **Styled boxes**
 
-By default the guest's browser draws the boxes of the form. With **Styled form boxes** on, the form draws its own, in the style of Admitto. For now that is the phone box, with a list of countries beside the number; date and time boxes stay the browser's. The switch is for the whole event, not for one question.
+By default the guest's browser draws the boxes of the form. With **Styled form boxes** on, the form draws its own, in the style of Admitto: a phone box with a list of countries, a calendar for a date, and a list of times for a time. The switch is for the whole event, not for one question.
 
 | Box | Switch off | Switch on |
 |---|---|---|
 | Phone | A one-line box | A button with a flag and a country code, a list of countries with a search box, and the number beside it |
-| Date and time | The browser's boxes | The browser's boxes |
+| Date | The browser's date box | A text box with a calendar button beside it. The calendar opens under the box |
+| Date and time | The browser's date and time box | A date box and a time box side by side, one under the other on a phone. Each has its own button, for a calendar and for a list of times |
 
 - A guest picks a country from the list, or types the number with a `+` and the country code. The answer is saved as the code and the digits, for example `+48500100200`.
 - A phone question that asks for digits only, or sets a shortest or longest length, keeps the browser's box. A country code would break its rule. This suits a desk extension.
+- A guest picks a day in the calendar, or types it as `2026-11-04` or as day, month and year in the order of their browser, for example `04.11.2026`. A guest picks a time from the lists of hours and minutes, or types it, for example `18:00`, `1800` or `6:30 PM`. The lists go from 00:00 to 23:59 a minute apart, and show AM and PM where the guest's region uses a 12-hour clock.
+- A date, or a date and time, is saved as it is without the styled boxes: `2026-11-04`, or `2026-11-04T18:30`, the clock at the event. A date without a time, a time without a date, or a text that is no day of the calendar (31 April) is not an answer. The guest sees `Enter a valid date.` or `Enter a valid date and time.` under the box.
+- No rule of a date or a date and time question changes what the calendar can pick, so every such question gets the boxes.
 - The answers, the rules and the messages are the same with the switch on or off. Only the boxes differ.
 
 **What each row of the checklist needs**

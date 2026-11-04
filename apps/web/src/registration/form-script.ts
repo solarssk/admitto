@@ -44,11 +44,14 @@
  *
  * An event that switched the styled boxes on (D-E9) gets a second script after this one (./form-controls-script.ts). This one does
  * not know it and is the same text with or without it: the two meet only in the page, where the second leaves the answer of a
- * styled box in a hidden `data-control` that this one reads like any other.
+ * styled box in a hidden `data-control` that this one reads like any other. For a date or a time that is also where this script
+ * learns that a box was begun and not finished: it asks the control `validity.badInput`, as it asks a native date box, and the
+ * hidden control of a styled date answers it.
  */
 
 import { esc } from "../ticket-page.js";
-import { REGISTRATION_STYLED_CONTROLS_SCRIPT } from "./form-controls-script.js";
+import type { StyledNeeds } from "./form-controls.js";
+import { registrationStyledControlsScript } from "./form-controls-script.js";
 
 /** The script, without its `<script>` tag. */
 export const REGISTRATION_FORM_SCRIPT = String.raw`
@@ -706,11 +709,12 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
 `;
 
 /**
- * The `<script>` element, under the nonce of this response. For an event that switched the styled boxes on there is a second
- * element after it, with the script of ./form-controls-script.ts under the same nonce. Without the switch the answer is the one
- * element it always was, byte for byte.
+ * The `<script>` element, under the nonce of this response. For an event that switched the styled boxes on (`styled` is what its
+ * form needs, see `styledNeedsOf` of ./form-controls.ts) there is a second element after it, with the script of
+ * ./form-controls-script.ts under the same nonce: the code of the boxes the form has. Without the switch (`styled` null) the answer
+ * is the one element it always was, byte for byte.
  */
-export function renderFormScript(nonce: string, styledControls = false): string {
+export function renderFormScript(nonce: string, styled: StyledNeeds | null = null): string {
   const first = `<script nonce="${esc(nonce)}">${REGISTRATION_FORM_SCRIPT}</script>`;
-  return styledControls ? `${first}\n  <script nonce="${esc(nonce)}">${REGISTRATION_STYLED_CONTROLS_SCRIPT}</script>` : first;
+  return styled ? `${first}\n  <script nonce="${esc(nonce)}">${registrationStyledControlsScript(styled)}</script>` : first;
 }
