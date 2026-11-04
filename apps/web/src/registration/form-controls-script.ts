@@ -421,7 +421,7 @@ const PHONE_AND_WINDOW_SCRIPT = String.raw`
 `;
 
 /** The end of the script, after the code of every box the form has. */
-const SCRIPT_END = String.raw`})();
+const SCRIPT_END = `})();
 `;
 
 /** The script of a form that has no date and no time: the phone box, which every page with the switch on carries. This is the text

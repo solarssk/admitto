@@ -432,7 +432,7 @@ export const DATE_BOX_SCRIPT = String.raw`
  * The field of a date, or of a date and time (the time box is added before this, for a form that asks a date and time), and the start
  * of the code: it finds every field the server marked, and sets each up. It closes the function that DATE_BOX_SCRIPT opened.
  */
-export const DATE_FIELD_SCRIPT = String.raw`
+export const DATE_FIELD_SCRIPT = `
     // A date field: the carrier, the date box and, for a date and time, the time box. The answer is the date, or the date and the time
     // as YYYY-MM-DDTHH:mm; a date without a time, a time without a date and a text that is neither are a box begun and not finished.
     function setUpField(box, withTime) {

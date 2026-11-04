@@ -81,8 +81,8 @@ function allQuestions(model: RegistrationFormModel): readonly FormQuestion[] {
 /** What the page of this form needs besides the phone box, or null for an event without the switch. */
 export function styledNeedsOf(model: RegistrationFormModel): StyledNeeds | null {
   if (!model.styledControls) return null;
-  const kinds = allQuestions(model).map(styledKindOf);
-  return { date: kinds.includes("date") || kinds.includes("datetime"), time: kinds.includes("datetime") };
+  const kinds = new Set(allQuestions(model).map(styledKindOf));
+  return { date: kinds.has("date") || kinds.has("datetime"), time: kinds.has("datetime") };
 }
 
 /**

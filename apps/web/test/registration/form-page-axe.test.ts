@@ -412,6 +412,8 @@ describe("axe-core finds nothing to report on the date, the time and the date an
   it("with the boxes marked as errors, for a required date and a required date and time left empty", async () => {
     const window = running(page());
     fillValid(window);
+    // fillValid typed text into the required date box; the empty box is the state this test is about.
+    byId(window, "f-q0").value = "";
     window.document.getElementById("reg-submit").click();
     await settle();
     expect(byId(window, "f-q0").getAttribute("aria-invalid")).toBe("true");
