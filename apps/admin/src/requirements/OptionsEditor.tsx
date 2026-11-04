@@ -49,6 +49,11 @@ export interface OptionsEditorProps {
   /** Say how many attendees hold each option, and warn before a rename or a removal that touches them. Off for a list that is not
    * answered by attendees (the suggestions of a text field): it has no count, so nothing is read for it and `usageCounts` is not used. */
   showUsage?: boolean;
+  /** The counts are hidden (a sensitive question): each row says so, and `usageCounts` is not used. Removing a row that exists is not
+   * done here but asked of `onConfirmRemove`, because it is not known whether anyone chose it. */
+  usageHidden?: boolean;
+  /** Called, instead of removing, for the remove button of a row that exists when `usageHidden`; the caller confirms and then changes the rows. */
+  onConfirmRemove?: (row: OptionRow) => void;
   /** The most rows the list takes: "+ Add" is off when it has that many. */
   max?: number;
   /** The rows whose text is wrong: their field is marked invalid. What is wrong is said by the caller, in the element `errorId`. */
@@ -71,7 +76,8 @@ function UsageSkeleton({ held }: Readonly<{ held: boolean }>) {
 /** What a row says about how many attendees use its option. It is gated on the placeholder having had its minimum time
  * (`showContent`), not only on the counts being in: an answer that comes just after the 200ms would otherwise show its bar for a
  * few frames and flash. */
-function usageLabelFor(usage: number, usageKnown: boolean, gate: LoadingGate): ReactNode {
+function usageLabelFor(usage: number, usageKnown: boolean, gate: LoadingGate, hidden: boolean): ReactNode {
+  if (hidden) return "Hidden";
   if (!gate.showContent) return <UsageSkeleton held={!gate.showIndicator} />;
   if (!usageKnown) return "Unknown";
   if (usage > 0) return `${usage} ${usage === 1 ? "attendee" : "attendees"}`;
@@ -124,6 +130,8 @@ export function OptionsEditor({
   disabled,
   noun = "option",
   showUsage = true,
+  usageHidden = false,
+  onConfirmRemove,
   max,
   invalidKeys,
   errorId,
@@ -149,7 +157,8 @@ export function OptionsEditor({
   }
 
   function handleDeleteClick(row: OptionRow) {
-    if (usageOf(usageCounts, row.originalText) > 0) setConfirmingKey(row.key);
+    if (usageHidden && onConfirmRemove && row.originalText !== "") onConfirmRemove(row);
+    else if (usageOf(usageCounts, row.originalText) > 0) setConfirmingKey(row.key);
     else removeRow(row.key);
   }
 
@@ -375,8 +384,8 @@ export function OptionsEditor({
                 onChange={(text) => updateRow(row.key, text)}
               />
               {showUsage ? (
-                <span className={`options-editor__usage${usage === 0 ? " options-editor__usage--unused" : ""}`}>
-                  {usageLabelFor(usage, usageKnown, usageGate)}
+                <span className={`options-editor__usage${usage === 0 && !usageHidden ? " options-editor__usage--unused" : ""}`}>
+                  {usageLabelFor(usage, usageKnown, usageGate, usageHidden)}
                 </span>
               ) : null}
               <IconButton

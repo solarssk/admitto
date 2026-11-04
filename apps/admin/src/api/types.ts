@@ -752,8 +752,9 @@ export interface EventCustomFieldDto {
   /** Whose answer the question asks for: the guest's own, or the person the guest brings. The server always sends it; absent
    * reads as the guest's, as it does there, and keeps the shape of existing fixtures. */
   applies_to?: EventCustomFieldRecipient;
-  /** True for a sensitive question (D-E6): its answers are not in any list, filter, export, report, pass, mail or log, and the
-   * attendee's page shows no stored answer. The server always sends it; absent reads as false. */
+  /** True for a sensitive question (D-E6): its answers are not in a list, filter, export, report or the import preview, and the
+   * attendee's page shows no stored answer. The wallet pass, operator card, items and mail are not covered yet (117d). The server
+   * always sends it; absent reads as false. */
   sensitive?: boolean;
   /** Position among the event's fields, from 0; null = not placed yet (listed last). The list
    * endpoint already returns the fields in order, so a screen has no need to sort by this. */

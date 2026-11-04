@@ -13,6 +13,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
+import { drainExportJobs } from "@admitto/tickets";
+import { getDefaultStorage } from "@admitto/storage";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
@@ -22,6 +24,7 @@ const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures
 
 const ORG = "org-sensitive-fields";
 const EVENT = "evt-sensitive-fields";
+const OTHER_EVENT = "evt-sensitive-fields-other";
 const EMAILS = {
   admin: "sensitive-admin@example.com",
   superadmin: "sensitive-super@example.com",
@@ -50,18 +53,19 @@ let plainSelectFieldId = "";
 const sameOrigin = { Origin: "http://localhost" };
 
 async function wipe(client: PrismaClient): Promise<void> {
-  await client.attendee.deleteMany({ where: { event_id: EVENT } });
-  await client.registration.deleteMany({ where: { event_id: EVENT } });
-  await client.adminJob.deleteMany({ where: { event_id: EVENT } });
-  await client.attendeeActionLog.deleteMany({ where: { event_id: EVENT } });
+  const events = { in: [EVENT, OTHER_EVENT] };
+  await client.attendee.deleteMany({ where: { event_id: events } });
+  await client.registration.deleteMany({ where: { event_id: events } });
+  await client.adminJob.deleteMany({ where: { event_id: events } });
+  await client.attendeeActionLog.deleteMany({ where: { event_id: events } });
   await client.adminAuditLog.deleteMany({ where: { organization_id: ORG } });
-  await client.eventCustomField.deleteMany({ where: { event_id: EVENT } });
+  await client.eventCustomField.deleteMany({ where: { event_id: events } });
   await client.roleAssignment.deleteMany({ where: { scope_id: { in: [ORG, EVENT] } } });
   await client.session.deleteMany({ where: { user: { email: { in: Object.values(EMAILS) } } } });
   await client.userMfaMethod.deleteMany({ where: { user: { email: { in: Object.values(EMAILS) } } } });
   await client.user.deleteMany({ where: { email: { in: Object.values(EMAILS) } } });
   await client.eventRegistrationSettings.deleteMany({ where: { event_id: EVENT } });
-  await client.event.deleteMany({ where: { id: EVENT } });
+  await client.event.deleteMany({ where: { id: events } });
   await client.organization.deleteMany({ where: { id: ORG } });
 }
 
@@ -71,6 +75,9 @@ beforeAll(async () => {
   await prisma.organization.create({ data: { id: ORG, name: "Sensitive Org", slug: "sensitive-org" } });
   await prisma.event.create({
     data: { id: EVENT, title: "Sensitive Event", slug: "sensitive-event", date: new Date("2030-10-01"), organization_id: ORG, capacity: 20 },
+  });
+  await prisma.event.create({
+    data: { id: OTHER_EVENT, title: "Sensitive Other", slug: "sensitive-event-other", date: new Date("2030-10-02"), organization_id: ORG, capacity: 20 },
   });
   await prisma.eventRegistrationSettings.create({ data: { event_id: EVENT, mode: "approval", max_companions: 1 } });
   await prisma.eventCustomField.createMany({
@@ -82,6 +89,8 @@ beforeAll(async () => {
       { event_id: EVENT, source_field: "size", label: "Size", type: "select", options: ["S", "M"], show_on_form: true },
       { event_id: EVENT, source_field: "mobility", label: "Mobility", type: "text", applies_to: "companion", sensitive: true, show_on_form: true },
       { event_id: EVENT, source_field: "plate", label: "Plate", type: "text", applies_to: "companion", show_on_form: true },
+      // Shown only for the sensitive blood group "A": its answer is not to be lost when the blood group is left alone.
+      { event_id: EVENT, source_field: "rhnote", label: "Blood note", type: "text", show_on_form: true, rules: { show_when: { field: "rh", value: "A" } } },
     ],
   });
   selectFieldId = (await prisma.eventCustomField.findFirstOrThrow({ where: { event_id: EVENT, source_field: "rh" } })).id;
@@ -185,6 +194,7 @@ const send = (method: "POST" | "PATCH" | "PUT", path: string, body: unknown, coo
     headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+const remove = (path: string, cookie: string = cookies.admin) => app.request(path, { method: "DELETE", headers: { Cookie: cookie, ...sameOrigin } });
 
 type AttendeeDetail = {
   updated_at: string;
@@ -461,7 +471,171 @@ describe("the operator", () => {
 });
 
 describe("the logs", () => {
-  it("carry no sensitive answer from any of the requests above", () => {
+  it("carry no sensitive answer from the requests that read or write one", async () => {
+    const detail = await get(`/api/admin/events/${EVENT}/attendees/${guestId}`);
+    const request = await get(`/api/admin/events/${EVENT}/registrations/${registrationId}`);
+    const list = await get(`/api/admin/events/${EVENT}/attendees?pageSize=100`);
+    const requests = await get(`/api/admin/events/${EVENT}/registrations`);
+    const companion = await send("PATCH", `/api/admin/events/${EVENT}/attendees/${guestId}/companion`, { name: "Companion Person", custom_data: { plate: VISIBLE.plate } });
+    expect([detail.status, request.status, list.status, requests.status, companion.status]).toEqual([200, 200, 200, 200, 200]);
+
+    // The scan reads the whole console and system log of this test: it is not empty of the requests, they were made above.
+    expectNoSecret(written());
     expect(written()).not.toContain(tag.toLowerCase());
+  });
+});
+
+describe("a field that becomes sensitive", () => {
+  const path = `/api/admin/events/${EVENT}/custom-fields`;
+
+  async function builtExport(): Promise<string> {
+    const queued = await get(`/api/admin/events/${EVENT}/attendees/export?format=csv`);
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+    for (let i = 0; i < 40; i += 1) {
+      const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId }, select: { status: true } });
+      if (job.status === "succeeded" || job.status === "failed") break;
+      await drainExportJobs(prisma, getDefaultStorage(), { limit: 10 });
+    }
+    return jobId;
+  }
+  const download = (jobId: string) => get(`/api/admin/events/${EVENT}/export/jobs/${jobId}/download`);
+
+  it("makes an export built before the change unavailable, as after an erasure, and not one built after", async () => {
+    const created = (await (await send("POST", path, { source_field: "later_sensitive", label: "Later sensitive" })).json()) as { id: string };
+    const before = await builtExport();
+    expect((await download(before)).status).toBe(200);
+
+    const res = await send("PATCH", `${path}/${created.id}`, { sensitive: true });
+    expect(res.status).toBe(200);
+
+    expect((await download(before)).status).toBe(404);
+    expect(((await prisma.adminJob.findUniqueOrThrow({ where: { id: before } })).result_json as Record<string, unknown>).invalidated).toBe(true);
+    const after = await builtExport();
+    expect((await download(after)).status).toBe(200);
+  });
+
+  it("leaves the exports as they are when the field is created sensitive, or is sensitive already, or is made plain", async () => {
+    const before = await builtExport();
+
+    const created = (await (await send("POST", path, { source_field: "born_sensitive", label: "Born sensitive", sensitive: true })).json()) as { id: string };
+    await send("PATCH", `${path}/${created.id}`, { sensitive: true, label: "Born sensitive again" });
+    await send("PATCH", `${path}/${created.id}`, { sensitive: false });
+
+    expect((await download(before)).status).toBe(200);
+  });
+});
+
+describe("a staff edit of the guest when a question is shown only for a sensitive answer", () => {
+  it("leaves the stored answer to the dependent question alone when only another answer is changed", async () => {
+    const dependent = await prisma.attendee.create({
+      data: { event_id: EVENT, email: "sensitive-dependent@example.com", name: "Dependent Guest", first_name: "Dependent", last_name: "Guest", custom_data: { rh: "A", rhnote: "note-kept", shirt: "before" } },
+    });
+    try {
+      const detail = (await (await get(`/api/admin/events/${EVENT}/attendees/${dependent.id}`)).json()) as AttendeeDetail;
+      expect(detail.custom_data).toEqual({ rhnote: "note-kept", shirt: "before" });
+
+      const res = await send("PATCH", `/api/admin/events/${EVENT}/attendees/${dependent.id}`, {
+        expected_updated_at: detail.updated_at,
+        custom_data_fields: { shirt: "after", rh: "" },
+      });
+
+      expect(res.status).toBe(200);
+      expect((await prisma.attendee.findUniqueOrThrow({ where: { id: dependent.id } })).custom_data).toEqual({ rh: "A", rhnote: "note-kept", shirt: "after" });
+    } finally {
+      await prisma.attendee.delete({ where: { id: dependent.id } });
+    }
+  });
+});
+
+describe("deleting a sensitive field", () => {
+  const path = `/api/admin/events/${EVENT}/custom-fields`;
+  const MARK = `Zzyzx-removed-${tag}`;
+
+  async function tablesHolding(marker: string): Promise<string[]> {
+    const tables = await prisma.$queryRaw<{ table_name: string }[]>`
+      SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'`;
+    const holding: string[] = [];
+    for (const { table_name } of tables) {
+      // A table name read from the catalog, never request content.
+      const [row] = await prisma.$queryRawUnsafe<{ n: bigint }[]>(`SELECT count(*)::bigint AS n FROM "${table_name}" t WHERE t::text LIKE $1`, `%${marker}%`);
+      if (Number(row?.n ?? 0) > 0) holding.push(table_name);
+    }
+    return holding.sort();
+  }
+
+  async function holder(eventId: string, key: string) {
+    const attendee = await prisma.attendee.create({
+      data: {
+        event_id: eventId,
+        email: `removal-${randomUUID()}@example.com`,
+        name: "Removal Guest",
+        custom_data: { [key]: `${MARK}-a`, shirt: "keep-shirt" },
+        companions: { create: { slot: 1, name: "Companion Person", custom_data: { [key]: `${MARK}-c`, plate: "keep-plate" } } },
+      },
+    });
+    const registration = await prisma.registration.create({
+      data: {
+        event_id: eventId,
+        email: attendee.email,
+        first_name: "Removal",
+        last_name: "Guest",
+        name: "Removal Guest",
+        status: "accepted",
+        attendee_id: attendee.id,
+        custom_data: { [key]: `${MARK}-r`, shirt: "keep-shirt" },
+        companions: [{ name: "Companion Person", custom_data: { [key]: `${MARK}-k`, plate: "keep-plate" } }],
+      },
+    });
+    return { attendee, registration };
+  }
+
+  it("deletes its answers from the attendee, the companion, the request and its copy, keeps the rest, and records counts only", async () => {
+    const field = await prisma.eventCustomField.create({ data: { event_id: EVENT, source_field: "gone_sensitive", label: "Gone", sensitive: true } });
+    const mine = await holder(EVENT, "gone_sensitive");
+    const elsewhere = await holder(OTHER_EVENT, "gone_sensitive");
+    expect(await tablesHolding(MARK)).toEqual(["Attendee", "AttendeeCompanion", "Registration"]);
+
+    const res = await remove(`${path}/${field.id}`);
+
+    expect(res.status).toBe(200);
+    expect((await prisma.attendee.findUniqueOrThrow({ where: { id: mine.attendee.id } })).custom_data).toEqual({ shirt: "keep-shirt" });
+    expect((await prisma.attendeeCompanion.findFirstOrThrow({ where: { attendee_id: mine.attendee.id } })).custom_data).toEqual({ plate: "keep-plate" });
+    const registration = await prisma.registration.findUniqueOrThrow({ where: { id: mine.registration.id } });
+    expect(registration.custom_data).toEqual({ shirt: "keep-shirt" });
+    expect(registration.companions).toEqual([{ name: "Companion Person", custom_data: { plate: "keep-plate" } }]);
+    // Another event keeps its own rows.
+    expect((await prisma.attendee.findUniqueOrThrow({ where: { id: elsewhere.attendee.id } })).custom_data).toMatchObject({ gone_sensitive: `${MARK}-a` });
+
+    const logged = await prisma.attendeeActionLog.findFirstOrThrow({ where: { event_id: EVENT, action_type: "event_custom_field_deleted" }, orderBy: { created_at: "desc" } });
+    expect(logged.metadata).toMatchObject({ source_field: "gone_sensitive", answers_removed: { attendees: 1, companions: 1, registrations: 1 } });
+    expect(JSON.stringify(logged.metadata)).not.toContain(MARK);
+  });
+
+  it("does not show an old answer when a question is created again under the same key", async () => {
+    const field = await prisma.eventCustomField.create({ data: { event_id: EVENT, source_field: "again", label: "Again", sensitive: true } });
+    const mine = await holder(EVENT, "again");
+    await remove(`${path}/${field.id}`);
+
+    const created = await send("POST", path, { source_field: "again", label: "Again plain" });
+    expect(created.status).toBe(201);
+
+    const detail = await get(`/api/admin/events/${EVENT}/attendees/${mine.attendee.id}`);
+    expect((await detail.text()).includes(MARK)).toBe(false);
+    const request = await get(`/api/admin/events/${EVENT}/registrations/${mine.registration.id}`);
+    expect((await request.text()).includes(MARK)).toBe(false);
+  });
+
+  it("deletes nothing of the answers to a question that is not sensitive", async () => {
+    const field = await prisma.eventCustomField.create({ data: { event_id: EVENT, source_field: "plain_gone", label: "Plain gone" } });
+    const mine = await holder(EVENT, "plain_gone");
+
+    const res = await remove(`${path}/${field.id}`);
+
+    expect(res.status).toBe(200);
+    expect((await prisma.attendee.findUniqueOrThrow({ where: { id: mine.attendee.id } })).custom_data).toMatchObject({ plain_gone: `${MARK}-a` });
+    expect((await prisma.registration.findUniqueOrThrow({ where: { id: mine.registration.id } })).custom_data).toMatchObject({ plain_gone: `${MARK}-r` });
+    const logged = await prisma.attendeeActionLog.findFirstOrThrow({ where: { event_id: EVENT, action_type: "event_custom_field_deleted" }, orderBy: { created_at: "desc" } });
+    expect(logged.metadata).toEqual({ source_field: "plain_gone" });
   });
 });

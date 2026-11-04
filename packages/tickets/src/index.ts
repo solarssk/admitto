@@ -114,6 +114,7 @@ export {
   WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX,
 } from "./wallet-custom-fields.js";
 export { buildItemDetail } from "./event-item-contents.js";
+export { removeFieldAnswers, type RemovedFieldAnswers } from "./field-answers-removal.js";
 export {
   redactSensitiveCustomData,
   redactSensitiveCustomDataList,
@@ -322,6 +323,7 @@ export {
   redactAttendeeListFiltersForStorage,
   scrubExportJobResultJson,
   isExportInvalidated,
+  invalidateEventExports,
 } from "./export-job-privacy.js";
 export type { RedactedAttendeeListFilters } from "./export-job-privacy.js";
 export { safeExportJobError } from "./export-job-errors.js";

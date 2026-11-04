@@ -12,6 +12,7 @@ import { writeAttendeeCompanion } from "../src/attendee-companion.js";
 import { buildExportColumns, buildSanitizedExportRows, exportAttendeesCsv, type ExportAttendeeSqlRow } from "../src/attendees-export.js";
 import { buildAttendeesExportArtifact } from "../src/attendees-export-artifact.js";
 import { eraseAttendees } from "../src/erase-attendees.js";
+import { removeFieldAnswers } from "../src/field-answers-removal.js";
 import { loadEventCustomDataFields, loadRegistrantFormFields } from "../src/event-custom-fields.js";
 import {
   loadSensitiveCustomFields,
@@ -130,8 +131,10 @@ afterAll(async () => {
   await migrated?.drop();
 });
 
-const field = (eventId: string, data: { source_field: string; applies_to?: string; sensitive?: boolean; required?: boolean }) =>
-  db.eventCustomField.create({ data: { event_id: eventId, label: data.source_field, ...data } });
+const field = (
+  eventId: string,
+  data: { source_field: string; applies_to?: string; sensitive?: boolean; required?: boolean; type?: string; options?: string[]; rules?: object },
+) => db.eventCustomField.create({ data: { event_id: eventId, label: data.source_field, ...data } });
 
 describe("the registry loaders", () => {
   it("carry the flag on a sensitive field and nothing on a plain one", async () => {
@@ -243,6 +246,54 @@ describe("a staff edit of the companion", () => {
     await expect(edit(eventId, guest.id, {})).rejects.toThrow();
   });
 
+  describe("with a question that is shown only for a sensitive answer", () => {
+    async function conditionalEvent() {
+      const eventId = await make.event();
+      await field(eventId, { source_field: "mobility", applies_to: "companion", sensitive: true, type: "select", options: ["wheelchair", "cane"] });
+      await field(eventId, {
+        source_field: "aid",
+        applies_to: "companion",
+        rules: { show_when: { field: "mobility", value: "wheelchair" } },
+      });
+      await field(eventId, { source_field: "shirt", applies_to: "companion" });
+      const guest = await companionWithAnswers(eventId, { mobility: "wheelchair", aid: "ramp", shirt: "M" });
+      return { eventId, guest };
+    }
+
+    it("keeps the dependent answer when only the name is changed", async () => {
+      const { eventId, guest } = await conditionalEvent();
+
+      await edit(eventId, guest.id, {}, "Cleo Renamed");
+
+      expect(await stored(guest.id)).toEqual({ mobility: "wheelchair", aid: "ramp" });
+    });
+
+    it("keeps the dependent answer when only a plain answer is changed", async () => {
+      const { eventId, guest } = await conditionalEvent();
+
+      await edit(eventId, guest.id, { shirt: "L" });
+
+      expect(await stored(guest.id)).toEqual({ mobility: "wheelchair", aid: "ramp", shirt: "L" });
+    });
+
+    it("still judges the dependent answer by the new value when the sensitive question is answered again", async () => {
+      const { eventId, guest } = await conditionalEvent();
+
+      await edit(eventId, guest.id, { mobility: "cane" });
+
+      // Not asked any more for "cane": its answer is not kept, as for any question whose condition is not met.
+      expect(await stored(guest.id)).toEqual({ mobility: "cane" });
+    });
+
+    it("takes a dependent answer typed with the sensitive one left empty, judged by the stored value", async () => {
+      const { eventId, guest } = await conditionalEvent();
+
+      await edit(eventId, guest.id, { aid: "lift" });
+
+      expect(await stored(guest.id)).toEqual({ mobility: "wheelchair", aid: "lift" });
+    });
+  });
+
   it("still clears a plain answer that is left empty (only a sensitive one is write-only)", async () => {
     const eventId = await make.event();
     await field(eventId, { source_field: "shirt", applies_to: "companion" });
@@ -288,5 +339,74 @@ describe("erasing an attendee who gave a sensitive answer", () => {
     await db.$transaction((tx) => eraseAttendees(tx, { eventId, attendeeIds: [guest.id] }));
 
     expect(await tablesHolding(MARKER)).toEqual([]);
+  });
+});
+
+describe("removing the answers to a question", () => {
+  const KEY = "diet";
+  const tagged = (label: string) => `${label}-${randomUUID()}`;
+
+  async function seed(eventId: string) {
+    const guest = await make.attendee(eventId);
+    await db.attendee.update({ where: { id: guest.id }, data: { custom_data: { [KEY]: tagged("guest"), shirt: "keep-shirt" } } });
+    await make.companion(guest.id, { name: "Cleo Example", customData: { [KEY]: tagged("companion"), plate: "keep-plate" } });
+    const registration = await make.registration(eventId, {
+      status: "accepted",
+      attendeeId: guest.id,
+      email: guest.email,
+      customData: { [KEY]: tagged("registration"), shirt: "keep-shirt" },
+      companions: [{ name: "Cleo Example", custom_data: { [KEY]: tagged("copy"), plate: "keep-plate" } }],
+    });
+    return { guest, registration };
+  }
+  const remove = (eventId: string, sourceField = KEY) => db.$transaction((tx) => removeFieldAnswers(tx, { eventId, sourceField }));
+
+  it("deletes the key from the attendee, the companion, the registration and its copy of the companion, and nothing else", async () => {
+    const eventId = await make.event();
+    const { guest, registration } = await seed(eventId);
+
+    const removed = await remove(eventId);
+
+    expect(removed).toEqual({ attendees: 1, companions: 1, registrations: 1 });
+    expect((await db.attendee.findUniqueOrThrow({ where: { id: guest.id } })).custom_data).toEqual({ shirt: "keep-shirt" });
+    expect((await db.attendeeCompanion.findFirstOrThrow({ where: { attendee_id: guest.id } })).custom_data).toEqual({ plate: "keep-plate" });
+    const row = await db.registration.findUniqueOrThrow({ where: { id: registration.id } });
+    expect(row.custom_data).toEqual({ shirt: "keep-shirt" });
+    expect(row.companions).toEqual([{ name: "Cleo Example", custom_data: { plate: "keep-plate" } }]);
+  });
+
+  it("leaves another event and another key as they are", async () => {
+    const eventId = await make.event();
+    const otherEvent = await make.event();
+    await seed(eventId);
+    const elsewhere = await seed(otherEvent);
+
+    await remove(eventId, "no_such_key");
+    await remove(eventId);
+
+    expect((await db.attendee.findUniqueOrThrow({ where: { id: elsewhere.guest.id } })).custom_data).toMatchObject({ [KEY]: expect.any(String) });
+    const row = await db.registration.findUniqueOrThrow({ where: { id: elsewhere.registration.id } });
+    expect(row.custom_data).toMatchObject({ [KEY]: expect.any(String) });
+  });
+
+  it("handles rows with no answers, an empty companion list, and an attendee who was erased", async () => {
+    const eventId = await make.event();
+    await make.attendee(eventId);
+    await make.registration(eventId, { status: "pending" });
+    const erasedGuest = await seed(eventId);
+    await db.$transaction((tx) => eraseAttendees(tx, { eventId, attendeeIds: [erasedGuest.guest.id] }));
+
+    const removed = await remove(eventId);
+
+    expect(removed).toEqual({ attendees: 0, companions: 0, registrations: 0 });
+  });
+
+  it("is idempotent: a second run changes nothing", async () => {
+    const eventId = await make.event();
+    await seed(eventId);
+
+    await remove(eventId);
+
+    expect(await remove(eventId)).toEqual({ attendees: 0, companions: 0, registrations: 0 });
   });
 });

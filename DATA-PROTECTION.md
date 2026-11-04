@@ -78,11 +78,13 @@ The value is left out of:
 - the import preview (the file may carry the answer and the import stores it, but the preview repeats it nowhere);
 - logs and audit entries, which hold field keys and never a value, and the audit entry of the personal data export, which records only how many sensitive fields it left out.
 
-Staff can still write a sensitive answer: the box is write-only. An empty box in an edit means "unchanged", never "clear", so an edit of an attendee or a companion that does not touch a sensitive question keeps the stored answer (a required one is not asked again). A guest still types the answer into the registration form.
+Deleting a sensitive question deletes its answers: in the same transaction the key is removed from `Attendee.custom_data`, `AttendeeCompanion.custom_data`, `Registration.custom_data` and the copy of each companion in `Registration.companions` of that event (`removeFieldAnswers`), and the event log records the question's key and how many rows changed, never a value. This keeps an answer from coming back under an unknown key, or under a question created again with the same key. The answers to a question that is not sensitive stay when it is deleted, as before. When a question becomes sensitive, the export files already built for the event can no longer be downloaded, as after an erasure; a new export leaves the column out.
+
+Staff can still write a sensitive answer: the box is write-only. An empty box in an edit means "unchanged", never "clear", so an edit of an attendee or a companion that does not touch a sensitive question keeps the stored answer (a required one is not asked again), and so does the stored answer to a question that is shown only for a sensitive answer, which the edit form cannot see. A guest still types the answer into the registration form.
 
 Erasure and removal need no code of their own: the answers sit in `Attendee.custom_data`, `Registration.custom_data`, `AttendeeCompanion.custom_data` and the copy in `Registration.companions`, each of which the [erasure rules](docs/dev/attendee-erasure.md#rules-for-code) already clear or delete, and a test scans the database for a sensitive answer after an erasure.
 
-Not covered yet, and closed by the next pull requests of the same release: the wallet pass, the operator's check-in card and the event items, the mail templates, and the administrator's deliberate "Show" of a value with its audit entry. Until then, do not mark a field sensitive that is shown on a pass or an item. The flag also does not reach a value stored under a question that was deleted afterwards: nothing shows it, but it stays until the attendee is erased.
+Not covered yet, and closed by the next pull requests of the same release: the wallet pass, the operator's check-in card and the event items, the mail templates, and the administrator's deliberate "Show" of a value with its audit entry. Until then, do not mark a field sensitive that is shown on a pass or an item.
 
 ## Data minimisation
 

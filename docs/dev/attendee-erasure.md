@@ -889,6 +889,7 @@ A pass whose request left no trace on the row at all. Only a request from before
 - **Reading a guest's answers (`custom_data`)?** A question can be marked sensitive, and its answers must not reach a list, filter, export, report or log.
   - Pass the value through `redactSensitiveCustomData`, or drop the field with `withoutSensitiveFields` (`sensitive-custom-data.ts` in `@admitto/tickets`), before it leaves the server.
   - `packages/tickets/test/sensitive-fields-inventory.test.ts` fails for a source file that reads `custom_data` and has no decision. Add the file there with `redacted` or `n/a` and a reason.
+  - Deleting a sensitive field deletes its answers from the four places that hold them (`removeFieldAnswers`, in the transaction of the delete). It takes the jobs of the event (`lockOpenAttendeeJobs`) before the custom fields lock, then the registration queue, the registration rows in id order, the attendee rows in id order and the companions' rows. Making a field sensitive takes the jobs first too, and invalidates the event's exports (`invalidateEventExports`).
   - A staff edit treats an empty sensitive answer as "unchanged" (`withoutBlankSensitiveEntries`). The answers are erased with the rows above and need no code of their own. See [DATA-PROTECTION.md](../../DATA-PROTECTION.md#sensitive-attendee-fields).
 - **Taking locks: one order.**
   - A transaction that takes several of these locks takes them in this order. A step it does not need is skipped, never taken later.

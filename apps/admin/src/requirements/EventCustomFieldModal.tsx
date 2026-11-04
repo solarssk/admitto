@@ -45,6 +45,10 @@ export interface EventCustomFieldModalProps {
   showOnForm?: boolean;
 }
 
+/** What the editor of a sensitive question says before it removes or renames an option that exists: it cannot count the answers. */
+const HIDDEN_ANSWERS_MESSAGE =
+  "Answers to this question are hidden, so Admitto cannot tell whether anyone chose this option. Removing or renaming it can leave answers that no longer match any option. Continue?";
+
 type FormState = {
   label: string;
   source_field: string;
@@ -88,6 +92,9 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
   const usage = useOptionUsage(eventId, field);
   const usageCounts = usage.counts;
   const [confirmRiskyRenames, setConfirmRiskyRenames] = useState(false);
+  // A sensitive question tells no counts (usage.hidden): an option that exists is confirmed before it is removed, here, and before it is
+  // renamed, at Save, because nobody can say whether an answer is on it. `null` = no removal is waiting for an answer.
+  const [removalToConfirm, setRemovalToConfirm] = useState<OptionRow | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Suspended while the risky-rename ConfirmDialog is open (same pattern as EventItemDrawer's
@@ -95,7 +102,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
   // capture-phase Escape listener on document, and this modal's runs first (mounted first), so
   // pressing Escape to dismiss just the confirmation would instead call this modal's own onClose
   // and discard the whole draft, options changes included.
-  useModalFocusTrap(panelRef, !confirmRiskyRenames, onClose);
+  useModalFocusTrap(panelRef, !confirmRiskyRenames && removalToConfirm === null, onClose);
   useOverscrollBounceGuard(scrollRef);
 
   const usageUnknown = usageCounts === null;
@@ -155,7 +162,9 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
         const trimmed = r.text.trim();
         const blanked = trimmed === "" && r.originalText !== "";
         const renamed = !blanked && trimmed !== r.originalText;
-        return (blanked || renamed) && (usageCounts[r.originalText] ?? 0) > 0;
+        // Hidden counts: any option that exists and is renamed or blanked may have answers. A new row (no original text) has none.
+        const inUse = usage.hidden ? r.originalText !== "" : (usageCounts[r.originalText] ?? 0) > 0;
+        return (blanked || renamed) && inUse;
       })
     : [];
 
@@ -313,6 +322,8 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
                   <OptionsEditor
                     rows={form.options}
                     usageCounts={usageCounts}
+                    usageHidden={usage.hidden}
+                    onConfirmRemove={setRemovalToConfirm}
                     usageLoading={usage.loading}
                     disabled={saving}
                     onChange={(rows) => setForm((f) => ({ ...f, options: rows }))}
@@ -372,11 +383,29 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
         </div>
       </div>
       <ConfirmDialog
+        open={removalToConfirm !== null}
+        icon={<i className="ti ti-alert-triangle" />}
+        title="Answers are hidden"
+        message={HIDDEN_ANSWERS_MESSAGE}
+        confirmLabel="Remove anyway"
+        confirmVariant="warning"
+        onCancel={() => setRemovalToConfirm(null)}
+        onConfirm={() => {
+          const removed = removalToConfirm;
+          setRemovalToConfirm(null);
+          if (removed) setForm((f) => ({ ...f, options: f.options.filter((row) => row.key !== removed.key) }));
+        }}
+      />
+      <ConfirmDialog
         open={confirmRiskyRenames}
         icon={<i className="ti ti-alert-triangle" />}
-        title="This will affect existing attendees"
-        message="Renaming these options changes what attendees currently have selected - they'll show as unset until reassigned."
-        confirmLabel="Save anyway"
+        title={usage.hidden ? "Answers are hidden" : "This will affect existing attendees"}
+        message={
+          usage.hidden
+            ? HIDDEN_ANSWERS_MESSAGE
+            : "Renaming these options changes what attendees currently have selected - they'll show as unset until reassigned."
+        }
+        confirmLabel={usage.hidden ? "Continue" : "Save anyway"}
         confirmVariant="warning"
         onCancel={() => setConfirmRiskyRenames(false)}
         onConfirm={() => {
@@ -384,7 +413,8 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
           void performSave();
         }}
       >
-        <ul className="custom-field-risky-list">
+        {usage.hidden ? null : (
+          <ul className="custom-field-risky-list">
           {riskyRenames.map((r) => {
             const trimmed = r.text.trim();
             const count = usageCounts?.[r.originalText] ?? 0;
@@ -404,6 +434,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
             );
           })}
         </ul>
+        )}
       </ConfirmDialog>
     </dialog>
   );

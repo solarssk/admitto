@@ -85,7 +85,7 @@ const INVENTORY: Record<string, Decision> = {
   "packages/import/src/parser.ts": { decision: "n/a", why: "Reads the cells of a file; its invalid-row reasons carry no cell." },
   "packages/import/src/types.ts": { decision: "n/a", why: "Types; ImportAttributeField carries the sensitive flag to the preview." },
   "packages/tickets/src/attendee-card.ts": { decision: "later", pending: { pr: "117d", what: "the operator card (content_fields) leaves a sensitive field out" } },
-  "packages/tickets/src/attendee-companion.ts": { decision: "redacted", via: "sensitiveAnswersLeftAsStored" },
+  "packages/tickets/src/attendee-companion.ts": { decision: "redacted", via: "answersLeftAsStored" },
   "packages/tickets/src/attendees-export.ts": { decision: "redacted", via: "withoutSensitiveFields(" },
   "packages/tickets/src/attendees-list-filters.ts": {
     decision: "n/a",
@@ -97,6 +97,10 @@ const INVENTORY: Record<string, Decision> = {
   "packages/tickets/src/erase-attendees.ts": { decision: "n/a", why: "The erasure: it clears the answers of the attendee, the companion and the registration." },
   "packages/tickets/src/event-custom-fields.ts": { decision: "redacted", via: "row.sensitive" },
   "packages/tickets/src/event-item-contents.ts": { decision: "later", pending: { pr: "117d", what: "buildItemDetail leaves a sensitive field out of the card" } },
+  "packages/tickets/src/field-answers-removal.ts": {
+    decision: "n/a",
+    why: "Deletes the answers to one question from every row when a sensitive question is deleted; it returns counts, never a value.",
+  },
   "packages/tickets/src/index.ts": { decision: "n/a", why: "Re-exports of the package; no code of its own." },
   "packages/tickets/src/registrant-input.ts": { decision: "n/a", why: "The boundary of what a registrant sends; it reads input and returns the cleaned answers to the writer." },
   "packages/tickets/src/registration-attendee.ts": { decision: "n/a", why: STORES_ONLY },
