@@ -36,8 +36,9 @@ type FormState = {
   content_fields: string[];
 };
 
-/** Map API item row to editable drawer form state. */
-function toForm(item: EventItemDto): FormState {
+/** Map API item row to editable drawer form state. `sensitiveKeys` are the questions that must not be shown on an item (D-E6):
+ * an item that still lists one (set before the question became sensitive) is edited without it, so saving it removes the entry. */
+function toForm(item: EventItemDto, sensitiveKeys: ReadonlySet<string>): FormState {
   const cfg = item.config ?? null;
   return {
     label: item.label,
@@ -47,7 +48,7 @@ function toForm(item: EventItemDto): FormState {
     // Match check-in runtime: only explicit false disables auto-issue.
     issue_on_checkin: cfg?.issue_on_checkin !== false,
     icon: normalizeEventItemIconForForm(item.icon),
-    content_fields: cfg?.content_fields ?? [],
+    content_fields: (cfg?.content_fields ?? []).filter((key) => !sensitiveKeys.has(key)),
   };
 }
 
@@ -78,7 +79,11 @@ export function EventItemDrawer({
   onUpdated,
 }: Readonly<EventItemDrawerProps>) {
   const { addToast } = useToast();
-  const [form, setForm] = useState<FormState>(() => toForm(item));
+  const sensitiveKeys = useMemo(
+    () => new Set(customFields.filter((f) => f.sensitive).map((f) => f.source_field)),
+    [customFields],
+  );
+  const [form, setForm] = useState<FormState>(() => toForm(item, sensitiveKeys));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -103,14 +108,16 @@ export function EventItemDrawer({
     return owners;
   }, [items, item.id]);
   const headerIcon = form.icon ?? item.icon ?? DEFAULT_EVENT_ITEM_ICON;
-  const dirty = JSON.stringify(form) !== JSON.stringify(toForm(item));
+  const dirty = JSON.stringify(form) !== JSON.stringify(toForm(item, sensitiveKeys));
   // Two custom fields can share a display label (only source_field is required to be unique) -
   // append the slug to disambiguate, same trigger CSV export/import already use.
   const duplicateFieldLabels = findDuplicateLabels(customFields.map((f) => f.label));
+  // A sensitive question is never shown on an item (D-E6): the server refuses it, so it is not offered.
+  const offeredFields = customFields.filter((f) => !f.sensitive);
 
   useEffect(() => {
-    setForm(toForm(item));
-  }, [item]);
+    setForm(toForm(item, sensitiveKeys));
+  }, [item, sensitiveKeys]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -256,14 +263,14 @@ export function EventItemDrawer({
                   the item varies per person (e.g. shirt size on a gift bag). Manage the fields
                   themselves in the "Attendee fields" card on the Fields tab of the Registration page.
                 </p>
-                {customFields.length === 0 ? (
+                {offeredFields.length === 0 ? (
                   <Notice variant="info">
                     No custom fields defined for this event yet. Add fields in the "Attendee fields" card
                     on the Fields tab of the Registration page, then link them here.
                   </Notice>
                 ) : (
                   <div className="requirements-field-stack">
-                    {customFields.map((field) => {
+                    {offeredFields.map((field) => {
                       const checked = form.content_fields.includes(field.source_field);
                       const claimedBy = fieldOwners.get(field.source_field);
                       const disabled = !checked && !!claimedBy;

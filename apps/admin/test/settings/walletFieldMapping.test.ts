@@ -40,6 +40,15 @@ describe("buildWalletCustomFieldOptions", () => {
     expect(options).toEqual([{ id: "custom:vip_access", icon: "forms", label: "VIP access" }]);
   });
 
+  it("does not offer a sensitive field, next to a plain one that it is offered", () => {
+    const options = buildWalletCustomFieldOptions([
+      makeField({ source_field: "t_shirt_size", label: "T-Shirt size" }),
+      makeField({ source_field: "allergy", label: "Allergy", sensitive: true }),
+      makeField({ source_field: "wheelchair", label: "Wheelchair", type: "boolean", options: null, sensitive: true }),
+    ]);
+    expect(options.map((o) => o.id)).toEqual(["custom:t_shirt_size"]);
+  });
+
   it("excludes text-type custom fields entirely", () => {
     const options = buildWalletCustomFieldOptions([
       makeField({ source_field: "dietary", label: "Dietary requirements", type: "text", options: null }),

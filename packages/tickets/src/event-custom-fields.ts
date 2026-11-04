@@ -14,6 +14,14 @@ export class UnknownContentFieldError extends Error {
   }
 }
 
+/** Thrown when an EventItem's `content_fields` names a sensitive question (D-E6): an item's content is the hint on the
+ * operator's check-in card, and the answer to a sensitive question is not shown there. */
+export class SensitiveContentFieldError extends Error {
+  constructor(public readonly sourceField: string) {
+    super(`sensitive_content_field:${sourceField}`);
+  }
+}
+
 /** The one order of an event's custom attendee fields, for every reader: the staff field list, the
  * Add attendee form, import and export columns, the field reports and the registration form.
  * `display_order` ascending, a field that has none after every field that has one, then oldest
@@ -104,10 +112,17 @@ export async function loadRegistrantFormFields(
 }
 
 /** Reject an EventItem's `content_fields` if any entry isn't in the event's registry. */
-export function validateContentFieldReferences(allowed: Set<string>, contentFields: string[]): void {
+export function validateContentFieldReferences(
+  allowed: Set<string>,
+  contentFields: string[],
+  sensitive: ReadonlySet<string> = new Set(),
+): void {
   for (const field of contentFields) {
     if (!allowed.has(field)) {
       throw new UnknownContentFieldError(field);
+    }
+    if (sensitive.has(field)) {
+      throw new SensitiveContentFieldError(field);
     }
   }
 }

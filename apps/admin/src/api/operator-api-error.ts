@@ -155,6 +155,8 @@ export const CODE_MESSAGES: Record<string, string> = {
   resend_skipped: "Ticket email was not sent.",
   save_failed: "Save failed. Try again.",
   "server error": "Something went wrong. Try again.",
+  sensitive_content_field: "A sensitive field is never shown on an item. Uncheck it.",
+  sensitive_wallet_field: "A sensitive field is never put on a wallet pass. Remove its row from the field mapping.",
   setup_not_ready: "Complete the setup steps before finishing.",
   show_when_not_on_form:
     "A field with a condition can be on the registration form only when the field it depends on is on the form too.",

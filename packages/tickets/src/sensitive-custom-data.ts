@@ -3,8 +3,9 @@ import type { Prisma, PrismaClient } from "@admitto/db";
 /**
  * Sensitive attendee fields (D-E6): a question the organiser marks sensitive (health, accessibility) keeps its answers in
  * `custom_data`, but the attendee and request pages, lists, filters, search, exports, reports and the import preview leave the
- * value out. The field is there, the value is not. The wallet pass, the operator card, event items and mail are not covered
- * yet (117d), and neither is the administrator's deliberate "Show" (117b).
+ * value out. The field is there, the value is not. So do the wallet pass (wallet-custom-fields.ts), the
+ * operator card and the content of an item (event-item-contents.ts) and mail (its placeholders are a closed list with none for a
+ * custom field). The administrator's deliberate "Show" is not covered yet (117b).
  *
  * This file is the one rule. Every reader of `custom_data` either calls {@link redactSensitiveCustomData}, drops the field
  * with {@link withoutSensitiveFields}, or has a recorded reason why it needs neither: `sensitive-fields-inventory.test.ts`
