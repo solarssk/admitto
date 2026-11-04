@@ -23,7 +23,7 @@ import type { BrandingTheme } from "@admitto/auth";
 import { renderAdmittoFaviconLink } from "../favicon.js";
 import { TURNSTILE_ORIGIN } from "../registration-page-security.js";
 import { esc } from "../ticket-page.js";
-import { renderStyledControls } from "./form-controls.js";
+import { renderStyledControls, styledNeedsOf, type StyledNeeds } from "./form-controls.js";
 import { renderAgreement, renderCompanion, renderPasswordField, renderPersonalFields, renderQuestions } from "./form-fields.js";
 import { icon, renderIconSprite } from "./form-icons.js";
 import type { ClosedFormModel, FormContact, FormEvent, RegistrationFormModel } from "./form-model.js";
@@ -41,7 +41,7 @@ const TURNSTILE_SCRIPT_URL = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
 /** Both pages tell iOS not to turn what looks like a phone number into a call link: an organiser's example of a phone
  * answer ("For example: +1 555 0100") would become one, and so would any other run of digits in a note. */
-export function renderDocument(title: string, content: string, scripts: string, theme?: BrandingTheme | null, styledControls = false): string {
+export function renderDocument(title: string, content: string, scripts: string, theme?: BrandingTheme | null, styled: StyledNeeds | null = null): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -50,7 +50,7 @@ export function renderDocument(title: string, content: string, scripts: string, 
   <meta name="format-detection" content="telephone=no">
   <title>${esc(title)}</title>
   ${renderAdmittoFaviconLink()}
-  <style>${buildRegistrationPageStyles(theme, styledControls)}</style>
+  <style>${buildRegistrationPageStyles(theme, styled)}</style>
 </head>
 <body class="ticket-page">
   ${renderIconSprite()}
@@ -164,8 +164,9 @@ export function renderRegistrationFormPage(model: RegistrationFormModel, options
   ]
     .filter((part) => part !== "")
     .join("\n    ");
-  const scripts = `${renderFormScript(options.nonce, model.styledControls)}\n  <script src="${TURNSTILE_SCRIPT_URL}" async defer></script>`;
-  return renderDocument(`Registration - ${model.event.title}`, content, scripts, options.theme, model.styledControls);
+  const styled = styledNeedsOf(model);
+  const scripts = `${renderFormScript(options.nonce, styled)}\n  <script src="${TURNSTILE_SCRIPT_URL}" async defer></script>`;
+  return renderDocument(`Registration - ${model.event.title}`, content, scripts, options.theme, styled);
 }
 
 /** The page of an event that is over. No form, no script, no widget. */

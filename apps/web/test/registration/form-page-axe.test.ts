@@ -348,3 +348,102 @@ describe("axe-core finds nothing to report on the styled phone box of an event t
     expect(await violations(window)).toEqual([]);
   });
 });
+
+describe("axe-core finds nothing to report on the date, the time and the date and time, with the styled boxes on and off", { timeout: 30_000 }, () => {
+  const questions = [
+    question({ key: "arrival", label: "Arrival date", type: "date", required: true, icon: "calendar", description: "The day you land.", rules: { example: "04/11/2026" } }),
+    question({ key: "departure", label: "Departure date", type: "date" }),
+    question({ key: "when", label: "Expected arrival", type: "datetime", required: true, icon: "clock" }),
+    question({ key: "back", label: "Return", type: "datetime", description: "Roughly is fine." }),
+    question({ key: "car", label: "I will drive", type: "boolean" }),
+    question({ key: "parking", label: "Parking from", type: "datetime", required: true, showWhen: { field: "car", value: true } }),
+  ];
+  const page = (overrides = {}) => renderRegistrationFormPage(formModel({ styledControls: true, questions, ...overrides }), { nonce: NONCE });
+  const byId = (window: ReturnType<typeof open>, id: string): Dom => window.document.getElementById(id);
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("with the switch off, where the browser draws the boxes", async () => {
+    expect(await violations(open(page({ styledControls: false })))).toEqual([]);
+    expect(await violations(running(page({ styledControls: false })))).toEqual([]);
+  });
+
+  it("in the page as the server writes it, before the script runs", async () => {
+    expect(await violations(open(page()))).toEqual([]);
+  });
+
+  it("with the script running and everything closed", async () => {
+    const window = running(page());
+    expect(byId(window, "f-q0").getAttribute("type")).toBe("text");
+    expect(byId(window, "f-q2-time")).not.toBeNull();
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the calendar open on the month of today, and with a day picked and the calendar open again", async () => {
+    const window = running(page());
+    byId(window, "f-q0-cal").click();
+    expect(window.document.querySelectorAll("#f-q0-calpanel td[role=gridcell]")).toHaveLength(42);
+    expect(await violations(window)).toEqual([]);
+    window.document.querySelector("#f-q0-calpanel td[data-iso]")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(byId(window, "f-q0").value).not.toBe("");
+    byId(window, "f-q0-cal").click();
+    expect(window.document.querySelector("#f-q0-calpanel td[aria-selected=true]")).not.toBeNull();
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the calendar of a date and time open on a typed date in another year", async () => {
+    const window = running(page());
+    byId(window, "f-q2").value = "2024-02-29";
+    byId(window, "f-q2").dispatchEvent(new window.Event("input", { bubbles: true }));
+    byId(window, "f-q2-cal").click();
+    expect(window.document.querySelector("#f-q2-calpanel [data-date-month]")?.textContent).toBe("February 2024");
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the list of times open, and with a time chosen", async () => {
+    const window = running(page());
+    byId(window, "f-q2-clock").click();
+    expect(window.document.querySelectorAll("#f-q2-clockpanel [role=option]").length).toBeGreaterThan(70);
+    expect(await violations(window)).toEqual([]);
+    window.document.querySelector("#f-q2-clockpanel [role=option]")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(byId(window, "f-q2-time").value).not.toBe("");
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the boxes marked as errors, for a required date and a required date and time left empty", async () => {
+    const window = running(page());
+    fillValid(window);
+    window.document.getElementById("reg-submit").click();
+    await settle();
+    expect(byId(window, "f-q0").getAttribute("aria-invalid")).toBe("true");
+    expect(byId(window, "f-q2").getAttribute("aria-invalid")).toBe("true");
+    expect(byId(window, "f-q2-time").getAttribute("aria-invalid")).toBe("true");
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with a text typed that is no date and a time that is no time", async () => {
+    const window = running(page());
+    fillValid(window);
+    byId(window, "f-q0").value = "31/02/2026";
+    byId(window, "f-q0").dispatchEvent(new window.Event("input", { bubbles: true }));
+    byId(window, "f-q3").value = "2026-11-04";
+    byId(window, "f-q3").dispatchEvent(new window.Event("input", { bubbles: true }));
+    window.document.getElementById("reg-submit").click();
+    await settle();
+    expect(window.document.querySelector("[data-custom=back] [data-msg-text]")?.textContent).toBe("Enter a valid date and time.");
+    expect(await violations(window)).toEqual([]);
+  });
+
+  it("with the date and time that waits for an answer asked, and in the companion's panel", async () => {
+    const companion = { max: 1, questions: [question({ key: "guest_arrival", label: "Guest arrival", type: "datetime" }), question({ key: "guest_day", label: "Guest day", type: "date" })] };
+    const window = running(page({ companion }));
+    byId(window, "f-q4").click();
+    await settle();
+    expect(byId(window, "f-q5-clock").disabled).toBe(false);
+    const toggle = byId(window, "f-companion");
+    toggle.checked = true;
+    toggle.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle();
+    byId(window, "f-c0-cal").click();
+    expect(await violations(window)).toEqual([]);
+  });
+});

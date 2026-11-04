@@ -62,7 +62,7 @@ import {
   companionAnswerErrorKey,
   customDataErrorKey,
 } from "./form-contract.js";
-import { wantsCountryPicker } from "./form-controls.js";
+import { styledKindOf, type StyledKind } from "./form-controls.js";
 import { checkTick, icon, type GuestIcon } from "./form-icons.js";
 import type { FormConsent, FormQuestion, RegistrationFormModel } from "./form-model.js";
 import { botChallengeCData } from "./bot-challenge.js";
@@ -166,7 +166,7 @@ interface TextFieldSpec {
   suggestions?: readonly string[];
   /** The kind of styled box the second script (./form-controls-script.ts) is to make of this field, for an event that
    * switched the styled boxes on. Absent: the browser's box stays, as it is on every other page. */
-  styled?: "phone";
+  styled?: StyledKind;
 }
 
 /**
@@ -430,13 +430,27 @@ function renderLongTextQuestion(question: FormQuestion, id: string, context: Que
   return `<div class="at-field"${wrapper}>${labelOf(id, question.label, question.required)}${textarea}${slot(id, questionNote(question))}</div>`;
 }
 
-/** A date is the browser's own date control, which gives `YYYY-MM-DD`. */
+/** The kind of styled box a question is marked for, when the event switched the styled boxes on and the question's rules leave
+ * room for the box (see {@link styledKindOf}). Absent for every other event: the page is the one it always was. */
+function styledOf(question: FormQuestion, context: QuestionContext): StyledKind | undefined {
+  return context.styledControls === true ? styledKindOf(question) : undefined;
+}
+
+/** A date is the browser's own date control, which gives `YYYY-MM-DD`. With the styled boxes on, the second script turns it into a
+ * text box with a calendar beside it; the control in the page is the same one, with the same id, label, note and message. */
 function renderDateQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
-  return questionField(question, id, context, { kind: "date", message: "Enter a date.", invalid: invalidMessage(question), inputType: "date" });
+  return questionField(question, id, context, {
+    kind: "date",
+    message: "Enter a date.",
+    invalid: invalidMessage(question),
+    inputType: "date",
+    styled: styledOf(question, context),
+  });
 }
 
 /** A date and time is the browser's own control, which gives `YYYY-MM-DDTHH:mm` with no zone. The answer is
- * read as the clock of the event, so the note names the event's time zone. */
+ * read as the clock of the event, so the note names the event's time zone. With the styled boxes on, the second script makes
+ * a date box and a time box of it, side by side; the note stays under them. */
 function renderDateTimeQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
   return questionField(question, id, context, {
     kind: "datetime",
@@ -444,12 +458,13 @@ function renderDateTimeQuestion(question: FormQuestion, id: string, context: Que
     invalid: invalidMessage(question),
     inputType: "datetime-local",
     note: questionNote(question, `Time in the event's time zone (${context.timeZone}).`),
+    styled: styledOf(question, context),
   });
 }
 
 /** A phone number is typed freely; the server accepts spaces, dashes, dots, brackets and a leading + and keeps the digits.
  * With the styled boxes on, a question whose rules leave room for a country code is marked for the second script, which
- * puts a list of countries beside the box (see {@link wantsCountryPicker}); the box itself is the same one. */
+ * puts a list of countries beside the box (see {@link styledKindOf}); the box itself is the same one. */
 function renderPhoneQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
   return questionField(question, id, context, {
     kind: "phone",
@@ -457,7 +472,7 @@ function renderPhoneQuestion(question: FormQuestion, id: string, context: Questi
     invalid: invalidMessage(question),
     maxLength: REGISTRANT_TEXT_MAX,
     inputType: "tel",
-    styled: context.styledControls === true && wantsCountryPicker(question) ? "phone" : undefined,
+    styled: styledOf(question, context),
   });
 }
 

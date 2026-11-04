@@ -35,12 +35,22 @@
  * it does nothing, and the browser's own box stays what it is.
  *
  * The window that the country list opens in (`setUpWindow`) is small and shared on purpose: it opens and closes under a button, sets
- * `aria-expanded`, closes on a press outside, on Escape and when the focus leaves, and gives the focus back. The date and time
- * boxes that follow use it as the phone does.
+ * `aria-expanded`, closes on a press outside, on Escape and when the focus leaves, and gives the focus back. The calendar of the date
+ * box and the lists of the time box open in it as the country list does.
+ *
+ * The date and the time boxes (./form-date-script.ts and ./form-time-script.ts) are added to this text only for a form that asks a
+ * date or a date and time, so the script of a form without them is the one it was, byte for byte (REGISTRATION_STYLED_CONTROLS_SCRIPT
+ * below, which a test pins). They follow the same pattern as the phone: the real control stays in the form as the guest's text box
+ * (its id, label, note and message are the page's), a hidden control that this script adds carries the answer as it is sent, the
+ * text box is marked `data-picker-trigger`, and what the first script sets on the carrier is copied across by an observer.
  */
+import type { StyledNeeds } from "./form-controls.js";
+import { DATE_BOX_SCRIPT, DATE_FIELD_SCRIPT } from "./form-date-script.js";
+import { TIME_BOX_SCRIPT } from "./form-time-script.js";
 
-/** The script, without its `<script>` tag. */
-export const REGISTRATION_STYLED_CONTROLS_SCRIPT = String.raw`
+/** The window and the phone box: the part of the script that every page with the switch on has. It stops short of the closing of the
+ * script, so that the date and the time can be added after it. */
+const PHONE_AND_WINDOW_SCRIPT = String.raw`
 (function () {
   "use strict";
   var form = document.getElementById("reg-form");
@@ -408,5 +418,23 @@ export const REGISTRATION_STYLED_CONTROLS_SCRIPT = String.raw`
     var countries = readCountries(data);
     phones.forEach(function (box) { setUpPhone(box, kit, countries); });
   }
-})();
 `;
+
+/** The end of the script, after the code of every box the form has. */
+const SCRIPT_END = String.raw`})();
+`;
+
+/** The script of a form that has no date and no time: the phone box, which every page with the switch on carries. This is the text
+ * of PR 113g-1, byte for byte, and a test keeps it so. */
+export const REGISTRATION_STYLED_CONTROLS_SCRIPT = `${PHONE_AND_WINDOW_SCRIPT}${SCRIPT_END}`;
+
+/**
+ * The script of the page of a form with the switch on. It is one fixed text for each combination of the boxes the form has: the
+ * window and the phone box always, the date box (and the field that holds a date or a date and time) when the form asks a date
+ * or a date and time, and the time box when it asks a date and time. Nothing of the database is in any of them, and a form that
+ * asks no date or time is no heavier than it was.
+ */
+export function registrationStyledControlsScript(needs: StyledNeeds): string {
+  if (!needs.date) return REGISTRATION_STYLED_CONTROLS_SCRIPT;
+  return `${PHONE_AND_WINDOW_SCRIPT}${DATE_BOX_SCRIPT}${needs.time ? TIME_BOX_SCRIPT : ""}${DATE_FIELD_SCRIPT}${SCRIPT_END}`;
+}
