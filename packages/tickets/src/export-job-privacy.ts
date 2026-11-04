@@ -13,8 +13,8 @@ import type { Prisma } from "@admitto/db";
  * Marks every export of the event, in any state, as not to be downloaded: the erasure and the removal of an attendee,
  * and a question that becomes sensitive, call it in their transaction under the event's attendee-job queue lock. An
  * export that is still pending or running carries the marker too, and the drain does not finish it over the marker:
- * its write of the result is conditional on the row not being invalidated (drain-export-jobs.ts), and it takes the
- * stored file back when it is.
+ * its write of the result judges the locked row (drain-export-jobs.ts) and does not write over the marker, and it
+ * takes the stored file back when the row is invalidated.
  */
 export async function invalidateEventExports(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
   // Keep completed-job history and the storage key: physical deletion can fail and must remain retryable.

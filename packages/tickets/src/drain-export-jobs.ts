@@ -173,30 +173,46 @@ async function runOneExportJob(
       // committed after the last check of the rows stopped it) must not end up with a file that holds the
       // people the erasure removed. Nor one whose export was invalidated meanwhile (a question became sensitive
       // while the file was built and stored: the marker of invalidateEventExports is on the row, and this write
-      // must neither replace `result_json`, which holds it, nor mark the job ready). One statement, so the
-      // checks and the write cannot part: it waits for a transaction that holds the row (the one that sets the
-      // marker takes the job rows first, lockOpenAttendeeJobs, and waits for nothing this statement holds, so the
-      // order of locks of docs/dev/attendee-erasure.md stays acyclic), then judges the row as that transaction left it.
-      const result = {
-        request: {
-          kind: request.kind,
-          format: request.format,
-          filters: redactAttendeeListFiltersForStorage(request.filters),
-        },
-        filename: file.filename,
-        contentType: file.contentType,
-        rowCount: file.rowCount,
-      };
-      recorded = {
-        count: await db.$executeRaw`
-          UPDATE "AdminJob" SET
-            "status" = 'succeeded', "finished_at" = ${new Date()}, "storage_key" = ${staged.key},
-            "filename" = ${file.filename}, "created_count" = ${file.rowCount},
-            "result_json" = ${JSON.stringify(result)}::jsonb, "error" = NULL, "updated_at" = NOW()
-          WHERE "id" = ${job.id} AND "status" = 'running'
-            AND COALESCE("result_json" ->> 'invalidated', '') <> 'true'
-        `,
-      };
+      // must neither replace `result_json`, which holds it, nor mark the job ready). The row is locked, judged and
+      // written in one transaction, so the checks and the write cannot part. It waits for a transaction that holds
+      // the row (the one that sets the marker takes the job rows first, lockOpenAttendeeJobs, and waits for nothing
+      // this holds, so the order of locks of docs/dev/attendee-erasure.md stays acyclic), then judges the row as that
+      // transaction left it.
+      recorded = await db.$transaction(async (tx) => {
+        const rows = await tx.$queryRaw<{ invalidated: boolean }[]>`
+          SELECT COALESCE("result_json" ->> 'invalidated', '') = 'true' AS "invalidated"
+          FROM "AdminJob" WHERE "id" = ${job.id} AND "status" = 'running' FOR UPDATE
+        `;
+        if (rows[0]?.invalidated === true) {
+          // Still running and carrying the marker: closed as failed, with `result_json` as it is.
+          await tx.adminJob.updateMany({
+            where: { id: job.id, status: "running" },
+            data: { status: "failed", finished_at: new Date(), error: EXPORT_JOB_FAILED_ERROR },
+          });
+          return { count: 0 };
+        }
+        return tx.adminJob.updateMany({
+          where: { id: job.id, status: "running" },
+          data: {
+            status: "succeeded",
+            finished_at: new Date(),
+            storage_key: staged.key,
+            filename: file.filename,
+            created_count: file.rowCount,
+            result_json: {
+              request: {
+                kind: request.kind,
+                format: request.format,
+                filters: redactAttendeeListFiltersForStorage(request.filters),
+              },
+              filename: file.filename,
+              contentType: file.contentType,
+              rowCount: file.rowCount,
+            },
+            error: null,
+          },
+        });
+      });
     } catch (finalizeErr) {
       // The write itself failed. The file is in storage and no row names it: take it back.
       await takeBackStoredFile(db, storage, job, staged.key);
@@ -207,12 +223,6 @@ async function runOneExportJob(
       // somebody closed it (an erasure stopped it, or it was reclaimed as stale) and said why. The file
       // holds attendees and nothing names it: take it back.
       await takeBackStoredFile(db, storage, job, staged.key);
-      // Invalidated while it ran: the job is still `running` and keeps its marker. Close it as failed, so it is not
-      // left for the stale-job run, without touching `result_json`.
-      await db.adminJob.updateMany({
-        where: { id: job.id, status: "running" },
-        data: { status: "failed", finished_at: new Date(), error: EXPORT_JOB_FAILED_ERROR },
-      });
       return "failed";
     }
 
