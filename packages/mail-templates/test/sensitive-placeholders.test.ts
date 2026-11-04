@@ -48,7 +48,7 @@ describe("the vocabulary of a mail template", () => {
   });
 
   it("has no placeholder named after a custom field", () => {
-    expect([...ALLOWED_PLACEHOLDERS].filter((name) => /^custom|answer|health|diet|allerg|disab|access_need/.test(name))).toEqual([]);
+    expect([...ALLOWED_PLACEHOLDERS].filter((name) => name.startsWith("custom") || /answer|health|diet|allerg|disab|access_need/.test(name))).toEqual([]);
   });
 
   it("refuses a placeholder that names a custom field, in the subject and in the body", () => {
