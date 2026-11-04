@@ -12,6 +12,10 @@ export interface OptionUsage extends Pick<OptionsLoad<unknown>, "loading" | "err
    * "unknown", never "unused", so that a delete or a rename is not judged harmless before the numbers are in. Nothing is read for
    * a field that is being created, or whose type is not a choice. */
   counts: Record<string, number> | null;
+  /** True for a sensitive question: the server tells no count (`hidden: true`, and `counts` empty), so nothing is read and every option
+   * of the field is of unknown use. Neither Save nor Delete waits for it: an option that exists is confirmed before it is removed or
+   * renamed instead. */
+  hidden: boolean;
 }
 
 /**
@@ -21,7 +25,8 @@ export interface OptionUsage extends Pick<OptionsLoad<unknown>, "loading" | "err
  */
 export function useOptionUsage(eventId: string, field: EventCustomFieldDto | null): OptionUsage {
   const fieldId = field?.id;
-  const enabled = field?.type === "select";
+  const hidden = field?.type === "select" && field.sensitive === true;
+  const enabled = field?.type === "select" && !hidden;
   const load = useCallback(
     async (signal: AbortSignal) => {
       assertPresent(fieldId);
@@ -36,5 +41,5 @@ export function useOptionUsage(eventId: string, field: EventCustomFieldDto | nul
     if (!enabled) return NOTHING_TO_COUNT;
     return ready ? Object.fromEntries(items) : null;
   }, [enabled, ready, items]);
-  return { counts, loading: lookup.loading, error: lookup.error, retry: lookup.retry, retrying: lookup.retrying };
+  return { counts, hidden, loading: lookup.loading, error: lookup.error, retry: lookup.retry, retrying: lookup.retrying };
 }

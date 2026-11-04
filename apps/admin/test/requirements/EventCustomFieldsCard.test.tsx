@@ -790,6 +790,16 @@ describe("EventCustomFieldsCard: the icon and the condition of a question", { ti
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it("says that the answers go too when the question is sensitive, and only then", () => {
+    renderCard([parking, { ...plate, sensitive: true }]);
+    fireEvent.click(within(rowOf("Plate number")).getByRole("button", { name: "Delete field" }));
+    expect(
+      within(screen.getByRole("dialog", { name: "Delete custom field" })).getByText(
+        'Delete "Plate number"? The answers already given to it are deleted too. This cannot be undone.',
+      ),
+    ).toBeTruthy();
+  });
+
   it("names every field that is shown for a question that is to be deleted", () => {
     const second = { ...plate, id: "field-second", source_field: "second", label: "Second" };
     renderCard([parking, plate, second]);

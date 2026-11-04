@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { customDataValue, parseCustomData } from "./custom-data.js";
+import { withoutSensitiveFields } from "./sensitive-custom-data.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
 import { keepLiveRows } from "./lock-check.js";
 import { loadEventTicketTypes, type TicketTypeInfo } from "./ticket-types.js";
@@ -106,10 +107,12 @@ function sanitizeAttributeValue(field: EventItemContent, value: string | null): 
 
 export function buildSanitizedExportRows(
   rows: ExportAttendeeSqlRow[],
-  attributeFields: EventItemContent[],
+  allAttributeFields: EventItemContent[],
   timeZone: string,
   ticketTypes: TicketTypeInfo[] = [],
 ): SanitizedExportRow[] {
+  // A sensitive field has no column in any export (D-E6); the columns are cut the same way in buildExportColumnLabels.
+  const attributeFields = withoutSensitiveFields(allAttributeFields);
   return rows.map((row) => {
     const { company, department } = resolveCompanyDepartment(row);
     return {
@@ -128,7 +131,8 @@ export function buildSanitizedExportRows(
   });
 }
 
-export function buildExportColumnLabels(attributeFields: EventItemContent[]): string[] {
+export function buildExportColumnLabels(allAttributeFields: EventItemContent[]): string[] {
+  const attributeFields = withoutSensitiveFields(allAttributeFields);
   const labelCounts = new Map<string, number>();
   for (const field of attributeFields) {
     labelCounts.set(field.label, (labelCounts.get(field.label) ?? 0) + 1);

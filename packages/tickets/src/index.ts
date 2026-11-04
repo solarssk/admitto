@@ -46,6 +46,10 @@ export {
   lockAttendeeJobQueue,
   lockOpenAttendeeJobs,
   stopOpenAttendeeJobs,
+  STOPPED_BY_FIELD_DELETION,
+  EXPORT_STOPPED_BY_FIELD_DELETION_ERROR,
+  IMPORT_STOPPED_BY_FIELD_DELETION_ERROR,
+  type StoppedJobMessages,
 } from "./stop-open-jobs.js";
 export { removeAttendees } from "./remove-attendees.js";
 export { lockRegistrationQueue, lockRegistrationsForUpdate, tryLockRegistrationQueue } from "./registration-lock.js";
@@ -114,6 +118,16 @@ export {
   WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX,
 } from "./wallet-custom-fields.js";
 export { buildItemDetail } from "./event-item-contents.js";
+export { removeFieldAnswers, type RemovedFieldAnswers } from "./field-answers-removal.js";
+export {
+  redactSensitiveCustomData,
+  redactSensitiveCustomDataList,
+  sensitiveSourceFields,
+  withoutSensitiveFields,
+  withoutBlankSensitiveEntries,
+  loadSensitiveCustomFields,
+  type SensitivityField,
+} from "./sensitive-custom-data.js";
 export {
   eventCustomFieldOrderBy,
   loadEventCustomDataFields,
@@ -313,6 +327,7 @@ export {
   redactAttendeeListFiltersForStorage,
   scrubExportJobResultJson,
   isExportInvalidated,
+  invalidateEventExports,
 } from "./export-job-privacy.js";
 export type { RedactedAttendeeListFilters } from "./export-job-privacy.js";
 export { safeExportJobError } from "./export-job-errors.js";

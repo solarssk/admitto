@@ -219,6 +219,12 @@ model EventCustomField {
   // (loadEventCustomDataFields). Values: CUSTOM_FIELD_APPLIES_TO in packages/db/src/status.ts, backed by the CHECK
   // constraint EventCustomField_applies_to_check (migration SQL).
   applies_to    String   @default("guest")
+  // A sensitive question (D-E6, for example one about health or accessibility): its answers stay in custom_data, but the
+  // attendee and request pages, lists, filters, exports, reports and the import preview leave the value out
+  // (redactSensitiveCustomData in @admitto/tickets). The wallet pass, the operator card, event items and mail are not
+  // covered yet (117d). False for every field that existed before it. The field editor switches it on a later pull
+  // request; the API takes it already. Deleting a sensitive question deletes its answers.
+  sensitive     Boolean  @default(false)
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 

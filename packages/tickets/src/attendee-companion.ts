@@ -3,6 +3,7 @@ import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db/status";
 import { isAttendeeGone, lockAttendeeRow } from "./attendee-lock.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
 import { lockRegistrationQueue } from "./registration-lock.js";
+import { sensitiveSourceFields } from "./sensitive-custom-data.js";
 import {
   buildRegistrantCustomData,
   RegistrantInputError,
@@ -122,6 +123,55 @@ function answersToKeep(stored: Prisma.JsonValue | null, asked: ReadonlySet<strin
   return Object.fromEntries(kept);
 }
 
+function ownOf(value: unknown, key: string): unknown {
+  return value !== null && typeof value === "object" ? ownValue(value, key) : undefined;
+}
+
+/** True for an answer a staff form did not give: absent, null or an empty text. */
+function isBlank(value: unknown): boolean {
+  return value === undefined || value === null || value === "";
+}
+
+/**
+ * What a staff edit leaves as it is stored (D-E6). A sensitive answer is write-only: the page never shows the stored one,
+ * so a box left empty means "unchanged". That has two consequences, both about not losing an answer behind anyone's back:
+ * - `sensitive`: the sensitive questions with a stored answer and no new one. Their stored answer is kept, and it counts
+ *   when the conditions of other questions are judged (the form could not send it);
+ * - `dependents`: the questions that are shown only for an answer to one of those, and have a stored answer that the
+ *   form could not send either (it judged the condition on a blank box and hid the question). Their stored answer stays,
+ *   and is not asked for again.
+ */
+function answersLeftAsStored(
+  questions: readonly RegistrantFormField[],
+  stored: Prisma.JsonValue,
+  input: unknown,
+): { sensitive: Set<string>; dependents: Set<string> } {
+  const sensitive = new Set<string>();
+  for (const key of sensitiveSourceFields(questions)) {
+    if (typeof ownOf(stored, key) === "string" && isBlank(ownOf(input, key))) sensitive.add(key);
+  }
+  const dependents = new Set<string>();
+  for (const question of questions) {
+    const controller = question.rules?.show_when?.field;
+    const key = question.source_field;
+    if (controller !== undefined && sensitive.has(controller) && typeof ownOf(stored, key) === "string" && isBlank(ownOf(input, key))) {
+      dependents.add(key);
+    }
+  }
+  return { sensitive, dependents };
+}
+
+/** The input with the stored answer of each sensitive question that was left empty put back, so a condition on it is judged on what the companion has. */
+function withStoredSensitiveAnswers(input: unknown, stored: Prisma.JsonValue, keys: ReadonlySet<string>): unknown {
+  if (keys.size === 0 || (input !== undefined && input !== null && (typeof input !== "object" || Array.isArray(input)))) return input;
+  const merged: Record<string, unknown> = { ...(input as Record<string, unknown> | null | undefined) };
+  for (const key of keys) {
+    if (UNSAFE_ANSWER_KEYS.has(key)) continue;
+    Object.defineProperty(merged, key, { value: ownOf(stored, key), enumerable: true, configurable: true, writable: true });
+  }
+  return merged;
+}
+
 /**
  * Corrects the name and the answers of an attendee's companion (staff, D-E5). The companion has to exist: this never
  * adds one, because a companion takes a seat, and a seat is taken under the capacity lock after a count, which only
@@ -153,10 +203,17 @@ export async function writeAttendeeCompanion(
   const name = registrantNameSchema.safeParse(params.name);
   if (!name.success) throw new RegistrantInputError();
   const questions = await loadCompanionQuestions(tx, eventId);
-  const answers = buildRegistrantCustomData(questions, params.customData, "companion");
   const stored = await tx.attendeeCompanion.findFirst({ where: { attendee_id: attendeeId, slot }, select: { custom_data: true } });
   if (!stored) return { outcome: "no_companion" };
-  const kept = answersToKeep(stored.custom_data, new Set(questions.map((question) => question.source_field)));
+  // A sensitive answer is write-only for staff (D-E6): see answersLeftAsStored for what an empty box leaves as it is.
+  const left = answersLeftAsStored(questions, stored.custom_data, params.customData);
+  const answers = buildRegistrantCustomData(
+    questions.map((question) => (left.dependents.has(question.source_field) ? { ...question, required: false } : question)),
+    withStoredSensitiveAnswers(params.customData, stored.custom_data, left.sensitive),
+    "companion",
+  );
+  const asked = questions.map((question) => question.source_field).filter((key) => !left.sensitive.has(key) && !left.dependents.has(key));
+  const kept = answersToKeep(stored.custom_data, new Set(asked));
   const merged = { ...kept, ...answers };
   const updated = await tx.attendeeCompanion.updateMany({
     where: { attendee_id: attendeeId, slot },

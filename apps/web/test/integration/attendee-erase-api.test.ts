@@ -2358,7 +2358,8 @@ describe("export files of the event, after an erasure or a removal", () => {
 
     const drained = drainExportJobs(prisma, storage as never, { limit: 50 });
     try {
-      await waitUntilAStatementWaitsForALock();
+      // The write of the result starts by locking the job row (`SELECT ... FOR UPDATE`), and that is the statement that waits.
+      await waitUntilAStatementWaitsForALock("AdminJob%FOR UPDATE");
       expect(held).toBeDefined();
     } finally {
       // Whatever happened, the erasure's transaction ends here, so a failure never leaves a lock behind.

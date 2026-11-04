@@ -1386,3 +1386,91 @@ describe("EventCustomFieldModal: the format rules", () => {
     });
   });
 });
+
+describe("EventCustomFieldModal and a sensitive select question", () => {
+  const hiddenField: EventCustomFieldDto = {
+    ...dietaryField,
+    id: "field-blood",
+    source_field: "blood_group",
+    label: "Blood group",
+    type: "select",
+    options: ["A", "B"],
+    sensitive: true,
+  };
+  const HIDDEN_MESSAGE =
+    "Answers to this question are hidden, so Admitto cannot tell whether anyone chose this option. Removing or renaming it can leave answers that no longer match any option. Continue?";
+
+  it("reads no counts, says they are hidden, and leaves Save available", () => {
+    renderModal(hiddenField);
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Blood" } });
+
+    expect(fetchEventCustomFieldOptionUsage).not.toHaveBeenCalled();
+    expect(screen.getAllByText("Hidden")).toHaveLength(2);
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(false);
+  });
+
+  it("asks before removing an option that exists, keeps it on Cancel, and removes it once confirmed", async () => {
+    renderModal(hiddenField);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove option" })[0]!);
+    expect(await screen.findByText(HIDDEN_MESSAGE)).toBeTruthy();
+    expect(screen.getByDisplayValue("A")).toBeTruthy();
+
+    const confirmation = screen.getByText(HIDDEN_MESSAGE).closest("dialog")!;
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByText(HIDDEN_MESSAGE)).toBeNull());
+    expect(screen.getByDisplayValue("A")).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove option" })[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove anyway" }));
+    await waitFor(() => expect(screen.queryByDisplayValue("A")).toBeNull());
+    expect(screen.getByDisplayValue("B")).toBeTruthy();
+  });
+
+  it("asks at Save before an option that exists is renamed, and saves once confirmed", async () => {
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...hiddenField, options: ["Type A", "B"] });
+    renderModal(hiddenField);
+    fireEvent.change(screen.getAllByLabelText("Option text")[0]!, { target: { value: "Type A" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(HIDDEN_MESSAGE)).toBeTruthy();
+    expect(updateEventCustomField).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(updateEventCustomField).toHaveBeenCalledTimes(1));
+  });
+
+  it("asks at Save before an option that exists is blanked", async () => {
+    renderModal(hiddenField);
+    fireEvent.change(screen.getAllByLabelText("Option text")[1]!, { target: { value: "" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(HIDDEN_MESSAGE)).toBeTruthy();
+    expect(updateEventCustomField).not.toHaveBeenCalled();
+  });
+
+  it("does not ask for an option added in this edit, and Save goes straight through (also with Enter)", async () => {
+    vi.mocked(updateEventCustomField).mockResolvedValue({ ...hiddenField, options: ["A", "B", "AB"] });
+    renderModal(hiddenField);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add option" }));
+    const added = screen.getAllByLabelText("Option text")[2]!;
+    fireEvent.change(added, { target: { value: "AB" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateEventCustomField).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(HIDDEN_MESSAGE)).toBeNull();
+
+    fireEvent.submit(added.closest("form")!);
+    await waitFor(() => expect(updateEventCustomField).toHaveBeenCalledTimes(2));
+  });
+
+  it("still counts the options of a select that is not sensitive, as before", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ A: 2 });
+    renderModal({ ...hiddenField, sensitive: false });
+
+    expect(await screen.findByText("2 attendees")).toBeTruthy();
+    expect(screen.queryByText("Hidden")).toBeNull();
+  });
+});

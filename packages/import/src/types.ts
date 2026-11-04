@@ -23,6 +23,8 @@ export type ImportAttributeField = {
   required?: boolean;
   options?: string[];
   rules?: EventCustomFieldRules;
+  /** A sensitive question (D-E6): the import still stores its answers, but no preview or report repeats them. */
+  sensitive?: boolean;
 };
 
 /** Minimal per-event ticket-type catalog shape for import validation (batch 04 / #351) - key +

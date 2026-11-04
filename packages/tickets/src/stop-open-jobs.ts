@@ -10,14 +10,33 @@ export const EXPORT_STOPPED_BY_ERASURE_ERROR =
 export const IMPORT_STOPPED_BY_ERASURE_ERROR =
   "Import stopped: someone in this event was erased or removed before it finished. Run the import again, and leave that person out of the file if it lists them.";
 
+/** What an export says when the deletion of a sensitive question stopped it. */
+export const EXPORT_STOPPED_BY_FIELD_DELETION_ERROR =
+  "Export stopped: a sensitive question of this event was deleted before it finished. Run it again.";
+
+/** What an import says when the deletion of a sensitive question stopped it: its answers were deleted, and a file that still has them must not bring them back. */
+export const IMPORT_STOPPED_BY_FIELD_DELETION_ERROR =
+  "Import stopped: a sensitive question of this event was deleted before it finished. Run the import again, without a column for that question.";
+
+/** What a stopped export and a stopped import tell the person who started them. */
+export type StoppedJobMessages = { export: string; import_commit: string };
+
+const STOPPED_BY_ERASURE: StoppedJobMessages = { export: EXPORT_STOPPED_BY_ERASURE_ERROR, import_commit: IMPORT_STOPPED_BY_ERASURE_ERROR };
+
+/** The messages of the deletion of a sensitive question (removeFieldAnswers' caller). */
+export const STOPPED_BY_FIELD_DELETION: StoppedJobMessages = {
+  export: EXPORT_STOPPED_BY_FIELD_DELETION_ERROR,
+  import_commit: IMPORT_STOPPED_BY_FIELD_DELETION_ERROR,
+};
+
 /** A job that has not finished: waiting for the worker, or being run by it. */
 const OPEN_JOB_STATUSES = ["pending", "running"];
 
 /** The jobs that read the attendee list into a file or write attendees from a file. */
 const ATTENDEE_JOB_TYPES = ["export", "import_commit"];
 
-const stoppedError = (type: string): string =>
-  type === "import_commit" ? IMPORT_STOPPED_BY_ERASURE_ERROR : EXPORT_STOPPED_BY_ERASURE_ERROR;
+const stoppedError = (type: string, messages: StoppedJobMessages): string =>
+  type === "import_commit" ? messages.import_commit : messages.export;
 
 /**
  * Serialises the creation of an export or an import job with an erasure or a removal in the same event.
@@ -100,7 +119,11 @@ export async function lockOpenAttendeeJobs(tx: Prisma.TransactionClient, eventId
  *
  * The search text of a stopped export is scrubbed like that of any other failed export.
  */
-export async function stopOpenAttendeeJobs(tx: Prisma.TransactionClient, eventId: string): Promise<number> {
+export async function stopOpenAttendeeJobs(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  messages: StoppedJobMessages = STOPPED_BY_ERASURE,
+): Promise<number> {
   await lockOpenAttendeeJobs(tx, eventId);
   const open = await tx.adminJob.findMany({
     where: { type: { in: ATTENDEE_JOB_TYPES }, event_id: eventId, status: { in: OPEN_JOB_STATUSES } },
@@ -116,7 +139,7 @@ export async function stopOpenAttendeeJobs(tx: Prisma.TransactionClient, eventId
         data: {
           status: "failed",
           finished_at: new Date(),
-          error: stoppedError(job.type),
+          error: stoppedError(job.type, messages),
           ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed } : {}),
         },
       });

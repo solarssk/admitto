@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { EXPORT_JOB_FAILED_ERROR, safeExportJobError } from "../src/export-job-errors.js";
-import { EXPORT_STOPPED_BY_ERASURE_ERROR } from "../src/stop-open-jobs.js";
+import { EXPORT_STOPPED_BY_ERASURE_ERROR, EXPORT_STOPPED_BY_FIELD_DELETION_ERROR } from "../src/stop-open-jobs.js";
 import { STALE_EXPORT_JOB_ERROR, STALE_EXPORT_PENDING_ERROR } from "../src/reclaim-stale-export-jobs.js";
 
 describe("safe export job errors", () => {
   it.each([
-    EXPORT_JOB_FAILED_ERROR, EXPORT_STOPPED_BY_ERASURE_ERROR,
+    EXPORT_JOB_FAILED_ERROR, EXPORT_STOPPED_BY_ERASURE_ERROR, EXPORT_STOPPED_BY_FIELD_DELETION_ERROR,
     STALE_EXPORT_JOB_ERROR, STALE_EXPORT_PENDING_ERROR,
     "export_job_incomplete", "export_job_bad_request", "export_too_large",
   ])("preserves the fixed category %s", (error) => {

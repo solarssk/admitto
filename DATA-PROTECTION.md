@@ -65,6 +65,27 @@
 must not record GDPR Art. 9 data unless their organisation has documented a lawful basis,
 instructions from its privacy officer/DPO, and appropriate safeguards.
 
+## Sensitive attendee fields
+
+An administrator can mark a question about an attendee or a companion **sensitive** (for example one about health or accessibility; `EventCustomField.sensitive`, off by default). The answers stay in `custom_data` like any other answer (they are not encrypted in the database, and backups hold them), but the field is shown and its value is not. One rule does this, `redactSensitiveCustomData` in `@admitto/tickets`, and a test (`sensitive-fields-inventory.test.ts`) fails for any source file that reads `custom_data` and has no recorded decision, so a new reader cannot skip it unnoticed.
+
+The value is left out of:
+
+- the attendee's page and its companion card, and the request window of a guest registration and its companion (the key is removed, so the page does not even say whether the question was answered);
+- the Attendees list, its search and its filters (a filter on a sensitive field is ignored, because it would tell who gave which answer);
+- every export of attendees (CSV, XLSX, PDF, the command line, the worker) and the personal data export of a superadmin: the column is not in the file;
+- the Custom fields report, its file and the per-option counts of a select field, which would be the distribution of the answers;
+- the import preview (the file may carry the answer and the import stores it, but the preview repeats it nowhere);
+- logs and audit entries, which hold field keys and never a value, and the audit entry of the personal data export, which records only how many sensitive fields it left out.
+
+Deleting a sensitive question deletes its answers: in the same transaction the key is removed from `Attendee.custom_data`, `AttendeeCompanion.custom_data`, `Registration.custom_data` and the copy of each companion in `Registration.companions` of that event (`removeFieldAnswers`), and the event log records the question's key and how many rows changed, never a value. This keeps an answer from coming back under an unknown key, or under a question created again with the same key. The answers to a question that is not sensitive stay when it is deleted, as before. When a question becomes sensitive, or is created sensitive, the export files already built for the event can no longer be downloaded, as after an erasure, and an export that is running does not record its file; a new export leaves the column out.
+
+Staff can still write a sensitive answer: the box is write-only. An empty box in an edit means "unchanged", never "clear", so an edit of an attendee or a companion that does not touch a sensitive question keeps the stored answer (a required one is not asked again), and so does the stored answer to a question that is shown only for a sensitive answer, which the edit form cannot see. A guest still types the answer into the registration form.
+
+Erasure and removal need no code of their own: the answers sit in `Attendee.custom_data`, `Registration.custom_data`, `AttendeeCompanion.custom_data` and the copy in `Registration.companions`, each of which the [erasure rules](docs/dev/attendee-erasure.md#rules-for-code) already clear or delete, and a test scans the database for a sensitive answer after an erasure.
+
+Not covered yet, and closed by the next pull requests of the same release: the wallet pass, the operator's check-in card and the event items, the mail templates, and the administrator's deliberate "Show" of a value with its audit entry. Until then, do not mark a field sensitive that is shown on a pass or an item.
+
 ## Data minimisation
 
 Only fields required for ticketing and email delivery are imported. The token/QR

@@ -24,6 +24,12 @@ const CARD_TEXT = {
   emptyText: "Add a field to ask guests a question on the registration form, like dietary requirements or shirt size.",
 } as const;
 
+/** The question of the delete dialog. The answers to a sensitive question are deleted with it, and the dialog says so. */
+function deleteMessage(field: EventCustomFieldDto | null): string {
+  const answers = field?.sensitive === true ? " The answers already given to it are deleted too." : "";
+  return `Delete "${field?.label}"?${answers} This cannot be undone.`;
+}
+
 export interface EventCustomFieldsCardProps {
   readonly eventId: string;
   readonly event: EventDto;
@@ -384,7 +390,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpd
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Delete custom field"
-        message={deleteBlocked || `Delete "${deleteTarget?.label}"? This cannot be undone.`}
+        message={deleteBlocked || deleteMessage(deleteTarget)}
         confirmLabel="Delete"
         cancelLabel={deleteBlocked ? "Close" : "Cancel"}
         confirmVariant="danger"

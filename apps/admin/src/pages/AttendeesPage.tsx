@@ -1287,8 +1287,9 @@ export function AttendeesPage() {
     if (!beginCustomFields()) setCustomFieldsError(null);
     const ac = new AbortController();
     fetchEventCustomFields(eventId, ac.signal)
-      // The list holds the guests' own answers: a question about a companion is answered into another row.
-      .then((all) => guestQuestions(all))
+      // The list holds the guests' own answers: a question about a companion is answered into another row. A sensitive
+      // question has no filter: the server ignores it, and a box that does nothing would only mislead (D-E6).
+      .then((all) => guestQuestions(all).filter((field) => field.sensitive !== true))
       .then((fields) => {
         if (ac.signal.aborted) return;
         setCustomFields((current) => (current.length === 0 && fields.length === 0 ? current : fields));

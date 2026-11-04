@@ -18,8 +18,13 @@ import {
   eventCustomFieldRulesSchema,
   findShowWhenProblem,
   hasNoRules,
+  invalidateEventExports,
   isReservedCustomDataSourceField,
+  lockOpenAttendeeJobs,
+  stopOpenAttendeeJobs,
+  STOPPED_BY_FIELD_DELETION,
   readStoredFieldRules,
+  removeFieldAnswers,
   writeBulkActionLog,
   type ConditionField,
   type OpsAuditContext,
@@ -123,6 +128,9 @@ const createFieldSchema = z
     show_on_form: z.boolean().optional(),
     // Left out = the guest's own question, as every field that existed before the companion.
     applies_to: appliesToSchema.optional(),
+    // Left out = not sensitive. A sensitive question keeps its answers out of the attendee and request pages, lists, filters, exports,
+    // reports and the import preview (D-E6); the wallet pass, operator card, items and mail are covered by a later pull request.
+    sensitive: z.boolean().optional(),
     options: z.array(optionValueField).max(20).optional(),
     // The rules of the field (see eventCustomFieldRulesSchema): a shape that is not one is a 400, rules the
     // type does not take are a 422 (eventCustomFieldRulesFitType), and a condition between fields that cannot
@@ -152,6 +160,8 @@ const patchFieldSchema = z
     // Changing whose answer a question asks for is judged like any other change to the conditions between fields: a question
     // that others wait for cannot move to the other recipient, and nor can one that waits for a question of the first.
     applies_to: appliesToSchema.optional(),
+    // Left out = unchanged.
+    sensitive: z.boolean().optional(),
     // null (not just omitted) is how the client asks to clear a previous select's options when
     // switching to text/boolean - omitting the key means "leave options untouched" for PATCH.
     options: z.union([z.array(optionValueField).max(20), z.null()]).optional(),
@@ -185,6 +195,9 @@ export type EventCustomFieldDto = {
   show_on_form: boolean;
   /** Whose answer the question asks for: the guest's own, or the guest's companion's. */
   applies_to: CustomFieldAppliesTo;
+  /** True for a sensitive question: its answers do not appear in the attendee and request pages, lists, filters, exports,
+   * reports or the import preview (D-E6). The wallet pass, operator card, items and mail are not covered yet (117d). */
+  sensitive: boolean;
   display_order: number | null;
   options: string[] | null;
   /** Format rules (text, long text and phone fields), and the icon, condition and suggestions of the
@@ -214,6 +227,7 @@ type CustomFieldRow = {
   rules: Prisma.JsonValue;
   /** Whose answer the question asks for (`guest` or `companion`). */
   applies_to: string;
+  sensitive: boolean;
   created_at: Date;
 };
 
@@ -235,6 +249,7 @@ function serializeCustomField(row: CustomFieldRow): EventCustomFieldDto {
     required: row.required,
     show_on_form: row.show_on_form,
     applies_to: recipientOf(row.applies_to),
+    sensitive: row.sensitive,
     display_order: row.display_order,
     options: options && options.length > 0 ? options : null,
     rules: readStoredFieldRules(row.rules) ?? null,
@@ -377,6 +392,7 @@ function newFieldData(
     required: input.required ?? false,
     show_on_form: input.show_on_form ?? false,
     applies_to: input.applies_to ?? "guest",
+    sensitive: input.sensitive ?? false,
     options: input.options ?? Prisma.JsonNull,
     rules: rulesColumn(input.rules),
   };
@@ -430,6 +446,10 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
   const data = newFieldData(eventId, parsed.data);
   try {
     const created = await db.$transaction(async (tx) => {
+      // A question created sensitive may meet answers that exist already (a plain question of the same key was deleted and
+      // its answers stayed) and exports built with them: those files are not to be downloaded any more, as when an existing
+      // field becomes sensitive. The jobs come first, in the one order of docs/dev/attendee-erasure.md ("Taking locks").
+      if (parsed.data.sensitive === true) await lockOpenAttendeeJobs(tx, eventId);
       // Recheck the cap inside the transaction: the earlier count() above is a fast-path
       // rejection only and isn't race-safe on its own - two concurrent creates could both read a
       // count under the cap before either insert commits. The advisory lock serializes concurrent
@@ -444,11 +464,12 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
       // A new field cannot be one that others depend on, so only its own condition is checked.
       if (parsed.data.rules?.show_when) await assertConditionsHold(tx, eventId, newConditionField(parsed.data));
       const row = await tx.eventCustomField.create({ data });
+      if (parsed.data.sensitive === true) await invalidateEventExports(tx, eventId);
       await writeBulkActionLog(tx, {
         event_id: eventId,
         action_type: "event_custom_field_created",
         audit: adminAuditFromContext(c),
-        metadata: { source_field: row.source_field },
+        metadata: { source_field: row.source_field, ...(row.sensitive ? { sensitive: true } : {}) },
       });
       return row;
     });
@@ -561,6 +582,7 @@ function fieldPatchData(patch: z.infer<typeof patchFieldSchema>): Prisma.EventCu
   if (patch.required !== undefined) data.required = patch.required;
   if (patch.show_on_form !== undefined) data.show_on_form = patch.show_on_form;
   if (patch.applies_to !== undefined) data.applies_to = patch.applies_to;
+  if (patch.sensitive !== undefined) data.sensitive = patch.sensitive;
   if (patch.options !== undefined) data.options = patch.options ?? Prisma.JsonNull;
   if (patch.rules !== undefined) data.rules = rulesColumn(patch.rules);
   return data;
@@ -661,7 +683,12 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
   }
 
   try {
+    // A field that becomes sensitive has answers in files that were built while it was not: those files are not to be
+    // downloaded any more, as after an erasure. Whenever the request asks for sensitive, the jobs come first, in the one order
+    // of docs/dev/attendee-erasure.md ("Taking locks"), and whether the field changes is judged below on the row read under
+    // the lock, never on the first read, which another save may have made stale.
     const updated = await db.$transaction(async (tx) => {
+      if (parsed.data.sensitive === true) await lockOpenAttendeeJobs(tx, eventId);
       // Under the lock, and from a fresh read: the Required-on-form check below has to judge the
       // flags this update replaces, not those a save that committed a moment ago has changed
       // (two PATCHes that each flip one flag would otherwise both pass and leave both flipped).
@@ -678,11 +705,13 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
       }
       await assertRequiredFieldStaysOnForm(tx, eventId, mergedFormFlags(current, parsed.data), current);
       const row = await tx.eventCustomField.update({ where: { id: fieldId }, data });
+      if (parsed.data.sensitive === true && !current.sensitive) await invalidateEventExports(tx, eventId);
       await writeBulkActionLog(tx, {
         event_id: eventId,
         action_type: "event_custom_field_updated",
         audit: adminAuditFromContext(c),
-        metadata: { source_field: row.source_field },
+        // Whether a question is sensitive decides who can read its answers, so a change of it is on the record.
+        metadata: { source_field: row.source_field, ...(parsed.data.sensitive === undefined ? {} : { sensitive: row.sensitive }) },
       });
       return row;
     });
@@ -804,16 +833,19 @@ export async function handleGetEventCustomFieldOptionUsage(c: Context, db: Prism
   if (existing.type !== "select") {
     return c.json({ error: "not_a_select_field" }, 400);
   }
+  // How many people gave each answer is the distribution of a sensitive question (D-E6): it is not told.
+  if (existing.sensitive) return c.json({ counts: {}, hidden: true });
 
   const counts = await countAttendeesByCustomFieldValue(db, eventId, existing.source_field, existing.applies_to === "companion" ? "companion" : "guest");
   return c.json({ counts: Object.fromEntries(counts) });
 }
 
-/** DELETE /api/admin/events/:eventId/custom-fields/:fieldId — blocked (409 field_in_use) while
+/** DELETE /api/admin/events/:eventId/custom-fields/:fieldId. The answers to a sensitive question are deleted with it
+ * (removeFieldAnswers); those to any other question stay, as stored. Blocked (409 field_in_use) while
  * any of the event's items still reference this field via config.content_fields, and (409
- * field_controls_others) while another field is shown only for an answer to this one. Does not check
- * existing Attendee.custom_data, consistent with how deleting/reshaping an item today never
- * scrubs attendee data. */
+ * field_controls_others) while another field is shown only for an answer to this one. For any other question
+ * it does not check or change existing Attendee.custom_data, consistent with how deleting/reshaping an item
+ * today never scrubs attendee data. */
 export async function handleDeleteEventCustomField(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -829,11 +861,20 @@ export async function handleDeleteEventCustomField(c: Context, db: PrismaClient)
 
   try {
     await db.$transaction(async (tx) => {
+      // The answers to a sensitive question go with it (D-E6), which writes attendee rows: the jobs of the event come
+      // first, in the one order of docs/dev/attendee-erasure.md ("Taking locks"). The open exports and imports are stopped
+      // as an erasure stops them (the job is no longer running, so an import that loaded the fields before this and has not
+      // taken its job row yet writes nothing, and cannot bring the deleted answers back).
+      if (existing.sensitive) await stopOpenAttendeeJobs(tx, eventId, STOPPED_BY_FIELD_DELETION);
       // The lock serializes against event-items-api-routes.ts's content_fields validation, which
       // takes the same lock before its own registry check + commit - without it, an item save
       // could commit a new content_fields reference between this scan and the delete below
       // (Postgres default isolation is READ COMMITTED, not Serializable).
       await acquireEventCustomFieldsLock(tx, eventId);
+      const current = await loadCustomFieldInEvent(tx, eventId, fieldId);
+      if (!current) throw new FieldGoneError();
+      // Made sensitive after the first read, so the jobs were not locked: the caller tries again.
+      if (current.sensitive && !existing.sensitive) throw new FieldSetChangedError();
 
       if (await itemsShowField(tx, eventId, existing.source_field)) {
         throw new FieldInUseError();
@@ -844,11 +885,13 @@ export async function handleDeleteEventCustomField(c: Context, db: PrismaClient)
       }
 
       await tx.eventCustomField.delete({ where: { id: fieldId } });
+      const removed = current.sensitive ? await removeFieldAnswers(tx, { eventId, sourceField: current.source_field }) : null;
       await writeBulkActionLog(tx, {
         event_id: eventId,
         action_type: "event_custom_field_deleted",
         audit: adminAuditFromContext(c),
-        metadata: { source_field: existing.source_field },
+        // Counts of the rows whose answers were removed, never an answer.
+        metadata: { source_field: existing.source_field, ...(removed ? { answers_removed: removed } : {}) },
       });
     });
     return c.json({ ok: true });
@@ -856,6 +899,8 @@ export async function handleDeleteEventCustomField(c: Context, db: PrismaClient)
     if (err instanceof FieldInUseError) {
       return c.json({ error: "field_in_use" }, 409);
     }
+    if (err instanceof FieldSetChangedError) return c.json({ error: "stale_write" }, 409);
+    if (err instanceof FieldGoneError) return c.json({ error: "forbidden" }, 403);
     if (err instanceof ShowWhenError) return showWhenProblemResponse(c, err.problem);
     throw err;
   }
