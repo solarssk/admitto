@@ -59,6 +59,8 @@ the explanation across lines *after* the directive) silences nothing, since "nex
 points at another comment instead of the real target. Grep for `eslint-disable-next-line` mid a
 multi-line comment block if a lint warning appears on a line that already has one right above it.
 
+**`npm run lint` runs ESLint with an 8 GB heap on purpose** (`node --max-old-space-size=8192` in the root `package.json`). The type-aware rules load every package into one process and need a little over 4 GB, which is Node's default ceiling on a CI runner: a bump of `typescript-eslint` was enough to end the CI lint step with `FATAL ERROR: ... JavaScript heap out of memory` (exit code 134), with no lint message at all. If that happens again, raise the number (a public-repo runner has 16 GB) instead of splitting the lint or disabling rules.
+
 **SonarCloud's `NOSONAR` marker must be the first thing in its own comment on the flagged line**,
 e.g. `code // NOSONAR - reason` or `// NOSONAR - reason` as a whole standalone comment. Appending
 ` // NOSONAR - reason` after an *already-open* `//` comment (e.g. after an existing `// TODO: …`)

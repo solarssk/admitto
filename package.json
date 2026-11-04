@@ -14,7 +14,7 @@
     "coverage": "npm run coverage --workspaces --if-present",
     "build": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/location && npm run build -w @admitto/db && npm run build -w @admitto/wallet && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/notifications && npm run build -w @admitto/auth && npm run build -w @admitto/storage && npm run build -w @admitto/import && npm run build -w @admitto/ui && npm run build -w @admitto/admin && npm run build -w @admitto/web && npm run build -w @admitto/cli",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "eslint --max-warnings 0 'packages/*/src/**/*.{ts,tsx}' 'apps/*/src/**/*.{ts,tsx}'",
+    "lint": "node --max-old-space-size=8192 node_modules/eslint/bin/eslint.js --max-warnings 0 'packages/*/src/**/*.{ts,tsx}' 'apps/*/src/**/*.{ts,tsx}'",
     "test:scripts": "node --test scripts/*.test.mjs",
     "db:migrate": "npm run db:migrate -w @admitto/db",
     "db:migrate:status": "npm run db:migrate:status -w @admitto/db",
@@ -56,7 +56,7 @@
     }
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.72.0",
+    "@typescript-eslint/eslint-plugin": "^8.72.1",
     "@typescript-eslint/parser": "^8.69.0",
     "@vitest/coverage-v8": "5.0.5",
     "eslint": "10.11.0",
