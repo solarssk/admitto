@@ -4256,7 +4256,12 @@ html:not(.icons-ready) .ti {
      uploads) should never look different from one with more. */
   max-height: 440px;
   overflow-y: auto;
-  animation: font-styles-popover-in 140ms ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .font-styles-popover {
+    animation: font-styles-popover-in 140ms ease;
+  }
 }
 
 .font-styles-popover__item {

@@ -438,14 +438,10 @@
   overflow: hidden;
 }
 
-.communication-code-editor .cm-tooltip-autocomplete > ul {
-  /* !important on both: CodeMirror's own base theme sets min-width: 250px / max-width: min(700px,
-     95vw) on this exact selector shape, injected into <head> at runtime (after this stylesheet
-     already loaded) - equal specificity, later source order wins by default, so a plain override
-     here was silently losing outright (confirmed empirically: computed max-width was still
-     min(700px,95vw)'s value, not this rule's). Same specificity/!important fight documented
-     elsewhere in this app (see staff.css) for the same "later-injected library CSS" reason. */
-  min-width: 280px !important;
+.communication-code-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul {
+  /* The editor class makes this more specific than CodeMirror's runtime base theme,
+     so these bounds also win when the library injects its stylesheet after ours. */
+  min-width: 280px;
   /* calc(100vw - 40px), not a plain vw percentage: CodeMirror positions this tooltip flush
      against the viewport edge with no safety margin of its own (confirmed empirically at 375px
      width - the popup's right edge landed at exactly 375px, touching the screen edge with zero
@@ -457,7 +453,7 @@
      instead (confirmed empirically - fixing the 2px gap alone visibly restored a margin on both
      sides). A fixed pixel gap holds regardless of where the cursor happens to sit, which a
      percentage-of-viewport width doesn't guarantee. */
-  max-width: min(440px, calc(100vw - 40px)) !important;
+  max-width: min(440px, calc(100vw - 40px));
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
