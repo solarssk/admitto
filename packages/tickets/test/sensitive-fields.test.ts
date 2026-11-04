@@ -9,7 +9,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@admitto/db";
 import { writeAttendeeCompanion } from "../src/attendee-companion.js";
-import { buildExportColumns, buildSanitizedExportRows, type ExportAttendeeSqlRow } from "../src/attendees-export.js";
+import { buildExportColumns, buildSanitizedExportRows, exportAttendeesCsv, type ExportAttendeeSqlRow } from "../src/attendees-export.js";
+import { buildAttendeesExportArtifact } from "../src/attendees-export-artifact.js";
 import { eraseAttendees } from "../src/erase-attendees.js";
 import { loadEventCustomDataFields, loadRegistrantFormFields } from "../src/event-custom-fields.js";
 import {
@@ -163,6 +164,29 @@ describe("the registry loaders", () => {
     const eventId = await make.event();
     const created = await field(eventId, { source_field: "shirt" });
     expect(created.sensitive).toBe(false);
+  });
+});
+
+describe("the files an export makes (the command line and the worker)", () => {
+  it("leave out the column and the answer of a sensitive field, beside a plain one that stays", async () => {
+    const eventId = await make.event();
+    await field(eventId, { source_field: "diet", sensitive: true });
+    await field(eventId, { source_field: "shirt" });
+    const guest = await make.attendee(eventId, { name: "Export Guest" });
+    await db.attendee.update({ where: { id: guest.id }, data: { custom_data: { diet: "Zzyzx-command-line", shirt: "shirt-visible" } } });
+
+    const csv = (await exportAttendeesCsv(db, eventId, { status: "all" })).csv;
+    expect(csv.split("\r\n")[0]).toContain("shirt");
+    expect(csv.split("\r\n")[0]).not.toContain("diet");
+    expect(csv).toContain("shirt-visible");
+    expect(csv).not.toContain("Zzyzx-command-line");
+
+    const rows = await db.$queryRaw<ExportAttendeeSqlRow[]>`SELECT id, name, email, company, department, custom_data, ticket_type, admitted_at FROM "Attendee" WHERE event_id = ${eventId}`;
+    const artifact = await buildAttendeesExportArtifact(db, eventId, rows, "csv", { title: "Event", date: new Date(), timezone: "UTC" });
+    const text = Buffer.from(artifact.bytes).toString("utf8");
+    expect(text).toContain("shirt-visible");
+    expect(text).not.toContain("Zzyzx-command-line");
+    expect(text.split("\r\n")[0]).not.toContain("diet");
   });
 });
 

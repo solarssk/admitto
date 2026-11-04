@@ -46,6 +46,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Let a guest bring one companion on the registration form, with a seat of their own counted against the event's capacity ([#1824](https://github.com/solarssk/admitto/pull/1824))
 - Let an Administrator correct or remove a guest's companion on the attendee's page, and mark a question as about the guest or the companion ([#1827](https://github.com/solarssk/admitto/pull/1827))
 - Add a switch on the Access tab for styled boxes on the guest form: a phone number gets a list of countries beside it ([#1829](https://github.com/solarssk/admitto/pull/1829))
+- Add a Sensitive setting for attendee fields in the admin API: the answers stay out of lists, filters, exports, reports and the attendee page, and an empty box in an edit keeps them (#TBD)
 
 ### Changed
 

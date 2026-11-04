@@ -87,6 +87,25 @@ describe("AttendeesPage and the questions about a companion", () => {
   });
 });
 
+describe("AttendeesPage and the sensitive questions", () => {
+  it("offers no filter for a sensitive question, and still one for the plain question beside it", async () => {
+    fetchEventCustomFields.mockResolvedValue([
+      { ...textField("health", "Health notes"), sensitive: true },
+      { ...selectField("allergy", "Allergy", ["none", "nuts"]), sensitive: true },
+      textField("shirt_notes", "Shirt notes"),
+    ]);
+    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+
+    renderPage();
+    await waitFor(() => expect(fetchEventCustomFields).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("button", { name: "Filters" }));
+
+    expect(screen.getByLabelText("Shirt notes")).toBeTruthy();
+    expect(screen.queryByLabelText("Health notes")).toBeNull();
+    expect(screen.queryByText("Allergy")).toBeNull();
+  });
+});
+
 describe("AttendeesPage custom-field text filter debounce", () => {
   it("debounces two text custom fields independently - typing in one does not reset the other's timer", async () => {
     fetchEventCustomFields.mockResolvedValue([
