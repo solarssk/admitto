@@ -49,6 +49,26 @@ export interface EventCustomFieldModalProps {
 const HIDDEN_ANSWERS_MESSAGE =
   "Answers to this question are hidden, so Admitto cannot tell whether anyone chose this option. Removing or renaming it can leave answers that no longer match any option. Continue?";
 
+/** A hidden count (a sensitive question): any option that exists may have answers on it, and one added in this edit (no original text) has none. */
+function mayHaveHiddenAnswers(row: OptionRow): boolean {
+  return row.originalText !== "";
+}
+
+/** An option that some attendees hold, by the counts that were read. */
+function holdsAttendees(counts: Record<string, number>): (row: OptionRow) => boolean {
+  return (row) => (counts[row.originalText] ?? 0) > 0;
+}
+
+/** The rows that exist and are renamed, or blanked (which the save treats as a removal), away from an option that `inUse` says has answers. */
+function renamedOrBlanked(rows: readonly OptionRow[], inUse: (row: OptionRow) => boolean): OptionRow[] {
+  return rows.filter((row) => {
+    const trimmed = row.text.trim();
+    const blanked = trimmed === "" && row.originalText !== "";
+    const renamed = !blanked && trimmed !== row.originalText;
+    return (blanked || renamed) && inUse(row);
+  });
+}
+
 type FormState = {
   label: string;
   source_field: string;
@@ -157,16 +177,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
   // value with attendees currently on it. Save gates on these with ConfirmDialog instead of
   // sending the PATCH straight away. A row removed via OptionsEditor's own trash button is
   // already confirmed in place, so it isn't repeated here.
-  const riskyRenames = usageCounts
-    ? form.options.filter((r) => {
-        const trimmed = r.text.trim();
-        const blanked = trimmed === "" && r.originalText !== "";
-        const renamed = !blanked && trimmed !== r.originalText;
-        // Hidden counts: any option that exists and is renamed or blanked may have answers. A new row (no original text) has none.
-        const inUse = usage.hidden ? r.originalText !== "" : (usageCounts[r.originalText] ?? 0) > 0;
-        return (blanked || renamed) && inUse;
-      })
-    : [];
+  const riskyRenames = usageCounts ? renamedOrBlanked(form.options, usage.hidden ? mayHaveHiddenAnswers : holdsAttendees(usageCounts)) : [];
 
   function selectType(type: EventCustomFieldType) {
     setForm((f) => ({ ...f, type, options: type === "select" ? f.options : [] }));
@@ -323,7 +334,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
                     rows={form.options}
                     usageCounts={usageCounts}
                     usageHidden={usage.hidden}
-                    onConfirmRemove={setRemovalToConfirm}
+                    onConfirmRemove={usage.hidden ? setRemovalToConfirm : undefined}
                     usageLoading={usage.loading}
                     disabled={saving}
                     onChange={(rows) => setForm((f) => ({ ...f, options: rows }))}

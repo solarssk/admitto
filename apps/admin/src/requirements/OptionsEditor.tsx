@@ -52,7 +52,8 @@ export interface OptionsEditorProps {
   /** The counts are hidden (a sensitive question): each row says so, and `usageCounts` is not used. Removing a row that exists is not
    * done here but asked of `onConfirmRemove`, because it is not known whether anyone chose it. */
   usageHidden?: boolean;
-  /** Called, instead of removing, for the remove button of a row that exists when `usageHidden`; the caller confirms and then changes the rows. */
+  /** When given, the remove button of a row that exists calls it instead of removing (a caller whose counts are hidden confirms first and
+   * then changes the rows); a row that was added in this edit is always removed at once. */
   onConfirmRemove?: (row: OptionRow) => void;
   /** The most rows the list takes: "+ Add" is off when it has that many. */
   max?: number;
@@ -76,8 +77,7 @@ function UsageSkeleton({ held }: Readonly<{ held: boolean }>) {
 /** What a row says about how many attendees use its option. It is gated on the placeholder having had its minimum time
  * (`showContent`), not only on the counts being in: an answer that comes just after the 200ms would otherwise show its bar for a
  * few frames and flash. */
-function usageLabelFor(usage: number, usageKnown: boolean, gate: LoadingGate, hidden: boolean): ReactNode {
-  if (hidden) return "Hidden";
+function usageLabelFor(usage: number, usageKnown: boolean, gate: LoadingGate): ReactNode {
   if (!gate.showContent) return <UsageSkeleton held={!gate.showIndicator} />;
   if (!usageKnown) return "Unknown";
   if (usage > 0) return `${usage} ${usage === 1 ? "attendee" : "attendees"}`;
@@ -157,7 +157,7 @@ export function OptionsEditor({
   }
 
   function handleDeleteClick(row: OptionRow) {
-    if (usageHidden && onConfirmRemove && row.originalText !== "") onConfirmRemove(row);
+    if (onConfirmRemove && row.originalText !== "") onConfirmRemove(row);
     else if (usageOf(usageCounts, row.originalText) > 0) setConfirmingKey(row.key);
     else removeRow(row.key);
   }
@@ -385,7 +385,7 @@ export function OptionsEditor({
               />
               {showUsage ? (
                 <span className={`options-editor__usage${usage === 0 && !usageHidden ? " options-editor__usage--unused" : ""}`}>
-                  {usageLabelFor(usage, usageKnown, usageGate, usageHidden)}
+                  {usageHidden ? "Hidden" : usageLabelFor(usage, usageKnown, usageGate)}
                 </span>
               ) : null}
               <IconButton
