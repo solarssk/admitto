@@ -2029,6 +2029,25 @@ describe("whose answer a question asks for", () => {
     await prisma.eventItem.delete({ where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } } });
   });
 
+  it("refuses to make a question sensitive while an item shows it, with 409 field_in_use, and lets it once no item shows it (D-E6)", async () => {
+    const field = await makeField(EVENT_CF_ORDER, { source_field: "badge_name" });
+    await prisma.eventItem.upsert({
+      where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } },
+      create: { event_id: EVENT_CF_ORDER, key: "badge_item", label: "Badge", config: { content_fields: ["badge_name"] } },
+      update: { config: { content_fields: ["badge_name"] } },
+    });
+
+    expect(await refusal(await patchField(EVENT_CF_ORDER, field.id, { sensitive: true }))).toEqual([409, "field_in_use"]);
+    expect((await prisma.eventCustomField.findUniqueOrThrow({ where: { id: field.id } })).sensitive).toBe(false);
+    // Another change of the same question is not held up by the item.
+    expect((await patchField(EVENT_CF_ORDER, field.id, { label: "Badge name" })).status).toBe(200);
+
+    await prisma.eventItem.update({ where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } }, data: { config: { content_fields: [] } } });
+    expect((await patchField(EVENT_CF_ORDER, field.id, { sensitive: true })).status).toBe(200);
+    expect((await prisma.eventCustomField.findUniqueOrThrow({ where: { id: field.id } })).sensitive).toBe(true);
+    await prisma.eventItem.delete({ where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } } });
+  });
+
   it("does not look at the items when the recipient stays the same, or when a question moves back to the guest", async () => {
     const field = await makeField(EVENT_CF_ORDER, { source_field: "badge_name" });
     await prisma.eventItem.upsert({

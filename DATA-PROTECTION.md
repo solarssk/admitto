@@ -76,6 +76,9 @@ The value is left out of:
 - every export of attendees (CSV, XLSX, PDF, the command line, the worker) and the personal data export of a superadmin: the column is not in the file;
 - the Custom fields report, its file and the per-option counts of a select field, which would be the distribution of the answers;
 - the import preview (the file may carry the answer and the import stores it, but the preview repeats it nowhere);
+- the wallet pass: a field mapping that names a sensitive select or boolean question is refused (400 `sensitive_wallet_field`), and a pass leaves such a question out whatever mapping is stored, so a mapping saved before the question became sensitive does no harm;
+- the operator's check-in card and the content of an item: a sensitive question is not offered in the item's field picker, the server refuses it in `content_fields` (400 `sensitive_content_field`), the card leaves it out if an item still lists it, and a question that an item shows cannot be made sensitive (409 `field_in_use`) until the item stops showing it;
+- mail: a template has a closed list of placeholders and none of them is the answer to a custom question, so no mail carries one; a test fails for the change that would add such a placeholder;
 - logs and audit entries, which hold field keys and never a value, and the audit entry of the personal data export, which records only how many sensitive fields it left out.
 
 Deleting a sensitive question deletes its answers: in the same transaction the key is removed from `Attendee.custom_data`, `AttendeeCompanion.custom_data`, `Registration.custom_data` and the copy of each companion in `Registration.companions` of that event (`removeFieldAnswers`), and the event log records the question's key and how many rows changed, never a value. This keeps an answer from coming back under an unknown key, or under a question created again with the same key. The answers to a question that is not sensitive stay when it is deleted, as before. When a question becomes sensitive, or is created sensitive, the export files already built for the event can no longer be downloaded, as after an erasure, and an export that is running does not record its file; a new export leaves the column out.
@@ -84,7 +87,9 @@ Staff can still write a sensitive answer: the box is write-only. An empty box in
 
 Erasure and removal need no code of their own: the answers sit in `Attendee.custom_data`, `Registration.custom_data`, `AttendeeCompanion.custom_data` and the copy in `Registration.companions`, each of which the [erasure rules](docs/dev/attendee-erasure.md#rules-for-code) already clear or delete, and a test scans the database for a sensitive answer after an erasure.
 
-Not covered yet, and closed by the next pull requests of the same release: the wallet pass, the operator's check-in card and the event items, the mail templates, and the administrator's deliberate "Show" of a value with its audit entry. Until then, do not mark a field sensitive that is shown on a pass or an item.
+A pass that was already issued keeps what it held when it was built: Admitto leaves the answer out of every pass it builds from then on, but it does not take back a pass that the guest's phone and the wallet provider already hold. For a question that is marked sensitive after passes went out, reissue the passes if their content matters.
+
+Not covered yet, and closed by the next pull requests of the same release: the administrator's deliberate "Show" of a value with its audit entry.
 
 ## Data minimisation
 

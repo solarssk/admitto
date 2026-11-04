@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db/status";
 import { parseCustomData } from "./custom-data.js";
+import { redactSensitiveCustomData } from "./sensitive-custom-data.js";
 import { buildItemDetail, prefixCompanionNames } from "./event-item-contents.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
 import { lockAttendeeRow } from "./attendee-lock.js";
@@ -151,6 +152,9 @@ export async function getAttendeeCard(
 
   const customFields = await loadEventCustomDataFields(prisma, eventId);
   const customFieldsByKey = new Map(customFields.map((f) => [f.source_field, f]));
+  // The card shows no answer to a sensitive question (D-E6): `buildItemDetail` skips such a field, and the answers it reads are
+  // the ones without them, so neither alone is what keeps a value off the card.
+  const cardCustomData = redactSensitiveCustomData(attendee.custom_data, customFields);
 
   const states = await prisma.attendeeItemState.findMany({
     where: { attendee_id: attendeeId, event_item_id: { in: eventItems.map((i) => i.id) } },
@@ -199,7 +203,7 @@ export async function getAttendeeCard(
     items: eventItems.map((item) => {
       const state = stateByItem.get(item.id) ?? "pending";
       const config = item.config as EventItemConfig | null;
-      const contents = buildItemDetail(item.config, attendee.custom_data, customFieldsByKey);
+      const contents = buildItemDetail(item.config, cardCustomData, customFieldsByKey);
       return {
         key: item.key,
         label: item.label,

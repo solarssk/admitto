@@ -340,6 +340,33 @@ describe("EventItemDrawer", () => {
     });
   });
 
+  it("does not offer a sensitive field, and offers a plain one beside it", () => {
+    renderDrawer(giftbagItem, [shirtSizeField, { ...shirtSizeField, id: "field-health", source_field: "health", label: "Health note", sensitive: true }]);
+
+    expect(screen.getByRole("checkbox", { name: /Shirt size/ })).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: /Health note/ })).toBeNull();
+  });
+
+  it("drops a sensitive field an item still lists when the item is saved, so the server's refusal cannot trap it", async () => {
+    const itemWithBoth: EventItemDto = {
+      ...giftbagItem,
+      config: { requires_return: false, content_fields: ["shirt_size", "health"] },
+    };
+    vi.mocked(updateEventItem).mockResolvedValueOnce(itemWithBoth);
+    renderDrawer(itemWithBoth, [shirtSizeField, { ...shirtSizeField, id: "field-health", source_field: "health", label: "Health note", sensitive: true }]);
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Gift bag " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(updateEventItem).toHaveBeenCalledWith(
+        "evt-1",
+        "item-gift",
+        expect.objectContaining({ config: { requires_return: false, content_fields: ["shirt_size"] } }),
+      );
+    });
+  });
+
   it("does not flag a field as claimed by a sibling item with no config", () => {
     renderDrawer(giftbagItem, [shirtSizeField], [giftbagItem, badgeWithNullConfig]);
 

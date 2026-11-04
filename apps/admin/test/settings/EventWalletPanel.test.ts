@@ -44,6 +44,10 @@ describe("computeWalletCustomFieldPreview", () => {
     expect(computeWalletCustomFieldPreview("custom:t_shirt_size", [field])).toBe("e.g. …");
   });
 
+  it("shows WALLET_VALUE_NOT_SET for a mapping that points at a field that became sensitive", () => {
+    expect(computeWalletCustomFieldPreview("custom:allergy", [makeField({ source_field: "allergy", sensitive: true })])).toBe(WALLET_VALUE_NOT_SET);
+  });
+
   it("shows WALLET_VALUE_NOT_SET for a stale mapping (field deleted after being mapped)", () => {
     expect(computeWalletCustomFieldPreview("custom:removed_field", [makeField()])).toBe(WALLET_VALUE_NOT_SET);
   });

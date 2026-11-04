@@ -700,6 +700,11 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
       if (parsed.data.applies_to === "companion" && current.applies_to !== "companion" && (await itemsShowField(tx, eventId, current.source_field))) {
         throw new FieldInUseError();
       }
+      // The operator's card shows no answer to a sensitive question (D-E6), and a new item cannot be given one. The question that an
+      // item already shows is refused as well: the organiser takes it off the item first, as before deleting it.
+      if (parsed.data.sensitive === true && !current.sensitive && (await itemsShowField(tx, eventId, current.source_field))) {
+        throw new FieldInUseError();
+      }
       if (patchTouchesConditions(parsed.data)) {
         await assertConditionsHold(tx, eventId, patchedConditionField(current, parsed.data));
       }

@@ -91,6 +91,7 @@ async function seed(client: PrismaClient) {
       { event_id: EVENT_EI_A, source_field: "meal_choice", label: "Meal choice" },
       { event_id: EVENT_EI_A, source_field: "badge_color", label: "Badge color" },
       { event_id: EVENT_EI_A, source_field: "race_field", label: "Race field" },
+      { event_id: EVENT_EI_A, source_field: "health_note", label: "Health note", sensitive: true },
     ],
   });
 
@@ -293,6 +294,21 @@ describe("POST /api/admin/events/:eventId/items", () => {
     expect(body.field).toBe("no_such_field");
   });
 
+  it("rejects a content_fields reference to a sensitive question with 400 sensitive_content_field, and creates no item (D-E6)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        key: "new_item_sensitive_hint",
+        label: "New item sensitive hint",
+        config: { content_fields: ["meal_choice", "health_note"] },
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "sensitive_content_field", field: "health_note" });
+    expect(await prisma.eventItem.count({ where: { event_id: EVENT_EI_A, key: "new_item_sensitive_hint" } })).toBe(0);
+  });
+
   it("rejects a content_fields reference already assigned to a different item", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
       method: "POST",
@@ -460,6 +476,19 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
     const body = (await res.json()) as { error: string; field: string };
     expect(body.error).toBe("unknown_content_field");
     expect(body.field).toBe("no_such_field");
+  });
+
+  it("rejects a content_fields reference to a sensitive question with 400 sensitive_content_field, and leaves the item as it was (D-E6)", async () => {
+    const before = await prisma.eventItem.findUniqueOrThrow({ where: { id: ITEM_SOCKS }, select: { config: true } });
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ config: { content_fields: ["health_note"] } }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "sensitive_content_field", field: "health_note" });
+    const after = await prisma.eventItem.findUniqueOrThrow({ where: { id: ITEM_SOCKS }, select: { config: true } });
+    expect(after.config).toEqual(before.config);
   });
 
   it("rejects a content_fields reference already assigned to a different item", async () => {

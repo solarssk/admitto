@@ -115,6 +115,7 @@ export {
 export { parseCustomData, customDataValue } from "./custom-data.js";
 export {
   resolveWalletCustomFieldPlaceholders,
+  sensitiveWalletMappingFields,
   WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX,
 } from "./wallet-custom-fields.js";
 export { buildItemDetail } from "./event-item-contents.js";
@@ -134,6 +135,7 @@ export {
   loadRegistrantFormFields,
   validateContentFieldReferences,
   UnknownContentFieldError,
+  SensitiveContentFieldError,
   findConflictingContentField,
   assertContentFieldsNotAssignedElsewhere,
   ContentFieldAlreadyAssignedError,

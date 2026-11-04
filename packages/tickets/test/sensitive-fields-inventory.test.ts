@@ -60,15 +60,11 @@ const INVENTORY: Record<string, Decision> = {
   "apps/web/src/admin/attendees-api-routes.ts": { decision: "redacted", via: "redactSensitiveCustomData(" },
   "apps/web/src/admin/checkin-api-routes.ts": { decision: "n/a", why: "Reads only the company and department keys for the history of scans." },
   "apps/web/src/admin/event-custom-fields-routes.ts": { decision: "redacted", via: "existing.sensitive" },
-  "apps/web/src/admin/event-settings-routes.ts": {
-    decision: "redacted",
-    via: "redactSensitiveCustomData(",
-    pending: { pr: "117d", what: "the wallet field mapping refuses a sensitive field" },
-  },
+  "apps/web/src/admin/event-settings-routes.ts": { decision: "redacted", via: "redactSensitiveCustomData(" },
   "apps/web/src/admin/import-api-routes.ts": { decision: "redacted", via: "field.sensitive" },
   "apps/web/src/admin/registrations-api-routes.ts": { decision: "redacted", via: "redactSensitiveCustomData(" },
   "apps/web/src/admin/reports-routes.ts": { decision: "redacted", via: "sensitive: false" },
-  "apps/web/src/app.ts": { decision: "later", pending: { pr: "117d", what: "the wallet pass built for an attendee leaves a sensitive field out" } },
+  "apps/web/src/app.ts": { decision: "redacted", via: "resolveWalletCustomFieldPlaceholders(" },
   "apps/web/src/registration/form-contract.ts": { decision: "n/a", why: GUEST_FORM },
   "apps/web/src/registration/form-fields.ts": { decision: "n/a", why: GUEST_FORM },
   "apps/web/src/registration/form-model.ts": { decision: "n/a", why: GUEST_FORM },
@@ -84,7 +80,7 @@ const INVENTORY: Record<string, Decision> = {
   "packages/import/src/importer.ts": { decision: "n/a", why: STORES_ONLY },
   "packages/import/src/parser.ts": { decision: "n/a", why: "Reads the cells of a file; its invalid-row reasons carry no cell." },
   "packages/import/src/types.ts": { decision: "n/a", why: "Types; ImportAttributeField carries the sensitive flag to the preview." },
-  "packages/tickets/src/attendee-card.ts": { decision: "later", pending: { pr: "117d", what: "the operator card (content_fields) leaves a sensitive field out" } },
+  "packages/tickets/src/attendee-card.ts": { decision: "redacted", via: "redactSensitiveCustomData(" },
   "packages/tickets/src/attendee-companion.ts": { decision: "redacted", via: "answersLeftAsStored" },
   "packages/tickets/src/attendees-export.ts": { decision: "redacted", via: "withoutSensitiveFields(" },
   "packages/tickets/src/attendees-list-filters.ts": {
@@ -96,7 +92,7 @@ const INVENTORY: Record<string, Decision> = {
   "packages/tickets/src/custom-data.ts": { decision: "n/a", why: "Reads one key of a value it is given." },
   "packages/tickets/src/erase-attendees.ts": { decision: "n/a", why: "The erasure: it clears the answers of the attendee, the companion and the registration." },
   "packages/tickets/src/event-custom-fields.ts": { decision: "redacted", via: "row.sensitive" },
-  "packages/tickets/src/event-item-contents.ts": { decision: "later", pending: { pr: "117d", what: "buildItemDetail leaves a sensitive field out of the card" } },
+  "packages/tickets/src/event-item-contents.ts": { decision: "redacted", via: "field.sensitive" },
   "packages/tickets/src/field-answers-removal.ts": {
     decision: "n/a",
     why: "Deletes the answers to one question from every row when a sensitive question is deleted; it returns counts, never a value.",
@@ -107,12 +103,15 @@ const INVENTORY: Record<string, Decision> = {
   "packages/tickets/src/registration-list.ts": { decision: "n/a", why: "The list leaves the answers out and the search never reads them." },
   "packages/tickets/src/registration-lock.ts": { decision: "n/a", why: "Reads the locked row for the writers of a decision; nothing it reads is returned to a reader." },
   "packages/tickets/src/registration-placement.ts": { decision: "n/a", why: STORES_ONLY },
-  "packages/tickets/src/reissue-wallet-pass.ts": { decision: "later", pending: { pr: "117d", what: "the pass built again leaves a sensitive field out" } },
-  "packages/tickets/src/resolve.ts": { decision: "later", pending: { pr: "117d", what: "the resolved ticket carries the answers to the wallet builder, which leaves sensitive fields out" } },
+  "packages/tickets/src/reissue-wallet-pass.ts": { decision: "redacted", via: "resolveWalletCustomFieldPlaceholders(" },
+  "packages/tickets/src/resolve.ts": {
+    decision: "n/a",
+    why: "Carries the stored answers on the resolved ticket; the only reader is the wallet pass builder (resolveWalletCustomFieldPlaceholders), which leaves sensitive fields out (a test lists the readers).",
+  },
   "packages/tickets/src/sensitive-custom-data.ts": { decision: "redacted", via: "export function redactSensitiveCustomData" },
   "packages/tickets/src/types.ts": { decision: "n/a", why: "Types of the package; no code that reads an answer." },
   "packages/tickets/src/validate-custom-data.ts": { decision: "n/a", why: "Its errors carry the key of a field and never a value." },
-  "packages/tickets/src/wallet-custom-fields.ts": { decision: "later", pending: { pr: "117d", what: "the pass placeholders skip a sensitive field" } },
+  "packages/tickets/src/wallet-custom-fields.ts": { decision: "redacted", via: "field.sensitive" },
 };
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -171,7 +170,7 @@ describe("sensitive attendee fields inventory", () => {
       .filter(([, entry]) => entry.pending !== undefined)
       .map(([file, entry]) => `${entry.pending!.pr} ${file}`)
       .sort();
-    // 117d (wallet, operator card, items, mail) and 117c (the admin screens) remove their lines from this list.
+    // 117c (the admin screens) removes its lines from this list; 117b adds the deliberate "Show".
     expect(open).toEqual([
       "117c apps/admin/src/attendees/AddAttendeeModal.tsx",
       "117c apps/admin/src/attendees/CompanionCard.tsx",
@@ -181,13 +180,6 @@ describe("sensitive attendee fields inventory", () => {
       "117c apps/admin/src/attendees/customData.ts",
       "117c apps/admin/src/pages/AttendeeDetailPage.tsx",
       "117c apps/admin/src/registration/RequestDetailDialog.tsx",
-      "117d apps/web/src/admin/event-settings-routes.ts",
-      "117d apps/web/src/app.ts",
-      "117d packages/tickets/src/attendee-card.ts",
-      "117d packages/tickets/src/event-item-contents.ts",
-      "117d packages/tickets/src/reissue-wallet-pass.ts",
-      "117d packages/tickets/src/resolve.ts",
-      "117d packages/tickets/src/wallet-custom-fields.ts",
     ]);
   });
 });

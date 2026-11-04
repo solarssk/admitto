@@ -48,6 +48,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a switch on the Access tab for styled boxes on the guest form: a phone number gets a list of countries beside it ([#1829](https://github.com/solarssk/admitto/pull/1829))
 - Add a Sensitive setting for attendee fields in the admin API: the answers stay out of lists, filters, exports, reports and the attendee page, and an empty box in an edit keeps them ([#1843](https://github.com/solarssk/admitto/pull/1843))
 - Add a calendar for dates and a list of times for times to the styled boxes of the guest form ([#1841](https://github.com/solarssk/admitto/pull/1841))
+- Keep a sensitive attendee field off wallet passes, the check-in card and event items, and refuse it in a wallet field mapping and in an item's fields
 
 ### Changed
 
