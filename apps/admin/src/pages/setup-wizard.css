@@ -331,9 +331,11 @@
   margin-bottom: 1rem;
 }
 
-.setup-wizard__check-retry {
-  border-color: var(--status-error) !important;
-  color: var(--status-error) !important;
+/* Keep the error action's colour above the shared secondary button, including hover. */
+.at-btn.setup-wizard__check-retry,
+.at-btn.setup-wizard__check-retry:hover:not(:disabled, [aria-disabled="true"]) {
+  border-color: var(--status-error);
+  color: var(--status-error);
 }
 
 /* The placeholder of a step while its first read runs (WizardStepLoad.tsx): the shapes of what will be there. */

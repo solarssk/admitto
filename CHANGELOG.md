@@ -8,6 +8,10 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ## [Unreleased]
 
+### Fixed
+
+- Respect reduced-motion preferences when opening font styles, and preserve autocomplete sizing and setup retry colours without forced CSS overrides ([#1846](https://github.com/solarssk/admitto/pull/1846)).
+
 ### Security
 
 - Bump `zod` to 4.6.6 (high: memory exhaustion on oversized collections, GHSA-mrhx-c7xc-m3w5), and `hono` and `ip-address` past moderate advisories ([#1797](https://github.com/solarssk/admitto/pull/1797))
