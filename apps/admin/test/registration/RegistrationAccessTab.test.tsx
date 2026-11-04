@@ -185,6 +185,10 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(styled.disabled).toBe(false);
     const row = styled.closest(".settings-row") as HTMLElement;
     expect(within(row).getByText("Styled form boxes").tagName).toBe("STRONG");
+    // It says what each kind of box becomes, and only what the form does: a date, a time and a phone number.
+    expect(row.textContent).toContain("a calendar for a date, a list of times for a time, and a list of countries beside a phone number");
+    expect(row.textContent).toContain("A phone question that allows only digits, or a set length, keeps the browser's box.");
+    expect(row.textContent).not.toContain("stay the browser's");
     expect(row.textContent).toContain("Turned off, guests get their browser's boxes.");
     expect(screen.queryByText("Unsaved changes")).toBeNull();
   });
