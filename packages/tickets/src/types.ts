@@ -69,6 +69,9 @@ export type EventItemContent = {
   /** The rules of the field (`EventCustomField.rules`); absent = none: format rules for a `text`, `long_text` or
    * `phone` field, and the icon, condition (`show_when`) and suggestions of the registration form. */
   rules?: EventCustomFieldRules;
+  /** Present (true) only for a sensitive question (`EventCustomField.sensitive`, D-E6): its answers are never shown in a
+   * list, export, report, pass, mail or log. Read through `sensitive-custom-data.ts`, nowhere else. */
+  sensitive?: boolean;
 };
 
 /** Per-item JSON config: operator hints and issuance behaviour flags (ADR 0025).

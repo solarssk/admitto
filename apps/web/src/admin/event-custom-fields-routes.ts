@@ -123,6 +123,8 @@ const createFieldSchema = z
     show_on_form: z.boolean().optional(),
     // Left out = the guest's own question, as every field that existed before the companion.
     applies_to: appliesToSchema.optional(),
+    // Left out = not sensitive. A sensitive question keeps its answers out of lists, filters, exports, reports and logs (D-E6).
+    sensitive: z.boolean().optional(),
     options: z.array(optionValueField).max(20).optional(),
     // The rules of the field (see eventCustomFieldRulesSchema): a shape that is not one is a 400, rules the
     // type does not take are a 422 (eventCustomFieldRulesFitType), and a condition between fields that cannot
@@ -152,6 +154,8 @@ const patchFieldSchema = z
     // Changing whose answer a question asks for is judged like any other change to the conditions between fields: a question
     // that others wait for cannot move to the other recipient, and nor can one that waits for a question of the first.
     applies_to: appliesToSchema.optional(),
+    // Left out = unchanged.
+    sensitive: z.boolean().optional(),
     // null (not just omitted) is how the client asks to clear a previous select's options when
     // switching to text/boolean - omitting the key means "leave options untouched" for PATCH.
     options: z.union([z.array(optionValueField).max(20), z.null()]).optional(),
@@ -185,6 +189,8 @@ export type EventCustomFieldDto = {
   show_on_form: boolean;
   /** Whose answer the question asks for: the guest's own, or the guest's companion's. */
   applies_to: CustomFieldAppliesTo;
+  /** True for a sensitive question: its answers never appear in a list, filter, export, report, pass, mail or log (D-E6). */
+  sensitive: boolean;
   display_order: number | null;
   options: string[] | null;
   /** Format rules (text, long text and phone fields), and the icon, condition and suggestions of the
@@ -214,6 +220,7 @@ type CustomFieldRow = {
   rules: Prisma.JsonValue;
   /** Whose answer the question asks for (`guest` or `companion`). */
   applies_to: string;
+  sensitive: boolean;
   created_at: Date;
 };
 
@@ -235,6 +242,7 @@ function serializeCustomField(row: CustomFieldRow): EventCustomFieldDto {
     required: row.required,
     show_on_form: row.show_on_form,
     applies_to: recipientOf(row.applies_to),
+    sensitive: row.sensitive,
     display_order: row.display_order,
     options: options && options.length > 0 ? options : null,
     rules: readStoredFieldRules(row.rules) ?? null,
@@ -377,6 +385,7 @@ function newFieldData(
     required: input.required ?? false,
     show_on_form: input.show_on_form ?? false,
     applies_to: input.applies_to ?? "guest",
+    sensitive: input.sensitive ?? false,
     options: input.options ?? Prisma.JsonNull,
     rules: rulesColumn(input.rules),
   };
@@ -448,7 +457,7 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
         event_id: eventId,
         action_type: "event_custom_field_created",
         audit: adminAuditFromContext(c),
-        metadata: { source_field: row.source_field },
+        metadata: { source_field: row.source_field, ...(row.sensitive ? { sensitive: true } : {}) },
       });
       return row;
     });
@@ -561,6 +570,7 @@ function fieldPatchData(patch: z.infer<typeof patchFieldSchema>): Prisma.EventCu
   if (patch.required !== undefined) data.required = patch.required;
   if (patch.show_on_form !== undefined) data.show_on_form = patch.show_on_form;
   if (patch.applies_to !== undefined) data.applies_to = patch.applies_to;
+  if (patch.sensitive !== undefined) data.sensitive = patch.sensitive;
   if (patch.options !== undefined) data.options = patch.options ?? Prisma.JsonNull;
   if (patch.rules !== undefined) data.rules = rulesColumn(patch.rules);
   return data;
@@ -682,7 +692,8 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
         event_id: eventId,
         action_type: "event_custom_field_updated",
         audit: adminAuditFromContext(c),
-        metadata: { source_field: row.source_field },
+        // Whether a question is sensitive decides who can read its answers, so a change of it is on the record.
+        metadata: { source_field: row.source_field, ...(parsed.data.sensitive === undefined ? {} : { sensitive: row.sensitive }) },
       });
       return row;
     });
@@ -804,6 +815,8 @@ export async function handleGetEventCustomFieldOptionUsage(c: Context, db: Prism
   if (existing.type !== "select") {
     return c.json({ error: "not_a_select_field" }, 400);
   }
+  // How many people gave each answer is the distribution of a sensitive question (D-E6): it is not told.
+  if (existing.sensitive) return c.json({ counts: {}, hidden: true });
 
   const counts = await countAttendeesByCustomFieldValue(db, eventId, existing.source_field, existing.applies_to === "companion" ? "companion" : "guest");
   return c.json({ counts: Object.fromEntries(counts) });

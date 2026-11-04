@@ -35,6 +35,7 @@ type CustomFieldRow = {
   show_on_form: boolean;
   description: string | null;
   applies_to: string;
+  sensitive: boolean;
 };
 
 /** The rows of an event's registry in the one order, of both audiences, or only those whose answers are about `appliesTo`. */
@@ -62,6 +63,7 @@ function toFieldContent(row: CustomFieldRow): EventItemContent {
   }
   const rules = readStoredFieldRules(row.rules);
   if (rules) field.rules = rules;
+  if (row.sensitive) field.sensitive = true;
   return field;
 }
 

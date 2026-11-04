@@ -41,6 +41,10 @@ import {
   assertCustomDataMeetsRequirements,
   customDataValue,
   parseCustomData,
+  loadSensitiveCustomFields,
+  redactSensitiveCustomData,
+  withoutBlankSensitiveEntries,
+  type SensitivityField,
   writeActionLog,
   writeActionLogMany,
   writeAdminAuditLog,
@@ -723,7 +727,8 @@ async function parseListQuery(
   const mail_status = parseCommaSeparatedEnum(c.req.query("mail_status"), ATTENDEE_MAIL_STATUS_FILTERS);
   // The attendee's own fields: a question about a companion is answered into the companion's row, which no filter reads.
   const customFieldDefs = await db.eventCustomField.findMany({
-    where: { event_id: eventId, applies_to: "guest" },
+    // Not a sensitive one: a filter on its answers would tell who gave which (D-E6).
+    where: { event_id: eventId, applies_to: "guest", sensitive: false },
     select: { source_field: true, type: true, options: true },
     orderBy: eventCustomFieldOrderBy(),
   });
@@ -1144,12 +1149,19 @@ function companionAnswers(raw: Prisma.JsonValue): Record<string, string> | null 
 /** The companion of an attendee, or null for one who has none or was erased: an erased attendee's page is read-only and
  * shows nothing of the person they brought, whose row stays only to keep the seat. The attendee's state is judged in the
  * same read, so a page built from a row that was read before an erasure still shows nothing of the person. */
-async function loadAttendeeCompanion(db: PrismaClient, attendeeId: string): Promise<AttendeeCompanionDto | null> {
+async function loadAttendeeCompanion(
+  db: PrismaClient,
+  attendeeId: string,
+  sensitive: readonly SensitivityField[],
+): Promise<AttendeeCompanionDto | null> {
   const row = await db.attendeeCompanion.findFirst({
     where: { attendee_id: attendeeId, attendee: { erased_at: null } },
     orderBy: { slot: "asc" },
   });
-  return row ? { slot: row.slot, name: row.name, custom_data: companionAnswers(row.custom_data) } : null;
+  // The answers to sensitive questions are not in the page (D-E6): the field is, the value is not.
+  return row
+    ? { slot: row.slot, name: row.name, custom_data: companionAnswers(redactSensitiveCustomData(row.custom_data, sensitive)) }
+    : null;
 }
 
 /** Build attendee detail DTO including delivery log and activity. */
@@ -1182,15 +1194,16 @@ export async function buildAttendeeDetailDto(
   activityPageSize: number = ATTENDEE_ACTIVITY_DEFAULT_PAGE_SIZE,
   activitySnapshot: ActivitySnapshot | null = null,
 ): Promise<AttendeeDetailDto> {
-  const [deliveriesResult, actionLog, event_items, notes, walletLinks, event, companion] = await Promise.all([
+  const [deliveriesResult, actionLog, event_items, notes, walletLinks, event, sensitive] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
     loadAttendeeActionLogEntries(db, row.id, activityPage, activityPageSize, activitySnapshot),
     loadAttendeeItemsSummary(db, eventId, row.id),
     loadAttendeeNotes(db, eventId, row.id, notesPage),
     resolveAttendeeWalletLinksForDto(db, row.id),
     db.event.findUnique({ where: { id: eventId }, select: { wallet_field_mapping: true } }),
-    loadAttendeeCompanion(db, row.id),
+    loadSensitiveCustomFields(db, eventId),
   ]);
+  const companion = await loadAttendeeCompanion(db, row.id, sensitive);
   const { company, department } = resolveCompanyDepartment(row);
 
   return {
@@ -1219,7 +1232,7 @@ export async function buildAttendeeDetailDto(
     wallet_apple_link: walletLinks.apple,
     wallet_google_link: walletLinks.google,
     wallet_field_mapping: parseWalletFieldMapping(event?.wallet_field_mapping),
-    custom_data: row.custom_data ?? null,
+    custom_data: redactSensitiveCustomData(row.custom_data ?? null, sensitive),
     companion,
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log: actionLog.items,
@@ -1799,10 +1812,12 @@ async function validateAndNormalizeProfilePatch(
 
   if (profilePatch.custom_data_fields) {
     try {
+      const allowedFields = await loadAllowedFieldsOnce();
+      // A sensitive answer is write-only (D-E6): the page never shows the stored one, so an emptied box is "unchanged", not "clear".
       profilePatch.custom_data_fields = validateCustomDataPatch(
-        await loadAllowedFieldsOnce(),
+        allowedFields,
         existing.custom_data,
-        profilePatch.custom_data_fields,
+        withoutBlankSensitiveEntries(allowedFields, profilePatch.custom_data_fields),
       );
     } catch (err) {
       return customDataErrorPayload(err);

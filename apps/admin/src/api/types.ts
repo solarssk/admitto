@@ -752,6 +752,9 @@ export interface EventCustomFieldDto {
   /** Whose answer the question asks for: the guest's own, or the person the guest brings. The server always sends it; absent
    * reads as the guest's, as it does there, and keeps the shape of existing fixtures. */
   applies_to?: EventCustomFieldRecipient;
+  /** True for a sensitive question (D-E6): its answers are not in any list, filter, export, report, pass, mail or log, and the
+   * attendee's page shows no stored answer. The server always sends it; absent reads as false. */
+  sensitive?: boolean;
   /** Position among the event's fields, from 0; null = not placed yet (listed last). The list
    * endpoint already returns the fields in order, so a screen has no need to sort by this. */
   display_order: number | null;
@@ -770,6 +773,8 @@ export interface EventCustomFieldsListResponse {
  * with a 0. */
 export interface EventCustomFieldOptionUsageResponse {
   counts: Record<string, number>;
+  /** True for a sensitive question: how many gave each answer is not told, and `counts` is empty. */
+  hidden?: boolean;
 }
 
 export interface CreateEventCustomFieldBody {
@@ -782,6 +787,8 @@ export interface CreateEventCustomFieldBody {
   show_on_form?: boolean;
   /** Left out = the guest's own question. */
   applies_to?: EventCustomFieldRecipient;
+  /** Left out = not sensitive. */
+  sensitive?: boolean;
   options?: string[];
   /** Only for a text, long text or phone field; left out or null = none. */
   rules?: EventCustomFieldRules | null;
@@ -806,6 +813,8 @@ export interface UpdateEventCustomFieldPatch {
   /** Left out = unchanged. A question that others wait for cannot move to the other recipient (409 `field_controls_others`),
    * nor can one that waits for a question of the first (422 `invalid_show_when`). */
   applies_to?: EventCustomFieldRecipient;
+  /** Left out = unchanged. */
+  sensitive?: boolean;
   /** null clears a previous select's options; omit to leave options untouched. */
   options?: string[] | null;
   /** null clears the rules (send it when the field becomes a type that takes none); omit to leave

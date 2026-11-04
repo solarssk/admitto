@@ -3,6 +3,7 @@ import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db/status";
 import { isAttendeeGone, lockAttendeeRow } from "./attendee-lock.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
 import { lockRegistrationQueue } from "./registration-lock.js";
+import { sensitiveSourceFields } from "./sensitive-custom-data.js";
 import {
   buildRegistrantCustomData,
   RegistrantInputError,
@@ -122,6 +123,25 @@ function answersToKeep(stored: Prisma.JsonValue | null, asked: ReadonlySet<strin
   return Object.fromEntries(kept);
 }
 
+function ownOf(value: unknown, key: string): unknown {
+  return value !== null && typeof value === "object" ? ownValue(value, key) : undefined;
+}
+
+/** The sensitive questions this edit leaves as they are stored: those with a stored answer and no new one in the input. */
+function sensitiveAnswersLeftAsStored(
+  questions: readonly RegistrantFormField[],
+  stored: Prisma.JsonValue,
+  input: unknown,
+): Set<string> {
+  const left = new Set<string>();
+  for (const key of sensitiveSourceFields(questions)) {
+    const hasStored = typeof ownOf(stored, key) === "string";
+    const incoming = ownOf(input, key);
+    if (hasStored && (incoming === undefined || incoming === null || incoming === "")) left.add(key);
+  }
+  return left;
+}
+
 /**
  * Corrects the name and the answers of an attendee's companion (staff, D-E5). The companion has to exist: this never
  * adds one, because a companion takes a seat, and a seat is taken under the capacity lock after a count, which only
@@ -153,10 +173,17 @@ export async function writeAttendeeCompanion(
   const name = registrantNameSchema.safeParse(params.name);
   if (!name.success) throw new RegistrantInputError();
   const questions = await loadCompanionQuestions(tx, eventId);
-  const answers = buildRegistrantCustomData(questions, params.customData, "companion");
   const stored = await tx.attendeeCompanion.findFirst({ where: { attendee_id: attendeeId, slot }, select: { custom_data: true } });
   if (!stored) return { outcome: "no_companion" };
-  const kept = answersToKeep(stored.custom_data, new Set(questions.map((question) => question.source_field)));
+  // A sensitive answer is write-only for staff (D-E6): the page never shows the stored one, so a box left empty means
+  // "unchanged". Such a question is not required of this edit, and its stored answer stays unless a new one comes with it.
+  const unchanged = sensitiveAnswersLeftAsStored(questions, stored.custom_data, params.customData);
+  const answers = buildRegistrantCustomData(
+    questions.map((question) => (unchanged.has(question.source_field) ? { ...question, required: false } : question)),
+    params.customData,
+    "companion",
+  );
+  const kept = answersToKeep(stored.custom_data, new Set(questions.map((question) => question.source_field).filter((key) => !unchanged.has(key))));
   const merged = { ...kept, ...answers };
   const updated = await tx.attendeeCompanion.updateMany({
     where: { attendee_id: attendeeId, slot },

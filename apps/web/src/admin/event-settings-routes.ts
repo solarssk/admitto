@@ -9,6 +9,8 @@ import {
   ADMITTABLE_STATUS_LIST,
   REVOCABLE_ITEM_STATES,
   keepLiveRows,
+  loadSensitiveCustomFields,
+  redactSensitiveCustomData,
   writeAdminAuditLog,
   parseWalletFieldMapping,
 } from "@admitto/tickets";
@@ -1474,6 +1476,8 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
   // The last check before the file is built: `erased_at: null` above is evaluated against the row
   // as it was before an erasure that is still open began, so such an attendee would be in the file.
   const attendees = await keepLiveRows(db, fetched);
+  // The file has no answer to a sensitive question either (D-E6): an export of everything held is still an export.
+  const sensitive = await loadSensitiveCustomFields(db, eventId);
 
   const columns = [
     "id",
@@ -1492,7 +1496,7 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
     const checkInStatus = row.admitted_at ? "admitted" : "not_admitted";
     const customData =
       row.custom_data != null && typeof row.custom_data === "object"
-        ? JSON.stringify(row.custom_data)
+        ? JSON.stringify(redactSensitiveCustomData(row.custom_data, sensitive))
         : "";
     return [
       row.id,
@@ -1521,7 +1525,7 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
     ip: audit.ip,
     timezone: audit.timezone,
     actionType: "event_pii_exported",
-    metadata: { eventId, rowCount: attendees.length, totalCount, truncated },
+    metadata: { eventId, rowCount: attendees.length, totalCount, truncated, sensitiveFieldCount: sensitive.length },
   });
 
   return new Response(bom + csvBody, {

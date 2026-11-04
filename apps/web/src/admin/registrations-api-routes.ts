@@ -27,10 +27,14 @@ import {
   MAX_REGISTRATION_BULK_IDS,
   canRetryRegistrationMail,
   isEmptyRegistrationFilter,
+  loadSensitiveCustomFields,
   parseRegistrationFilter,
+  redactSensitiveCustomData,
+  redactSensitiveCustomDataList,
   registrationListWhere,
   registrationSelectionDigest,
   type RegistrationListFilter,
+  type SensitivityField,
 } from "@admitto/tickets";
 import {
   assertEventManageAccess,
@@ -116,7 +120,7 @@ export type RegistrationDetailDto = {
   last_name: string;
   company: string | null;
   department: string | null;
-  /** The answers as they were stored. Fields marked sensitive are not treated differently yet (D-E6, stage 2). */
+  /** The answers as they were stored, without those to sensitive questions (D-E6): the field is there, the value is not. */
   custom_data: Record<string, unknown> | null;
   companions: RegistrationCompanionDto[];
   created_at: string;
@@ -280,6 +284,7 @@ function serializeDetail(
   decidedBy: RegistrationDetailDto["decided_by"],
   mails: MailRow[],
   nowMs: number,
+  sensitive: readonly SensitivityField[],
 ): RegistrationDetailDto {
   return {
     id: row.id,
@@ -289,8 +294,8 @@ function serializeDetail(
     last_name: row.last_name,
     company: row.company,
     department: row.department,
-    custom_data: plainObjectOrNull(row.custom_data),
-    companions: serializeCompanions(row.companions),
+    custom_data: plainObjectOrNull(redactSensitiveCustomData(row.custom_data, sensitive)),
+    companions: redactSensitiveCustomDataList(serializeCompanions(row.companions), sensitive),
     created_at: row.created_at.toISOString(),
     email_verified_at: isoOrNull(row.email_verified_at),
     confirm_expires_at: isoOrNull(row.confirm_expires_at),
@@ -445,13 +450,14 @@ export async function handleGetEventRegistration(c: Context, db: PrismaClient): 
   const row = await db.registration.findFirst({ where: { id, event_id: event.id }, select: DETAIL_SELECT });
   if (!row) return c.json({ error: "not_found" }, 404);
 
-  const [mails, decidedBy] = await Promise.all([
+  const [mails, decidedBy, sensitive] = await Promise.all([
     db.registrationMail.findMany({
       where: { registration_id: row.id, event_id: event.id },
       select: MAIL_SELECT,
       orderBy: [{ queued_at: "asc" }, { id: "asc" }],
     }),
     decidedByOf(db, row.decided_by),
+    loadSensitiveCustomFields(db, event.id),
   ]);
-  return c.json(serializeDetail(row, decidedBy, mails, Date.now()));
+  return c.json(serializeDetail(row, decidedBy, mails, Date.now(), sensitive));
 }

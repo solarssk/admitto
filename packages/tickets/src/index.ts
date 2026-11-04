@@ -115,6 +115,15 @@ export {
 } from "./wallet-custom-fields.js";
 export { buildItemDetail } from "./event-item-contents.js";
 export {
+  redactSensitiveCustomData,
+  redactSensitiveCustomDataList,
+  sensitiveSourceFields,
+  withoutSensitiveFields,
+  withoutBlankSensitiveEntries,
+  loadSensitiveCustomFields,
+  type SensitivityField,
+} from "./sensitive-custom-data.js";
+export {
   eventCustomFieldOrderBy,
   loadEventCustomDataFields,
   loadRegistrantFormFields,

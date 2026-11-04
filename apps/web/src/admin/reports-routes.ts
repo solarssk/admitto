@@ -1473,7 +1473,8 @@ async function loadCustomFieldReportsAggregates(
     db.eventCustomField.findMany({
       // The attendee's own fields: the answers charted here are Attendee.custom_data, which a question about a
       // companion never writes to.
-      where: { event_id: eventId, applies_to: "guest" },
+      // Not a sensitive one (D-E6): a distribution or even a response rate would say who gave which answer.
+      where: { event_id: eventId, applies_to: "guest", sensitive: false },
       // Same order as the field list and every other reader (eventCustomFieldOrderBy).
       orderBy: eventCustomFieldOrderBy(),
     }),
@@ -3036,7 +3037,8 @@ async function exportCustomFieldReportsCsv(
     loadEventTicketTypes(db, eventId),
     // The attendee's own fields, like the report above: their answers are the columns of this file.
     db.eventCustomField.findMany({
-      where: { event_id: eventId, applies_to: "guest" },
+      // Not a sensitive one (D-E6): no column of any export carries its answers.
+      where: { event_id: eventId, applies_to: "guest", sensitive: false },
       orderBy: eventCustomFieldOrderBy(),
     }),
   ]);
