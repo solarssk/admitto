@@ -64,9 +64,13 @@ function renamedOrBlanked(rows: readonly OptionRow[], inUse: (row: OptionRow) =>
   return rows.filter((row) => editOf(row) !== "same" && inUse(row));
 }
 
-/** Which options have answers on them: for a sensitive question the counts are hidden, so any option that exists may; else the counts say. */
-function optionInUse(hidden: boolean, counts: Record<string, number>): (row: OptionRow) => boolean {
-  return hidden ? mayHaveHiddenAnswers : holdsAttendees(counts);
+/**
+ * The rows that are renamed or blanked away from an option that may have answers on it. For a sensitive question the counts are hidden,
+ * so any option that exists may; otherwise the counts say; none while the counts are not read.
+ */
+function riskyRenamesOf(rows: readonly OptionRow[], usage: Pick<ReturnType<typeof useOptionUsage>, "counts" | "hidden">): OptionRow[] {
+  if (usage.counts === null) return [];
+  return renamedOrBlanked(rows, usage.hidden ? mayHaveHiddenAnswers : holdsAttendees(usage.counts));
 }
 
 type FormState = {
@@ -183,7 +187,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
   // value with attendees currently on it. Save gates on these with ConfirmDialog instead of
   // sending the PATCH straight away. A row removed via OptionsEditor's own trash button is
   // already confirmed in place, so it isn't repeated here.
-  const riskyRenames = usageCounts ? renamedOrBlanked(form.options, optionInUse(usage.hidden, usageCounts)) : [];
+  const riskyRenames = riskyRenamesOf(form.options, usage);
 
   function selectType(type: EventCustomFieldType) {
     setForm((f) => ({ ...f, type, options: type === "select" ? f.options : [] }));
