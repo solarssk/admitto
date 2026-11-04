@@ -24,7 +24,7 @@ const TOGGLES: ReadonlyArray<{ key: ToggleKey; title: string; text: string }> = 
   {
     key: "styled_form_controls",
     title: "Styled form boxes",
-    text: "A phone number gets the product's own box, with a list of countries beside it, instead of the one in the guest's browser. Date and time boxes stay the browser's. Turned off, guests get their browser's boxes.",
+    text: "Dates, times and phone numbers get the product's own boxes instead of the ones in the guest's browser: a calendar for a date, a list of times for a time, and a list of countries beside a phone number. A phone question that allows only digits, or a set length, keeps the browser's box. Turned off, guests get their browser's boxes.",
   },
 ];
 
