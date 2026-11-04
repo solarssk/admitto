@@ -11,7 +11,9 @@ import type { PrismaClient } from "@admitto/db";
 import { writeAttendeeCompanion } from "../src/attendee-companion.js";
 import { buildExportColumns, buildSanitizedExportRows, exportAttendeesCsv, type ExportAttendeeSqlRow } from "../src/attendees-export.js";
 import { buildAttendeesExportArtifact } from "../src/attendees-export-artifact.js";
+import { drainExportJobs, type ExportJobStorage } from "../src/drain-export-jobs.js";
 import { eraseAttendees } from "../src/erase-attendees.js";
+import { invalidateEventExports, isExportInvalidated } from "../src/export-job-privacy.js";
 import { removeFieldAnswers } from "../src/field-answers-removal.js";
 import { loadEventCustomDataFields, loadRegistrantFormFields } from "../src/event-custom-fields.js";
 import {
@@ -408,5 +410,87 @@ describe("removing the answers to a question", () => {
     await remove(eventId);
 
     expect(await remove(eventId)).toEqual({ attendees: 0, companions: 0, registrations: 0 });
+  });
+});
+
+describe("an export that is running when its files stop being allowed", () => {
+  /** A storage that remembers what it holds, and runs `whileStoring` once the file is stored: the moment between the file and the write of its result. */
+  function storageWith(whileStoring: () => Promise<void>) {
+    const files = new Map<string, Buffer>();
+    const storage: ExportJobStorage = {
+      put: async (bytes) => {
+        const key = `exports/${randomUUID()}.csv`;
+        files.set(key, bytes);
+        await whileStoring();
+        return { key };
+      },
+      delete: async (key) => {
+        files.delete(key);
+      },
+    };
+    return { files, storage };
+  }
+
+  async function exportJob(eventId: string) {
+    const event = await db.event.findUniqueOrThrow({ where: { id: eventId }, select: { organization_id: true } });
+    return db.adminJob.create({
+      data: {
+        type: "export",
+        status: "pending",
+        organization_id: event.organization_id,
+        event_id: eventId,
+        result_json: { request: { kind: "attendees_filtered", format: "csv", filters: { status: "all" } } },
+      },
+    });
+  }
+  const reload = (id: string) => db.adminJob.findUniqueOrThrow({ where: { id } });
+
+  it("records its file when nothing happened meanwhile", async () => {
+    const eventId = await make.event();
+    await make.attendee(eventId);
+    const job = await exportJob(eventId);
+    const { files, storage } = storageWith(async () => {});
+
+    await drainExportJobs(db, storage, { limit: 1 });
+
+    const done = await reload(job.id);
+    expect(done.status).toBe("succeeded");
+    expect(done.storage_key).not.toBeNull();
+    expect(files.size).toBe(1);
+  });
+
+  it("does not record its file over the marker of an invalidation, takes the file back and closes the job", async () => {
+    const eventId = await make.event();
+    await make.attendee(eventId);
+    const job = await exportJob(eventId);
+    const { files, storage } = storageWith(async () => {
+      // A question becomes sensitive while the file is built and stored: the marker goes on the running job.
+      await db.$transaction((tx) => invalidateEventExports(tx, eventId));
+    });
+
+    await drainExportJobs(db, storage, { limit: 1 });
+
+    const done = await reload(job.id);
+    expect(done.status).toBe("failed");
+    expect(done.storage_key).toBeNull();
+    expect(isExportInvalidated(done.result_json)).toBe(true);
+    expect(files.size).toBe(0);
+  });
+
+  it("does not record its file for an erasure that comes meanwhile either, and takes it back", async () => {
+    const eventId = await make.event();
+    const guest = await make.attendee(eventId);
+    const job = await exportJob(eventId);
+    const { files, storage } = storageWith(async () => {
+      await db.$transaction((tx) => eraseAttendees(tx, { eventId, attendeeIds: [guest.id] }));
+    });
+
+    await drainExportJobs(db, storage, { limit: 1 });
+
+    const done = await reload(job.id);
+    expect(done.status).toBe("failed");
+    expect(done.storage_key).toBeNull();
+    expect(isExportInvalidated(done.result_json)).toBe(true);
+    expect(files.size).toBe(0);
   });
 });

@@ -444,6 +444,10 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
   const data = newFieldData(eventId, parsed.data);
   try {
     const created = await db.$transaction(async (tx) => {
+      // A question created sensitive may meet answers that exist already (a plain question of the same key was deleted and
+      // its answers stayed) and exports built with them: those files are not to be downloaded any more, as when an existing
+      // field becomes sensitive. The jobs come first, in the one order of docs/dev/attendee-erasure.md ("Taking locks").
+      if (parsed.data.sensitive === true) await lockOpenAttendeeJobs(tx, eventId);
       // Recheck the cap inside the transaction: the earlier count() above is a fast-path
       // rejection only and isn't race-safe on its own - two concurrent creates could both read a
       // count under the cap before either insert commits. The advisory lock serializes concurrent
@@ -458,6 +462,7 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
       // A new field cannot be one that others depend on, so only its own condition is checked.
       if (parsed.data.rules?.show_when) await assertConditionsHold(tx, eventId, newConditionField(parsed.data));
       const row = await tx.eventCustomField.create({ data });
+      if (parsed.data.sensitive === true) await invalidateEventExports(tx, eventId);
       await writeBulkActionLog(tx, {
         event_id: eventId,
         action_type: "event_custom_field_created",

@@ -515,14 +515,66 @@ describe("a field that becomes sensitive", () => {
     expect((await download(after)).status).toBe(200);
   });
 
-  it("leaves the exports as they are when the field is created sensitive, or is sensitive already, or is made plain", async () => {
+  it("leaves the exports as they are when the field is sensitive already, or is made plain", async () => {
+    const created = (await (await send("POST", path, { source_field: "born_sensitive", label: "Born sensitive", sensitive: true })).json()) as { id: string };
     const before = await builtExport();
 
-    const created = (await (await send("POST", path, { source_field: "born_sensitive", label: "Born sensitive", sensitive: true })).json()) as { id: string };
     await send("PATCH", `${path}/${created.id}`, { sensitive: true, label: "Born sensitive again" });
     await send("PATCH", `${path}/${created.id}`, { sensitive: false });
 
     expect((await download(before)).status).toBe(200);
+  });
+
+  it("makes the exports unavailable also when a field is created sensitive under the key of a plain one that was deleted (its answers stayed)", async () => {
+    const plain = await prisma.eventCustomField.create({ data: { event_id: EVENT, source_field: "recreated", label: "Recreated" } });
+    await prisma.attendee.update({ where: { id: otherId }, data: { custom_data: { shirt: "other-shirt", size: "S", recreated: "Zzyzx-recreated" } } });
+    const before = await builtExport();
+    expect((await download(before)).status).toBe(200);
+    expect((await remove(`${path}/${plain.id}`)).status).toBe(200);
+    expect((await download(before)).status).toBe(200);
+
+    const created = await send("POST", path, { source_field: "recreated", label: "Recreated", sensitive: true });
+
+    expect(created.status).toBe(201);
+    expect((await download(before)).status).toBe(404);
+    await prisma.attendee.update({ where: { id: otherId }, data: { custom_data: { shirt: "other-shirt", size: "S" } } });
+  });
+
+  it("does not let an export that is running when the field becomes sensitive record its file, and takes the file back", async () => {
+    const created = (await (await send("POST", path, { source_field: "mid_export", label: "Mid export" })).json()) as { id: string };
+    const storage = getDefaultStorage();
+    const stored: string[] = [];
+    const deleted: string[] = [];
+    const queued = await get(`/api/admin/events/${EVENT}/attendees/export?format=csv`);
+    const { jobId } = (await queued.json()) as { jobId: string };
+
+    await drainExportJobs(
+      prisma,
+      {
+        put: async (bytes, options) => {
+          const result = await storage.put(bytes, options);
+          stored.push(result.key);
+          // The file is built and stored; the question becomes sensitive before the job writes its result.
+          expect((await send("PATCH", `${path}/${created.id}`, { sensitive: true })).status).toBe(200);
+          return result;
+        },
+        delete: async (key) => {
+          deleted.push(key);
+          return storage.delete(key);
+        },
+      },
+      { limit: 10 },
+    );
+
+    expect(stored).toHaveLength(1);
+    expect(deleted).toEqual(stored);
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    expect(job.status).not.toBe("succeeded");
+    expect(job.storage_key).toBeNull();
+    expect((job.result_json as Record<string, unknown>).invalidated).toBe(true);
+    expect((await download(jobId)).status).toBe(404);
+    const after = await builtExport();
+    expect((await download(after)).status).toBe(200);
   });
 });
 
