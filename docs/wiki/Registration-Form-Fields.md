@@ -21,8 +21,8 @@ The form opens for an event only when registration is turned on for it, on the *
 |---|---|---|
 | Text | A one-line box. A list of suggestions opens under it when the field has some | A short answer, up to 100 characters |
 | Long text | A box four lines tall that can be pulled taller | Up to 1000 characters, with line breaks |
-| Date | The browser's date picker | One day |
-| Date and time | The browser's date and time picker | One day and a time on the clock |
+| Date | The browser's date picker. With the styled boxes on, a text box with a calendar button beside it | One day |
+| Date and time | The browser's date and time picker. With the styled boxes on, a date box and a time box side by side, each with its own button | One day and a time on the clock |
 | Phone | A one-line box. A phone opens its number keypad. With the styled boxes on, a button with a flag and a country code, and a list of countries, sits beside it | 3 to 15 digits, with an optional `+` at the start |
 | Single choice | A button that opens a list, with a search box past six options, as in the admin | One of your options |
 | Yes / No | A tick box. A required one is a list of Yes and No instead, drawn like a single choice | Yes or No |
@@ -87,9 +87,13 @@ The rules on the form are hints. The form does not stop a guest from sending bec
 
 ## Styled boxes
 
-An Administrator can switch **Styled form boxes** on for the event, on the **Access** tab. See [Registration Access](Registration-Access#styled-boxes). With it on, a phone question shows the button of a country beside the number. The guest opens the list, searches by the name or the code of a country, and picks one with the mouse, a tap or the keys. The answer is the code and the digits of the number.
+An Administrator can switch **Styled form boxes** on for the event, on the **Access** tab. See [Registration Access](Registration-Access#styled-boxes). With it on:
 
-A phone question with a digits-only rule or a length rule keeps the browser's box, because a country code would break the rule.
+- A phone question shows the button of a country beside the number. The guest opens the list, searches by the name or the code of a country, and picks one with the mouse, a tap or the keys. The answer is the code and the digits of the number.
+- A date question shows a text box and a calendar button. The calendar opens under the box, with the month, the days and the buttons for the previous and the next month, for today and for clearing the date (not offered for a required question). The guest picks a day, or types it. The keys work as in any calendar: the arrows move by a day and a week, Home and End go to the start and the end of the week, Page Up and Page Down by a month, and with Shift by a year.
+- A date and time question shows the date box and, beside it, a time box with a button that opens the lists of hours and minutes.
+
+A phone question with a digits-only rule or a length rule keeps the browser's box, because a country code would break the rule. A date or a date and time question has no such rule, so it always gets the boxes. The guest's browser decides the order of day, month and year, the first day of the week and the 12 or 24-hour clock, as the browser's own boxes do. The names of the months and days are in English, like the rest of the form.
 
 ## Date and time
 
@@ -162,7 +166,7 @@ A guest who sends the form twice at the same moment is registered once. An addre
 | Problem | What it means and what to do |
 |---|---|
 | A guest sees "Check your answer" under a long text that is short | Text pasted from another program can hold invisible characters, such as a soft hyphen. Admitto refuses them. Ask the guest to type the text again, or to paste it as plain text |
-| A guest sees "Enter a valid date" with a date typed in | One part of the date is still empty. Every part must be filled |
+| A guest sees "Enter a valid date" with a date typed in | One part of the date is still empty. Every part must be filled. With the styled boxes on, the text may also be no day of the calendar, for example 31 April, or a date and time may have a date and no time |
 | A guest's time is an hour out | The guest may have entered their own local time. The time is read as the clock at the event. Check the time zone saved for the event, and say in the description which clock to use |
 | The form says "not found" although registration is on | A required question that the form cannot show keeps it closed, for example a required Single choice field with no options. Add the options, or clear **Required** |
 | A question never appears under the tick box or the list it waits for | The question it waits for must be on the form, and must be a Yes / No or a Single choice field. For a list, the condition must name an option that exists, written exactly |
