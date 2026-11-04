@@ -23,7 +23,7 @@ import {
 } from "./fieldRules.js";
 import { FormRulesEditor } from "./FormRulesEditor.js";
 import { slugifyItemKey } from "./itemKey.js";
-import { optionRowsFromOptions, OptionsEditor, type OptionRow } from "./OptionsEditor.js";
+import { editOf, optionRowsFromOptions, OptionsEditor, type OptionRow } from "./OptionsEditor.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { RetryHint } from "../components/RetryHint.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
@@ -61,12 +61,12 @@ function holdsAttendees(counts: Record<string, number>): (row: OptionRow) => boo
 
 /** The rows that exist and are renamed, or blanked (which the save treats as a removal), away from an option that `inUse` says has answers. */
 function renamedOrBlanked(rows: readonly OptionRow[], inUse: (row: OptionRow) => boolean): OptionRow[] {
-  return rows.filter((row) => {
-    const trimmed = row.text.trim();
-    const blanked = trimmed === "" && row.originalText !== "";
-    const renamed = !blanked && trimmed !== row.originalText;
-    return (blanked || renamed) && inUse(row);
-  });
+  return rows.filter((row) => editOf(row) !== "same" && inUse(row));
+}
+
+/** Which options have answers on them: for a sensitive question the counts are hidden, so any option that exists may; else the counts say. */
+function optionInUse(hidden: boolean, counts: Record<string, number>): (row: OptionRow) => boolean {
+  return hidden ? mayHaveHiddenAnswers : holdsAttendees(counts);
 }
 
 type FormState = {
@@ -101,32 +101,8 @@ function formFromField(field: EventCustomFieldDto): FormState {
   };
 }
 
-/** Add/edit modal for one EventCustomField registry row (dietary, shirt size, ...). */
-export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved, showOnForm = false }: Readonly<EventCustomFieldModalProps>) {
-  const { addToast } = useToast();
-  const isEdit = field !== null;
-  const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
-  const [saving, setSaving] = useState(false);
-  // How many attendees hold each option of a select field being edited (null = still being read, or the read failed): the
-  // delete and rename-risk checks in OptionsEditor and below treat null as "unknown", never as "unused".
-  const usage = useOptionUsage(eventId, field);
-  const usageCounts = usage.counts;
-  const [confirmRiskyRenames, setConfirmRiskyRenames] = useState(false);
-  // A sensitive question tells no counts (usage.hidden): an option that exists is confirmed before it is removed, here, and before it is
-  // renamed, at Save, because nobody can say whether an answer is on it. `null` = no removal is waiting for an answer.
-  const [removalToConfirm, setRemovalToConfirm] = useState<OptionRow | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  // Suspended while the risky-rename ConfirmDialog is open (same pattern as EventItemDrawer's
-  // and UserEditModal's own nested confirm dialogs) - both dialogs otherwise register their own
-  // capture-phase Escape listener on document, and this modal's runs first (mounted first), so
-  // pressing Escape to dismiss just the confirmation would instead call this modal's own onClose
-  // and discard the whole draft, options changes included.
-  useModalFocusTrap(panelRef, !confirmRiskyRenames && removalToConfirm === null, onClose);
-  useOverscrollBounceGuard(scrollRef);
-
-  const usageUnknown = usageCounts === null;
-
+/** What the draft in the form amounts to: what a save would send, what the server would refuse, and what the save would change. */
+function describeDraft(form: FormState, field: EventCustomFieldDto | null, fields: readonly EventCustomFieldDto[], showOnForm: boolean) {
   const labelTrimmed = form.label.trim();
   const selectOptions = form.options.map((r) => r.text.trim()).filter(Boolean);
   // What the server would refuse in the rules, said where the boxes are. A type that takes no format rules has none to refuse.
@@ -171,13 +147,48 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
   const changesAnswerFormat = field !== null && (form.type !== field.type || !sameRules(nextFormatRules, field.rules));
   // Whether this moves a field that exists to the other person: the answers already given are not moved with it.
   const movesRecipient = field !== null && form.appliesTo !== recipientOfField(field);
+  return { labelTrimmed, selectOptions, problems, save, onForm, dependency, canSubmit, dirty, changesAnswerFormat, movesRecipient };
+}
+
+/** Add/edit modal for one EventCustomField registry row (dietary, shirt size, ...). */
+export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved, showOnForm = false }: Readonly<EventCustomFieldModalProps>) {
+  const { addToast } = useToast();
+  const isEdit = field !== null;
+  const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
+  const [saving, setSaving] = useState(false);
+  // How many attendees hold each option of a select field being edited (null = still being read, or the read failed): the
+  // delete and rename-risk checks in OptionsEditor and below treat null as "unknown", never as "unused".
+  const usage = useOptionUsage(eventId, field);
+  const usageCounts = usage.counts;
+  const [confirmRiskyRenames, setConfirmRiskyRenames] = useState(false);
+  // A sensitive question tells no counts (usage.hidden): an option that exists is confirmed before it is removed, here, and before it is
+  // renamed, at Save, because nobody can say whether an answer is on it. `null` = no removal is waiting for an answer.
+  const [removalToConfirm, setRemovalToConfirm] = useState<OptionRow | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Suspended while the risky-rename ConfirmDialog is open (same pattern as EventItemDrawer's
+  // and UserEditModal's own nested confirm dialogs) - both dialogs otherwise register their own
+  // capture-phase Escape listener on document, and this modal's runs first (mounted first), so
+  // pressing Escape to dismiss just the confirmation would instead call this modal's own onClose
+  // and discard the whole draft, options changes included.
+  useModalFocusTrap(panelRef, !confirmRiskyRenames && removalToConfirm === null, onClose);
+  useOverscrollBounceGuard(scrollRef);
+
+  const usageUnknown = usageCounts === null;
+
+  const { labelTrimmed, selectOptions, problems, save, onForm, dependency, canSubmit, dirty, changesAnswerFormat, movesRecipient } = describeDraft(
+    form,
+    field,
+    fields,
+    showOnForm,
+  );
   const recipientHint = FIELD_RECIPIENTS.find((recipient) => recipient.value === form.appliesTo)?.hint;
 
   // Options renamed - or blanked, which selectOptions below treats as a removal - away from a
   // value with attendees currently on it. Save gates on these with ConfirmDialog instead of
   // sending the PATCH straight away. A row removed via OptionsEditor's own trash button is
   // already confirmed in place, so it isn't repeated here.
-  const riskyRenames = usageCounts ? renamedOrBlanked(form.options, usage.hidden ? mayHaveHiddenAnswers : holdsAttendees(usageCounts)) : [];
+  const riskyRenames = usageCounts ? renamedOrBlanked(form.options, optionInUse(usage.hidden, usageCounts)) : [];
 
   function selectType(type: EventCustomFieldType) {
     setForm((f) => ({ ...f, type, options: type === "select" ? f.options : [] }));

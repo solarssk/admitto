@@ -77,6 +77,13 @@ function UsageSkeleton({ held }: Readonly<{ held: boolean }>) {
 /** What a row says about how many attendees use its option. It is gated on the placeholder having had its minimum time
  * (`showContent`), not only on the counts being in: an answer that comes just after the 200ms would otherwise show its bar for a
  * few frames and flash. */
+/** What an edit of an existing row amounts to: blanked (the save treats that as a removal), renamed, or left as it was. A new row is never either. */
+export function editOf(row: OptionRow): "blanked" | "renamed" | "same" {
+  const trimmed = row.text.trim();
+  if (trimmed === "" && row.originalText !== "") return "blanked";
+  return trimmed !== "" && trimmed !== row.originalText ? "renamed" : "same";
+}
+
 function usageLabelFor(usage: number, usageKnown: boolean, gate: LoadingGate): ReactNode {
   if (!gate.showContent) return <UsageSkeleton held={!gate.showIndicator} />;
   if (!usageKnown) return "Unknown";
@@ -315,14 +322,12 @@ export function OptionsEditor({
       <div className={`options-editor__list${showUsage ? "" : " options-editor__list--plain"}`} ref={listRef}>
         {rows.map((row) => {
           const usage = usageOf(usageCounts, row.originalText);
-          const trimmed = row.text.trim();
           // Blanking an existing row's text is a removal, not a no-op - selectOptions (the
           // modal) drops empty rows from what actually gets saved, so this needs the same
           // in-place warning as a rename or it'd silently vanish from an in-use attendee's
           // allowed options with no confirmation at all.
-          const blanked = trimmed === "" && row.originalText !== "";
-          const renamed = !blanked && trimmed !== row.originalText && trimmed !== "";
-          const risky = (blanked || renamed) && usage > 0;
+          const edit = editOf(row);
+          const risky = edit !== "same" && usage > 0;
           // A list with no counts has nothing to wait for: its rows can always be removed.
           const usageKnown = !showUsage || usageCounts !== null;
 
@@ -398,7 +403,7 @@ export function OptionsEditor({
                 <div className="options-editor__warning">
                   <i className="ti ti-alert-triangle" aria-hidden="true" /> {usage} {usage === 1 ? "attendee" : "attendees"}{" "}
                   currently {usage === 1 ? "has" : "have"} &ldquo;{row.originalText}&rdquo;.{" "}
-                  {blanked
+                  {edit === "blanked"
                     ? "Clearing this removes the option, so they will need to be reassigned."
                     : "Renaming creates a new value, so they will need to be reassigned."}
                 </div>
