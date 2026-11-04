@@ -147,7 +147,7 @@ function describeDraft(form: FormState, field: EventCustomFieldDto | null, field
   const changesAnswerFormat = field !== null && (form.type !== field.type || !sameRules(nextFormatRules, field.rules));
   // Whether this moves a field that exists to the other person: the answers already given are not moved with it.
   const movesRecipient = field !== null && form.appliesTo !== recipientOfField(field);
-  return { labelTrimmed, selectOptions, problems, save, onForm, dependency, canSubmit, dirty, changesAnswerFormat, movesRecipient };
+  return { problems, save, onForm, dependency, canSubmit, dirty, changesAnswerFormat, movesRecipient };
 }
 
 /** Add/edit modal for one EventCustomField registry row (dietary, shirt size, ...). */
@@ -176,12 +176,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
 
   const usageUnknown = usageCounts === null;
 
-  const { labelTrimmed, selectOptions, problems, save, onForm, dependency, canSubmit, dirty, changesAnswerFormat, movesRecipient } = describeDraft(
-    form,
-    field,
-    fields,
-    showOnForm,
-  );
+  const { problems, save, onForm, dependency, canSubmit, dirty, changesAnswerFormat, movesRecipient } = describeDraft(form, field, fields, showOnForm);
   const recipientHint = FIELD_RECIPIENTS.find((recipient) => recipient.value === form.appliesTo)?.hint;
 
   // Options renamed - or blanked, which selectOptions below treats as a removal - away from a
