@@ -46,6 +46,10 @@ export {
   lockAttendeeJobQueue,
   lockOpenAttendeeJobs,
   stopOpenAttendeeJobs,
+  STOPPED_BY_FIELD_DELETION,
+  EXPORT_STOPPED_BY_FIELD_DELETION_ERROR,
+  IMPORT_STOPPED_BY_FIELD_DELETION_ERROR,
+  type StoppedJobMessages,
 } from "./stop-open-jobs.js";
 export { removeAttendees } from "./remove-attendees.js";
 export { lockRegistrationQueue, lockRegistrationsForUpdate, tryLockRegistrationQueue } from "./registration-lock.js";

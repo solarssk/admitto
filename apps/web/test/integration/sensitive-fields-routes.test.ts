@@ -13,7 +13,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { drainExportJobs } from "@admitto/tickets";
+import { drainExportJobs, IMPORT_STOPPED_BY_FIELD_DELETION_ERROR } from "@admitto/tickets";
+import { executeImportCommit, ImportStoppedError } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { buildTestApp } from "../helpers/build-test-app.js";
@@ -689,5 +690,113 @@ describe("deleting a sensitive field", () => {
     expect((await prisma.registration.findUniqueOrThrow({ where: { id: mine.registration.id } })).custom_data).toMatchObject({ plain_gone: `${MARK}-r` });
     const logged = await prisma.attendeeActionLog.findFirstOrThrow({ where: { event_id: EVENT, action_type: "event_custom_field_deleted" }, orderBy: { created_at: "desc" } });
     expect(logged.metadata).toEqual({ source_field: "plain_gone" });
+  });
+});
+
+/**
+ * `prisma` with a hook that runs once, after the first read of one model's method: the moment between what a route read
+ * and what it does next, which a test cannot reach any other way. Functions are bound to the real client, so transactions still work.
+ */
+function withHookAfterFirst(model: "ticketType" | "eventCustomField", method: "findMany" | "findUnique", hook: () => Promise<void>): PrismaClient {
+  let done = false;
+  return new Proxy(prisma, {
+    get(target, prop) {
+      const value: unknown = Reflect.get(target, prop);
+      if (prop !== model) return typeof value === "function" ? value.bind(target) : value;
+      return new Proxy(value as object, {
+        get(delegate, name) {
+          const member: unknown = Reflect.get(delegate, name);
+          if (name !== method || typeof member !== "function") return typeof member === "function" ? member.bind(delegate) : member;
+          return async (...args: unknown[]) => {
+            const result: unknown = await member.apply(delegate, args);
+            if (!done) {
+              done = true;
+              await hook();
+            }
+            return result;
+          };
+        },
+      });
+    },
+  }) as PrismaClient;
+}
+
+describe("an import that loaded the fields before a sensitive field was deleted", () => {
+  const path = `/api/admin/events/${EVENT}/custom-fields`;
+
+  async function runningImport() {
+    return prisma.adminJob.create({ data: { type: "import_commit", status: "running", organization_id: ORG, event_id: EVENT } });
+  }
+  const csvFor = (key: string, email: string) => `email,first_name,last_name,${key}\n${email},Import,Person,back-${tag}\n`;
+  const importOf = (db: PrismaClient, jobId: string, key: string, email: string) =>
+    executeImportCommit(db, {
+      eventId: EVENT,
+      csv: csvFor(key, email),
+      overwrite: true,
+      forceCapacity: false,
+      actorUserId: null,
+      sessionId: null,
+      timezone: null,
+      filename: "import.csv",
+      importId: randomUUID(),
+      adminJobId: jobId,
+    });
+
+  it("is stopped, and does not write the deleted answers back; the job says why", async () => {
+    const field = await prisma.eventCustomField.create({ data: { event_id: EVENT, source_field: "restorable", label: "Restorable", sensitive: true } });
+    const email = `import-${randomUUID()}@example.com`;
+    const person = await prisma.attendee.create({ data: { event_id: EVENT, email, name: "Import Person", first_name: "Import", last_name: "Person", custom_data: { restorable: "orig", shirt: "keep-shirt" } } });
+    const job = await runningImport();
+    // The import has read the fields (it reads the ticket types right after them) and has not taken its job row yet.
+    const db = withHookAfterFirst("ticketType", "findMany", async () => {
+      expect((await remove(`${path}/${field.id}`)).status).toBe(200);
+    });
+
+    await expect(importOf(db, job.id, "restorable", email)).rejects.toBeInstanceOf(ImportStoppedError);
+
+    expect((await prisma.attendee.findUniqueOrThrow({ where: { id: person.id } })).custom_data).toEqual({ shirt: "keep-shirt" });
+    expect(await prisma.adminJob.findUniqueOrThrow({ where: { id: job.id } })).toMatchObject({ status: "failed", error: IMPORT_STOPPED_BY_FIELD_DELETION_ERROR });
+  });
+
+  it("is not stopped by the deletion of a plain field", async () => {
+    const field = await prisma.eventCustomField.create({ data: { event_id: EVENT, source_field: "plain_import", label: "Plain import" } });
+    const email = `import-${randomUUID()}@example.com`;
+    await prisma.attendee.create({ data: { event_id: EVENT, email, name: "Import Person", first_name: "Import", last_name: "Person" } });
+    const job = await runningImport();
+    const db = withHookAfterFirst("ticketType", "findMany", async () => {
+      expect((await remove(`${path}/${field.id}`)).status).toBe(200);
+    });
+
+    await importOf(db, job.id, "plain_import", email);
+
+    expect((await prisma.adminJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("succeeded");
+  });
+});
+
+describe("a PATCH to sensitive whose first read of the field is stale", () => {
+  const path = `/api/admin/events/${EVENT}/custom-fields`;
+
+  it("still takes the jobs and invalidates the exports, judging the field by the row it reads under the lock", async () => {
+    const created = (await (await send("POST", path, { source_field: "stale_read", label: "Stale read", sensitive: true })).json()) as { id: string };
+    let jobId = "";
+    // The route reads the field as sensitive. Before it takes its locks, someone makes it plain and an export is built.
+    const racing = withHookAfterFirst("eventCustomField", "findUnique", async () => {
+      await prisma.eventCustomField.update({ where: { id: created.id }, data: { sensitive: false } });
+      const queued = await get(`/api/admin/events/${EVENT}/attendees/export?format=csv`);
+      jobId = ((await queued.json()) as { jobId: string }).jobId;
+      await drainExportJobs(prisma, getDefaultStorage(), { limit: 10 });
+    });
+    const racingApp = buildTestApp({ prisma: racing, checkinToken: "sensitive-checkin-token-32-chars!!", adminDistRoot });
+
+    const res = await racingApp.request(`${path}/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: cookies.admin, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ sensitive: true }),
+    });
+
+    expect(res.status).toBe(200);
+    expect((await prisma.eventCustomField.findUniqueOrThrow({ where: { id: created.id } })).sensitive).toBe(true);
+    expect(jobId).not.toBe("");
+    expect((await get(`/api/admin/events/${EVENT}/export/jobs/${jobId}/download`)).status).toBe(404);
   });
 });

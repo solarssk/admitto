@@ -21,6 +21,8 @@ import {
   invalidateEventExports,
   isReservedCustomDataSourceField,
   lockOpenAttendeeJobs,
+  stopOpenAttendeeJobs,
+  STOPPED_BY_FIELD_DELETION,
   readStoredFieldRules,
   removeFieldAnswers,
   writeBulkActionLog,
@@ -682,11 +684,11 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
 
   try {
     // A field that becomes sensitive has answers in files that were built while it was not: those files are not to be
-    // downloaded any more, as after an erasure. The jobs come first, in the one order of docs/dev/attendee-erasure.md
-    // ("Taking locks"): a running export is waited for, so no file is recorded after this commit that still holds the answers.
-    const becomesSensitive = parsed.data.sensitive === true && !existing.sensitive;
+    // downloaded any more, as after an erasure. Whenever the request asks for sensitive, the jobs come first, in the one order
+    // of docs/dev/attendee-erasure.md ("Taking locks"), and whether the field changes is judged below on the row read under
+    // the lock, never on the first read, which another save may have made stale.
     const updated = await db.$transaction(async (tx) => {
-      if (becomesSensitive) await lockOpenAttendeeJobs(tx, eventId);
+      if (parsed.data.sensitive === true) await lockOpenAttendeeJobs(tx, eventId);
       // Under the lock, and from a fresh read: the Required-on-form check below has to judge the
       // flags this update replaces, not those a save that committed a moment ago has changed
       // (two PATCHes that each flip one flag would otherwise both pass and leave both flipped).
@@ -703,7 +705,7 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
       }
       await assertRequiredFieldStaysOnForm(tx, eventId, mergedFormFlags(current, parsed.data), current);
       const row = await tx.eventCustomField.update({ where: { id: fieldId }, data });
-      if (becomesSensitive && !current.sensitive) await invalidateEventExports(tx, eventId);
+      if (parsed.data.sensitive === true && !current.sensitive) await invalidateEventExports(tx, eventId);
       await writeBulkActionLog(tx, {
         event_id: eventId,
         action_type: "event_custom_field_updated",
@@ -860,8 +862,10 @@ export async function handleDeleteEventCustomField(c: Context, db: PrismaClient)
   try {
     await db.$transaction(async (tx) => {
       // The answers to a sensitive question go with it (D-E6), which writes attendee rows: the jobs of the event come
-      // first, in the one order of docs/dev/attendee-erasure.md ("Taking locks"), so no import writes the key meanwhile.
-      if (existing.sensitive) await lockOpenAttendeeJobs(tx, eventId);
+      // first, in the one order of docs/dev/attendee-erasure.md ("Taking locks"). The open exports and imports are stopped
+      // as an erasure stops them (the job is no longer running, so an import that loaded the fields before this and has not
+      // taken its job row yet writes nothing, and cannot bring the deleted answers back).
+      if (existing.sensitive) await stopOpenAttendeeJobs(tx, eventId, STOPPED_BY_FIELD_DELETION);
       // The lock serializes against event-items-api-routes.ts's content_fields validation, which
       // takes the same lock before its own registry check + commit - without it, an item save
       // could commit a new content_fields reference between this scan and the delete below
