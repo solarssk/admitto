@@ -24,8 +24,15 @@ export interface SensitiveAnswersProps {
 
 /** The answer to `field` among the answers "Show" returned, as a reader sees it; undefined when there is none (an empty one is none). */
 function shownAnswer(field: CustomDataFieldDef, answers: Readonly<Record<string, string>>, timezone: string): string | undefined {
-  const value = Object.hasOwn(answers, field.source_field) ? answers[field.source_field] : undefined;
-  return value === undefined || value.trim() === "" ? undefined : formatAnswerFor(field, value, timezone);
+  const value = answerText(Object.hasOwn(answers, field.source_field) ? answers[field.source_field] : undefined);
+  return value.trim() === "" ? undefined : formatAnswerFor(field, value, timezone);
+}
+
+/** The text of an answer as the server hands it back, which is the JSON as it is stored: a text, or the text of a number or a yes or no
+ * should it ever be one; anything else is no answer, and never a failure of the screen. */
+function answerText(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  return typeof raw === "number" || typeof raw === "boolean" ? String(raw) : "";
 }
 
 /** The value cell of one question: hidden until "Show" has answered, then the answer, or "No answer". */

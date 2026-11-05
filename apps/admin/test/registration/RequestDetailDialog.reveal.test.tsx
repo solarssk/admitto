@@ -91,6 +91,25 @@ describe("a request's sensitive answers", { timeout: 30_000 }, () => {
     expect(reveal.request).not.toHaveBeenCalled();
   });
 
+  it("draws the Answers section for the sensitive questions alone when the guest gave no ordinary answer", async () => {
+    api.fetchRegistration.mockResolvedValue(detail("r1", { custom_data: {}, companions: [] }));
+
+    const box = await openWindow();
+
+    const answers = sectionOf(box, "Answers");
+    expect(within(answers).getByText("Accessibility needs").parentElement?.textContent).toContain("Hidden");
+    expect(within(answers).queryByText("Shirt size")).toBeNull();
+  });
+
+  it("draws no Answers section when there is no answer and no sensitive question for the guest", async () => {
+    api.fetchEventCustomFields.mockResolvedValue([field("shirt", "Shirt size")]);
+    api.fetchRegistration.mockResolvedValue(detail("r1", { custom_data: {}, companions: [] }));
+
+    const box = await openWindow();
+
+    expect(within(box).queryByRole("heading", { name: "Answers" })).toBeNull();
+  });
+
   it("shows each person's answers from their own button, one call and one audit entry for each", async () => {
     const box = await openWindow();
 

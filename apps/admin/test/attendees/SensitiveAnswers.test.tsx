@@ -89,6 +89,12 @@ describe("the masks", { timeout: 30_000 }, () => {
     expect(container.textContent).toBe("");
   });
 
+  it("names the button without a person when the page has only one", () => {
+    render(<RequestSensitiveAnswers eventId="evt-1" requestId="req-1" questions={QUESTIONS} slot={null} canReveal timezone="UTC" />);
+
+    expect(screen.getByRole("button", { name: "Show sensitive answers" })).toBeTruthy();
+  });
+
   it("offers an operator the masks and no button", () => {
     renderGuest({ canReveal: false });
 
@@ -125,6 +131,20 @@ describe("Show", { timeout: 30_000 }, () => {
     expect(within(rowOf("Accessibility needs")).getByText(SECRET)).toBeTruthy();
     expect(within(rowOf("Allergies")).getByText("No answer")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Hide sensitive answers of guest" })).toBeTruthy();
+  });
+
+  it.each([
+    [5, "5"],
+    [true, "true"],
+    [null, "No answer"],
+    [{ nested: "x" }, "No answer"],
+  ])("shows an answer that the server sent as %j as %s, instead of failing", async (sent, shown) => {
+    api.attendee.mockResolvedValue({ guest: { access: sent }, companions: [] } as unknown as SensitiveRevealDto);
+    renderGuest();
+
+    await reveal();
+
+    expect(within(rowOf("Accessibility needs")).getByText(shown)).toBeTruthy();
   });
 
   it("never shows an answer to an ordinary question, whatever the answer carries", async () => {
@@ -261,6 +281,22 @@ describe("hiding again", { timeout: 30_000 }, () => {
     await act(async () => held.resolve(answer({ access: SECRET })));
 
     expect(pageText()).not.toContain(SECRET);
+    expect(within(rowOf("Accessibility needs")).getByText("Hidden")).toBeTruthy();
+  });
+
+  it("drops a failure that comes late for the old person, and the new person shows no error", async () => {
+    const held = deferred<SensitiveRevealDto>();
+    api.attendee.mockReturnValueOnce(held.promise);
+    const view = renderGuest({ id: "att-1" });
+    fireEvent.click(showButton());
+    fireEvent.click(within(screen.getByRole("group")).getByRole("button", { name: "Show" }));
+
+    view.rerender(
+      <AttendeeSensitiveAnswers key="att-2" eventId="evt-1" attendeeId="att-2" questions={QUESTIONS} slot={null} who="guest" canReveal timezone="UTC" />,
+    );
+    await act(async () => held.reject(new ApiError(403, "forbidden", "forbidden")));
+
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(within(rowOf("Accessibility needs")).getByText("Hidden")).toBeTruthy();
   });
 
