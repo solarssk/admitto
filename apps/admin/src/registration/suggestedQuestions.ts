@@ -75,7 +75,8 @@ function stateOf(plan: SuggestedFieldsPlan, key: string): SuggestedRowState {
 function warningOf(suggested: SuggestedEventField, state: SuggestedRowState, fields: readonly EventCustomFieldDto[]): string {
   if (suggested.sensitive !== true) return "";
   if (state === "add") return SENSITIVE_SUGGESTION_WARNING;
-  const existing = state === "present" ? fields.find((field) => field.source_field === suggested.source_field) : undefined;
+  // A question that is left out as blocked is one the event does not have, so the lookup finds nothing for it.
+  const existing = fields.find((field) => field.source_field === suggested.source_field);
   if (existing === undefined || existing.sensitive === true) return "";
   return existing.show_on_form ? PRESENT_ORDINARY_WARNING : PRESENT_ORDINARY_OFF_FORM_WARNING;
 }

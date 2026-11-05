@@ -1715,6 +1715,8 @@ function customDataPatchOf(
   const customDataPatch: Record<string, string | null> = {};
   for (const field of shownCustomFields(attributeFields, form.customFields)) {
     const key = field.source_field;
+    // The form holds an entry for every question that is asked (toAttendeeForm, mergeFormAfterReload): the fallback only satisfies the index type.
+    /* v8 ignore next */
     const next = form.customFields[key] ?? "";
     if (field.sensitive === true && next === "") continue;
     const current = readCustomDataField(detail.custom_data, key) ?? "";
