@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { CODE_MESSAGES } from "../../src/api/operator-api-error.js";
@@ -48,11 +48,14 @@ const FIELDS = [
   field("allergy", "Allergies", { applies_to: "companion", sensitive: true }),
 ];
 
-async function openWindow() {
+async function openWindow({ waitForAnswers = true } = {}) {
   renderTab({ search: "?tab=requests&status=all", event: { ...EVENT, organization_id: "org-1" } });
   await screen.findByRole("table", { name: "Requests" });
   fireEvent.click(openButton("r1") as HTMLElement);
-  return screen.findByRole("dialog", { name: "Ann Kowalska" });
+  const box = await screen.findByRole("dialog", { name: "Ann Kowalska" });
+  // The window opens before the request is read and draws its sections when the read comes back, which a slow runner may do later.
+  if (waitForAnswers) await within(box).findByRole("heading", { name: "Answers" });
+  return box;
 }
 const sectionOf = (box: HTMLElement, title: string) => within(box).getByRole("heading", { name: title }).parentElement as HTMLElement;
 async function show(section: HTMLElement, who: string) {
@@ -105,7 +108,9 @@ describe("a request's sensitive answers", { timeout: 30_000 }, () => {
     api.fetchEventCustomFields.mockResolvedValue([field("shirt", "Shirt size")]);
     api.fetchRegistration.mockResolvedValue(detail("r1", { custom_data: {}, companions: [] }));
 
-    const box = await openWindow();
+    const box = await openWindow({ waitForAnswers: false });
+    await waitFor(() => expect(api.fetchRegistration).toHaveBeenCalled());
+    await act(async () => {});
 
     expect(within(box).queryByRole("heading", { name: "Answers" })).toBeNull();
   });
@@ -154,6 +159,7 @@ describe("a request's sensitive answers", { timeout: 30_000 }, () => {
     expect(document.body.textContent).not.toContain(SECRET);
     fireEvent.click(openButton("r1") as HTMLElement);
     const again = await screen.findByRole("dialog", { name: "Ann Kowalska" });
+    await within(again).findByRole("heading", { name: "Answers" });
 
     expect(within(sectionOf(again, "Answers")).getByText("Accessibility needs").parentElement?.textContent).toContain("Hidden");
   });
