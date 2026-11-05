@@ -131,9 +131,8 @@ function jsonTooManyRequests(c: Context): Response {
 }
 
 /** The 429 of the "Show" budget: its own code (the admin app says why), and how long the window of the check that refused is. */
-function sensitiveRevealLimited(c: Context, checkIndex: number): Response {
-  const check = RATE_POLICIES["admin:sensitive-reveal"].checks[checkIndex];
-  c.header("Retry-After", String(Math.ceil((check?.windowMs ?? 60_000) / 1000)));
+function sensitiveRevealLimited(c: Context, checkIndex: 0 | 1): Response {
+  c.header("Retry-After", String(Math.ceil(RATE_POLICIES["admin:sensitive-reveal"].checks[checkIndex].windowMs / 1000)));
   return c.json({ error: "sensitive_reveal_limit" }, 429);
 }
 
