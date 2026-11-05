@@ -347,6 +347,7 @@ export type RateLimitScope =
   | "admin_resend"
   | "admin_export"
   | "admin_attendee_patch"
+  | "admin_sensitive_reveal"
   | "admin_user_revoke_sessions"
   | "admin_wallet_action"
   | "admin_wallet_action_bulk"

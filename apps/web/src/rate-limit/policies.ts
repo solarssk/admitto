@@ -130,6 +130,13 @@ function jsonTooManyRequests(c: Context): Response {
   return c.json({ error: "too many requests" }, 429);
 }
 
+/** The 429 of the "Show" budget: its own code (the admin app says why), and how long the window of the check that refused is. */
+function sensitiveRevealLimited(c: Context, checkIndex: number): Response {
+  const check = RATE_POLICIES["admin:sensitive-reveal"].checks[checkIndex];
+  c.header("Retry-After", String(Math.ceil((check?.windowMs ?? 60_000) / 1000)));
+  return c.json({ error: "sensitive_reveal_limit" }, 429);
+}
+
 function authUserId(c: Context): string | undefined {
   return c.get("auth")?.userId;
 }
@@ -717,6 +724,30 @@ export const RATE_POLICIES = {
         windowMs: 60_000,
         max: 20,
         logOnExceeded: { scope: "admin_attendee_patch", keyHint: "user_attendee" },
+      },
+    ],
+  },
+  // The deliberate "Show" of the answers to sensitive questions (D-E6, 117b): both routes, one budget per user. Every click is
+  // already an audit entry, so this bounds how fast one account can read the sensitive answers of an event, not how many
+  // entries it makes. A person who shows an answer or two at a time, and goes back and forth between guests, stays well under
+  // 20 a minute; a script that walks an event does not. The hourly check is the one that stops a slow walk: 200 an hour is far
+  // more than a person reads in an hour, and a 1000-guest event then takes five hours of audit entries. The 429 says in
+  // Retry-After how long the window is at most, read from the check so a retune with RATE_LIMIT_OVERRIDES is followed.
+  "admin:sensitive-reveal": {
+    checks: [
+      {
+        keyOf: (c) => `admin:sensitive-reveal:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 20,
+        onExceeded: (c) => sensitiveRevealLimited(c, 0),
+        logOnExceeded: { scope: "admin_sensitive_reveal", keyHint: "user" },
+      },
+      {
+        keyOf: (c) => `admin:sensitive-reveal:hour:user:${c.get("auth").userId}`,
+        windowMs: 3_600_000,
+        max: 200,
+        onExceeded: (c) => sensitiveRevealLimited(c, 1),
+        logOnExceeded: { scope: "admin_sensitive_reveal", keyHint: "user_hour" },
       },
     ],
   },

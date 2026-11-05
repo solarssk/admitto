@@ -152,6 +152,7 @@ export function getTimelineIcon(actionType: string): string {
     attendee_edited: "pencil",
     attendee_companion_updated: "users",
     attendee_companion_removed: "user-minus",
+    sensitive_data_revealed: "eye",
     scan_preview: "scan",
     wallet_pass_voided: "wallet-off",
     wallet_pass_restored: "refresh",
@@ -214,6 +215,8 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
       return "Companion updated";
     case "attendee_companion_removed":
       return "Companion removed";
+    case "sensitive_data_revealed":
+      return "Sensitive answers shown";
     case "pass_revoked":
       return "Pass revoked";
     case "pass_restored":
