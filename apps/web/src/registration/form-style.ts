@@ -266,9 +266,9 @@ const DARK_INK = "#1d273b";
 export const REGISTRATION_SSO_CSS = `
 /* The address a company sign-in gave: shown, not editable. It reads as a value that is there, not as a box waiting for text. */
 .reg-form .at-input[readonly] { background: var(--surface-sunken); color: var(--text-secondary); cursor: default; }
-/* The sign-in screen: its title is a level under the event's, and the sentence of a refused sign-in is as wide as the button. */
+/* The sign-in screen: its title is a level under the event's, and the sentence of a refused sign-in is as wide as the button and does not fade in (the notices of the form do not either). */
 .reg-center h2 { margin: 0; font-size: var(--fs-h3); line-height: 1.3; overflow-wrap: anywhere; }
-.reg-center .at-notice { width: 100%; max-width: 360px; text-align: left; }
+.reg-center .at-notice { width: 100%; max-width: 360px; text-align: left; animation: none; }
 `;
 
 const BLACK = "#000000";
