@@ -188,3 +188,16 @@ describe("formatDateTime", () => {
     expect(formatDateTime(null)).toBe("-");
   });
 });
+
+describe("toAttendeeForm and a sensitive question", () => {
+  it("starts the box of a sensitive question empty, whatever the detail holds, and fills an ordinary one", () => {
+    const fields = [
+      { id: "1", source_field: "shirt", label: "Shirt", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "2", source_field: "access", label: "Access", type: "text", required: false, options: null, sensitive: true, created_at: "2026-01-01T00:00:00.000Z" },
+    ] as unknown as CustomDataFieldDef[];
+
+    const form = toAttendeeForm(detail({ custom_data: { shirt: "M", access: "needs a ramp" } }), fields);
+
+    expect(form.customFields).toEqual({ shirt: "M", access: "" });
+  });
+});

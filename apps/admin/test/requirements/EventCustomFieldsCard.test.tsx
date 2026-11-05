@@ -190,6 +190,17 @@ describe("EventCustomFieldsCard", () => {
     expect(rowNames()).toEqual(["Dietary requirements", "Badge name"]);
   });
 
+  it("marks a sensitive question with a Sensitive badge (a lock and the word), and no other", () => {
+    const access: EventCustomFieldDto = { ...dietaryField, id: "field-access", source_field: "access", label: "Accessibility needs", sensitive: true };
+    renderCard([dietaryField, access]);
+
+    const mark = within(screen.getByText("Accessibility needs").closest("tr")!).getByText("Sensitive");
+    expect(mark.closest(".at-badge")).not.toBeNull();
+    expect(mark.closest(".at-badge")?.querySelector("i.ti-lock")).not.toBeNull();
+    expect(within(screen.getByText("Dietary requirements").closest("tr")!).queryByText("Sensitive")).toBeNull();
+    expect(rowNames()).toEqual(["Dietary requirements", "Accessibility needs"]);
+  });
+
   it("marks a field that says nothing of its recipient as the guest's: no badge", () => {
     renderCard([dietaryField, { ...shirtField, applies_to: "guest" }]);
     expect(screen.queryByText("Companion")).toBeNull();

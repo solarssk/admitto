@@ -1278,3 +1278,49 @@ describe("AddAttendeeModal: questions that are shown only for an answer", { time
     expect(sentCustomData()).toBeUndefined();
   });
 });
+
+describe("AddAttendeeModal: a sensitive question is write-only", () => {
+  const access = answerField("access", "Accessibility needs", "text", { sensitive: true });
+  const badge = answerField("badge", "Name on badge", "text", { sensitive: true, required: true });
+  const shirt = answerField("shirt", "Shirt size", "text");
+
+  afterEach(() => mockFetchEventCustomFields.mockResolvedValue([]));
+
+  async function openWith(fields: unknown[]) {
+    mockFetchEventCustomFields.mockResolvedValue(fields as never);
+    mockCreateAttendee.mockResolvedValue({ id: "att-9" } as never);
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
+    fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
+    await screen.findByLabelText("Shirt size");
+  }
+  const submit = () => fireEvent.click(screen.getByRole("button", { name: "Add attendee" }));
+
+  it("says under each sensitive box that it is hidden after saving, and nothing under an ordinary one", async () => {
+    await openWith([shirt, access]);
+
+    expect(screen.getAllByText("Hidden after saving.")).toHaveLength(1);
+    expect(screen.queryByText(/leave it empty to keep/)).toBeNull();
+  });
+
+  it("sends the answer that was typed into a sensitive box, with the ordinary one", async () => {
+    await openWith([shirt, access]);
+
+    fireEvent.change(screen.getByLabelText("Shirt size"), { target: { value: "M" } });
+    fireEvent.change(screen.getByLabelText("Accessibility needs"), { target: { value: "step-free access" } });
+    submit();
+
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(mockCreateAttendee.mock.calls[0]![1]).toMatchObject({ custom_data: { shirt: "M", access: "step-free access" } });
+  });
+
+  it("still asks for a required sensitive question when a new attendee is added", async () => {
+    await openWith([shirt, badge]);
+
+    submit();
+
+    expect(await screen.findByText("Name on badge is required.")).toBeTruthy();
+    expect(mockCreateAttendee).not.toHaveBeenCalled();
+  });
+});
