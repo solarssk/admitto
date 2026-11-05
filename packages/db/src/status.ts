@@ -108,7 +108,8 @@ export type AttendeeActionType =
   | 'registrations_deleted'
   | 'registration_mail_retried'
   | 'attendee_companion_updated'
-  | 'attendee_companion_removed';
+  | 'attendee_companion_removed'
+  | 'sensitive_data_revealed';
 
 export const ATTENDEE_ACTION_TYPE = [
   'check_in',
@@ -138,6 +139,7 @@ export const ATTENDEE_ACTION_TYPE = [
   'registration_mail_retried',
   'attendee_companion_updated',
   'attendee_companion_removed',
+  'sensitive_data_revealed',
 ] as const satisfies AttendeeActionType[];
 
 /** Maximum note body length (API validation — Lock #8). */

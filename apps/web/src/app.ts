@@ -191,6 +191,7 @@ import {
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
 import { MAX_COMPANION_BODY_BYTES, handleDeleteAttendeeCompanion, handlePatchAttendeeCompanion } from "./admin/attendee-companion-routes.js";
+import { handleRevealAttendeeAnswers, handleRevealRegistrationAnswers } from "./admin/sensitive-reveal-routes.js";
 import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "./admin/attendee-erase-routes.js";
 import {
   handleDeleteEventRegistrations,
@@ -851,6 +852,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminWalletMessageJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-job-status");
   const adminWalletMessageSendRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-send");
   const adminAttendeePatchRateLimit = rateLimit(rateLimitStore, "admin:attendee-patch");
+  const adminSensitiveRevealRateLimit = rateLimit(rateLimitStore, "admin:sensitive-reveal");
   const adminUserRevokeSessionsRateLimit = rateLimit(rateLimitStore, "admin:user-revoke-sessions");
   const adminWalletActionRateLimit = rateLimit(rateLimitStore, "admin:wallet-action");
   const adminWalletActionBulkRateLimit = rateLimit(rateLimitStore, "admin:wallet-action-bulk");
@@ -2138,6 +2140,24 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/registrations/:id", staffAdminGate, (c) =>
     handleGetEventRegistration(c, db),
+  );
+  // The deliberate "Show" of the answers to sensitive questions (D-E6): one registration or one attendee at a time, with its
+  // companion. A read that is audited, so a POST behind the cross-site check, with its own budget per user; not behind
+  // guardArchivedEvent, because reading an archived event is allowed. The route checks on its own that the caller manages
+  // the event (an administrator of its organisation or a superadmin, never an operator).
+  app.post(
+    "/api/admin/events/:eventId/registrations/:id/reveal",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminSensitiveRevealRateLimit,
+    (c) => handleRevealRegistrationAnswers(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/reveal-sensitive",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminSensitiveRevealRateLimit,
+    (c) => handleRevealAttendeeAnswers(c, db),
   );
   // Decisions on guest registrations: accept, reject, send a failed mail again. One registration is a list of one.
   // The chain of the bulk attendee routes: CSRF, staff gate, body cap, the shared bulk-mutation budget, and the

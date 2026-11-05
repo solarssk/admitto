@@ -89,7 +89,15 @@ Erasure and removal need no code of their own: the answers sit in `Attendee.cust
 
 A pass that was already issued keeps what it held when it was built: Admitto leaves the answer out of every pass it builds from then on, but it does not take back a pass that the guest's phone and the wallet provider already hold. For a question that is marked sensitive after passes went out, reissue the passes if their content matters.
 
-Not covered yet, and closed by the next pull requests of the same release: the administrator's deliberate "Show" of a value with its audit entry.
+**Show.** An administrator of the organisation or a superadmin can show the sensitive answers of one person at a time, on a deliberate click (`POST /api/admin/events/:eventId/registrations/:id/reveal` for a guest's registration, `POST /api/admin/events/:eventId/attendees/:id/reveal-sensitive` for an attendee). It is the one place that returns them, and it is built so that the answers leave only with their trace:
+
+- **Who.** The server checks the role: an operator and an administrator of another organisation get 403, whatever the page shows. It works on an archived event, because it reads and changes nothing.
+- **What.** The answers to the questions that are sensitive now, of the guest and of their companion, and only those that have a value. An answer to an ordinary question is never returned, and neither is a key that no question has. The answer is in the response and nowhere else: not in a log line, an error or an audit entry, and the response is not cached.
+- **Erased.** An erased attendee answers 409 `attendee_erased` and a deleted registration 404 `not_found`. A request that arrives while an erasure or a deletion is still running waits for it, through the same locks as the writers, and then finds the person gone.
+- **Audit.** Every click is one entry in the event's activity log (the attendee's own row, or an event-level row for a registration) and one in the central audit log (`sensitive_data_revealed`), written in the transaction that reads the answers. If an entry cannot be written, the request fails and returns no answer. The entries hold who, when, the event, the id of the registration or attendee, the keys of the questions and how many values were shown. They never hold a value. A click on a person with no sensitive answer is an entry too.
+- **Limit.** 20 a minute and 200 an hour for each user, across both routes (`admin:sensitive-reveal`; the 429 is `sensitive_reveal_limit` with `Retry-After`; retune it with `RATE_LIMIT_OVERRIDES`). A person who looks at a few guests stays far under it. A script that walks an event does not.
+
+Showing an answer does not change the value stored. The audit entry of an attendee goes with the attendee when they are erased, like the rest of their activity log; the central entry holds ids and question keys only.
 
 ## Data minimisation
 
