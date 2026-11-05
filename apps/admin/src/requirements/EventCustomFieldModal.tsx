@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import type { EventCustomFieldType } from "@admitto/shared";
-import { Button, IconButton, ModalBackdrop, Notice, Tooltip, useToast } from "@admitto/ui";
-import { createEventCustomField, updateEventCustomField } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { Button, IconButton, ModalBackdrop, Notice, Switch, Tooltip, useToast } from "@admitto/ui";
+import { ApiError, createEventCustomField, updateEventCustomField } from "../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto, EventCustomFieldRecipient } from "../api/types.js";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
 import { dependencyMessage, dependencyProblem } from "./fieldDependencies.js";
@@ -23,6 +23,7 @@ import {
 } from "./fieldRules.js";
 import { FormRulesEditor } from "./FormRulesEditor.js";
 import { slugifyItemKey } from "./itemKey.js";
+import { SensitiveFieldSwitch } from "./SensitiveFieldSwitch.js";
 import { editOf, optionRowsFromOptions, OptionsEditor, type OptionRow } from "./OptionsEditor.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { RetryHint } from "../components/RetryHint.js";
@@ -81,6 +82,8 @@ type FormState = {
   required: boolean;
   /** Whose answer the field asks for. */
   appliesTo: EventCustomFieldRecipient;
+  /** Whether the answers are sensitive (D-E6). */
+  sensitive: boolean;
   options: OptionRow[];
   /** The rules, as typed: the format rules, the icon, the condition and the suggestions. What was typed for a type that does not take
    * it stays, so that going back to a type that does gives it back; what counts as an edit and what is sent follows the type
@@ -89,7 +92,7 @@ type FormState = {
 };
 
 function emptyForm(): FormState {
-  return { label: "", source_field: "", description: "", type: "text", required: false, appliesTo: "guest", options: [], rules: EMPTY_RULES_DRAFT };
+  return { label: "", source_field: "", description: "", type: "text", required: false, appliesTo: "guest", sensitive: false, options: [], rules: EMPTY_RULES_DRAFT };
 }
 
 function formFromField(field: EventCustomFieldDto): FormState {
@@ -100,6 +103,7 @@ function formFromField(field: EventCustomFieldDto): FormState {
     type: field.type,
     required: field.required,
     appliesTo: recipientOfField(field),
+    sensitive: field.sensitive === true,
     options: optionRowsFromOptions(field.options),
     rules: rulesDraftFromRules(field.rules),
   };
@@ -119,6 +123,7 @@ function describeDraft(form: FormState, field: EventCustomFieldDto | null, field
     description: form.description.trim(),
     required: form.required,
     appliesTo: form.appliesTo,
+    sensitive: form.sensitive,
     options: selectOptions,
     rules: nextRules,
   };
@@ -160,6 +165,8 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
   const isEdit = field !== null;
   const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
   const [saving, setSaving] = useState(false);
+  // Why the server refused to make the question sensitive (an item still shows it): said in the editor, where the switch is.
+  const [sensitiveRefusal, setSensitiveRefusal] = useState<string | null>(null);
   // How many attendees hold each option of a select field being edited (null = still being read, or the read failed): the
   // delete and rename-risk checks in OptionsEditor and below treat null as "unknown", never as "unused".
   const usage = useOptionUsage(eventId, field);
@@ -214,6 +221,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
 
   async function performSave() {
     setSaving(true);
+    setSensitiveRefusal(null);
     try {
       if (isEdit) {
         await updateEventCustomField(eventId, field.id, updateFieldPatch(field, save));
@@ -222,7 +230,9 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
       }
       onSaved();
     } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to save field."), "error");
+      const message = operatorApiErrorMessage(err, "Failed to save field.");
+      if (form.sensitive && err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "field_in_use")) setSensitiveRefusal(message);
+      else addToast(message, "error");
     } finally {
       setSaving(false);
     }
@@ -352,6 +362,21 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
                 </>
               )}
             </div>
+            <SensitiveFieldSwitch
+              checked={form.sensitive}
+              wasSensitive={field?.sensitive === true}
+              isEdit={isEdit}
+              disabled={saving}
+              onChange={(sensitive) => {
+                setSensitiveRefusal(null);
+                setForm((f) => ({ ...f, sensitive }));
+              }}
+            />
+            {sensitiveRefusal && (
+              <Notice variant="error" role="alert">
+                {sensitiveRefusal}
+              </Notice>
+            )}
             {dependency?.kind === "controls_others" && (
               <Notice variant="warning" as="output">
                 {dependencyMessage(dependency, fields)}
