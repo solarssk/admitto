@@ -118,7 +118,7 @@ Signs: registrations nobody expects, registration mail going to addresses nobody
 
 Signs: many entries of **Sensitive answers shown** in the audit log from one account, or a 429 `sensitive_reveal_limit` that someone reports.
 
-1. **Look at the entries.** Instance Settings → Audit log, filter the action **Sensitive answers shown**. Each entry names the account, the time, the event, the registration or attendee and the keys of the questions, never an answer.
+1. **Look at the entries.** Organisation settings → Logs → Audit, filter the action **Sensitive answers shown**. Each entry names the account, the time, the event, the registration or attendee and the keys of the questions, never an answer.
 2. **Cut the account off.** Revoke its sessions (see the first steps of this page) and change its role, so it cannot show anything more.
 3. **Slow it down for everyone** if you cannot tell yet who it is: `RATE_LIMIT_OVERRIDES` with `{"admin:sensitive-reveal":[{"max":5},{"max":30}]}`, then recreate `app`. The limit has two checks, a minute and an hour, and a user has one budget across both routes (the registration and the attendee).
 4. **What was shown.** The entries tell which people and which questions, not the answers, which stay in `custom_data` as before. Treat those people as having had their answers read by that account.

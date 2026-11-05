@@ -31,7 +31,7 @@ An Administrator prepares and runs events belonging to an assigned organisation.
 
 A question can be marked sensitive, for example one about health or accessibility. Its answers are hidden everywhere in Admitto. Only an Administrator of the organisation or a Superadmin can show the answers of one guest at a time, and an Operator never can.
 
-Every time someone shows sensitive answers, Admitto writes an entry to the audit log: who did it, when, which guest or registration, and which questions. The entry never holds the answers themselves. It is written even when the guest gave no sensitive answer. Showing many guests in a short time is limited per person, so a script cannot read a whole event.
+Every time someone shows sensitive answers, Admitto writes an entry to the audit log: who did it, when, which guest or registration, and which questions. The entry never holds the answers themselves. It is written even when the guest gave no sensitive answer. Showing many guests in a short time is limited per person (20 a minute and 200 an hour), which slows a script down and leaves one audit entry for every guest it shows.
 
 An erased guest has no answers left to show. Showing is also allowed on an archived event.
 
