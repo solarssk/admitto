@@ -489,6 +489,7 @@ function suggestedFieldInput(suggested: SuggestedEventField): z.infer<typeof cre
     type: suggested.type,
     required: false,
     show_on_form: true,
+    sensitive: suggested.sensitive === true ? true : undefined,
     options: suggested.options ? [...suggested.options] : undefined,
     rules: suggested.rules ? structuredClone(suggested.rules) : undefined,
   };

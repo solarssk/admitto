@@ -22,7 +22,13 @@ export interface SuggestedRow {
   readonly meta: string;
   /** Why a question that cannot be added is not; empty for the others. */
   readonly note: string;
+  /** What the organiser should know before adding a question whose answers are sensitive; empty for the others. */
+  readonly warning: string;
 }
+
+/** Said under a suggested question that is created sensitive (the one about accessibility needs, which can hold health data). */
+export const SENSITIVE_SUGGESTION_WARNING =
+  "Answers about accessibility can be health data. This question is optional and its answers are sensitive: they are hidden in lists and exports and shown only on request to administrators.";
 
 const quoted = (name: string): string => `“${name}”`;
 
@@ -64,6 +70,7 @@ export function suggestedRows(plan: SuggestedFieldsPlan, fields: readonly EventC
       state,
       meta: metaOf(suggested, fields),
       note: state === "blocked" ? blockedNote(suggested, fields) : "",
+      warning: suggested.sensitive === true ? SENSITIVE_SUGGESTION_WARNING : "",
     };
   });
 }

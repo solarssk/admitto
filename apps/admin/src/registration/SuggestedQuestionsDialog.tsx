@@ -27,7 +27,7 @@ export interface SuggestedQuestionsDialogProps {
 }
 
 /**
- * Lists the suggested questions (parking, travel, accommodation) before they are added to the event, and adds them when the organiser
+ * Lists the suggested questions (parking, travel, accommodation, accessibility needs) before they are added to the event, and adds them when the organiser
  * confirms. It says first what will happen to each: it is added, the event has a field under that key already and it stays as it is, or
  * it cannot be added because the field it depends on is something else. The plan is the server's own rule (`planSuggestedFields`), so
  * what the window promises is what the request does. When the questions would not all fit in the event's limit of fields it says by how
@@ -91,6 +91,11 @@ export function SuggestedQuestionsDialog({ eventId, fields, onClose, onAdded }: 
                 <span className="suggested-questions__title">{row.label}</span>
                 <span className="suggested-questions__meta">{row.meta}</span>
                 {row.note !== "" && <span className="suggested-questions__note">{row.note}</span>}
+                {row.warning !== "" && (
+                  <span className="suggested-questions__note suggested-questions__warning">
+                    <i className="ti ti-lock" aria-hidden="true" /> {row.warning}
+                  </span>
+                )}
               </div>
               <Badge variant={badgeOf(row.state).variant}>{badgeOf(row.state).text}</Badge>
             </li>
