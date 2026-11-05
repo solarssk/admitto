@@ -62,6 +62,32 @@ const failedAt = (slug: string, word = "failed") => `/r/${slug}?sso=${word}`;
 /** A browser that holds the flow cookie of `state`, the way the start puts it there. */
 const holdFlow = (jar: Jar, state: string) => jar.set(flowCookieName(state), state, GUEST_SSO_CALLBACK_PATH);
 
+/**
+ * `db`, but the provider is switched off the moment after it was read for the first time: after the check that the event is
+ * open (which reads the provider to know the company sign-in is available), before the read that fetches the provider's settings.
+ */
+function switchProviderOffAfterFirstRead(db: PrismaClient): PrismaClient {
+  let reads = 0;
+  const provider = new Proxy(db.identityProvider, {
+    get(model, key) {
+      if (key !== "findFirst") return Reflect.get(model, key);
+      return async (args: Parameters<typeof model.findFirst>[0]) => {
+        const row = await model.findFirst(args);
+        reads += 1;
+        if (reads === 1) await model.update({ where: { id: PROVIDER_ID }, data: { enabled: false } });
+        return row;
+      };
+    },
+  });
+  return new Proxy(db, {
+    get(client, key) {
+      if (key === "identityProvider") return provider;
+      const value: unknown = Reflect.get(client, key);
+      return typeof value === "function" ? value.bind(client) : value;
+    },
+  });
+}
+
 beforeAll(async () => {
   prisma = createTestPrismaClient();
   idp = await startMockOidcIdp();
@@ -572,6 +598,28 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
     expect(res.status).toBe(404);
     expect(jar.names()).toEqual([]);
     expect(calls()).toBe(0);
+  });
+
+  it("goes back to the page with the general notice, with the flow cookie deleted and without asking the provider, when the provider is switched off in the instant after the event was found open", async () => {
+    const slug = await addEvent("provider-race");
+    const jar = new Jar();
+    const before = await goToProvider(h.app, jar, slug, idp);
+    const racing = new Hono();
+    racing.get(GUEST_SSO_CALLBACK_PATH, (c) =>
+      handleSsoCallback(c, { db: switchProviderOffAfterFirstRead(prisma), baseUrl: async () => "https://tickets.example.com" }),
+    );
+
+    const res = await racing.request(`${ORIGIN}${before.callbackUrl.pathname}${before.callbackUrl.search}`, {
+      headers: { Cookie: jar.header(before.callbackUrl.pathname) },
+    });
+    jar.absorb(res);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(failedAt(slug));
+    expect(jar.names()).toEqual([]);
+    expect(calls()).toBe(0);
+    const refusals = querySystemLogs({ source: "security" }).filter((entry) => entry.message === "registration_sso_refused");
+    expect(refusals.map((entry) => entry.fields)).toEqual([{ reason: "provider_unavailable", event_id: eventIds.get(slug) }]);
   });
 
   it("is the 404 when the event has closed between the start and the callback", async () => {
