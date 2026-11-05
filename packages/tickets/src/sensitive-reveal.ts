@@ -71,11 +71,14 @@ function revealedFrom(
   return { guest: sensitiveAnswers(guestData, sensitive), companions: withAnswers };
 }
 
-const sortedKeys = (answers: Record<string, unknown>): string[] => Object.keys(answers).sort();
+/** The keys in one fixed order, whatever the locale of the process, so the entry reads the same everywhere. */
+const byKey = (a: string, b: string): number => a.localeCompare(b, "en");
+
+const sortedKeys = (answers: Record<string, unknown>): string[] => Object.keys(answers).sort(byKey);
 
 /** The metadata of both entries: the person, how many values were shown, and the keys of their questions. No value. */
 function entryMetadata(subject: RevealSubject, answers: RevealedAnswers): Record<string, unknown> {
-  const companionKeys = [...new Set(answers.companions.flatMap(({ answers: companion }) => Object.keys(companion)))].sort();
+  const companionKeys = [...new Set(answers.companions.flatMap(({ answers: companion }) => Object.keys(companion)))].sort(byKey);
   const count =
     Object.keys(answers.guest).length + answers.companions.reduce((sum, { answers: companion }) => sum + Object.keys(companion).length, 0);
   return {
@@ -119,7 +122,7 @@ async function readRegistrationAnswers(
  * Returns the answers of one person to the questions that are sensitive now, and records the click. See the comment at the
  * top of the file. The attendee has to be in the event for the caller to ask (the route checks who may manage it).
  */
-export async function revealSensitiveAnswers(db: PrismaClient, params: RevealParams): Promise<RevealResult> {
+export function revealSensitiveAnswers(db: PrismaClient, params: RevealParams): Promise<RevealResult> {
   const { eventId, subject, actor } = params;
   return db.$transaction(async (tx): Promise<RevealResult> => {
     if (subject.kind === "attendee") {
