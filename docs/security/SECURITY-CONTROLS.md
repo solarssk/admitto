@@ -398,6 +398,22 @@ An Administrator corrects or removes the person a guest brought: `PATCH` and `DE
 
 ---
 
+## Showing sensitive answers (staff)
+
+An Administrator shows the answers to the questions marked sensitive, one person at a time: `POST /api/admin/events/:eventId/registrations/:id/reveal` and `POST /api/admin/events/:eventId/attendees/:id/reveal-sensitive`. It is the only place that returns them (everything else leaves them out, see [DATA-PROTECTION.md](../../DATA-PROTECTION.md#sensitive-attendee-fields)), so it is narrow and every use is on record.
+
+| Control | What it does |
+|---------|--------------|
+| Access | An admin of the event's organisation or a superadmin, checked on the server in the handler. An operator gets 403, and so does an admin of another organisation. Both routes have the cross-site check (403 `forbidden`) and take no body. They work on an archived event. |
+| What is returned | `{ guest, companions }`: the answers to the questions that are sensitive now, by key, that have a value, for the person and each companion that has any. Never an answer to an ordinary question. The response is `Cache-Control: no-store`. |
+| Who is refused | An erased attendee (409 `attendee_erased`), an id that is no attendee of the event (403), a registration that is not in the event or was deleted (404 `not_found`). |
+| Locks | An attendee: the row lock (`lockAttendeeRow`) before anything is read. A registration: the registration queue, which an erasure and a deletion hold. A request that arrives while one of them is open waits and then finds the person gone. |
+| Audit | `sensitive_data_revealed` in the event's activity log and in the central audit log, written in the transaction that reads the answers: a failed entry fails the request and no answer is returned. One entry of each kind for every successful click, also for a person with no sensitive answer. They hold the event, the person's id, the number of values and the keys of the questions, never a value. |
+| Rate limit | `admin:sensitive-reveal`, per user across both routes: 20 a minute and 200 an hour. The 429 is `sensitive_reveal_limit` with `Retry-After` set to the window of the check that refused. Retune with `RATE_LIMIT_OVERRIDES`, an array with one entry per check. |
+| Logs | No answer is written to a log line, an error or an audit entry, also when a request fails. |
+
+---
+
 ## Optional hardening (customer choice)
 
 Organizations with stricter policies often add controls **outside** the application:
@@ -538,6 +554,7 @@ Notes on the rows above:
 | polling a background job's status (`…/import/jobs/:jobId`, `…/wallet-push`, `…/wallet-message`, `…/wallet-refresh-status`, `…/wallet-cleanup/jobs/:jobId`) | user + event | 120 / 60 s per route | event admin |
 | `PATCH …/attendees/:id` | user + attendee | 20 / 60 s | event admin |
 | `PATCH` and `DELETE …/attendees/:id/companion` | user + attendee (the bucket of `PATCH …/attendees/:id`) | 20 / 60 s | event admin |
+| `POST …/registrations/:id/reveal` and `POST …/attendees/:id/reveal-sensitive` (show sensitive answers) | user, one bucket for both routes | 20 / 60 s and 200 / h | event admin |
 | `POST …/attendees/:id/resend` | user + attendee; and per user | 5 / 60 s; 30 / h | event admin |
 | bulk resend / bulk send (real sends; dry-run exempt) | user | 3 / 10 min | event admin |
 | `POST …/wallet-message/send` (real send; dry-run exempt) | user + event | 10 / 10 min | event admin |
