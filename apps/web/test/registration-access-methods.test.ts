@@ -8,17 +8,20 @@ import {
   resolveAccessMethodAvailability,
   setEnabledAccessMethods,
 } from "../src/registration/access-methods.js";
+import { SSO_PROVIDER_SETTINGS_KEY } from "../src/registration/sso-provider.js";
 import { TURNSTILE_SETTINGS_KEY } from "../src/registration/turnstile-settings.js";
 import { memorySystemSettings } from "./helpers/memory-system-settings.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-/** SystemSettings in memory plus an identity provider table with a given number of enabled rows. */
-function fakeDb(options: { values?: Record<string, string>; enabledProviders?: number } = {}) {
+/** SystemSettings in memory plus an identity provider table with the given rows (found by id, as `findOidcProviderById` asks). */
+function fakeDb(options: { values?: Record<string, string>; providers?: { id: string; enabled: boolean }[] } = {}) {
   const memory = memorySystemSettings(options.values);
-  const findMany = vi.fn(async () => Array.from({ length: options.enabledProviders ?? 0 }, (_, i) => ({ id: `idp-${i}` })));
-  const db = { systemSettings: memory.systemSettings, identityProvider: { findMany } } as unknown as Db;
-  return { db, rows: memory.rows(), findMany };
+  const findFirst = vi.fn(async ({ where }: { where: { id: string; provider_type: string } }) =>
+    (options.providers ?? []).find((provider) => provider.id === where.id) ?? null,
+  );
+  const db = { systemSettings: memory.systemSettings, identityProvider: { findFirst } } as unknown as Db;
+  return { db, rows: memory.rows(), findFirst };
 }
 
 const readyKeys = JSON.stringify({
@@ -103,7 +106,7 @@ describe("resolveAccessMethodAvailability", () => {
 
   it("closes link and password without keys, also for a development-looking setup", async () => {
     const values = { [ACCESS_METHODS_SETTINGS_KEY]: '["link","password","sso"]' };
-    const { db } = fakeDb({ values, enabledProviders: 0 });
+    const { db } = fakeDb({ values });
     expect(byMethod(await resolveAccessMethodAvailability(db))).toEqual({ link: false, password: false, sso: false });
   });
 
@@ -126,19 +129,44 @@ describe("resolveAccessMethodAvailability", () => {
     });
   });
 
-  it("opens SSO when an identity provider is enabled", async () => {
-    const values = { [ACCESS_METHODS_SETTINGS_KEY]: '["sso"]' };
-    expect(byMethod(await resolveAccessMethodAvailability(fakeDb({ values, enabledProviders: 1 }).db))).toEqual({
+  it("opens SSO when the identity provider chosen for guests exists and is enabled, with no Turnstile keys", async () => {
+    const values = { [ACCESS_METHODS_SETTINGS_KEY]: '["sso"]', [SSO_PROVIDER_SETTINGS_KEY]: '"idp-1"' };
+    const providers = [{ id: "idp-1", enabled: true }];
+    expect(byMethod(await resolveAccessMethodAvailability(fakeDb({ values, providers }).db))).toEqual({
       link: false,
       password: false,
       sso: true,
     });
   });
 
-  it("counts only enabled OIDC providers for SSO", async () => {
-    const { db, findMany } = fakeDb({ enabledProviders: 0 });
-    await resolveAccessMethodAvailability(db);
-    expect(findMany).toHaveBeenCalledTimes(1);
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { enabled: true, provider_type: "oidc" } }));
+  it("keeps SSO closed, and says why, while no provider is chosen, the chosen one is gone or switched off, or another one is enabled", async () => {
+    const enabled = { [ACCESS_METHODS_SETTINGS_KEY]: '["sso"]' };
+    const cases: [string, Parameters<typeof fakeDb>[0]][] = [
+      ["nothing chosen, one enabled", { values: enabled, providers: [{ id: "idp-1", enabled: true }] }],
+      ["chosen provider deleted", { values: { ...enabled, [SSO_PROVIDER_SETTINGS_KEY]: '"idp-gone"' }, providers: [{ id: "idp-1", enabled: true }] }],
+      ["chosen provider switched off", { values: { ...enabled, [SSO_PROVIDER_SETTINGS_KEY]: '"idp-1"' }, providers: [{ id: "idp-1", enabled: false }] }],
+      ["chosen value is not an id", { values: { ...enabled, [SSO_PROVIDER_SETTINGS_KEY]: "7" }, providers: [{ id: "idp-1", enabled: true }] }],
+      ["chosen value is corrupt", { values: { ...enabled, [SSO_PROVIDER_SETTINGS_KEY]: "not json" }, providers: [{ id: "idp-1", enabled: true }] }],
+    ];
+    for (const [what, options] of cases) {
+      const list = await resolveAccessMethodAvailability(fakeDb(options).db);
+      expect(list.find((entry) => entry.method === "sso"), what).toEqual({
+        method: "sso",
+        enabled: true,
+        available: false,
+        blockedBy: "identity_provider",
+      });
+    }
+  });
+
+  it("looks for the chosen provider by its id, among the OIDC providers, and for nothing when none is chosen", async () => {
+    const chosen = fakeDb({ values: { [SSO_PROVIDER_SETTINGS_KEY]: '"idp-1"' } });
+    await resolveAccessMethodAvailability(chosen.db);
+    expect(chosen.findFirst).toHaveBeenCalledTimes(1);
+    expect(chosen.findFirst).toHaveBeenCalledWith({ where: { id: "idp-1", provider_type: "oidc" } });
+
+    const none = fakeDb();
+    await resolveAccessMethodAvailability(none.db);
+    expect(none.findFirst).not.toHaveBeenCalled();
   });
 });

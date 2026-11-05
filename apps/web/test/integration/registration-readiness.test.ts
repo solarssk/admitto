@@ -3,6 +3,7 @@ import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { getEventRegistrationSettings } from "../../src/admin/event-registration-settings.js";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
+import { SSO_PROVIDER_SETTINGS_KEY, setSsoProviderId } from "../../src/registration/sso-provider.js";
 import { resolveRegistration } from "../../src/registration/form-model.js";
 import { READINESS_KEYS, readinessBlockers, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
@@ -34,13 +35,42 @@ beforeAll(async () => {
   await seeder.prepare();
 });
 
+const PROVIDER_ID = "reg118a-ready-idp";
+
+async function resetSso(): Promise<void> {
+  await prisma.systemSettings.deleteMany({ where: { key: SSO_PROVIDER_SETTINGS_KEY } });
+  await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
+}
+
+/** An identity provider and the company sign-in turned on by the system, with the parts a row may take away. */
+async function ssoSystem(options: { providerEnabled?: boolean; chosen?: boolean; wayEnabled?: boolean; keys?: boolean } = {}): Promise<void> {
+  const { providerEnabled = true, chosen = true, wayEnabled = true, keys = true } = options;
+  await prisma.identityProvider.create({
+    data: {
+      id: PROVIDER_ID,
+      issuer: "https://idp.reg118a.example.com/",
+      client_id: "reg118a-ready",
+      authorization_endpoint: "https://idp.reg118a.example.com/authorize",
+      token_endpoint: "https://idp.reg118a.example.com/token",
+      jwks_uri: "https://idp.reg118a.example.com/jwks",
+      display_name: "Ready IdP",
+      enabled: providerEnabled,
+    },
+  });
+  await setSsoProviderId(prisma, chosen ? PROVIDER_ID : null);
+  await setEnabledAccessMethods(prisma, wayEnabled ? ["link", "sso"] : ["link"]);
+  if (!keys) await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
+}
+
 beforeEach(async () => {
+  await resetSso();
   await seeder.setSystemKeys(true);
   await setMail(true);
 });
 
 afterAll(async () => {
   if (!prisma) return;
+  await resetSso();
   await seeder.wipe();
   await setMail(false);
   await prisma.$disconnect();
@@ -65,7 +95,13 @@ const ROWS: Row[] = [
   { name: "an event that has everything, in the mode of approval", seed: { settings: { mode: "approval" } }, page: "open", blockers: [] },
   { name: "an event that is ready and has registration off: ready, and still a not-found page", seed: { settings: { mode: null } }, page: "not_found", blockers: [] },
   { name: "no way in chosen", seed: { settings: { access_methods: [] } }, page: "not_found", blockers: ["access_method"] },
-  { name: "the company sign-in, which an event cannot choose yet", seed: { settings: { access_methods: ["sso"] } }, page: "not_found", blockers: ["access_method"] },
+  { name: "the company sign-in, with a provider chosen and on, and no Turnstile keys: the form needs no bot check", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem({ keys: false }), page: "open", blockers: [] },
+  { name: "the company sign-in, with the Turnstile keys saved too", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem(), page: "open", blockers: [] },
+  { name: "the company sign-in, with no provider chosen", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem({ chosen: false }), page: "not_found", blockers: ["identity_provider"] },
+  { name: "the company sign-in, with the chosen provider switched off", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem({ providerEnabled: false }), page: "not_found", blockers: ["identity_provider"] },
+  { name: "the company sign-in, which the system administrator has not enabled", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem({ wayEnabled: false }), page: "not_found", blockers: ["access_method_enabled"] },
+  { name: "the company sign-in next to the link", seed: { settings: { access_methods: ["sso", "link"] } }, system: () => ssoSystem(), page: "not_found", blockers: ["access_method"] },
+  { name: "a link, whatever the state of the identity provider", system: () => ssoSystem({ chosen: false, providerEnabled: false }), page: "open", blockers: [] },
   { name: "two ways in", seed: { settings: { access_methods: ["link", "password"] } }, system: bothWays, page: "not_found", blockers: ["access_method"] },
   { name: "a link that the system administrator has not enabled", system: () => setEnabledAccessMethods(prisma, []), page: "not_found", blockers: ["access_method_enabled"] },
   {

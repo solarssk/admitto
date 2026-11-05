@@ -7,9 +7,12 @@
  * an event that has registration off, is archived, offers another way in, or is not ready. The
  * exception is an event that is over: its form says "Registration is closed".
  *
- * Two ways in are built: the public link and the shared password of the event (D-C1, D-C3). An event whose way in is the
- * password is open only while it has a password: without one it is as good as off, the same 404. The hash of the
- * password is read with the event for the submit route and stays out of the model of the page.
+ * Three ways in are built: the public link, the shared password of the event and the company sign-in (D-C1, D-C3, D-C4). An
+ * event whose way in is the password is open only while it has a password: without one it is as good as off, the same 404.
+ * The hash of the password is read with the event for the submit route and stays out of the model of the page. An event
+ * whose way in is the company sign-in is open only while the identity provider chosen for guests exists and is enabled; its
+ * page asks the guest to sign in first, and what it knows of the person comes from the signed cookie (./sso-session.ts),
+ * which the route reads, never from this model.
  *
  * Checks run from the cheapest, and the ones that can only fail for an event that does not exist or has
  * no registration come first, so a guess at a slug costs one lookup of the event.
@@ -37,6 +40,8 @@ import { legalDocumentPath } from "../legal/legal-documents.js";
 import { loadRequiredLegalDocuments, type RequiredLegalDocuments } from "../legal/registration-gate.js";
 import { resolveAccessMethodAvailability } from "./access-methods.js";
 import { canBeMet, canDrawQuestion, controllersByKey, type FormQuestionType } from "./form-fields.js";
+import { restrictionOf, type ClaimRestriction } from "./sso-claim.js";
+import { getSsoProviderId } from "./sso-provider.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
 
 /** An event slug as the create-event form allows it (lowercase letters, digits, `_` and `-`, up to 80).
@@ -120,11 +125,15 @@ export interface RegistrationFormModel {
   termsPath: string;
   consents: FormConsent[];
   contact: FormContact | null;
-  /** The public Turnstile key; the page has no widget without one, and then it is not served. */
+  /** The public Turnstile key; the page has no widget without one, and then it is not served. Empty for the company
+   * sign-in, which has no widget: the form stands behind a sign-in. */
   turnstileSiteKey: string;
   /** Whether the way in is the event's password: the page then asks for it first and keeps the form behind it. Only that:
    * the hash of the password is never part of what the page is built from. */
   needsPassword: boolean;
+  /** Whether the way in is the company sign-in (D-C4): the page then asks the guest to sign in first, and shows the form,
+   * with the address the provider gave locked, only to a guest who has. Only that: who has is the route's to say. */
+  needsSso: boolean;
   /** Whether the event draws the phone box (and, in a later step, the date and time boxes) in the product's own style
    * instead of the browser's (D-E9). One switch for the event. Off: the page is the native one, byte for byte. */
   styledControls: boolean;
@@ -142,7 +151,11 @@ export type RegistrationPageState =
 
 /** How a guest gets to the form (D-C1). An event whose way in is the password is open only while it has one, so a hash is
  * part of the type of that way and cannot be missing. */
-export type GuestAccess = { method: "link" } | { method: "password"; passwordHash: string };
+export type GuestAccess =
+  | { method: "link" }
+  | { method: "password"; passwordHash: string }
+  /** The company sign-in: the provider guests sign in with, and the restriction to one company the event has, if any. */
+  | { method: "sso"; providerId: string; restriction: ClaimRestriction | null };
 
 /** {@link RegistrationPageState} with what the submit route (`POST /r/:slug`) needs besides the form: the id of the
  * event, the questions as they are stored and the way in with the hash of the password. The submit route and the page
@@ -178,6 +191,8 @@ const EVENT_SELECT = {
       consent_keys: true,
       max_companions: true,
       styled_form_controls: true,
+      sso_claim_name: true,
+      sso_claim_values: true,
     },
   },
 } as const;
@@ -306,13 +321,17 @@ function drawCompanion(fields: readonly RegistrantFormField[], maxCompanions: nu
   return questions ? { max, questions } : null;
 }
 
-/** The way in the event offers: the one method of `access_methods` (one in this release, D-C1) when it is a way built
- * here, with what it needs. Null for any other, and for the password when the event has none: as good as off. */
-function accessOf(settings: SettingsRow): GuestAccess | null {
+/** The way in the event offers: the one method of `access_methods` (one in this release, D-C1), with what it needs. Null for
+ * the password when the event has none, and for the company sign-in while no provider is chosen for guests: as good as off. */
+async function accessOf(db: PrismaClient, settings: SettingsRow): Promise<GuestAccess | null> {
   if (settings.access_methods.length !== 1) return null;
   const method = settings.access_methods[0];
   if (method === "link") return { method };
-  return method === "password" && settings.password_hash ? { method, passwordHash: settings.password_hash } : null;
+  if (method === "password") return settings.password_hash ? { method, passwordHash: settings.password_hash } : null;
+  if (method !== "sso") return null;
+  const providerId = await getSsoProviderId(db);
+  if (providerId === null) return null;
+  return { method, providerId, restriction: restrictionOf(settings.sso_claim_name, settings.sso_claim_values) };
 }
 
 /** The form of an event that is not over, or `not_found` when something it needs is not in place. */
@@ -334,7 +353,9 @@ async function loadOpenForm(
   const way = availability.find((entry) => entry.method === access.method);
   const paths = legalPaths(row.slug, legal);
   const questions = drawQuestions(fields, "guest");
-  if (!way?.available || keys.state !== "ready" || !paths || !questions) return NOT_FOUND;
+  // The link and the password need the bot check; the company sign-in does not, because the form stands behind a sign-in.
+  const botCheckReady = access.method === "sso" || keys.state === "ready";
+  if (!way?.available || !botCheckReady || !paths || !questions) return NOT_FOUND;
   return {
     kind: "open",
     eventId: row.id,
@@ -343,7 +364,8 @@ async function loadOpenForm(
     form: {
       event,
       mode,
-      verifyEmail: settings.verify_email,
+      // The provider vouches for the address of a company sign-in (D-C5): there is no link to confirm.
+      verifyEmail: settings.verify_email && access.method !== "sso",
       askCompany: settings.ask_company,
       askDepartment: settings.ask_department,
       questions,
@@ -352,8 +374,9 @@ async function loadOpenForm(
       termsPath: paths.terms,
       consents: paths.consents,
       contact,
-      turnstileSiteKey: keys.siteKey,
+      turnstileSiteKey: keys.state === "ready" && access.method !== "sso" ? keys.siteKey : "",
       needsPassword: access.method === "password",
+      needsSso: access.method === "sso",
       styledControls: settings.styled_form_controls,
     },
   };
@@ -396,20 +419,21 @@ export function isOver(row: EventEndColumns, now: Date): boolean {
 /**
  * The state of the registration page of the event named by `slug` at `now`.
  *
- * - Not an event, archived, registration off, an access method other than the public link and the password (the
- *   company sign-in comes with its own PR), or the password with none set: `not_found`.
+ * - Not an event, archived, registration off, an access method that is not exactly one of the three, the password with
+ *   none set, or the company sign-in with no provider chosen: `not_found`.
  * - Over (see `eventEndsAtUtc`): `closed`, as long as it had registration on.
  * - Otherwise `open`, provided the event's way in is available (the Turnstile keys are saved and the system
- *   administrator allowed it), every text the event's registration needs is published and every
+ *   administrator allowed it; for the company sign-in: the provider chosen for guests exists and is enabled, and no keys are
+ *   needed), every text the event's registration needs is published and every
  *   required question can be drawn; else `not_found`, as if registration were off.
  */
 export async function resolveRegistration(db: PrismaClient, slug: string, now: Date): Promise<ResolvedRegistration> {
   const live = await findLiveEvent(db, slug);
   if (!live) return NOT_FOUND;
   const { row, settings, mode } = live;
-  // `access_methods` holds exactly one method in this release (D-C1); the link and the password are built here. An event
-  // whose way in is the password and that has none is as good as off, over or not.
-  const access = accessOf(settings);
+  // `access_methods` holds exactly one method in this release (D-C1). An event whose way in is the password and that has none,
+  // or the company sign-in with no provider chosen, is as good as off, over or not.
+  const access = await accessOf(db, settings);
   if (!access) return NOT_FOUND;
 
   const event = toFormEvent(row);

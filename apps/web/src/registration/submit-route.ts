@@ -30,6 +30,16 @@
  * 9. Only now the database is written, in `placeRegistration`, and the mail is queued in the same transaction. The mail
  *    of a new registration is withheld, not the registration, when the address or the event has spent its budget.
  *
+ * An event whose way in is the company sign-in (D-C4) has no challenge and no password: the signed cookie of the sign-in
+ * (./sso-session.ts) takes the place of step 4, and nothing is read from the body about who the guest is. A request without a
+ * cookie that checks out (forged, expired, of another event or provider, or no longer let in by the event's restriction) is the
+ * one `401 sign_in_required`, whatever is wrong with it, before anything that depends on the address. The address that is
+ * registered is the one in the cookie, whatever the body says, and the person is the provider's `sub`, which the registration
+ * keeps. The ceiling of step 5 and the floor of the answers are the same, counted from the check of the cookie. A new
+ * registration is placed as the address confirmation does when it places one (`placeRegistration`, one place of the seats, the
+ * mode and the mail), with the address already vouched for by the provider (D-C5), and the cookie is deleted with the answer
+ * that says it was received. A person who is registered already, by `sub` or by address, gets the same answer as a new one.
+ *
  * What the guest is told does not depend on the address (D-B14). A new address, an address that has a registration in any
  * state, an address of an attendee in any status and one whose mail was withheld all get the same answer, with the same
  * headers, and not sooner than one another: the answer waits until a floor of time has passed since the challenge was
@@ -61,11 +71,15 @@ import {
   ACCESS_DENIED_ERROR,
   ERROR_KEY_CHALLENGE,
   ERROR_KEY_COMPANIONS,
+  SIGN_IN_REQUIRED_ERROR,
   type RegistrationSubmitDenied,
   type RegistrationSubmitInvalid,
   type RegistrationSubmitOk,
+  type RegistrationSubmitSignIn,
 } from "./form-contract.js";
-import { resolveRegistration, type ResolvedRegistration } from "./form-model.js";
+import { resolveRegistration, type GuestAccess, type ResolvedRegistration } from "./form-model.js";
+import { proofSatisfies } from "./sso-claim.js";
+import { clearGuestSsoSessionCookie, readGuestSsoSession, type GuestSsoIdentity } from "./sso-session.js";
 import {
   SUBMIT_MESSAGES,
   checkSubmission,
@@ -135,7 +149,7 @@ export interface RegistrationSubmitDeps {
   pace?: AnswerPace;
 }
 
-type JsonStatus = 200 | 400 | 403 | 409 | 415 | 422 | 429 | 500 | 503;
+type JsonStatus = 200 | 400 | 401 | 403 | 409 | 415 | 422 | 429 | 500 | 503;
 
 /** Every JSON answer of the route: the same headers, whatever it says. */
 function json(c: Context, body: unknown, status: JsonStatus): Response {
@@ -152,6 +166,9 @@ const tooManyRequests = (c: Context): Response => json(c, { error: "too many req
 
 /** The one answer to a password that does not open the event, for every reason and every address. */
 const accessDenied = (c: Context): Response => json(c, { error: ACCESS_DENIED_ERROR } satisfies RegistrationSubmitDenied, 403);
+
+/** The one answer to a request that has no sign-in that checks out, for every reason: the page reloads to its sign-in screen. */
+const signInRequired = (c: Context): Response => json(c, { error: SIGN_IN_REQUIRED_ERROR } satisfies RegistrationSubmitSignIn, 401);
 
 function tryAgain(c: Context): Response {
   c.header("Retry-After", RETRY_AFTER_SECONDS);
@@ -210,11 +227,17 @@ function placeSubmission(
   deps: RegistrationSubmitDeps,
   { eventId, access }: Pick<Extract<ResolvedRegistration, { kind: "open" }>, "eventId" | "access">,
   registrant: RegistrantSubmission,
+  identity: GuestSsoIdentity | null,
 ): Promise<PlaceRegistrationResult> {
   const budget = INLINE_RATE_LIMITS["registration:mail-event"];
   return placeRegistration(
     deps.db,
-    { eventId, method: access.method, registrant },
+    {
+      eventId,
+      method: access.method,
+      registrant,
+      ...(identity ? { sso: { providerId: identity.providerId, subject: identity.subject } } : {}),
+    },
     {
       ...deps.placement,
       mail: {
@@ -234,12 +257,16 @@ async function answerPlacement(
   c: Context,
   placed: PlaceRegistrationResult,
   hold: () => Promise<void>,
+  spendSignIn: () => void,
 ): Promise<Response> {
   switch (placed.outcome) {
-    // `already_registered` is the answer of single sign-on only; the link never gets it, and would answer as below.
+    // `already_registered` is the outcome of single sign-on only, and it is answered as `received`: a person who has a place
+    // is told what a new one is told, so the list of who is registered is not given away to anyone who can sign in.
     case "received":
     case "already_registered":
       await hold();
+      // The sign-in is spent by the answer that says it was received, the same for both, and the same bytes.
+      spendSignIn();
       return received(c);
     case "closed":
       return respondRegistrationNotFound(c);
@@ -295,6 +322,63 @@ async function refusePassword(
   return accessDenied(c);
 }
 
+/** What the steps before the checks of the body come to: the form as the request is judged against, the instant the floor of
+ * the answers is counted from, and who signed in (null for the link and the password). */
+interface Admitted {
+  open: Extract<ResolvedRegistration, { kind: "open" }>;
+  startedAt: number;
+  identity: GuestSsoIdentity | null;
+}
+
+/** Steps 4 to 6 of the head of this file, for the link and the password: the challenge, the ceiling of the event, and the
+ * second look at the event. The answer that stops the request, or the form it goes on with. */
+async function admitByChallenge(
+  c: Context,
+  deps: RegistrationSubmitDeps,
+  target: Extract<ResolvedRegistration, { kind: "open" }>,
+  envelope: SubmissionEnvelope,
+  pace: AnswerPace,
+): Promise<Admitted | Response> {
+  const slug = target.form.event.slug;
+  const refusal = await refuseChallenge(c, deps, slug, envelope.challenge);
+  if (refusal) return refusal;
+  const startedAt = pace.now();
+  if (!(await checkRegistrationEventRateLimit(deps.store, target.eventId))) return tooManyRequests(c);
+
+  // The second look (step 6 of the head of this file): the same lookup as the first, so that the form the guest is judged
+  // against, and written for, is the one that is open now and not the one that was open before the challenge.
+  const open = await resolveRegistration(deps.db, slug, new Date());
+  if (open.kind !== "open") return respondRegistrationNotFound(c);
+  return { open, startedAt, identity: null };
+}
+
+/** The sign-in of a guest, if the request carries one that checks out for this event, this provider and the restriction of
+ * the event as it is now. The same rule the page uses to decide whether to show the form (./form-routes.ts). */
+function signedInGuest(c: Context, open: Extract<ResolvedRegistration, { kind: "open" }>, access: Extract<GuestAccess, { method: "sso" }>): GuestSsoIdentity | null {
+  const identity = readGuestSsoSession(
+    c,
+    { eventId: open.eventId, slug: open.form.event.slug, providerId: access.providerId },
+    Date.now(),
+  );
+  return identity !== null && proofSatisfies(access.restriction, identity.proof) ? identity : null;
+}
+
+/** The company sign-in in the place of steps 4 to 6: the cookie, then the ceiling of the event. No call over the network is
+ * made, so the event is not looked at a second time. */
+async function admitBySignIn(
+  c: Context,
+  deps: RegistrationSubmitDeps,
+  open: Extract<ResolvedRegistration, { kind: "open" }>,
+  access: Extract<GuestAccess, { method: "sso" }>,
+  pace: AnswerPace,
+): Promise<Admitted | Response> {
+  const identity = signedInGuest(c, open, access);
+  if (identity === null) return signInRequired(c);
+  const startedAt = pace.now();
+  if (!(await checkRegistrationEventRateLimit(deps.store, open.eventId))) return tooManyRequests(c);
+  return { open, startedAt, identity };
+}
+
 async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Response> {
   const now = new Date();
   const envelope = await readBody(c);
@@ -304,16 +388,12 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
   const target = await resolveRegistration(deps.db, slug, now);
   if (target.kind !== "open") return respondRegistrationNotFound(c);
 
-  const refusal = await refuseChallenge(c, deps, target.form.event.slug, envelope.challenge);
-  if (refusal) return refusal;
   const pace = deps.pace ?? REAL_PACE;
-  const startedAt = pace.now();
-  if (!(await checkRegistrationEventRateLimit(deps.store, target.eventId))) return tooManyRequests(c);
-
-  // The second look (step 6 of the head of this file): the same lookup as the first, so that the form the guest is judged
-  // against, and written for, is the one that is open now and not the one that was open before the challenge.
-  const open = await resolveRegistration(deps.db, slug, new Date());
-  if (open.kind !== "open") return respondRegistrationNotFound(c);
+  const { access } = target;
+  const admitted =
+    access.method === "sso" ? await admitBySignIn(c, deps, target, access, pace) : await admitByChallenge(c, deps, target, envelope, pace);
+  if (admitted instanceof Response) return admitted;
+  const { open, startedAt, identity } = admitted;
 
   // The password (step 7 of the head of this file) is judged by the event as the second look found it: an event that was
   // switched to the password between the two looks asks for it, and one switched away from it does not.
@@ -321,20 +401,24 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
   const refused = await refusePassword(c, deps, open, envelope.password, hold);
   if (refused) return refused;
 
-  const checked = checkSubmission(envelope, rulesOf(open, now));
+  // The address of a company sign-in is the provider's, from the signed cookie: what the body says of it is not read.
+  const judged = identity ? { ...envelope, email: identity.email } : envelope;
+  const checked = checkSubmission(judged, rulesOf(open, now));
   if (checked.kind === "malformed") return malformed(c);
   if (checked.kind === "invalid") return invalid(c, checked.errors);
 
   let placed: PlaceRegistrationResult;
   try {
-    placed = await placeSubmission(deps, open, checked.registrant);
+    placed = await placeSubmission(deps, open, checked.registrant, identity);
   } catch (error) {
     if (prismaCode(error) !== "P2002") throw error;
-    // The address got a registration while this request ran: the guest is told what a known address is told, and after
-    // the same wait, as the work of a new address is the one thing the wait is there to hide.
+    // The address (or the person) got a registration while this request ran: the guest is told what a known address is told, and
+    // after the same wait, as the work of a new address is the one thing the wait is there to hide.
     placed = { outcome: "received" };
   }
-  return answerPlacement(c, placed, hold);
+  return answerPlacement(c, placed, hold, () => {
+    if (identity) clearGuestSsoSessionCookie(c, slug);
+  });
 }
 
 export function prismaCode(error: unknown): string | undefined {

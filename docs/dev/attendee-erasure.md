@@ -864,6 +864,7 @@ A pass whose request left no trace on the row at all. Only a request from before
   - A registration that another attendee was accepted from is that attendee's, even with the same address (two attendees can hold one address in two spellings). It goes when that attendee is erased or removed.
   - `RegistrationMail` has no address or text of its own and goes with its registration (cascade).
   - Staff delete a registration with `deleteRegistrations` ([Deleting a guest registration](#deleting-a-guest-registration)). An accepted one erases its attendee with `eraseAttendees`. Never delete an accepted registration on its own: the attendee would keep the person's data.
+  - The company sign-in of a guest adds `sso_provider_id` and `sso_subject` (the provider's stable id of the person, `sub`), which go with the row like the address does. The table of the state of unfinished sign-ins (`RegistrationSsoState`) has no attendee, no address and no `sub`, so it is not in the inventory; the worker deletes it once it has run out.
   - A new column on `Registration` gets its decision in the same pull request.
 - **A companion (+1) is attendee data too.**
   - An `AttendeeCompanion` is a guest's companion: a third party with no ticket, who holds a name and the answers to the event's companion questions. The inventory records `placeholder` for the name and `cleared` for the answers. The row **stays**: `eraseAttendees` empties it (`ERASED_COMPANION_NAME`, no answers) and never deletes it, and Remove from event deletes the rows by cascade.

@@ -41,6 +41,12 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     missing: "Bot protection is not set up, so the form stays closed.",
     remedy: ASK_A_SUPERADMIN,
   },
+  identity_provider: {
+    title: "Company sign-in",
+    met: "The company sign-in is set up.",
+    missing: "The company sign-in is not set up, so the form stays closed.",
+    remedy: ASK_A_SUPERADMIN,
+  },
   password: {
     title: "Event password",
     met: "A password is set.",

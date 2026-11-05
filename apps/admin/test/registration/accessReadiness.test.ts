@@ -15,7 +15,7 @@ describe("the words of the checks", () => {
   it("are there for every check the server reports, in its order, and for no other", () => {
     const keys = serverKeys();
 
-    expect(keys).toHaveLength(11);
+    expect(keys).toHaveLength(12);
     expect(Object.keys(READINESS_COPY)).toEqual(keys);
   });
 
@@ -31,7 +31,7 @@ describe("the words of the checks", () => {
   it("send what a superadmin sets up to the superadmin, and what the organiser can put right to where they do it", () => {
     const remedy = (key: keyof typeof READINESS_COPY) => READINESS_COPY[key].remedy;
 
-    for (const key of ["bot_protection", "mail_provider", "instance_url"] as const) {
+    for (const key of ["bot_protection", "identity_provider", "mail_provider", "instance_url"] as const) {
       expect(remedy(key), key).toEqual({ text: "Ask a superadmin to set it up." });
     }
     // A way in is turned on at one place, and the organiser is told which.

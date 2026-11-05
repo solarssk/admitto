@@ -60,6 +60,7 @@ const EXPECTED_POLICIES: Record<
   "registration:page": { windowMs: [60_000], max: [300], checks: 1 },
   "registration:submit": { windowMs: [60_000], max: [120], checks: 1 },
   "registration:confirm": { windowMs: [60_000], max: [120], checks: 1 },
+  "registration:sso": { windowMs: [60_000], max: [240], checks: 1 },
   "registration:password": { windowMs: [900_000], max: [30], checks: 1 },
 };
 

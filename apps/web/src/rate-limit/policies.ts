@@ -910,6 +910,13 @@ export const RATE_POLICIES = {
    * bot that has no token spends nothing of the budget of somebody else's office. Silent here: the handler writes its
    * own line, because a line of the limiter would carry the address of the client. */
   "registration:password": ipScopedPolicy("registration:password", "registration", 30, 15 * 60_000, false),
+  /** The company sign-in of a guest (D-C4): `GET /r/:slug/sso/start` and `GET /r/:slug/sso/callback`, one budget per client
+   * address (IPv6 as its /64) for both. A start writes a row of state and a callback calls the provider, so this is what keeps
+   * a stranger from filling the table or using the instance as a way to call the provider; the worker deletes the rows that
+   * ran out. One sign-in is a start and a callback, so 240 a minute is 120 sign-ins a minute from one address, far above a
+   * company behind one NAT and far below a flood. No slug in the key, for the reason given at `registration:page`. Silent
+   * here: a line of the limiter would carry the address of the client. */
+  "registration:sso": ipScopedPolicy("registration:sso", "registration", 240, 60_000, false),
 } as const satisfies Record<string, RatePolicy>;
 
 // Operator overrides (RATE_LIMIT_OVERRIDES) are applied once, here, before any middleware reads a

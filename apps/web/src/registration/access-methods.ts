@@ -5,21 +5,21 @@
  *
  * "Available" is stricter than "enabled". A method the administrator enabled is available only when
  * what it needs is there: link and password need the Turnstile keys (the password form mails
- * addresses too, D-C2), SSO needs an enabled OIDC provider. Turning a method off, or losing what
+ * addresses too, D-C2), SSO needs the identity provider chosen for guests to exist and be enabled
+ * (./sso-provider.ts); it needs no Turnstile, because the form stands behind a sign-in. Turning a method off, or losing what
  * it needs, closes the form of every event that uses it; nothing is deleted. Callers decide
  * availability from `resolveAccessMethodAvailability` at request time, never from a cached copy.
  */
 
-import { findEnabledOidcProviders } from "@admitto/auth";
 import { REGISTRATION_ACCESS_METHOD, type Prisma, type PrismaClient, type RegistrationAccessMethod } from "@admitto/db";
+import { resolveGuestSsoProvider } from "./sso-provider.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
 
 /** SystemSettings.key of the JSON array of enabled method names. */
 export const ACCESS_METHODS_SETTINGS_KEY = "registration_access_methods";
 
-/** The methods an event can choose in this release. The company sign-in (`sso`) comes with PR 118: until then an event
- * cannot choose it, and one that somehow holds it is not ready (see ./readiness.ts). */
-export const SELECTABLE_ACCESS_METHODS = ["link", "password"] as const satisfies readonly RegistrationAccessMethod[];
+/** The methods an event can choose in this release: every one the model has. */
+export const SELECTABLE_ACCESS_METHODS = ["link", "password", "sso"] as const satisfies readonly RegistrationAccessMethod[];
 
 export type SelectableAccessMethod = (typeof SELECTABLE_ACCESS_METHODS)[number];
 
@@ -68,7 +68,7 @@ export async function setEnabledAccessMethods(
   return enabled;
 }
 
-/** The rule itself, apart from the lookups. */
+/** The rule itself, apart from the lookups. `identityProviderEnabled`: the provider chosen for guests exists and is enabled. */
 export function computeAccessMethodAvailability(input: {
   enabled: readonly RegistrationAccessMethod[];
   botProtectionReady: boolean;
@@ -85,14 +85,14 @@ export function computeAccessMethodAvailability(input: {
 /** Every method, in the canonical order, with whether the administrator enabled it and whether it
  * can be used right now. */
 export async function resolveAccessMethodAvailability(db: AccessMethodsDb): Promise<AccessMethodAvailability[]> {
-  const [enabled, keys, providers] = await Promise.all([
+  const [enabled, keys, provider] = await Promise.all([
     getEnabledAccessMethods(db),
     resolveTurnstileKeys(db),
-    findEnabledOidcProviders(db),
+    resolveGuestSsoProvider(db),
   ]);
   return computeAccessMethodAvailability({
     enabled,
     botProtectionReady: keys.state === "ready",
-    identityProviderEnabled: providers.length > 0,
+    identityProviderEnabled: provider.state === "ready",
   });
 }

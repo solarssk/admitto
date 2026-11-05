@@ -13,6 +13,7 @@ import {
   type RegistrationSettingsDto,
 } from "../../src/admin/event-registration-settings.js";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
+import { SSO_PROVIDER_SETTINGS_KEY, setSsoProviderId } from "../../src/registration/sso-provider.js";
 import { READINESS_KEYS, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
@@ -265,7 +266,7 @@ describe("reading the settings", () => {
     expect(await settingsRow(event.id)).toBeNull();
     expect(body).toMatchObject({ ...defaultSettings(), password_set: false, guest_url: `https://tickets.example.com/r/${event.slug}` });
     expect(body.readiness.map((check) => check.key)).toEqual(
-      READINESS_KEYS.filter((key) => key !== "password" && key !== "access_method_enabled"),
+      READINESS_KEYS.filter((key) => key !== "password" && key !== "identity_provider" && key !== "access_method_enabled"),
     );
     expect(body.readiness.find((check) => check.key === "access_method")).toEqual({ key: "access_method", ok: false });
     expect(body.public_fields).toEqual([]);
@@ -288,6 +289,8 @@ describe("reading the settings", () => {
       ask_department: body.ask_department,
       consent_keys: body.consent_keys,
       styled_form_controls: body.styled_form_controls,
+      sso_claim_name: body.sso_claim_name,
+      sso_claim_values: body.sso_claim_values,
     }).toEqual(defaultSettings());
   });
 
@@ -324,9 +327,11 @@ describe("reading the settings", () => {
       ask_department: true,
       consent_keys: ["photos"],
       styled_form_controls: true,
+      sso_claim_name: null,
+      sso_claim_values: [],
       password_set: false,
       guest_url: `https://tickets.example.com/r/${event.slug}`,
-      readiness: READINESS_KEYS.filter((key) => key !== "password").map((key) => ({ key, ok: true })),
+      readiness: READINESS_KEYS.filter((key) => key !== "password" && key !== "identity_provider").map((key) => ({ key, ok: true })),
       public_fields: [
         { key: "parking", label: "Parking", type: "boolean", required: false },
         { key: "diet", label: "Diet", type: "select", required: true },
@@ -356,6 +361,8 @@ describe("reading the settings", () => {
       "password_set",
       "public_fields",
       "readiness",
+      "sso_claim_name",
+      "sso_claim_values",
       "styled_form_controls",
       "verify_email",
       "waitlist_enabled",
@@ -402,8 +409,24 @@ describe("what a save may carry", () => {
     ["a field that is not a setting", { password_hash: "x" }],
     ["a password", { password: "a long enough password" }],
     ["the id of an event", { event_id: "evt-reg99a-other" }],
-    ["the company sign-in", { access_methods: ["sso"] }],
+    ["the company sign-in next to another way in", { access_methods: ["sso", "link"] }],
     ["two ways in", { access_methods: ["link", "password"] }],
+    ["a claim with no values", { sso_claim_name: "tid" }],
+    ["values with no claim", { sso_claim_values: ["tenant-a"] }],
+    ["a claim and an empty list of values", { sso_claim_name: "tid", sso_claim_values: [] }],
+    ["no claim and some values", { sso_claim_name: null, sso_claim_values: ["tenant-a"] }],
+    ["a claim name that is empty", { sso_claim_name: "", sso_claim_values: ["a"] }],
+    ["a claim name with a space", { sso_claim_name: "ten ant", sso_claim_values: ["a"] }],
+    ["a claim name with a line break", { sso_claim_name: "tid\nx", sso_claim_values: ["a"] }],
+    ["a claim name that is a number", { sso_claim_name: 7, sso_claim_values: ["a"] }],
+    ["a claim name that is too long", { sso_claim_name: "t".repeat(101), sso_claim_values: ["a"] }],
+    ["a claim value that is empty", { sso_claim_name: "tid", sso_claim_values: [""] }],
+    ["a claim value that is blank", { sso_claim_name: "tid", sso_claim_values: ["   "] }],
+    ["a claim value that is too long", { sso_claim_name: "tid", sso_claim_values: ["v".repeat(129)] }],
+    ["a claim value with a control character", { sso_claim_name: "tid", sso_claim_values: ["a\u0007b"] }],
+    ["a claim value that is a number", { sso_claim_name: "tid", sso_claim_values: [7] }],
+    ["more claim values than an event may list", { sso_claim_name: "tid", sso_claim_values: Array.from({ length: 21 }, (_, index) => `tenant-${index}`) }],
+    ["claim values that are a text", { sso_claim_name: "tid", sso_claim_values: "tenant-a" }],
     ["a way in that is a text", { access_methods: "link" }],
     ["a mode that is not one", { mode: "on" }],
     ["a mode that is a number", { mode: 1 }],
@@ -1071,5 +1094,188 @@ describe("a required field that the form does not ask", () => {
     expect(created.status).toBe(refusedBySave ? 422 : 201);
     if (refusedBySave) expect(await created.json()).toEqual({ error: "required_field_not_on_form" });
     expect(readiness).toEqual({ key: "required_fields", ok: !refusedBySave });
+  });
+});
+
+describe("the company sign-in as the way in, and its restriction to one company (D-C4)", () => {
+  const PROVIDER = "reg118a-idp";
+
+  beforeAll(async () => {
+    await prisma.identityProvider.deleteMany({ where: { id: PROVIDER } });
+    await prisma.identityProvider.create({
+      data: {
+        id: PROVIDER,
+        issuer: "https://idp.example.com/",
+        client_id: "reg118a-client",
+        authorization_endpoint: "https://idp.example.com/authorize",
+        token_endpoint: "https://idp.example.com/token",
+        jwks_uri: "https://idp.example.com/jwks",
+        display_name: "Company IdP",
+        enabled: true,
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.systemSettings.deleteMany({ where: { key: SSO_PROVIDER_SETTINGS_KEY } });
+    await prisma.identityProvider.deleteMany({ where: { id: PROVIDER } });
+  });
+
+  beforeEach(async () => {
+    await setEnabledAccessMethods(prisma, ["link", "password", "sso"]);
+    await setSsoProviderId(prisma, PROVIDER);
+  });
+
+  const claim = { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b"] };
+
+  it("is a way in an event can choose; it is ready with no Turnstile keys, and its list holds the identity provider and not the bot check", async () => {
+    await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
+    const event = await addEvent("sso-ready");
+
+    const res = await put(event.id, { access_methods: ["sso"], mode: "automatic" });
+    const body = await dto(res);
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ mode: "automatic", access_methods: ["sso"] });
+    expect(body.readiness.map((check) => check.key)).toEqual(
+      READINESS_KEYS.filter((key) => key !== "password" && key !== "bot_protection"),
+    );
+    expect(body.readiness.every((check) => check.ok)).toBe(true);
+    expect((await settingsRow(event.id))?.access_methods).toEqual(["sso"]);
+  });
+
+  it("is not ready while no provider is chosen, was switched off or deleted, and the answer names the one key and nothing else", async () => {
+    const event = await addEvent("sso-no-provider");
+    for (const breakIt of [
+      () => setSsoProviderId(prisma, null),
+      () => prisma.identityProvider.update({ where: { id: PROVIDER }, data: { enabled: false } }),
+      () => setSsoProviderId(prisma, "reg118a-gone"),
+    ]) {
+      await breakIt();
+      const res = await put(event.id, { access_methods: ["sso"], mode: "approval" });
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "registration_not_ready", blockers: ["identity_provider"] });
+      expect((await settingsRow(event.id))?.mode).toBeNull();
+      await prisma.identityProvider.update({ where: { id: PROVIDER }, data: { enabled: true } });
+      await setSsoProviderId(prisma, PROVIDER);
+    }
+  });
+
+  it("needs the way in to be turned on by the system", async () => {
+    await setEnabledAccessMethods(prisma, ["link"]);
+    const event = await addEvent("sso-not-enabled");
+
+    const res = await put(event.id, { access_methods: ["sso"], mode: "approval" });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "registration_not_ready", blockers: ["access_method_enabled"] });
+  });
+
+  it("saves the restriction, says it back, and audits the claim and the values that may register", async () => {
+    const event = await addEvent("sso-claim");
+
+    const res = await put(event.id, { access_methods: ["sso"], ...claim });
+    const body = await dto(res);
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject(claim);
+    expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["sso"], ...claim });
+    expect(await dto(await get(event.id))).toMatchObject(claim);
+    const [entry] = await auditOf(event.id);
+    expect(entry?.metadata).toMatchObject({
+      fields_changed: ["access_methods", "sso_claim_name", "sso_claim_values"],
+      access_methods: ["sso"],
+      ...claim,
+    });
+  });
+
+  it("keeps a value that is given twice once, in the order it came", async () => {
+    const event = await addEvent("sso-claim-twice");
+
+    const body = await dto(await put(event.id, { access_methods: ["sso"], sso_claim_name: "tid", sso_claim_values: ["b", "a", "b"] }));
+
+    expect(body.sso_claim_values).toEqual(["b", "a"]);
+  });
+
+  it("changes the restriction of an event that has the sign-in, and removes it with null and an empty list", async () => {
+    const event = await addEvent("sso-claim-change", { settings: { access_methods: ["sso"], ...claim } });
+
+    const changed = await dto(await put(event.id, { sso_claim_name: "groups", sso_claim_values: ["staff"] }));
+    const removed = await dto(await put(event.id, { sso_claim_name: null, sso_claim_values: [] }));
+
+    expect(changed).toMatchObject({ sso_claim_name: "groups", sso_claim_values: ["staff"] });
+    expect(removed).toMatchObject({ sso_claim_name: null, sso_claim_values: [] });
+    expect(await settingsRow(event.id)).toMatchObject({ sso_claim_name: null, sso_claim_values: [] });
+    expect((await auditOf(event.id)).map((row) => (row.metadata as { fields_changed: string[] }).fields_changed)).toEqual([
+      ["sso_claim_name", "sso_claim_values"],
+      ["sso_claim_name", "sso_claim_values"],
+    ]);
+  });
+
+  it("refuses a restriction for an event whose way in is not the company sign-in: 422, nothing saved, nothing audited", async () => {
+    const event = await addEvent("sso-claim-link");
+
+    const onLink = await put(event.id, claim);
+    const withLink = await put(event.id, { access_methods: ["link"], ...claim });
+    const withPassword = await put(event.id, { access_methods: ["password"], ...claim });
+
+    for (const res of [onLink, withLink, withPassword]) {
+      expect(res.status).toBe(422);
+      expect(await res.json()).toEqual({ error: "sso_claim_needs_sso" });
+    }
+    expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["link"], sso_claim_name: null, sso_claim_values: [] });
+    expect(await auditOf(event.id)).toHaveLength(0);
+  });
+
+  it("takes the restriction away with the move away from the sign-in, and does not bring it back with the move back", async () => {
+    const event = await addEvent("sso-claim-away", { settings: { access_methods: ["sso"], ...claim } });
+
+    const away = await dto(await put(event.id, { access_methods: ["link"] }));
+    const back = await dto(await put(event.id, { access_methods: ["sso"] }));
+
+    expect(away).toMatchObject({ access_methods: ["link"], sso_claim_name: null, sso_claim_values: [] });
+    expect(back).toMatchObject({ access_methods: ["sso"], sso_claim_name: null, sso_claim_values: [] });
+    expect(await settingsRow(event.id)).toMatchObject({ sso_claim_name: null, sso_claim_values: [] });
+    const [awayEntry] = await auditOf(event.id).then((rows) => rows.map((row) => row.metadata as Record<string, unknown>));
+    expect(awayEntry).toMatchObject({
+      fields_changed: ["access_methods", "sso_claim_name", "sso_claim_values"],
+      sso_claim_name: null,
+      sso_claim_values: [],
+    });
+  });
+
+  it("saves nothing, and audits nothing, when the restriction is as it was", async () => {
+    const event = await addEvent("sso-claim-same", { settings: { access_methods: ["sso"], ...claim } });
+
+    const res = await put(event.id, { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b"] });
+
+    expect(res.status).toBe(200);
+    expect(await auditOf(event.id)).toHaveLength(0);
+  });
+
+  it("does not need the event to be ready to change the restriction of one that has registration on", async () => {
+    const event = await addEvent("sso-claim-on", { settings: { access_methods: ["sso"], mode: "automatic" } });
+    await prisma.identityProvider.update({ where: { id: PROVIDER }, data: { enabled: false } });
+    try {
+      const res = await put(event.id, claim);
+
+      expect(res.status).toBe(200);
+      expect(await settingsRow(event.id)).toMatchObject(claim);
+    } finally {
+      await prisma.identityProvider.update({ where: { id: PROVIDER }, data: { enabled: true } });
+    }
+  });
+
+  it("is held together by the table too: a claim with no values, and values with no claim, cannot be written", async () => {
+    const event = await addEvent("sso-claim-half", { settings: { access_methods: ["sso"] } });
+
+    await expect(
+      prisma.eventRegistrationSettings.update({ where: { event_id: event.id }, data: { sso_claim_name: "tid" } }),
+    ).rejects.toThrow("EventRegistrationSettings_sso_claim_pair_check");
+    await expect(
+      prisma.eventRegistrationSettings.update({ where: { event_id: event.id }, data: { sso_claim_values: ["tenant-a"] } }),
+    ).rejects.toThrow("EventRegistrationSettings_sso_claim_pair_check");
+    expect(await settingsRow(event.id)).toMatchObject({ sso_claim_name: null, sso_claim_values: [] });
   });
 });

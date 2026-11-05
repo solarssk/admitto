@@ -12,7 +12,8 @@
  * What it promises, pinned to the public page by registration-readiness.test.ts:
  *  - An event that is ready opens its form: `resolveRegistration` (./form-model.ts) finds it `open`.
  *  - Each key that closes the form is a condition of the page itself: the way in (`access_method`,
- *    `access_method_enabled`, `bot_protection`, `password`), the texts (`legal_documents`), the questions (`form_questions`)
+ *    `access_method_enabled`, `bot_protection` for the link and the password, `identity_provider` for the company sign-in,
+ *    `password`), the texts (`legal_documents`), the questions (`form_questions`)
  *    and the event (`event_not_archived`, `event_not_ended`). The rules behind them are the page's own functions, not
  *    copies: `resolveAccessMethodAvailability`, `evaluateLegalGate`, `drawQuestions`, `isOver`.
  *  - Three keys are about what the form leads to, not about the form: `required_fields` (a question a guest must answer and
@@ -36,6 +37,7 @@ import {
 import { isRequiredFieldOffForm } from "./field-on-form.js";
 import type { FormQuestionType } from "./form-fields.js";
 import { drawQuestions } from "./form-model.js";
+import { resolveGuestSsoProvider } from "./sso-provider.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
 
 /** The vocabulary of the checks, in the order they are listed. */
@@ -43,6 +45,7 @@ export const READINESS_KEYS = [
   "access_method",
   "access_method_enabled",
   "bot_protection",
+  "identity_provider",
   "password",
   "legal_documents",
   "form_questions",
@@ -66,6 +69,8 @@ export interface ReadinessEnvironment {
   availability: readonly AccessMethodAvailability[];
   /** The Turnstile keys are saved and the secret reads back. */
   botProtectionReady: boolean;
+  /** The identity provider chosen for guests (./sso-provider.ts) exists and is enabled. */
+  identityProviderReady: boolean;
   /** A mail provider resolves for the event, as it does for the worker. */
   mailConfigured: boolean;
   /** The address guests' links point to (the one the worker uses), or null when none is known. */
@@ -87,7 +92,7 @@ export interface ReadinessInput {
   event: EventReadinessFacts;
 }
 
-/** The way in an event has chosen, when it is exactly one that can be chosen in this release. */
+/** The way in an event has chosen, when it is exactly one that can be chosen. */
 export function chosenAccessMethod(methods: readonly string[]): SelectableAccessMethod | null {
   const only = methods.length === 1 ? methods[0] : undefined;
   return SELECTABLE_ACCESS_METHODS.find((method) => method === only) ?? null;
@@ -104,7 +109,9 @@ export function evaluateRegistrationReadiness({ settings, environment, event }: 
     const entry = environment.availability.find((candidate) => candidate.method === method);
     checks.push({ key: "access_method_enabled", ok: entry?.enabled === true });
   }
-  checks.push({ key: "bot_protection", ok: environment.botProtectionReady });
+  // A form behind the company sign-in needs no bot check: it stands behind a sign-in of the provider. The others do.
+  if (method === "sso") checks.push({ key: "identity_provider", ok: environment.identityProviderReady });
+  else checks.push({ key: "bot_protection", ok: environment.botProtectionReady });
   if (method === "password") checks.push({ key: "password", ok: settings.password_set });
   checks.push(
     { key: "legal_documents", ok: evaluateLegalGate(event.legalRows, settings.consent_keys).missing.length === 0 },
@@ -175,11 +182,18 @@ export async function loadReadinessEnvironment(
   eventId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ReadinessEnvironment> {
-  const [availability, keys, mailConfigured, instanceBaseUrl] = await Promise.all([
+  const [availability, keys, provider, mailConfigured, instanceBaseUrl] = await Promise.all([
     resolveAccessMethodAvailability(db),
     resolveTurnstileKeys(db),
+    resolveGuestSsoProvider(db),
     succeeds(() => resolveMailConfig(eventId, db, env)),
     instanceBaseUrlOrNull(db, env),
   ]);
-  return { availability, botProtectionReady: keys.state === "ready", mailConfigured, instanceBaseUrl };
+  return {
+    availability,
+    botProtectionReady: keys.state === "ready",
+    identityProviderReady: provider.state === "ready",
+    mailConfigured,
+    instanceBaseUrl,
+  };
 }
