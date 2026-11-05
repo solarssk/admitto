@@ -115,6 +115,9 @@ describe(THIS_MIGRATION, () => {
         attendee_id: attendees[0]!.id,
         companions: [{ name: "Companion Example", custom_data: { diet: "none" } }],
       },
+      // Only the id, because the client returns every column of the schema it was built from, and a column added by a later
+      // migration (the company sign-in's) is not in the database as it is before this one.
+      select: { id: true },
     });
     // Raw, because a row of the table as it is before this migration has no applies_to for the client to return.
     await data.query(
