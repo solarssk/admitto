@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { EventCustomFieldType } from "@admitto/shared";
-import { Button, IconButton, ModalBackdrop, Notice, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, IconButton, ModalBackdrop, Notice, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, createEventCustomField, updateEventCustomField } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto, EventCustomFieldRecipient } from "../api/types.js";
