@@ -50,7 +50,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a calendar for dates and a list of times for times to the styled boxes of the guest form ([#1841](https://github.com/solarssk/admitto/pull/1841))
 - Keep a sensitive attendee field off wallet passes, the check-in card and event items, and refuse it in a wallet field mapping and in an item's fields ([#1845](https://github.com/solarssk/admitto/pull/1845))
 - Add an API for an administrator to show the sensitive answers of one guest or registration, with an audit entry for every click and a limit per user ([#1847](https://github.com/solarssk/admitto/pull/1847))
-- Let guests register by signing in with the company's identity provider, with an optional limit to one company, chosen by a superadmin
+- Let guests register by signing in with the company's identity provider, with an optional limit to one company, chosen by a superadmin ([#1848](https://github.com/solarssk/admitto/pull/1848))
 
 ### Changed
 
