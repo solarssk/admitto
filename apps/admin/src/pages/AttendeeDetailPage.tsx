@@ -1013,7 +1013,7 @@ function AttendeeOverviewTab({
   const sensitiveAnswers =
     sensitiveQuestions(guestQuestions).length > 0 ? (
       <AttendeeSensitiveAnswers
-        key={detail.id}
+        key={`${detail.id}:${detail.updated_at}`}
         eventId={event.id}
         attendeeId={detail.id}
         questions={guestQuestions}
@@ -1488,6 +1488,13 @@ function canDeleteNote(
   if (note.author_user_id === currentUserId) return true;
   if (superadminUser) return true;
   return orgAdminUser && note.author_role === "operator";
+}
+
+/** "Show" for sensitive answers is offered only while the detail on screen is the attendee of the address: the page keeps the previous
+ * attendee's detail until the next one is in, and a reveal that began there must neither stay nor finish on a person the address has
+ * left. The server decides who may read the answers; this is only what the page offers. */
+function canRevealOn(orgAdminUser: boolean, shownId: string, addressId: string): boolean {
+  return orgAdminUser && shownId === addressId;
 }
 
 type NoteEditState = {
@@ -2335,7 +2342,7 @@ export function AttendeeDetailPage() {
       setCompanionFields(companion);
       setForm((currentForm) => {
         if (!currentForm || !previousDetail) return toAttendeeForm(d, fields);
-        return mergeFormAfterReload(currentForm, previousDetail, d, fields);
+        return mergeFormAfterReload(currentForm, previousDetail, d, fields, attributeFields);
       });
       applyDetail(d);
       setInitialEmail(d.email);
@@ -2806,6 +2813,7 @@ export function AttendeeDetailPage() {
   }
 
   const lastMail = detail.deliveries[0]?.status ?? null;
+  const canRevealHere = canRevealOn(orgAdmin, detail.id, attendeeId);
   const emailChanged = form.email !== initialEmail;
   const walletPushNoticeVisible = computeWalletPushNoticeVisible(form, detail, attributeFields);
   const isRevoked = detail.status === "revoked";
@@ -3032,7 +3040,7 @@ export function AttendeeDetailPage() {
           attendeeSource={attendeeSource}
           customDataEntries={customDataEntries}
           guestQuestions={attributeFields}
-          canReveal={orgAdmin}
+          canReveal={canRevealHere}
           companionCard={
             detail.companion ? (
               <CompanionCard
@@ -3043,7 +3051,8 @@ export function AttendeeDetailPage() {
                 companion={detail.companion}
                 fields={companionFields}
                 fieldsLoaded={itemsWarning === null}
-                canReveal={orgAdmin}
+                canReveal={canRevealHere}
+                savedAt={detail.updated_at}
                 onChanged={handleCompanionChanged}
                 onArchived={() => void refreshEvent?.()}
                 onOutOfDate={() => void loadDetail()}

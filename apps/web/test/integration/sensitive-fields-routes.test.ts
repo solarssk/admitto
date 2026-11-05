@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { drainExportJobs, IMPORT_STOPPED_BY_FIELD_DELETION_ERROR } from "@admitto/tickets";
+import { drainExportJobs, ERASE_TRANSACTION_TIMEOUT_MS, IMPORT_STOPPED_BY_FIELD_DELETION_ERROR } from "@admitto/tickets";
 import { executeImportCommit, ImportStoppedError } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
 import { SUGGESTED_EVENT_FIELDS } from "@admitto/shared";
@@ -604,26 +604,28 @@ describe("adding the suggested questions, one of which is sensitive", () => {
     const job = await prisma.adminJob.create({ data: { type: "import_commit", status: "running", organization_id: ORG, event_id: EVENT } });
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
-    let held!: () => void;
-    const heldPromise = new Promise<void>((resolve) => (held = resolve));
+    let held!: (pid: number) => void;
+    const heldPromise = new Promise<number>((resolve) => (held = resolve));
     const holding = prisma.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT "status" FROM "AdminJob" WHERE "id" = ${job.id} FOR UPDATE`;
-        held();
+        const session = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid()::int AS "pid"`;
+        held(session[0]!.pid);
         await gate;
       },
       { timeout: 30_000 },
     );
-    await heldPromise;
-    return { release, done: holding };
+    const pid = await heldPromise;
+    return { release, done: holding, pid };
   }
 
-  const jobRowWaiters = async () =>
+  /** How many sessions wait for what the session `holderPid` holds: the request under test, and not a wait of another test in the same database. */
+  const jobRowWaiters = async (holderPid: number) =>
     Number(
       (
         await prisma.$queryRaw<{ waiting: bigint }[]>`
           SELECT count(*)::bigint AS "waiting" FROM pg_stat_activity
-          WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%AdminJob%FOR UPDATE%'`
+          WHERE datname = current_database() AND ${holderPid}::int = ANY(pg_blocking_pids(pid))`
       )[0]?.waiting ?? 0,
     );
 
@@ -667,7 +669,7 @@ describe("adding the suggested questions, one of which is sensitive", () => {
     const held = await holdOpenJob();
     const adding = Promise.resolve(addSuggested());
     try {
-      await vi.waitFor(async () => expect(await jobRowWaiters()).toBeGreaterThan(0), { timeout: 5000, interval: 25 });
+      await vi.waitFor(async () => expect(await jobRowWaiters(held.pid)).toBeGreaterThan(0), { timeout: 5000, interval: 25 });
     } finally {
       held.release();
     }
@@ -687,6 +689,94 @@ describe("adding the suggested questions, one of which is sensitive", () => {
       held.release();
     }
     await held.done;
+  });
+
+  it("does not let an export that is running when the sensitive question is added record its file, and takes the file back", async () => {
+    const storage = getDefaultStorage();
+    const stored: string[] = [];
+    const deleted: string[] = [];
+    const queued = await get(`/api/admin/events/${EVENT}/attendees/export?format=csv`);
+    const { jobId } = (await queued.json()) as { jobId: string };
+
+    await drainExportJobs(
+      prisma,
+      {
+        put: async (bytes, options) => {
+          const result = await storage.put(bytes, options);
+          stored.push(result.key);
+          // The file is built and stored; the batch adds the sensitive question before the job writes its result.
+          expect((await addSuggested()).status).toBe(201);
+          return result;
+        },
+        delete: async (key) => {
+          deleted.push(key);
+          return storage.delete(key);
+        },
+      },
+      { limit: 10 },
+    );
+
+    expect(stored).toHaveLength(1);
+    expect(deleted).toEqual(stored);
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    expect(job.status).not.toBe("succeeded");
+    expect(job.storage_key).toBeNull();
+    expect((job.result_json as Record<string, unknown>).invalidated).toBe(true);
+    expect((await download(jobId)).status).toBe(404);
+    expect((await download(await builtExport())).status).toBe(200);
+  });
+
+  it("repeats the run with the open jobs locked when the sensitive question it found is gone by the time the plan is made", async () => {
+    await prisma.eventCustomField.create({ data: { event_id: EVENT, source_field: sensitiveKey, label: "Already here", sensitive: true } });
+    const held = await holdOpenJob();
+    // The route reads the sensitive questions the event has (all of them: so it takes no locks), and before it plans, one is deleted.
+    app = buildTestApp({
+      prisma: withHookAfterFirst("eventCustomField", "findMany", async () => {
+        await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT, source_field: sensitiveKey } });
+      }),
+      checkinToken: "sensitive-checkin-token-32-chars!!",
+      adminDistRoot,
+    });
+    const adding = Promise.resolve(addSuggested());
+    try {
+      // The second run is the one that takes the job rows: it waits for the import that holds one.
+      await vi.waitFor(async () => expect(await jobRowWaiters(held.pid)).toBeGreaterThan(0), { timeout: 5000, interval: 25 });
+    } finally {
+      held.release();
+    }
+    await held.done;
+
+    const res = await adding;
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { added: string[] }).added).toContain(sensitiveKey);
+  });
+
+  it("gives every transaction that can wait for the open jobs the room an erasure has, not the 5 seconds of an interactive one", async () => {
+    const given: unknown[] = [];
+    app = buildTestApp({
+      prisma: new Proxy(prisma, {
+        get(target, prop) {
+          const value: unknown = Reflect.get(target, prop);
+          if (typeof value !== "function") return value;
+          if (prop !== "$transaction") return value.bind(target);
+          return (...args: unknown[]) => {
+            given.push(args[1]);
+            return value.apply(target, args);
+          };
+        },
+      }) as PrismaClient,
+      checkinToken: "sensitive-checkin-token-32-chars!!",
+      adminDistRoot,
+    });
+
+    const created = await send("POST", path, { source_field: "tx_room", label: "Tx room", sensitive: true });
+    const { id } = (await created.json()) as { id: string };
+    const patched = await send("PATCH", `${path}/${id}`, { label: "Tx room again" });
+    const suggested = await addSuggested();
+    const removed = await remove(`${path}/${id}`);
+
+    expect([created.status, patched.status, suggested.status, removed.status]).toEqual([201, 200, 201, 200]);
+    expect(given).toEqual(Array.from({ length: 4 }, () => ({ timeout: ERASE_TRANSACTION_TIMEOUT_MS, maxWait: 10_000 })));
   });
 });
 

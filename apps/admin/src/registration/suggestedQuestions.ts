@@ -35,6 +35,11 @@ export const SENSITIVE_SUGGESTION_WARNING =
 export const PRESENT_ORDINARY_WARNING =
   "This question is already on your form as an ordinary question and stays as it is: its answers are not hidden. Turn on Sensitive in its editor if they should be.";
 
+/** The same, for a question of the event that the registration form does not ask: it is not "on your form", but it exists and its answers are
+ * not hidden either. */
+export const PRESENT_ORDINARY_OFF_FORM_WARNING =
+  "This question already exists as an ordinary question that the registration form does not ask, and it stays as it is: its answers are not hidden. Turn on Sensitive in its editor if they should be.";
+
 const quoted = (name: string): string => `“${name}”`;
 
 /** What a question of the set that depends on another is called in a sentence: the label of the field the event has under that key, and
@@ -71,7 +76,8 @@ function warningOf(suggested: SuggestedEventField, state: SuggestedRowState, fie
   if (suggested.sensitive !== true) return "";
   if (state === "add") return SENSITIVE_SUGGESTION_WARNING;
   const existing = state === "present" ? fields.find((field) => field.source_field === suggested.source_field) : undefined;
-  return existing !== undefined && existing.sensitive !== true ? PRESENT_ORDINARY_WARNING : "";
+  if (existing === undefined || existing.sensitive === true) return "";
+  return existing.show_on_form ? PRESENT_ORDINARY_WARNING : PRESENT_ORDINARY_OFF_FORM_WARNING;
 }
 
 /** The questions of the set in their own order, each with what will happen to it in an event that has these fields. */

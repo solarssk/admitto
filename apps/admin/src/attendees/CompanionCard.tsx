@@ -23,6 +23,9 @@ export interface CompanionCardProps extends Pick<CompanionActionsInput, "eventId
   fieldsLoaded: boolean;
   /** An administrator of the organization or a superadmin: only they are offered "Show" for the companion's sensitive answers. */
   canReveal?: boolean;
+  /** When the attendee was last saved. Answers that were shown before a save are not the answers after it, so a save hides them again;
+   * an edit that is not saved yet does not. */
+  savedAt?: string;
 }
 
 const FIELDS_NOT_LOADED = "The questions about the companion could not be loaded. Reload the page to edit.";
@@ -122,7 +125,7 @@ function CompanionEditDialog({
  * said in the dialog in those words. Both are off on an archived event, as every change is. The page shows the card only for a guest
  * who has a companion; the registration window shows the same person, read-only, as the guest sent them.
  */
-export function CompanionCard({ event, companion, fields, fieldsLoaded, canReveal = false, ...actionInput }: Readonly<CompanionCardProps>) {
+export function CompanionCard({ event, companion, fields, fieldsLoaded, canReveal = false, savedAt = "", ...actionInput }: Readonly<CompanionCardProps>) {
   const actions = useCompanionActions({ ...actionInput, fields });
   const answers = companionAnswerEntries(companion, fields, event.timezone);
   const editButtonRef = useRef<HTMLButtonElement>(null);
@@ -171,7 +174,7 @@ export function CompanionCard({ event, companion, fields, fieldsLoaded, canRevea
             </div>
           ))}
           <AttendeeSensitiveAnswers
-            key={companion.slot}
+            key={`${companion.slot}:${savedAt}`}
             eventId={actionInput.eventId}
             attendeeId={actionInput.attendeeId}
             questions={fields}

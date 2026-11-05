@@ -39,13 +39,16 @@ export interface SensitiveReveal {
   hide: () => void;
 }
 
+const HIDDEN: RevealState = { step: "hidden" };
+
 /**
  * What one person's "Show" holds (D-E6). The answers live only in this state: not in a cache of the app, not in storage, not in the
  * address, not in the console and not in an error text. They go away on Hide, after two minutes, when the component goes (another
- * person, a closed window, a left page), and an answer that comes after any of those is dropped.
+ * person, a closed window, a left page), when the page is hidden, and when `allowed` turns false (the right to see them is taken away,
+ * or the page moves to another person); an answer that comes after any of those is dropped.
  */
-export function useSensitiveReveal(load: () => Promise<Record<string, string>>): SensitiveReveal {
-  const [state, setState] = useState<RevealState>({ step: "hidden" });
+export function useSensitiveReveal(load: () => Promise<Record<string, string>>, allowed: boolean): SensitiveReveal {
+  const [state, setState] = useState<RevealState>(HIDDEN);
   const [error, setError] = useState<string | null>(null);
   const [hiddenNotice, setHiddenNotice] = useState("");
   // The request that is waited for: a Hide, a cancel or an unmount ends the wait by moving this on.
@@ -89,6 +92,18 @@ export function useSensitiveReveal(load: () => Promise<Record<string, string>>):
     setState({ step: "hidden" });
     setHiddenNotice("Sensitive answers hidden");
   }, [stopTimeout]);
+  // A page that leaves for the back/forward cache keeps its state, so the document that comes back from it would still hold the answers
+  // (and the wait for one): the page being hidden ends both, as Hide does.
+  useEffect(() => {
+    window.addEventListener("pagehide", hide);
+    return () => window.removeEventListener("pagehide", hide);
+  }, [hide]);
+  // The right to see them taken away while they are on screen, or on their way, ends both. The state returned below shows none of them in
+  // the meantime, so there is no frame in which they are drawn without the right.
+  const { step } = state;
+  useEffect(() => {
+    if (!allowed && step !== "hidden") hide();
+  }, [allowed, hide, step]);
   const confirm = useCallback(() => {
     request.current += 1;
     const mine = request.current;
@@ -117,5 +132,5 @@ export function useSensitiveReveal(load: () => Promise<Record<string, string>>):
       });
   }, [stopTimeout]);
 
-  return { state, error, hiddenNotice, ask, cancel, confirm, hide };
+  return { state: allowed ? state : HIDDEN, error, hiddenNotice, ask, cancel, confirm, hide };
 }

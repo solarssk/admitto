@@ -46,18 +46,27 @@ export function toAttendeeForm(
   };
 }
 
+/**
+ * The form after a reload: what the person changed since the last load stays, the rest is taken from the reload. `attributeFields` are
+ * the questions the reload brought and `previousFields` those the form was drawn from. A question that turned sensitive in between is
+ * write-only now (its box starts empty), so what the form still holds for it is the old plain answer and not something the person
+ * typed: it is dropped, and never kept as a replacement to send back.
+ */
 export function mergeFormAfterReload(
   currentForm: AttendeeFormState,
   previousDetail: AttendeeDetailDto,
   reloaded: AttendeeDetailDto,
   attributeFields: CustomDataFieldDef[],
+  previousFields: readonly CustomDataFieldDef[] = attributeFields,
 ): AttendeeFormState {
   const previousForm = toAttendeeForm(previousDetail, attributeFields);
   const nextForm = toAttendeeForm(reloaded, attributeFields);
   const customFields: Record<string, string> = { ...nextForm.customFields };
+  const wasSensitive = new Set(previousFields.filter((field) => field.sensitive === true).map((field) => field.source_field));
   for (const field of attributeFields) {
     const key = field.source_field;
-    if (currentForm.customFields[key] !== previousForm.customFields[key]) {
+    const turnedSensitive = field.sensitive === true && !wasSensitive.has(key);
+    if (!turnedSensitive && currentForm.customFields[key] !== previousForm.customFields[key]) {
       customFields[key] = currentForm.customFields[key] ?? "";
     }
   }

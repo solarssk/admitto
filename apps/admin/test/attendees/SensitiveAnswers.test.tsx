@@ -6,7 +6,7 @@ import { CODE_MESSAGES } from "../../src/api/operator-api-error.js";
 import type { EventCustomFieldDto, SensitiveRevealDto } from "../../src/api/types.js";
 import { AttendeeSensitiveAnswers, REVEAL_CONFIRM_TEXT, RequestSensitiveAnswers } from "../../src/attendees/SensitiveAnswers.js";
 import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
-import { REVEAL_VISIBLE_MS } from "../../src/attendees/useSensitiveReveal.js";
+import { REVEAL_VISIBLE_MS, useSensitiveReveal } from "../../src/attendees/useSensitiveReveal.js";
 import { advanceTimers, deferred } from "../test-utils.js";
 
 const api = { attendee: vi.fn(), request: vi.fn() };
@@ -403,6 +403,120 @@ describe("hiding again", { timeout: 30_000 }, () => {
 
     expect(document.body.textContent).not.toContain(SECRET);
     expect(errors).not.toHaveBeenCalled();
+  });
+});
+
+describe("when the right to see the answers goes", { timeout: 30_000 }, () => {
+  const guestWith = (canReveal: boolean) => (
+    <AttendeeSensitiveAnswers key="att-1" eventId="evt-1" attendeeId="att-1" questions={QUESTIONS} slot={null} who="guest" canReveal={canReveal} timezone="UTC" />
+  );
+
+  it("takes the answers off the screen at once, offers no button, and says so to assistive technology", async () => {
+    api.attendee.mockResolvedValue(answer({ access: SECRET }));
+    const view = renderGuest();
+    await reveal();
+    expect(screen.getByText(SECRET)).toBeTruthy();
+
+    view.rerender(guestWith(false));
+
+    expect(pageText()).not.toContain(SECRET);
+    expect(within(rowOf("Accessibility needs")).getByText("Hidden")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(document.querySelector("[aria-live='polite']")?.textContent).toBe("Sensitive answers hidden");
+    // They are gone, not only out of sight: the right coming back does not bring them back.
+    view.rerender(guestWith(true));
+    expect(pageText()).not.toContain(SECRET);
+    expect(showButton()).toBeTruthy();
+  });
+
+  it("drops an answer that is on its way, and does not show it when the right comes back", async () => {
+    const held = deferred<SensitiveRevealDto>();
+    api.attendee.mockReturnValueOnce(held.promise);
+    const view = renderGuest();
+    fireEvent.click(showButton());
+    fireEvent.click(within(screen.getByRole("group")).getByRole("button", { name: "Show" }));
+
+    view.rerender(guestWith(false));
+    await act(async () => held.resolve(answer({ access: SECRET })));
+    view.rerender(guestWith(true));
+
+    expect(pageText()).not.toContain(SECRET);
+    expect(within(rowOf("Accessibility needs")).getByText("Hidden")).toBeTruthy();
+    expect(showButton()).toBeTruthy();
+  });
+
+  it("draws none of the answers even in the render that comes before the effect that hides them", async () => {
+    api.attendee.mockResolvedValue(answer({ access: SECRET }));
+    const steps: string[] = [];
+    function Probe({ allowed }: Readonly<{ allowed: boolean }>) {
+      const probe = useSensitiveReveal(async () => (await api.attendee()).guest, allowed);
+      steps.push(probe.state.step);
+      return <button onClick={probe.confirm}>go</button>;
+    }
+    const view = render(<Probe allowed />);
+    fireEvent.click(screen.getByRole("button", { name: "go" }));
+    await act(async () => {});
+    expect(steps.at(-1)).toBe("shown");
+    steps.length = 0;
+
+    view.rerender(<Probe allowed={false} />);
+
+    expect(steps.length).toBeGreaterThan(0);
+    expect(steps).not.toContain("shown");
+  });
+
+  it("closes the confirmation that was open, and it does not come back with the right", () => {
+    const view = renderGuest();
+    fireEvent.click(showButton());
+    expect(screen.getByRole("group", { name: "Show sensitive answers of guest?" })).toBeTruthy();
+
+    view.rerender(guestWith(false));
+    expect(screen.queryByRole("group")).toBeNull();
+    view.rerender(guestWith(true));
+
+    expect(screen.queryByRole("group")).toBeNull();
+    expect(showButton()).toBeTruthy();
+    expect(api.attendee).not.toHaveBeenCalled();
+  });
+});
+
+describe("when the page is hidden", { timeout: 30_000 }, () => {
+  const hidePage = () => act(() => void window.dispatchEvent(new Event("pagehide")));
+
+  it("takes the answers off the screen, as a page that goes into the back/forward cache must, and says so", async () => {
+    api.attendee.mockResolvedValue(answer({ access: SECRET }));
+    renderGuest();
+    await reveal();
+    expect(screen.getByText(SECRET)).toBeTruthy();
+
+    hidePage();
+
+    expect(pageText()).not.toContain(SECRET);
+    expect(within(rowOf("Accessibility needs")).getByText("Hidden")).toBeTruthy();
+    expect(document.querySelector("[aria-live='polite']")?.textContent).toBe("Sensitive answers hidden");
+  });
+
+  it("drops an answer that is on its way", async () => {
+    const held = deferred<SensitiveRevealDto>();
+    api.attendee.mockReturnValueOnce(held.promise);
+    renderGuest();
+    fireEvent.click(showButton());
+    fireEvent.click(within(screen.getByRole("group")).getByRole("button", { name: "Show" }));
+
+    hidePage();
+    await act(async () => held.resolve(answer({ access: SECRET })));
+
+    expect(pageText()).not.toContain(SECRET);
+    expect(within(rowOf("Accessibility needs")).getByText("Hidden")).toBeTruthy();
+  });
+
+  it("stops listening once the person is gone", () => {
+    const removed = vi.spyOn(window, "removeEventListener");
+    const view = renderGuest();
+
+    view.unmount();
+
+    expect(removed.mock.calls.some(([type]) => type === "pagehide")).toBe(true);
   });
 });
 

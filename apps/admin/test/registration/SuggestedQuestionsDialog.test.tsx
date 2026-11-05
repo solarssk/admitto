@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_CUSTOM_FIELDS_PER_EVENT, SUGGESTED_EVENT_FIELDS, type SuggestedEventField } from "@admitto/shared";
 import { ApiError } from "../../src/api/client.js";
 import type { AddSuggestedFieldsResponse, EventCustomFieldDto } from "../../src/api/types.js";
-import { PRESENT_ORDINARY_WARNING, SENSITIVE_SUGGESTION_WARNING } from "../../src/registration/suggestedQuestions.js";
+import { PRESENT_ORDINARY_OFF_FORM_WARNING, PRESENT_ORDINARY_WARNING, SENSITIVE_SUGGESTION_WARNING } from "../../src/registration/suggestedQuestions.js";
 import { SuggestedQuestionsDialog, type SuggestedQuestionsDialogProps } from "../../src/registration/SuggestedQuestionsDialog.js";
 import { deferred, isOff } from "../test-utils.js";
 
@@ -195,6 +195,16 @@ describe("SuggestedQuestionsDialog: an event that has some of them", () => {
     const warning = rowOf(ACCESS).querySelector(".suggested-questions__warning");
     expect(warning?.textContent?.trim()).toBe(PRESENT_ORDINARY_WARNING);
     expect(dialog().textContent).not.toContain(SENSITIVE_SUGGESTION_WARNING);
+  });
+
+  it("does not say an ordinary question is on the form when the event has it but the form does not ask it", () => {
+    renderDialog([{ ...accessField(), show_on_form: false }]);
+
+    expect(badgeOf(ACCESS)).toBe("Already in your list");
+    const warning = rowOf(ACCESS).querySelector(".suggested-questions__warning");
+    expect(warning?.textContent?.trim()).toBe(PRESENT_ORDINARY_OFF_FORM_WARNING);
+    expect(PRESENT_ORDINARY_OFF_FORM_WARNING).not.toContain("on your form");
+    expect(dialog().textContent).not.toContain(PRESENT_ORDINARY_WARNING);
   });
 
   it("says nothing about privacy for a question the event already has that is sensitive", () => {

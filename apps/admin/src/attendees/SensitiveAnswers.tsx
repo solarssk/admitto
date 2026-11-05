@@ -53,7 +53,7 @@ function AnswerValue({ shown, value }: Readonly<{ shown: boolean; value: string 
  * focus trap of the window this sits in), and the answers are held only in the state of this component (`useSensitiveReveal`).
  */
 export function SensitiveAnswers({ fields, canReveal, load, who, timezone }: Readonly<SensitiveAnswersProps>) {
-  const reveal = useSensitiveReveal(load);
+  const reveal = useSensitiveReveal(load, canReveal);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const { step } = reveal.state;

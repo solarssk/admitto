@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { CODE_MESSAGES } from "../../src/api/operator-api-error.js";
@@ -109,8 +109,8 @@ describe("a request's sensitive answers", { timeout: 30_000 }, () => {
     api.fetchRegistration.mockResolvedValue(detail("r1", { custom_data: {}, companions: [] }));
 
     const box = await openWindow({ waitForAnswers: false });
-    await waitFor(() => expect(api.fetchRegistration).toHaveBeenCalled());
-    await act(async () => {});
+    // A section that only the ready window has: until it is there the Answers section may be missing only because the read has not come back.
+    await within(box).findByRole("heading", { name: "Emails" });
 
     expect(within(box).queryByRole("heading", { name: "Answers" })).toBeNull();
   });

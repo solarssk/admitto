@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import type { EventCustomFieldDto, RoleAssignment } from "../../src/api/types.js";
 import { WRITE_ONLY_NEW_NOTE, WRITE_ONLY_REPLACE_NOTE } from "../../src/attendees/CustomDataFieldInput.js";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { baseAttendeeDetailEvent, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { baseAttendeeDetailEvent, deferred, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { answerField } from "./answerTypeFixtures.js";
 
 /**
@@ -280,5 +280,104 @@ describe("the companion's edit dialog is write-only too", { timeout: 30_000 }, (
 
     await waitFor(() => expect(updateAttendeeCompanion).toHaveBeenCalled());
     expect(updateAttendeeCompanion.mock.calls[0]![2]).toEqual({ name: "Piotr Companion", custom_data: { diet: "vegan", allergy: "nuts" } });
+  });
+});
+
+describe("the answers on screen when the page changes under them", { timeout: 30_000 }, () => {
+  it("hides the guest's answers again once the attendee is saved, because they were shown before the change", async () => {
+    updateAttendee.mockResolvedValue(detail({ first_name: "Anne", name: "Anne Baseline", updated_at: "2026-02-02T00:00:00.000Z" }));
+    await renderPage();
+    await reveal("guest");
+    expect(screen.getByText(SECRET)).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]!);
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anne" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+
+    await waitFor(() => expect(screen.queryByText(SECRET)).toBeNull());
+    expect(showOf("guest")).toBeTruthy();
+  });
+
+  it("hides the companion's answers again once the companion is saved, and not while an edit is open and not saved", async () => {
+    updateAttendeeCompanion.mockResolvedValue(
+      detail({ updated_at: "2026-02-02T00:00:00.000Z", companion: { slot: 1, name: "Piotr K.", custom_data: { diet: "vegan" } } }),
+    );
+    await renderPage();
+    await reveal("companion");
+    expect(within(cardOf("Companion")).getByText("peanuts")).toBeTruthy();
+    fireEvent.click(within(cardOf("Companion")).getByRole("button", { name: "Edit" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit companion" });
+    fireEvent.change(within(dialog).getByLabelText("Full name"), { target: { value: "Piotr K." } });
+    expect(within(cardOf("Companion")).getByText("peanuts")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateAttendeeCompanion).toHaveBeenCalled());
+
+    await waitFor(() => expect(screen.queryByText("peanuts")).toBeNull());
+    expect(showOf("companion")).toBeTruthy();
+  });
+
+  function Goto({ to }: Readonly<{ to: string }>) {
+    const navigate = useNavigate();
+    return (
+      <button type="button" onClick={() => void navigate(to)}>
+        Go to the next attendee
+      </button>
+    );
+  }
+  const nextAttendee = () => ({
+    detail: detail({ id: "att-2", name: "Bea Baseline", first_name: "Bea", email: "bea@example.com" }),
+    attributeFields: GUEST_FIELDS,
+    companionFields: COMPANION_FIELDS,
+    itemsWarning: null,
+  });
+  async function renderWithNavigation() {
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
+        <Goto to="/admin/events/evt-1/attendees/att-2" />
+        <Routes>
+          <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByRole("heading", { name: "Anna Baseline" });
+  }
+
+  it("takes the answers off the screen and offers no Show while the page still holds the previous attendee and the address is another's", async () => {
+    await renderWithNavigation();
+    await reveal("guest");
+    expect(screen.getByText(SECRET)).toBeTruthy();
+    const next = deferred<ReturnType<typeof nextAttendee>>();
+    loadAttendeeDetailData.mockReturnValueOnce(next.promise);
+
+    fireEvent.click(screen.getByRole("button", { name: "Go to the next attendee" }));
+
+    // The previous attendee is still the one on screen, so this is the case: nothing of theirs is revealed or can be.
+    expect(screen.getByRole("heading", { name: "Anna Baseline" })).toBeTruthy();
+    expect(screen.queryByText(SECRET)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Show sensitive answers/ })).toBeNull();
+    await act(async () => next.resolve(nextAttendee()));
+    await screen.findByRole("heading", { name: "Bea Baseline" });
+    expect(showOf("guest")).toBeTruthy();
+    expect(screen.queryByText(SECRET)).toBeNull();
+  });
+
+  it("drops an answer that was asked for the previous attendee and comes after the address has moved", async () => {
+    await renderWithNavigation();
+    const late = deferred<{ guest: Record<string, string>; companions: [] }>();
+    revealAttendeeSensitive.mockReturnValueOnce(late.promise);
+    fireEvent.click(showOf("guest"));
+    fireEvent.click(within(screen.getByRole("group", { name: "Show sensitive answers of guest?" })).getByRole("button", { name: "Show" }));
+    const next = deferred<ReturnType<typeof nextAttendee>>();
+    loadAttendeeDetailData.mockReturnValueOnce(next.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Go to the next attendee" }));
+
+    await act(async () => late.resolve({ guest: { access: SECRET }, companions: [] }));
+    await act(async () => next.resolve(nextAttendee()));
+    await screen.findByRole("heading", { name: "Bea Baseline" });
+
+    expect(screen.queryByText(SECRET)).toBeNull();
+    expect(showOf("guest")).toBeTruthy();
   });
 });

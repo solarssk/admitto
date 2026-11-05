@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import { CODE_MESSAGES } from "../../src/api/operator-api-error.js";
@@ -144,6 +144,8 @@ describe("the Sensitive switch of the field editor", { timeout: 30_000 }, () => 
 
     save();
 
-    expect(await screen.findByText("Failed to save field.")).toBeTruthy();
+    // In a toast, and not as an alert in the editor, which is where the refusal of an item is told.
+    expect((await screen.findByTestId("at-toast")).textContent).toContain("Failed to save field.");
+    expect(within(screen.getByRole("dialog")).queryByRole("alert")).toBeNull();
   });
 });

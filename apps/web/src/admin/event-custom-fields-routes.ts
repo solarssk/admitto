@@ -12,6 +12,7 @@ import {
   type SuggestedEventField,
 } from "@admitto/shared";
 import {
+  ERASE_TRANSACTION_TIMEOUT_MS,
   MAX_CUSTOM_FIELDS_PER_EVENT,
   controlsOtherFields,
   eventCustomFieldOrderBy,
@@ -38,6 +39,11 @@ import {
   requireEventId,
 } from "./admin-helpers.js";
 import { isRequiredFieldOffForm } from "../registration/field-on-form.js";
+
+/** The transactions that wait for the open exports and imports of the event (lockOpenAttendeeJobs, an import holds its job row for as long
+ * as it runs) or write the answers of many people have the room an erasure and a removal have, not the 5 seconds of an interactive
+ * transaction, which a normal import outlasts. */
+const JOB_LOCKING_TRANSACTION_OPTIONS = { timeout: ERASE_TRANSACTION_TIMEOUT_MS, maxWait: 10_000 } as const;
 
 /** Thrown when the per-event cap is still exceeded on the transaction-scoped recheck (two
  * concurrent creates could otherwise both pass the earlier, non-transactional count check before
@@ -473,7 +479,7 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
         metadata: { source_field: row.source_field, ...(row.sensitive ? { sensitive: true } : {}) },
       });
       return row;
-    });
+    }, JOB_LOCKING_TRANSACTION_OPTIONS);
     return c.json(serializeCustomField(created), 201);
   } catch (err) {
     return createFieldFailure(c, err);
@@ -546,7 +552,7 @@ function addSuggestedFields(c: Context, db: PrismaClient, eventId: string, lockJ
     }
     if (addsSensitive) await invalidateEventExports(tx, eventId);
     return planned;
-  });
+  }, JOB_LOCKING_TRANSACTION_OPTIONS);
 }
 
 /** POST /api/admin/events/:eventId/custom-fields/suggested
@@ -746,7 +752,7 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
         metadata: { source_field: row.source_field, ...(parsed.data.sensitive === undefined ? {} : { sensitive: row.sensitive }) },
       });
       return row;
-    });
+    }, JOB_LOCKING_TRANSACTION_OPTIONS);
     return c.json(serializeCustomField(updated));
   } catch (err) {
     return patchFieldFailure(c, err);
@@ -925,7 +931,7 @@ export async function handleDeleteEventCustomField(c: Context, db: PrismaClient)
         // Counts of the rows whose answers were removed, never an answer.
         metadata: { source_field: existing.source_field, ...(removed ? { answers_removed: removed } : {}) },
       });
-    });
+    }, JOB_LOCKING_TRANSACTION_OPTIONS);
     return c.json({ ok: true });
   } catch (err) {
     if (err instanceof FieldInUseError) {
