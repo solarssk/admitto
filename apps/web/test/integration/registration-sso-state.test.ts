@@ -78,6 +78,7 @@ describe("spendGuestSsoState", () => {
 
     expect(await spendGuestSsoState(prisma, given.state, now)).toEqual({
       eventId,
+      eventSlug: "reg118a-state-event",
       providerId: PROVIDER_ID,
       nonce: "a-nonce",
       codeVerifier: "a-verifier",

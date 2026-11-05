@@ -6,12 +6,16 @@
 import { encryptClientSecret } from "@admitto/auth";
 import type { PrismaClient } from "@admitto/db";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
-import { GUEST_SSO_FLOW_COOKIE, GUEST_SSO_SESSION_COOKIE } from "../../src/registration/sso-session.js";
+import { GUEST_SSO_CALLBACK_PATH, GUEST_SSO_SESSION_COOKIE } from "../../src/registration/sso-session.js";
+import { GUEST_SSO_FLOW_COOKIE_PREFIX, parseGuestSsoStateValue } from "../../src/registration/sso-state-value.js";
 import { SSO_PROVIDER_SETTINGS_KEY, setSsoProviderId } from "../../src/registration/sso-provider.js";
 import type { MockIdTokenOverrides, MockOidcIdp } from "./mock-oidc-idp.js";
 import { ORIGIN } from "./registration-submit-harness.js";
 
-export { GUEST_SSO_FLOW_COOKIE, GUEST_SSO_SESSION_COOKIE };
+export { GUEST_SSO_CALLBACK_PATH, GUEST_SSO_FLOW_COOKIE_PREFIX, GUEST_SSO_SESSION_COOKIE };
+
+/** The name of the flow cookie of the flow that began with this `state` (the state must be one the system wrote). */
+export const flowCookieName = (state: string): string => parseGuestSsoStateValue(state)!.cookieName;
 
 export const PROVIDER_ID = "reg118a-guest-idp";
 
@@ -84,6 +88,11 @@ export class Jar {
     this.cookies.set(`${name}@${path}`, { value, path, maxAge: null, line: "" });
   }
 
+  /** The names of the flow cookies the browser holds. */
+  flowNames(): string[] {
+    return this.names().filter((name) => name.startsWith(GUEST_SSO_FLOW_COOKIE_PREFIX));
+  }
+
   names(): string[] {
     return [...this.cookies.keys()].map((key) => key.split("@")[0]!);
   }
@@ -92,7 +101,7 @@ export class Jar {
 export type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 
 export const startPath = (slug: string) => `/r/${slug}/sso/start`;
-export const callbackPath = (slug: string) => `/r/${slug}/sso/callback`;
+export const callbackPath = () => GUEST_SSO_CALLBACK_PATH;
 
 /** A request of the browser of `jar`, with the cookies its paths allow. */
 export function browse(app: App, jar: Jar, path: string, init: RequestInit = {}): Promise<Response> {

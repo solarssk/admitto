@@ -307,6 +307,7 @@ import {
 import { registrationSubmitGuards } from "./registration/submit-guards.js";
 import { handlePostRegistration, type RegistrationSubmitDeps } from "./registration/submit-route.js";
 import { handleSsoCallback, handleSsoStart } from "./registration/sso-routes.js";
+import { GUEST_SSO_CALLBACK_PATH } from "./registration/sso-session.js";
 import {
   handleListEventTicketTypes,
   handleCreateEventTicketType,
@@ -3397,10 +3398,11 @@ export function createApp(options: CreateAppOptions = {}) {
   // The company sign-in of a guest (118, D-C4): start sends the guest to the identity provider chosen for guests, callback
   // takes them back and gives them a signed cookie that lets them fill in the form. It creates no account or session of
   // staff. Both have the budget `registration:sso` per client address; the order and the answers are in
-  // registration/sso-routes.ts. An event that is not open with the company sign-in is the one 404.
+  // registration/sso-routes.ts. An event that is not open with the company sign-in is the one 404. The callback is ONE
+  // address for the instance, outside `/r/`, so it is entered at the provider once and can never be an event's page.
   const registrationSso = { db, baseUrl: oidcPublicBaseUrl };
   app.get("/r/:slug/sso/start", rateLimit(rateLimitStore, "registration:sso"), (c) => handleSsoStart(c, registrationSso));
-  app.get("/r/:slug/sso/callback", rateLimit(rateLimitStore, "registration:sso"), (c) => handleSsoCallback(c, registrationSso));
+  app.get(GUEST_SSO_CALLBACK_PATH, rateLimit(rateLimitStore, "registration:sso"), (c) => handleSsoCallback(c, registrationSso));
 
   // The link in the confirmation mail of a registration (110, D-C5). The token is the credential: one whose signature does
   // not match is the one 404 before anything is read. GET shows a page with a button and changes nothing (mail scanners

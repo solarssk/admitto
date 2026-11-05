@@ -8,28 +8,32 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { handleSsoCallback, handleSsoStart } from "../../src/registration/sso-routes.js";
-import { GUEST_SSO_FLOW_COOKIE } from "../../src/registration/sso-session.js";
+import { GUEST_SSO_CALLBACK_PATH } from "../../src/registration/sso-session.js";
+import { newGuestSsoStateValue } from "../../src/registration/sso-state-value.js";
 
 const failing = (() => {
   const error = Object.assign(new Error("connect to ada.lovelace@contoso.example failed"), { name: "ConnectionError" });
-  return { event: { findUnique: vi.fn(async () => Promise.reject(error)) } } as unknown as PrismaClient;
+  const read = vi.fn(async () => Promise.reject(error));
+  return { event: { findUnique: read }, registrationSsoState: { findUnique: read } } as unknown as PrismaClient;
 })();
 
 const app = new Hono();
 const deps = { db: failing, baseUrl: async () => "https://tickets.example.com" };
 app.get("/r/:slug/sso/start", (c) => handleSsoStart(c, deps));
-app.get("/r/:slug/sso/callback", (c) => handleSsoCallback(c, deps));
+app.get(GUEST_SSO_CALLBACK_PATH, (c) => handleSsoCallback(c, deps));
 
 afterEach(() => {
   vi.restoreAllMocks();
   resetSystemLogBufferForTest();
 });
 
+const flow = newGuestSsoStateValue("northwind-summit");
+
 describe("an unexpected failure", () => {
   it.each([
-    ["the start", "/r/northwind-summit/sso/start", undefined],
-    ["the callback", "/r/northwind-summit/sso/callback?code=a-code&state=a-state", `${GUEST_SSO_FLOW_COOKIE}=a-state`],
-  ])("sends the guest of %s back to the page with the general notice, and logs the class of the error alone", async (_name, path, cookie) => {
+    ["the start", "/r/northwind-summit/sso/start", undefined, /^$/],
+    ["the callback", `${GUEST_SSO_CALLBACK_PATH}?code=a-code&state=${flow.value}`, `${flow.cookieName}=${flow.value}`, /Max-Age=0/],
+  ])("sends the guest of %s back to the page with the general notice, and logs the class of the error alone", async (_name, path, cookie, flowCookieLine) => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
@@ -38,7 +42,8 @@ describe("an unexpected failure", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/r/northwind-summit?sso=failed");
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(res.headers.getSetCookie().find((line) => line.startsWith(`${GUEST_SSO_FLOW_COOKIE}=`))).toMatch(/Max-Age=0/);
+    // The callback deletes the flow cookie of its flow; the start has set none, so it has none to delete.
+    expect(res.headers.getSetCookie().find((line) => line.startsWith(`${flow.cookieName}=`)) ?? "").toMatch(flowCookieLine);
     expect(JSON.stringify(consoleError.mock.calls)).toBe(JSON.stringify([["registration sso failed:", { reason: "ConnectionError" }]]));
     const refusals = querySystemLogs({ source: "security" }).filter((entry) => entry.message === "registration_sso_refused");
     expect(refusals.map((entry) => entry.fields)).toEqual([{ reason: "internal" }]);
