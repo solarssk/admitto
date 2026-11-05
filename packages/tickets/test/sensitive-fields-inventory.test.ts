@@ -7,6 +7,9 @@
  * What the decisions mean:
  * - redacted: the file keeps the answers to sensitive questions out of what it returns or writes. `via` is a text that must
  *             stay in the file, so the entry cannot outlive the code that makes it true.
+ * - reveals:  the one place that hands a sensitive answer back on purpose (the administrator's "Show", 117b). Its reason is
+ *             the role (an administrator or a superadmin), the audit entry of every click and the budget per user; `via` is a text
+ *             that must stay in the file, here the call that writes the entry, so the answers cannot leave without it.
  * - n/a:      the file never shows a stored answer to anyone who did not give it: the form a guest fills in, the code that
  *             only stores or validates, a type, an error text. `why` says which.
  * - later:    a surface that a later pull request of the same feature closes (117b, 117c or 117d); it stays listed until it does.
@@ -21,6 +24,7 @@ import { fileURLToPath } from "node:url";
 type Pending = { pr: "117b" | "117c" | "117d"; what: string };
 type Decision =
   | { decision: "redacted"; via: string; pending?: Pending }
+  | { decision: "reveals"; via: string; pending?: Pending }
   | { decision: "n/a"; why: string; pending?: Pending }
   | { decision: "later"; pending: Pending };
 
@@ -108,6 +112,7 @@ const INVENTORY: Record<string, Decision> = {
     decision: "n/a",
     why: "Carries the stored answers on the resolved ticket; the only reader is the wallet pass builder (resolveWalletCustomFieldPlaceholders), which leaves sensitive fields out (a test lists the readers).",
   },
+  "packages/tickets/src/sensitive-reveal.ts": { decision: "reveals", via: "writeStaffRegistrationAudit(" },
   "packages/tickets/src/sensitive-custom-data.ts": { decision: "redacted", via: "export function redactSensitiveCustomData" },
   "packages/tickets/src/types.ts": { decision: "n/a", why: "Types of the package; no code that reads an answer." },
   "packages/tickets/src/validate-custom-data.ts": { decision: "n/a", why: "Its errors carry the key of a field and never a value." },
@@ -152,10 +157,10 @@ describe("sensitive attendee fields inventory", () => {
     expect(Object.keys(INVENTORY).filter((file) => !readingFiles.includes(file))).toEqual([]);
   });
 
-  it.each(Object.entries(INVENTORY).filter(([, entry]) => entry.decision === "redacted"))(
-    "%s: the code that redacts is still there",
+  it.each(Object.entries(INVENTORY).filter(([, entry]) => entry.decision === "redacted" || entry.decision === "reveals"))(
+    "%s: the code that redacts, or that records the reveal, is still there",
     (file, entry) => {
-      if (entry.decision !== "redacted") throw new Error("filtered above");
+      if (entry.decision !== "redacted" && entry.decision !== "reveals") throw new Error("filtered above");
       expect(readFileSync(path.join(ROOT, file), "utf8")).toContain(entry.via);
     },
   );
@@ -170,7 +175,7 @@ describe("sensitive attendee fields inventory", () => {
       .filter(([, entry]) => entry.pending !== undefined)
       .map(([file, entry]) => `${entry.pending!.pr} ${file}`)
       .sort();
-    // 117c (the admin screens) removes its lines from this list; 117b adds the deliberate "Show".
+    // 117c (the admin screens) removes its lines from this list. The deliberate "Show" of 117b is `reveals`, not open.
     expect(open).toEqual([
       "117c apps/admin/src/attendees/AddAttendeeModal.tsx",
       "117c apps/admin/src/attendees/CompanionCard.tsx",
