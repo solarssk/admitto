@@ -5,6 +5,7 @@ import { ApiError } from "../../src/api/client.js";
 import { CODE_MESSAGES } from "../../src/api/operator-api-error.js";
 import type { EventCustomFieldDto, SensitiveRevealDto } from "../../src/api/types.js";
 import { AttendeeSensitiveAnswers, REVEAL_CONFIRM_TEXT, RequestSensitiveAnswers } from "../../src/attendees/SensitiveAnswers.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../../src/utils/loading-timing.js";
 import { REVEAL_VISIBLE_MS } from "../../src/attendees/useSensitiveReveal.js";
 import { advanceTimers, deferred } from "../test-utils.js";
 
@@ -222,6 +223,83 @@ describe("a refusal", { timeout: 30_000 }, () => {
     expect(pageText()).not.toContain(SECRET);
     expect(within(rowOf("Allergies")).getByText("Hidden")).toBeTruthy();
     expect(showButton()).toBeTruthy();
+  });
+});
+
+describe("an answer that does not come", { timeout: 30_000 }, () => {
+  async function startReveal() {
+    fireEvent.click(showButton());
+    fireEvent.click(within(screen.getByRole("group", { name: "Show sensitive answers of guest?" })).getByRole("button", { name: "Show" }));
+    await act(async () => {});
+  }
+
+  it("keeps waiting until 30 seconds are over, and not a moment longer", async () => {
+    vi.useFakeTimers();
+    api.attendee.mockReturnValue(deferred<SensitiveRevealDto>().promise);
+    renderGuest();
+    await startReveal();
+
+    await advanceTimers(LOAD_TIMEOUT_MS - 100);
+    expect(LOAD_TIMEOUT_MS).toBe(30_000);
+    expect(showButton().getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByRole("alert")).toBeNull();
+    await advanceTimers(100);
+
+    expect(screen.getByRole("alert").textContent).toBe(LOAD_TIMEOUT_MESSAGE);
+    expect(showButton().getAttribute("aria-busy")).not.toBe("true");
+    expect(within(rowOf("Accessibility needs")).getByText("Hidden")).toBeTruthy();
+  });
+
+  it("drops the answer that comes after the wait was given up", async () => {
+    vi.useFakeTimers();
+    const held = deferred<SensitiveRevealDto>();
+    api.attendee.mockReturnValue(held.promise);
+    renderGuest();
+    await startReveal();
+    await advanceTimers(LOAD_TIMEOUT_MS);
+
+    await act(async () => held.resolve(answer({ access: SECRET })));
+
+    expect(pageText()).not.toContain(SECRET);
+    expect(within(rowOf("Accessibility needs")).getByText("Hidden")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe(LOAD_TIMEOUT_MESSAGE);
+  });
+
+  it("lets the guest ask again through the same confirmation, and then shows the answers", async () => {
+    vi.useFakeTimers();
+    api.attendee.mockReturnValueOnce(deferred<SensitiveRevealDto>().promise).mockResolvedValueOnce(answer({ access: SECRET }));
+    renderGuest();
+    await startReveal();
+    await advanceTimers(LOAD_TIMEOUT_MS);
+
+    await startReveal();
+
+    expect(api.attendee).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(SECRET)).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not time out an answer that came in time", async () => {
+    vi.useFakeTimers();
+    api.attendee.mockResolvedValue(answer({ access: SECRET }));
+    renderGuest();
+    await startReveal();
+    await advanceTimers(LOAD_TIMEOUT_MS + 1000);
+    expect(screen.getByText(SECRET)).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("clears its timer when the window or the page goes", async () => {
+    vi.useFakeTimers();
+    api.attendee.mockReturnValue(deferred<SensitiveRevealDto>().promise);
+    const view = renderGuest();
+    await startReveal();
+    const waiting = vi.getTimerCount();
+
+    view.unmount();
+
+    // The timer of the wait is among those that go with the component; the answer that comes later has nothing to wake.
+    expect(vi.getTimerCount()).toBeLessThan(waiting);
   });
 });
 

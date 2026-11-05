@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SensitiveRevealDto } from "../api/types.js";
+import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS } from "../utils/loading-timing.js";
 
 /** How long the answers stay on screen after "Show" (D-E6). */
 export const REVEAL_VISIBLE_MS = 120_000;
@@ -51,6 +52,12 @@ export function useSensitiveReveal(load: () => Promise<Record<string, string>>):
   const request = useRef(0);
   const loadRef = useRef(load);
   loadRef.current = load;
+  // Ends the wait for an answer that does not come (LOAD_TIMEOUT_MS). Cleared with every other end of the wait.
+  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopTimeout = useCallback(() => {
+    if (timeout.current !== null) clearTimeout(timeout.current);
+    timeout.current = null;
+  }, []);
 
   const shown = state.step === "shown";
   useEffect(() => {
@@ -65,8 +72,9 @@ export function useSensitiveReveal(load: () => Promise<Record<string, string>>):
   useEffect(
     () => () => {
       request.current += 1;
+      stopTimeout();
     },
-    [],
+    [stopTimeout],
   );
 
   const ask = useCallback(() => {
@@ -77,24 +85,37 @@ export function useSensitiveReveal(load: () => Promise<Record<string, string>>):
   const cancel = useCallback(() => setState({ step: "hidden" }), []);
   const hide = useCallback(() => {
     request.current += 1;
+    stopTimeout();
     setState({ step: "hidden" });
     setHiddenNotice("Sensitive answers hidden");
-  }, []);
+  }, [stopTimeout]);
   const confirm = useCallback(() => {
     request.current += 1;
     const mine = request.current;
     setState({ step: "loading" });
+    stopTimeout();
+    // An answer that has not come in 30 seconds is given up: the wait ends with a message and the button free to ask again, and the
+    // answer that comes after is dropped, as one for another person is.
+    timeout.current = setTimeout(() => {
+      timeout.current = null;
+      request.current += 1;
+      setError(LOAD_TIMEOUT_MESSAGE);
+      setState({ step: "hidden" });
+    }, LOAD_TIMEOUT_MS);
     loadRef
       .current()
       .then((answers) => {
-        if (request.current === mine) setState({ step: "shown", answers });
+        if (request.current !== mine) return;
+        stopTimeout();
+        setState({ step: "shown", answers });
       })
       .catch((err: unknown) => {
         if (request.current !== mine) return;
+        stopTimeout();
         setError(failureMessage(err));
         setState({ step: "hidden" });
       });
-  }, []);
+  }, [stopTimeout]);
 
   return { state, error, hiddenNotice, ask, cancel, confirm, hide };
 }
