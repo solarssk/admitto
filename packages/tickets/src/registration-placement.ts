@@ -354,8 +354,8 @@ async function lookUpAddress(context: SubmissionContext): Promise<AddressState> 
 }
 
 /** The registration the signed-in person already has in the event, whatever its state and address. */
-async function findRegistrationOfSubject({ tx, eventId, sso }: SubmissionContext): Promise<KnownRegistration | null> {
-  if (sso === null) return null;
+function findRegistrationOfSubject({ tx, eventId, sso }: SubmissionContext): Promise<KnownRegistration | null> {
+  if (sso === null) return Promise.resolve(null);
   return tx.registration.findFirst({
     where: { event_id: eventId, sso_provider_id: sso.providerId, sso_subject: sso.subject },
     select: { id: true, status: true, confirm_expires_at: true },

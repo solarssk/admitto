@@ -12,7 +12,7 @@
  */
 import { esc } from "../ticket-page.js";
 
-export const REGISTRATION_SSO_SCRIPT = String.raw`
+export const REGISTRATION_SSO_SCRIPT = `
 (function () {
   "use strict";
   var send = window.fetch;

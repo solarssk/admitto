@@ -297,9 +297,9 @@ describe("the page of an event with the company sign-in", () => {
 
     const html = await (await page(slug, new Jar())).text();
 
-    expect(html.includes(PROVIDER_ID)).toBe(false);
-    expect(html.includes(idp.baseUrl)).toBe(false);
-    expect(html.includes("client_id")).toBe(false);
+    expect(html).not.toContain(PROVIDER_ID);
+    expect(html).not.toContain(idp.baseUrl);
+    expect(html).not.toContain("client_id");
   });
 });
 
