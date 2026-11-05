@@ -66,11 +66,11 @@ describe("sweepRegistrationSsoStates", () => {
     await prisma.registrationSsoState.createMany({
       data: [row(-MINUTE), row(-MINUTE, true), row(MINUTE), row(MINUTE, true)],
     });
-    const keep = (await prisma.registrationSsoState.findMany({ where: { expires_at: { gt: new Date() } } })).map((r) => r.state).sort();
+    const keep = (await prisma.registrationSsoState.findMany({ where: { expires_at: { gt: new Date() } } })).map((r) => r.state).sort((a, b) => String(a).localeCompare(String(b), "en"));
 
     expect(await sweepRegistrationSsoStates(prisma)).toEqual({ deleted: 2, more: false });
 
-    expect((await states()).sort()).toEqual(keep);
+    expect((await states()).sort((a, b) => String(a).localeCompare(String(b), "en"))).toEqual(keep);
   });
 
   it("does nothing, and says so, when nothing ran out", async () => {

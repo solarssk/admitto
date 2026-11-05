@@ -59,7 +59,7 @@ describe("createGuestSsoState", () => {
     const row = await prisma.registrationSsoState.findUniqueOrThrow({ where: { state: given.state } });
     expect(row).toMatchObject({ nonce: "a-nonce", code_verifier: "a-verifier", event_id: eventId, provider_id: PROVIDER_ID, consumed_at: null });
     expect(row.expires_at.getTime()).toBe(now.getTime() + GUEST_SSO_STATE_TTL_MS);
-    expect(Object.keys(row).sort()).toEqual(["code_verifier", "consumed_at", "created_at", "event_id", "expires_at", "id", "nonce", "provider_id", "state"]);
+    expect(Object.keys(row).sort((a, b) => String(a).localeCompare(String(b), "en"))).toEqual(["code_verifier", "consumed_at", "created_at", "event_id", "expires_at", "id", "nonce", "provider_id", "state"]);
   });
 
   it("refuses a second row with the same state", async () => {

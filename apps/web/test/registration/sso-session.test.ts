@@ -66,7 +66,7 @@ describe("the session cookie: what it carries", () => {
 
     const payload = JSON.parse(Buffer.from(value.split(".")[0]!, "base64url").toString("utf8")) as Record<string, unknown>;
 
-    expect(Object.keys(payload).sort()).toEqual(["cn", "cv", "em", "ev", "iat", "pr", "sl", "su", "v"]);
+    expect(Object.keys(payload).sort((a, b) => String(a).localeCompare(String(b), "en"))).toEqual(["cn", "cv", "em", "ev", "iat", "pr", "sl", "su", "v"]);
   });
 });
 

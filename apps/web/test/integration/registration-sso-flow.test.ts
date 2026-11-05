@@ -14,7 +14,7 @@ import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
-import { handleSsoStart } from "../../src/registration/sso-routes.js";
+import { handleSsoCallback, handleSsoStart } from "../../src/registration/sso-routes.js";
 import { setSsoProviderId } from "../../src/registration/sso-provider.js";
 import { verifyGuestSsoSession } from "../../src/registration/sso-session.js";
 import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/mock-oidc-idp.js";
@@ -31,7 +31,7 @@ import {
   startPath,
   walk,
 } from "../helpers/registration-sso-harness.js";
-import { PAST, SelectiveStore, eventSeeder, harness, signature } from "../helpers/registration-submit-harness.js";
+import { ORIGIN, PAST, SelectiveStore, eventSeeder, harness, signature } from "../helpers/registration-submit-harness.js";
 
 const ORG = "org-reg118a-flow";
 const SUBJECT = "mock-subject-oidc";
@@ -362,8 +362,8 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
 
     const [one, two] = await Promise.all([browse(h.app, first, target), browse(h.app, second, target)]);
 
-    const locations = [one, two].map((res) => res.headers.get("location")).sort();
-    expect(locations).toEqual([`/r/${slug}`, failedAt(slug)].sort());
+    const locations = [one, two].map((res) => res.headers.get("location")).sort((a, b) => String(a).localeCompare(String(b), "en"));
+    expect(locations).toEqual([`/r/${slug}`, failedAt(slug)].sort((a, b) => String(a).localeCompare(String(b), "en")));
     expect([first, second].filter((jar) => jar.has(GUEST_SSO_SESSION_COOKIE))).toHaveLength(1);
     // The one that lost never asked the provider.
     expect(calls()).toBe(1);
@@ -442,6 +442,22 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
 
     expect((await browse(h.app, new Jar(), callbackPath("Bad Slug"))).status).toBe(404);
     expect(await signature(await browse(h.app, new Jar(), `${callbackPath("reg118a-no-such-event")}?code=a&state=b`))).toEqual(unknown);
+  });
+
+  it("goes back to the page with the general notice, without asking the provider, when the instance has no address to build the redirect on", async () => {
+    const slug = await addEvent("callback-no-url");
+    const jar = new Jar();
+    const before = await goToProvider(h.app, jar, slug, idp);
+    const bare = new Hono();
+    bare.get("/r/:slug/sso/callback", (c) => handleSsoCallback(c, { db: prisma, baseUrl: async () => Promise.reject(new Error("no address")) }));
+
+    const res = await bare.request(`${ORIGIN}${before.callbackUrl.pathname}${before.callbackUrl.search}`, {
+      headers: { Cookie: jar.header(before.callbackUrl.pathname) },
+    });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(failedAt(slug));
+    expect(calls()).toBe(0);
   });
 
   it("is held to the budget per client address", async () => {
@@ -649,7 +665,7 @@ describe("what the flow writes to a log and to an answer", () => {
     const refusals = querySystemLogs({ source: "security" }).filter((entry) => entry.message === "registration_sso_refused");
     expect(refusals.length).toBeGreaterThanOrEqual(5);
     for (const entry of refusals) {
-      expect(Object.keys(entry.fields ?? {}).sort()).toEqual(["event_id", "reason"]);
+      expect(Object.keys(entry.fields ?? {}).sort((a, b) => String(a).localeCompare(String(b), "en"))).toEqual(["event_id", "reason"]);
       expect(entry.fields?.["reason"]).toMatch(/^[a-z_]+$/);
     }
   });

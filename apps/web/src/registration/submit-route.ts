@@ -77,7 +77,7 @@ import {
   type RegistrationSubmitOk,
   type RegistrationSubmitSignIn,
 } from "./form-contract.js";
-import { resolveRegistration, type ResolvedRegistration } from "./form-model.js";
+import { resolveRegistration, type GuestAccess, type ResolvedRegistration } from "./form-model.js";
 import { proofSatisfies } from "./sso-claim.js";
 import { clearGuestSsoSessionCookie, readGuestSsoSession, type GuestSsoIdentity } from "./sso-session.js";
 import {
@@ -354,9 +354,7 @@ async function admitByChallenge(
 
 /** The sign-in of a guest, if the request carries one that checks out for this event, this provider and the restriction of
  * the event as it is now. The same rule the page uses to decide whether to show the form (./form-routes.ts). */
-function signedInGuest(c: Context, open: Extract<ResolvedRegistration, { kind: "open" }>): GuestSsoIdentity | null {
-  const { access } = open;
-  if (access.method !== "sso") return null;
+function signedInGuest(c: Context, open: Extract<ResolvedRegistration, { kind: "open" }>, access: Extract<GuestAccess, { method: "sso" }>): GuestSsoIdentity | null {
   const identity = readGuestSsoSession(
     c,
     { eventId: open.eventId, slug: open.form.event.slug, providerId: access.providerId },
@@ -371,9 +369,10 @@ async function admitBySignIn(
   c: Context,
   deps: RegistrationSubmitDeps,
   open: Extract<ResolvedRegistration, { kind: "open" }>,
+  access: Extract<GuestAccess, { method: "sso" }>,
   pace: AnswerPace,
 ): Promise<Admitted | Response> {
-  const identity = signedInGuest(c, open);
+  const identity = signedInGuest(c, open, access);
   if (identity === null) return signInRequired(c);
   const startedAt = pace.now();
   if (!(await checkRegistrationEventRateLimit(deps.store, open.eventId))) return tooManyRequests(c);
@@ -390,8 +389,9 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
   if (target.kind !== "open") return respondRegistrationNotFound(c);
 
   const pace = deps.pace ?? REAL_PACE;
+  const { access } = target;
   const admitted =
-    target.access.method === "sso" ? await admitBySignIn(c, deps, target, pace) : await admitByChallenge(c, deps, target, envelope, pace);
+    access.method === "sso" ? await admitBySignIn(c, deps, target, access, pace) : await admitByChallenge(c, deps, target, envelope, pace);
   if (admitted instanceof Response) return admitted;
   const { open, startedAt, identity } = admitted;
 
