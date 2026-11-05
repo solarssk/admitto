@@ -163,79 +163,53 @@ export function getTimelineIcon(actionType: string): string {
   return icons[actionType] ?? "history";
 }
 
+/** The headline of every action whose words do not depend on the entry; `getTimelineLabel` handles the rest. */
+const STATIC_TIMELINE_LABELS: Record<string, string> = {
+  attendee_created_manual: "Created manually",
+  attendees_imported: "Imported from CSV",
+  attendee_imported: "Imported from CSV",
+  mail_bulk_resend: "Bulk ticket send",
+  attendee_ingested: "Ingested via API",
+  ticket_sent: "Ticket sent",
+  mail_delivered: "Email delivered",
+  mail_bounced: "Email bounced",
+  ticket_resent: "Ticket resent",
+  resend_ticket: "Ticket resent",
+  ticket_link_retrieved: "Ticket link copied",
+  check_in: "Checked in",
+  admitted: "Checked in",
+  check_in_undo: "Check-in undone",
+  check_in_undone: "Check-in undone",
+  check_in_revoked: "Check-in revoked",
+  note_added: "Note added",
+  note_updated: "Note updated",
+  note_deleted: "Note deleted",
+  item_issued: "Item issued",
+  item_state_changed: "Item issued",
+  item_returned: "Item returned",
+  item_revoked: "Item reset to pending",
+  attendee_edited: "Profile updated",
+  attendee_companion_updated: "Companion updated",
+  attendee_companion_removed: "Companion removed",
+  sensitive_data_revealed: "Sensitive answers shown",
+  pass_revoked: "Pass revoked",
+  pass_restored: "Pass restored",
+  wallet_pass_voided: "Wallet pass voided",
+  wallet_pass_restored: "Wallet pass restored",
+  wallet_pass_reissued: "Wallet pass updated",
+  wallet_pass_deleted: "Wallet pass deleted",
+  wallet_pass_removed: "Removed from provider",
+  scan_preview: "Scan preview",
+};
+
 export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
-  const meta = entry.metadata ?? {};
-  switch (entry.action_type) {
-    case "attendee_created_manual":
-      return "Created manually";
-    case "attendees_imported":
-    case "attendee_imported":
-      return "Imported from CSV";
-    case "mail_bulk_resend":
-      return "Bulk ticket send";
-    case "attendee_ingested":
-      return "Ingested via API";
-    case "rsvp_status_changed":
-      return `Status changed to ${formatRsvpStatus(meta.to ?? "updated")}`;
-    case "ticket_sent":
-      return "Ticket sent";
-    case "mail_delivered":
-      return "Email delivered";
-    case "mail_bounced":
-      return "Email bounced";
-    case "ticket_resent":
-    case "resend_ticket":
-      return "Ticket resent";
-    case "ticket_link_retrieved":
-      return "Ticket link copied";
-    case "check_in":
-    case "admitted":
-      return "Checked in";
-    case "check_in_undo":
-    case "check_in_undone":
-      return "Check-in undone";
-    case "check_in_revoked":
-      return "Check-in revoked";
-    case "note_added":
-      return "Note added";
-    case "note_updated":
-      return "Note updated";
-    case "note_deleted":
-      return "Note deleted";
-    case "item_issued":
-    case "item_state_changed":
-      return "Item issued";
-    case "item_returned":
-      return "Item returned";
-    case "item_revoked":
-      return "Item reset to pending";
-    case "attendee_edited":
-      return "Profile updated";
-    case "attendee_companion_updated":
-      return "Companion updated";
-    case "attendee_companion_removed":
-      return "Companion removed";
-    case "sensitive_data_revealed":
-      return "Sensitive answers shown";
-    case "pass_revoked":
-      return "Pass revoked";
-    case "pass_restored":
-      return "Pass restored";
-    case "wallet_pass_voided":
-      return "Wallet pass voided";
-    case "wallet_pass_restored":
-      return "Wallet pass restored";
-    case "wallet_pass_reissued":
-      return "Wallet pass updated";
-    case "wallet_pass_deleted":
-      return "Wallet pass deleted";
-    case "wallet_pass_removed":
-      return "Removed from provider";
-    case "scan_preview":
-      return "Scan preview";
-    default:
-      return humanizeFieldKey(entry.action_type);
+  if (entry.action_type === "rsvp_status_changed") {
+    return `Status changed to ${formatRsvpStatus(entry.metadata?.to ?? "updated")}`;
   }
+  // Own keys only: an action type such as "constructor" must not find a member of Object.prototype.
+  return Object.hasOwn(STATIC_TIMELINE_LABELS, entry.action_type)
+    ? STATIC_TIMELINE_LABELS[entry.action_type]!
+    : humanizeFieldKey(entry.action_type);
 }
 
 /** Who performed the row's action, shown next to the timestamp rather than mixed into the diff

@@ -90,10 +90,14 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     ["admitted", "Checked in"],
     ["check_in_undo", "Check-in undone"],
     ["check_in_undone", "Check-in undone"],
+    ["check_in_revoked", "Check-in revoked"],
     ["note_added", "Note added"],
     ["note_updated", "Note updated"],
     ["note_deleted", "Note deleted"],
+    ["item_issued", "Item issued"],
+    ["item_state_changed", "Item issued"],
     ["item_returned", "Item returned"],
+    ["item_revoked", "Item reset to pending"],
     ["attendee_edited", "Profile updated"],
     ["attendee_companion_updated", "Companion updated"],
     ["attendee_companion_removed", "Companion removed"],
@@ -113,6 +117,11 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
   it("falls back to a humanized raw action_type for anything unrecognized, starting with a capital letter", () => {
     expect(getTimelineLabel(labelEntry("some_future_action"))).toBe("Some future action");
     expect(getTimelineLabel(labelEntry("checked_in"))).toBe("Checked in");
+  });
+
+  it("does not take an action type that names a member of Object.prototype for a label", () => {
+    expect(getTimelineLabel(labelEntry("constructor"))).toBe("Constructor");
+    expect(getTimelineLabel(labelEntry("toString"))).toBe("ToString");
   });
 
   it("shows the RSVP target status, defaulting to 'updated' when metadata has none", () => {
