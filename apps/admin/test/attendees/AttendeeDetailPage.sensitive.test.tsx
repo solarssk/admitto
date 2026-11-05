@@ -208,6 +208,8 @@ describe("the boxes of the edit form are write-only", { timeout: 30_000 }, () =>
   });
 
   it("is no change while the boxes are empty, and saves an ordinary change without a sensitive key, though one is required", async () => {
+    // A detail that carried the stored answers would still send nothing for the empty boxes: an empty box is never "clear".
+    load({ custom_data: { shirt: "M", access: STORED, badge: STORED } });
     updateAttendee.mockResolvedValue(detail({ custom_data: { shirt: "L" } }));
     await openEdit();
     const save = screen.getByRole("button", { name: "Save" });
