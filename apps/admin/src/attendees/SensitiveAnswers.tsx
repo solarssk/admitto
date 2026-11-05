@@ -2,8 +2,7 @@ import { useEffect, useRef } from "react";
 import { Button, Notice } from "@admitto/ui";
 import { revealAttendeeSensitive, revealRegistrationSensitive } from "../api/client.js";
 import type { SensitiveRevealDto } from "../api/types.js";
-import { humanizeFieldKey } from "./attendeeTimeline.js";
-import { allCustomDataEntries, type CustomDataFieldDef } from "./customData.js";
+import { formatAnswerFor, type CustomDataFieldDef } from "./customData.js";
 import { companionAnswers, guestAnswers, useSensitiveReveal } from "./useSensitiveReveal.js";
 import "./sensitive-answers.css";
 
@@ -21,6 +20,12 @@ export interface SensitiveAnswersProps {
   who?: string;
   /** The event's time zone, for a date and time answer. */
   timezone: string;
+}
+
+/** The answer to `field` among the answers "Show" returned, as a reader sees it; undefined when there is none (an empty one is none). */
+function shownAnswer(field: CustomDataFieldDef, answers: Readonly<Record<string, string>>, timezone: string): string | undefined {
+  const value = Object.hasOwn(answers, field.source_field) ? answers[field.source_field] : undefined;
+  return value === undefined || value.trim() === "" ? undefined : formatAnswerFor(field, value, timezone);
 }
 
 /** The value cell of one question: hidden until "Show" has answered, then the answer, or "No answer". */
@@ -55,7 +60,6 @@ export function SensitiveAnswers({ fields, canReveal, load, who, timezone }: Rea
 
   if (fields.length === 0) return null;
   const answers = reveal.state.step === "shown" ? reveal.state.answers : {};
-  const entries = new Map(allCustomDataEntries(answers, [...fields], humanizeFieldKey, timezone).map(([key, , value]) => [key, value]));
   const named = who ? ` of ${who}` : "";
   const showing = step === "shown";
   return (
@@ -101,7 +105,7 @@ export function SensitiveAnswers({ fields, canReveal, load, who, timezone }: Rea
           <div className="sensitive-answers__row" key={field.source_field}>
             <dt>{field.label}</dt>
             <dd>
-              <AnswerValue shown={showing} value={entries.get(field.source_field)} />
+              <AnswerValue shown={showing} value={shownAnswer(field, answers, timezone)} />
             </dd>
           </div>
         ))}

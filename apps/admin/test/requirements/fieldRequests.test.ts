@@ -9,6 +9,7 @@ const save = (changes: Partial<FieldSave> = {}): FieldSave => ({
   description: "",
   required: false,
   appliesTo: "guest",
+  sensitive: false,
   options: [],
   rules: null,
   ...changes,
@@ -196,9 +197,12 @@ describe("fieldSaveOf and sameFieldSave", () => {
       description: "Pick one",
       required: true,
       appliesTo: "guest",
+      sensitive: false,
       options: ["S", "M"],
       rules: { icon: "shirt" },
     });
+    expect(fieldSaveOf(field({ sensitive: true })).sensitive).toBe(true);
+    expect(fieldSaveOf(field({ sensitive: undefined })).sensitive).toBe(false);
     expect(sameFieldSave(fieldSaveOf(choice), fieldSaveOf(choice))).toBe(true);
     expect(fieldSaveOf(field({ applies_to: "companion" })).appliesTo).toBe("companion");
     expect(fieldSaveOf(field({ applies_to: "guest" })).appliesTo).toBe("guest");
@@ -214,6 +218,7 @@ describe("fieldSaveOf and sameFieldSave", () => {
     expect(sameFieldSave(base, { ...base, description: "" })).toBe(false);
     expect(sameFieldSave(base, { ...base, required: false })).toBe(false);
     expect(sameFieldSave(base, { ...base, appliesTo: "companion" })).toBe(false);
+    expect(sameFieldSave(base, { ...base, sensitive: true })).toBe(false);
     expect(sameFieldSave(base, { ...base, options: ["M", "S"] })).toBe(false);
     expect(sameFieldSave(base, { ...base, rules: { icon: "car" } })).toBe(false);
     expect(sameFieldSave(base, { ...base, rules: null })).toBe(false);
@@ -224,5 +229,19 @@ describe("fieldSaveOf and sameFieldSave", () => {
     expect(sameFieldSave(plain, { ...plain, rules: null })).toBe(true);
     expect(sameFieldSave(plain, { ...plain, rules: {} })).toBe(true);
     expect(sameFieldSave(fieldSaveOf(field({ rules: { digits_only: false } })), plain)).toBe(true);
+  });
+});
+
+describe("the sensitive flag in the bodies", () => {
+  it("creates a field sensitive only when it is, and leaves the key out otherwise", () => {
+    expect(createFieldBody("access", save({ sensitive: true }), false)).toMatchObject({ sensitive: true });
+    expect(createFieldBody("access", save(), false)).not.toHaveProperty("sensitive");
+  });
+
+  it("sends the flag in an edit only when it changed, in either direction", () => {
+    expect(updateFieldPatch(field(), save({ sensitive: true }))).toMatchObject({ sensitive: true });
+    expect(updateFieldPatch(field({ sensitive: true }), save({ sensitive: false }))).toMatchObject({ sensitive: false });
+    expect(updateFieldPatch(field(), save())).not.toHaveProperty("sensitive");
+    expect(updateFieldPatch(field({ sensitive: true }), save({ sensitive: true }))).not.toHaveProperty("sensitive");
   });
 });

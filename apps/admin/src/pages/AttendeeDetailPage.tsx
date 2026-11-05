@@ -77,7 +77,7 @@ import {
   humanizeFieldKey,
 } from "../attendees/attendeeTimeline.js";
 import { CompanionCard } from "../attendees/CompanionCard.js";
-import { AttendeeSensitiveAnswers } from "../attendees/SensitiveAnswers.js";
+import { AttendeeSensitiveAnswers, sensitiveQuestions } from "../attendees/SensitiveAnswers.js";
 import { EraseAttendeeDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
 import { ErasedAttendeeView } from "../attendees/ErasedAttendeeView.js";
 import {
@@ -3017,16 +3017,18 @@ export function AttendeeDetailPage() {
           attendeeSource={attendeeSource}
           customDataEntries={customDataEntries}
           sensitiveAnswers={
-            <AttendeeSensitiveAnswers
-              key={detail.id}
-              eventId={event.id}
-              attendeeId={detail.id}
-              questions={attributeFields}
-              slot={null}
-              who="guest"
-              canReveal={orgAdmin}
-              timezone={event.timezone}
-            />
+            sensitiveQuestions(attributeFields).length > 0 ? (
+              <AttendeeSensitiveAnswers
+                key={detail.id}
+                eventId={event.id}
+                attendeeId={detail.id}
+                questions={attributeFields}
+                slot={null}
+                who="guest"
+                canReveal={orgAdmin}
+                timezone={event.timezone}
+              />
+            ) : null
           }
           companionCard={
             detail.companion ? (

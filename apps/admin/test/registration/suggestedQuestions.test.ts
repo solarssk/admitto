@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MAX_CUSTOM_FIELDS_PER_EVENT, SUGGESTED_EVENT_FIELDS, planSuggestedFields } from "@admitto/shared";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
-import { addedMessage, confirmLabel, dialogMessage, limitMessage, suggestedRows } from "../../src/registration/suggestedQuestions.js";
+import { SENSITIVE_SUGGESTION_WARNING, addedMessage, confirmLabel, dialogMessage, limitMessage, suggestedRows } from "../../src/registration/suggestedQuestions.js";
 
 function field(source_field: string, label: string, extra: Partial<EventCustomFieldDto> = {}): EventCustomFieldDto {
   return {
@@ -53,20 +53,20 @@ describe("dialogMessage", () => {
 
 describe("limitMessage", () => {
   it("is empty when the questions fit, and when there is nothing to add", () => {
-    expect(limitMessage(planSuggestedFields(own(MAX_CUSTOM_FIELDS_PER_EVENT - 5)), MAX_CUSTOM_FIELDS_PER_EVENT - 5)).toBe("");
+    expect(limitMessage(planSuggestedFields(own(MAX_CUSTOM_FIELDS_PER_EVENT - 6)), MAX_CUSTOM_FIELDS_PER_EVENT - 6)).toBe("");
     const everything = SUGGESTED_EVENT_FIELDS.map((suggested) => field(suggested.source_field, suggested.label, { type: suggested.type }));
     expect(limitMessage(planSuggestedFields(everything), everything.length)).toBe("");
   });
 
   it("says what the event has, what adding would make and how many fields to delete", () => {
     expect(limitMessage(planSuggestedFields(own(18)), 18)).toBe(
-      "This event has 18 of 20 fields, and adding 5 questions would take it to 23. Delete 3 fields first, or add the questions you want one at a time with Add field.",
+      "This event has 18 of 20 fields, and adding 6 questions would take it to 24. Delete 4 fields first, or add the questions you want one at a time with Add field.",
     );
   });
 
   it("says it in the singular for one question and one field", () => {
-    const four = SUGGESTED_EVENT_FIELDS.filter((suggested) => suggested.source_field !== "accommodation").map((suggested) => field(suggested.source_field, suggested.label, { type: suggested.type, options: suggested.options ? [...suggested.options] : null }));
-    const existing = [...four, ...own(MAX_CUSTOM_FIELDS_PER_EVENT - 4)];
+    const rest = SUGGESTED_EVENT_FIELDS.filter((suggested) => suggested.source_field !== "accommodation").map((suggested) => field(suggested.source_field, suggested.label, { type: suggested.type, options: suggested.options ? [...suggested.options] : null }));
+    const existing = [...rest, ...own(MAX_CUSTOM_FIELDS_PER_EVENT - 5)];
     expect(limitMessage(planSuggestedFields(existing), existing.length)).toBe(
       "This event has 20 of 20 fields, and adding 1 question would take it to 21. Delete 1 field first, or add the questions you want one at a time with Add field.",
     );
@@ -85,9 +85,13 @@ describe("suggestedRows", () => {
       ["travel", "present"],
       ["arrival", "add"],
       ["accommodation", "add"],
+      ["accessibility_needs", "add"],
     ]);
     expect(rows.map((row) => row.label)).toEqual(SUGGESTED_EVENT_FIELDS.map((suggested) => suggested.label));
     expect(rows.every((row) => row.note === "")).toBe(true);
+    // Only the accessibility question carries the warning about sensitive answers.
+    expect(rows.filter((row) => row.warning !== "").map((row) => row.key)).toEqual(["accessibility_needs"]);
+    expect(rows.find((row) => row.key === "accessibility_needs")?.warning).toBe(SENSITIVE_SUGGESTION_WARNING);
   });
 
   it("names the question a conditional one waits for as the event calls it, or as the set does when it is still to be added", () => {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SensitiveRevealDto } from "../api/types.js";
 
@@ -7,6 +8,13 @@ export const REVEAL_VISIBLE_MS = 120_000;
 
 /** What the screen of one person's sensitive answers is in. `asking` is the confirmation that the click is recorded. */
 export type RevealState = { step: "hidden" } | { step: "asking" } | { step: "loading" } | { step: "shown"; answers: Readonly<Record<string, string>> };
+
+const COULD_NOT_SHOW = "Could not show the answers.";
+
+/** What a failed "Show" says: the helper's sentence for a refusal it knows, and for a failure of the server only the fixed one, whatever text came with it. */
+function failureMessage(err: unknown): string {
+  return err instanceof ApiError && err.status >= 500 ? COULD_NOT_SHOW : operatorApiErrorMessage(err, COULD_NOT_SHOW);
+}
 
 /** The answers of the guest in the answer to "Show". */
 export function guestAnswers(dto: SensitiveRevealDto): Record<string, string> {
@@ -83,7 +91,7 @@ export function useSensitiveReveal(load: () => Promise<Record<string, string>>):
       })
       .catch((err: unknown) => {
         if (request.current !== mine) return;
-        setError(operatorApiErrorMessage(err, "Could not show the answers."));
+        setError(failureMessage(err));
         setState({ step: "hidden" });
       });
   }, []);

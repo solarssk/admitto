@@ -196,6 +196,12 @@ function formatCustomDataValue(
   }
 }
 
+/** The answer to `field` as a reader sees it (a yes or no as Yes or No, a date in the account's format): for a sensitive answer that "Show" has
+ * returned, which `allCustomDataEntries` never lists. */
+export function formatAnswerFor(field: CustomDataFieldDef, value: string, eventTimeZone?: string): string {
+  return formatCustomDataValue(value, field.type, eventTimeZone);
+}
+
 const LONG_ANSWER_CHARS = 60;
 
 /** True for an answer that is long enough, or has line breaks, to read better under its label than beside it. */
@@ -223,6 +229,9 @@ export function allCustomDataEntries(
       (pair): pair is [string, string] =>
         pair[0] !== "company" && pair[0] !== "department" && typeof pair[1] === "string" && pair[1].trim() !== "",
     )
+    // A sensitive answer is never listed here (D-E6): the server leaves it out, and this keeps the page from drawing one that comes anyway.
+    // It is shown by "Show", in its own block (SensitiveAnswers), and nowhere else.
+    .filter(([key]) => fieldsByKey.get(key)?.sensitive !== true)
     .map(([key, value]) => {
       const field = fieldsByKey.get(key);
       return [key, field?.label ?? humanizeKey(key), formatCustomDataValue(value, field?.type, eventTimeZone)];
