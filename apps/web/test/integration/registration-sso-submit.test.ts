@@ -124,7 +124,7 @@ describe("the page of an event with the company sign-in", () => {
     expect(document.querySelector(".cf-turnstile")).toBeNull();
     expect(document.querySelector("#reg-sign-in-link")?.getAttribute("href")).toBe(`/r/${slug}/sso/start`);
     expect(document.querySelector("h1")?.textContent).toContain("Submit Summit");
-    expect(html.includes("challenges.cloudflare.com")).toBe(false);
+    expect(html).not.toContain("challenges.cloudflare.com");
     expect(res.headers.get("content-security-policy")).not.toContain("cloudflare");
     expect(res.headers.get("cache-control")).toBe("private, no-store, max-age=0");
     expect(res.headers.getSetCookie()).toEqual([]);
