@@ -93,7 +93,7 @@ describe("registration per-IP policies", () => {
   });
 
   it("is silent when exceeded, for the password budget too: a limiter's line would carry the address of the client", async () => {
-    for (const name of ["registration:page", "registration:submit", "registration:confirm", "registration:password"] as const) {
+    for (const name of ["registration:page", "registration:submit", "registration:confirm", "registration:password", "registration:sso"] as const) {
       expect(RATE_POLICIES[name].checks[0]).not.toHaveProperty("logOnExceeded");
     }
 

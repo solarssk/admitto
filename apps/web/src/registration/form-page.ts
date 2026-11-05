@@ -13,6 +13,10 @@
  * organiser's anywhere on this page. The script and the Turnstile widget are added only to the form:
  * the closed page has neither.
  *
+ * An event whose way in is the company sign-in (D-C4) shows a page with a sign-in button and nothing else (no form, no script)
+ * to a guest who has not signed in, and the form, with the address the provider gave locked and with no bot check, to one who
+ * has. Whether the guest has is the route's to say (./form-routes.ts reads the signed cookie); the page only draws what it is told.
+ *
  * An event whose way in is the password (D-C3) shows its password screen first, as the mockup does, with the hero, the
  * notices, the form and the contact of the event written hidden behind it (`data-after-password`). The page script shows
  * them when a password has been typed ("Continue" checks nothing else) and the server judges that password with the form,
@@ -24,16 +28,23 @@ import { renderAdmittoFaviconLink } from "../favicon.js";
 import { TURNSTILE_ORIGIN } from "../registration-page-security.js";
 import { esc } from "../ticket-page.js";
 import { renderStyledControls, styledNeedsOf, type StyledNeeds } from "./form-controls.js";
-import { renderAgreement, renderCompanion, renderPasswordField, renderPersonalFields, renderQuestions } from "./form-fields.js";
+import { legalLink, renderAgreement, renderCompanion, renderPasswordField, renderPersonalFields, renderQuestions } from "./form-fields.js";
 import { icon, renderIconSprite } from "./form-icons.js";
 import type { ClosedFormModel, FormContact, FormEvent, RegistrationFormModel } from "./form-model.js";
 import { renderFormScript } from "./form-script.js";
 import { buildRegistrationPageStyles } from "./form-style.js";
+import type { SsoNotice } from "./sso-identity.js";
+
+/** Where a guest stands on an event whose way in is the company sign-in: signed in (with the address the provider gave), or
+ * not (with the notice a refused sign-in came back with, if one did). */
+export type SsoPageState = { signedInAs: string } | { signedInAs: null; notice: SsoNotice | null };
 
 export interface RegistrationPageOptions {
   /** The nonce of this response, the one in its `Content-Security-Policy`. */
   nonce: string;
   theme?: BrandingTheme | null;
+  /** For an event whose way in is the company sign-in (`model.needsSso`); left out for the others. */
+  sso?: SsoPageState;
 }
 
 /** Cloudflare's widget script. Its origin is the one the policy allows when Turnstile is on. */
@@ -142,15 +153,53 @@ export function renderFoot(contact: FormContact | null, gate = ""): string {
   return `<div class="ticket__foot">${line}<div>Powered by Admitto</div></div>`;
 }
 
+/** The sentence a refused sign-in comes back with: a fixed set, chosen by a word of the address (./sso-identity.ts). */
+const SSO_NOTICE_TEXT: Readonly<Record<SsoNotice, string>> = {
+  failed: "We could not sign you in. Try again. If it keeps failing, ask the organisers.",
+  no_email: "Your company account did not give us a verified email address, so we cannot register you with it.",
+  not_allowed: "This event is not open to your company account.",
+};
+
+function renderSsoNotice(notice: SsoNotice | null): string {
+  if (notice === null) return "";
+  return `<div class="at-notice at-notice--error" id="reg-sso-notice" role="alert">${icon("alert", "ic at-notice__icon")}<div class="at-notice__body">${esc(SSO_NOTICE_TEXT[notice])}</div></div>`;
+}
+
+/** What a guest who has not signed in sees on an event whose way in is the company sign-in: what to do, and one button that
+ * leaves for the provider. No form is drawn and no script runs, so there is nothing here to fill in or to send. */
+function renderSignInPage(model: RegistrationFormModel, notice: SsoNotice | null, options: RegistrationPageOptions): string {
+  const slug = esc(model.event.slug);
+  const content = [
+    renderHeader(model.event),
+    renderHero(model.event, ""),
+    `<section class="reg-center" id="reg-sign-in" aria-labelledby="reg-sign-in-title">
+      <div class="reg-badge">${icon("lock")}</div>
+      <h2 id="reg-sign-in-title" class="reg-center__title">Sign in to register</h2>
+      <p>This registration is for people with a company account. Sign in with it to fill in the form.</p>
+      ${renderSsoNotice(notice)}
+      <a class="at-btn at-btn--primary at-btn--lg" id="reg-sign-in-link" href="/r/${slug}/sso/start" rel="nofollow">Sign in</a>
+      <p class="reg-fine">How we use your details is in the ${legalLink(model.privacyPath, "privacy notice")}.</p>
+    </section>`,
+    renderFoot(model.contact),
+  ].join("\n    ");
+  return renderDocument(`Registration - ${model.event.title}`, content, "", options.theme);
+}
+
 /** The form page, for the nonce of one response. */
 export function renderRegistrationFormPage(model: RegistrationFormModel, options: RegistrationPageOptions): string {
+  const sso = options.sso;
+  // A page for the company sign-in that was not told the guest has signed in is the sign-in page: it fails closed.
+  if (model.needsSso && (sso === undefined || sso.signedInAs === null)) {
+    return renderSignInPage(model, sso?.signedInAs === null ? sso.notice : null, options);
+  }
   const gate = behindPassword(model);
+  const signedInAs = sso?.signedInAs ?? null;
   // An event that switched the styled boxes on marks its form; the page of every other event has not a byte of it.
   const controls = model.styledControls ? ' data-controls="styled"' : "";
   const questions = renderQuestions(model.questions, { timeZone: model.event.timezone, styledControls: model.styledControls });
   const form = `<form class="reg-form" id="reg-form" method="post" action="/r/${esc(model.event.slug)}" novalidate${controls} data-hide-when-done${gate}>
       <p class="reg-legend"><span class="reg-req" aria-hidden="true">*</span> Required</p>
-      ${renderPersonalFields(model)}${questions}${renderCompanion(model)}${renderAgreement(model)}
+      ${renderPersonalFields(model, signedInAs)}${questions}${renderCompanion(model)}${renderAgreement(model)}
     </form>`;
   const content = [
     renderHeader(model.event),
@@ -165,7 +214,9 @@ export function renderRegistrationFormPage(model: RegistrationFormModel, options
     .filter((part) => part !== "")
     .join("\n    ");
   const styled = styledNeedsOf(model);
-  const scripts = `${renderFormScript(options.nonce, styled)}\n  <script src="${TURNSTILE_SCRIPT_URL}" async defer></script>`;
+  // The widget's script only where there is a widget: the company sign-in has none.
+  const widget = model.needsSso ? "" : `\n  <script src="${TURNSTILE_SCRIPT_URL}" async defer></script>`;
+  const scripts = `${renderFormScript(options.nonce, styled)}${widget}`;
   return renderDocument(`Registration - ${model.event.title}`, content, scripts, options.theme, styled);
 }
 

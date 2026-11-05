@@ -51,6 +51,8 @@ export const REGISTRATION_PAGE_CSS = `
 }
 /* Mobile Safari lays a date input out by its own rules unless it is told to drop them: it does not take the product's border-box sizing, so the box is wider than its field and its right and bottom edges are cut off. It also centres the date it shows. */
 .reg-form .at-input[type="date"], .reg-form .at-input[type="datetime-local"] { -webkit-appearance: none; appearance: none; }
+/* The address a company sign-in gave: shown, not editable. It reads as a value that is there, not as a box waiting for text. */
+.reg-form .at-input[readonly] { background: var(--surface-sunken); color: var(--text-secondary); cursor: default; }
 .reg-form .at-input::-webkit-date-and-time-value { text-align: left; }
 /* The note and the error sit in one grid cell, so the slot is as tall as the taller of the two and an error that takes the place of a note moves nothing below it, whether the note is one line or several. */
 .reg-slot { display: grid; min-height: 1rem; line-height: 1rem; }
