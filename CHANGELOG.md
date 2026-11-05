@@ -51,7 +51,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Keep a sensitive attendee field off wallet passes, the check-in card and event items, and refuse it in a wallet field mapping and in an item's fields ([#1845](https://github.com/solarssk/admitto/pull/1845))
 - Add an API for an administrator to show the sensitive answers of one guest or registration, with an audit entry for every click and a limit per user ([#1847](https://github.com/solarssk/admitto/pull/1847))
 - Let guests register by signing in with the company's identity provider, chosen by a superadmin, with an optional limit to one company set by the event's administrator ([#1848](https://github.com/solarssk/admitto/pull/1848))
-- Use one return address for the guests' company sign-in on the whole instance, so the identity provider needs a single entry and not one per event
+- Use one return address for the guests' company sign-in on the whole instance, so the identity provider needs a single entry and not one per event ([#1850](https://github.com/solarssk/admitto/pull/1850))
 
 ### Changed
 
