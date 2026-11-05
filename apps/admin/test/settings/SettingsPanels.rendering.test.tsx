@@ -1178,6 +1178,36 @@ describe("AuditLogPanel rendering", () => {
     }
   });
 
+  it("names the entry of a click on Show, shows nothing of it but the keys it carries, and offers it in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          id: "audit-revealed",
+          action_type: "sensitive_data_revealed",
+          metadata: { event_id: "evt-1", event_title: "Demo", subject: "attendee", attendee_id: "att-1", field_count: 2, fields: ["allergy"], companion_fields: ["access"] },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Sensitive answers shown").className).toContain("at-badge--neutral");
+    // Details names the person, how many values were shown and the keys of their questions; the event is in the Scope column.
+    fireEvent.click(within(table).getByText("View"));
+    const valueOf = (label: string) => within(table).getByText(label).nextElementSibling?.textContent;
+    expect(valueOf("Subject")).toBe("attendee");
+    expect(valueOf("Field count")).toBe("2");
+    expect(valueOf("Fields")).toBe("allergy");
+    expect(valueOf("Companion fields")).toBe("access");
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    expect(screen.getByRole("button", { name: "Sensitive answers shown" })).toBeTruthy();
+  });
+
   it("names the decisions of staff on guest registrations and their deletion, and offers them in the Action filter", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [

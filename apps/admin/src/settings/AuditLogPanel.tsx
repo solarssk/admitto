@@ -124,6 +124,7 @@ const ACTION_LABELS: Record<string, string> = {
   role_changed: "Role changed",
   role_revoked: "Role revoked",
   security_audit_log_exported: "Security log exported",
+  sensitive_data_revealed: "Sensitive answers shown",
   session_device_label_updated: "Session device label updated",
   session_revoked: "Session revoked",
   support_contact_updated: "Support contact updated",

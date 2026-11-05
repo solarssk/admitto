@@ -130,6 +130,14 @@ export {
   type SensitivityField,
 } from "./sensitive-custom-data.js";
 export {
+  SENSITIVE_REVEAL_ACTION,
+  revealSensitiveAnswers,
+  type RevealParams,
+  type RevealResult,
+  type RevealSubject,
+  type RevealedAnswers,
+} from "./sensitive-reveal.js";
+export {
   eventCustomFieldOrderBy,
   loadEventCustomDataFields,
   loadRegistrantFormFields,
