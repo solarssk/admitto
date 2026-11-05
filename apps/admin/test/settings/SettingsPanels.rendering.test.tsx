@@ -1178,6 +1178,29 @@ describe("AuditLogPanel rendering", () => {
     }
   });
 
+  it("names the entry of a click on Show, shows nothing of it but the keys it carries, and offers it in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          id: "audit-revealed",
+          action_type: "sensitive_data_revealed",
+          metadata: { event_id: "evt-1", event_title: "Demo", subject: "attendee", attendee_id: "att-1", field_count: 2, fields: ["allergy"], companion_fields: ["access"] },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Sensitive answers shown").className).toContain("at-badge--neutral");
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    expect(screen.getByRole("button", { name: "Sensitive answers shown" })).toBeTruthy();
+  });
+
   it("names the decisions of staff on guest registrations and their deletion, and offers them in the Action filter", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [

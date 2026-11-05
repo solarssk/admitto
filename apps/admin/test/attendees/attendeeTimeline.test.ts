@@ -97,6 +97,7 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     ["attendee_edited", "Profile updated"],
     ["attendee_companion_updated", "Companion updated"],
     ["attendee_companion_removed", "Companion removed"],
+    ["sensitive_data_revealed", "Sensitive answers shown"],
     ["pass_revoked", "Pass revoked"],
     ["pass_restored", "Pass restored"],
     ["wallet_pass_voided", "Wallet pass voided"],
@@ -136,6 +137,7 @@ describe("getTimelineIcon — unrecognized action_type (Codecov review)", () => 
     ["wallet_pass_removed", "cloud-off"],
     ["attendee_companion_updated", "users"],
     ["attendee_companion_removed", "user-minus"],
+    ["sensitive_data_revealed", "eye"],
   ])("maps %s to %s", (actionType, expected) => {
     expect(getTimelineIcon(actionType)).toBe(expected);
   });
