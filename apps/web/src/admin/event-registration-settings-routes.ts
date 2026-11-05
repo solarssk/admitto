@@ -19,21 +19,28 @@ import { REGISTRATION_MODE, type PrismaClient } from "@admitto/db";
 import { MAX_COMPANION_SLOTS } from "@admitto/tickets";
 import { LEGAL_CONSENT_KEY_PATTERN, MAX_CONSENT_DOCUMENTS_PER_EVENT } from "../legal/legal-documents.js";
 import { SELECTABLE_ACCESS_METHODS } from "../registration/access-methods.js";
+import { SSO_CLAIM_NAME_MAX, SSO_CLAIM_VALUE_MAX, SSO_CLAIM_VALUES_MAX } from "../registration/sso-claim.js";
 import { assertEventManageAccess, requireAuditActor, requireEventId } from "./admin-helpers.js";
 import { getEventRegistrationSettings, updateEventRegistrationSettings } from "./event-registration-settings.js";
 
 /** The body is a handful of switches and at most ten short keys. */
 export const MAX_REGISTRATION_SETTINGS_BODY_BYTES = 4_096;
 
+/** The name of a claim: printable ASCII with no space, as a claim name or a URI is. */
+const CLAIM_NAME = /^[\x21-\x7e]+$/;
+
 /**
  * What a `PUT` may carry; every key is optional and an unknown one is a 400, so a key that is not a setting (a password,
  * a hash, `sso`) cannot be sent by mistake or by design:
  *
  * - `mode`: `null` (off), `"automatic"` or `"approval"`;
- * - `access_methods`: `[]` or exactly one of `"link"` and `"password"` (the company sign-in comes with PR 118);
+ * - `access_methods`: `[]` or exactly one of `"link"`, `"password"` and `"sso"` (the company sign-in);
  * - `waitlist_enabled`, `verify_email`, `ask_company`, `ask_department`, `styled_form_controls`: switches;
  * - `max_companions`: 0 to `MAX_COMPANION_SLOTS`;
- * - `consent_keys`: keys of the event's published extra consents (a key it has not published is a 422).
+ * - `consent_keys`: keys of the event's published extra consents (a key it has not published is a 422);
+ * - `sso_claim_name` and `sso_claim_values` (D-C4): the restriction of the company sign-in to the people whose token holds one
+ *   of the values in one claim, sent together. `null` and `[]` remove it. A restriction sent for an event whose way in is
+ *   not the company sign-in is a 422 `sso_claim_needs_sso`; moving an event away from that way in removes the restriction.
  */
 const putBodySchema = z
   .object({
@@ -46,8 +53,23 @@ const putBodySchema = z
     ask_department: z.boolean().optional(),
     styled_form_controls: z.boolean().optional(),
     consent_keys: z.array(z.string().regex(LEGAL_CONSENT_KEY_PATTERN)).max(MAX_CONSENT_DOCUMENTS_PER_EVENT).optional(),
+    sso_claim_name: z.string().trim().min(1).max(SSO_CLAIM_NAME_MAX).regex(CLAIM_NAME).nullable().optional(),
+    sso_claim_values: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1)
+          .max(SSO_CLAIM_VALUE_MAX)
+          .refine((value) => !/\p{Cc}/u.test(value)),
+      )
+      .max(SSO_CLAIM_VALUES_MAX)
+      .optional(),
   })
-  .strict();
+  .strict()
+  // The name and the values move together, and agree: a name needs a value to match, and values need a claim to be read from.
+  .refine((body) => (body.sso_claim_name === undefined) === (body.sso_claim_values === undefined))
+  .refine((body) => body.sso_claim_name === undefined || (body.sso_claim_name === null) === (body.sso_claim_values?.length === 0));
 
 /** GET /api/admin/events/:eventId/registration/settings */
 export async function handleGetEventRegistrationSettings(c: Context, db: PrismaClient): Promise<Response> {
@@ -90,6 +112,8 @@ export async function handlePutEventRegistrationSettings(c: Context, db: PrismaC
       return c.json({ code: "event_archived" }, 403);
     case "consent_not_published":
       return c.json({ error: "consent_not_published" }, 422);
+    case "sso_claim_needs_sso":
+      return c.json({ error: "sso_claim_needs_sso" }, 422);
     case "not_ready":
       // The keys of the checks that are not met, and nothing else: no text, no value, no name of anybody.
       return c.json({ error: "registration_not_ready", blockers: result.blockers }, 409);

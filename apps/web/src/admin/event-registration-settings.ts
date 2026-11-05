@@ -53,6 +53,10 @@ export type SettingsValues = {
   consent_keys: string[];
   /** The guest form draws its date, time and phone boxes in the product's style, not the browser's (D-E9). */
   styled_form_controls: boolean;
+  /** The company sign-in only (D-C4): the one claim of the provider's token that a guest must hold, and the values that let
+   * them register. Both are empty (`null` and `[]`) for no restriction; they move together. */
+  sso_claim_name: string | null;
+  sso_claim_values: string[];
 };
 
 /** What an event without a settings row has: registration off, and everything else as the columns default. A test keeps the
@@ -68,6 +72,8 @@ export function defaultSettings(): SettingsValues {
     ask_department: false,
     consent_keys: [],
     styled_form_controls: false,
+    sso_claim_name: null,
+    sso_claim_values: [],
   };
 }
 
@@ -91,11 +97,13 @@ export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_met
  * - `not_found`: no such event;
  * - `archived`: the event is archived, and an archived event is read only;
  * - `consent_not_published`: a consent key is not one of the event's published extra consents;
+ * - `sso_claim_needs_sso`: the save sets a restriction of the company sign-in, and the way in it leaves the event with is
+ *   another;
  * - `not_ready`: the change needs the event to be ready, and these checks are not met.
  */
 export type SettingsUpdate =
   | { kind: "saved"; settings: RegistrationSettingsDto }
-  | { kind: "not_found" | "archived" | "consent_not_published" }
+  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" }
   | { kind: "not_ready"; blockers: RegistrationReadinessKey[] };
 
 export interface SettingsOptions {
@@ -127,6 +135,8 @@ const SETTINGS_SELECT = {
   ask_department: true,
   consent_keys: true,
   styled_form_controls: true,
+  sso_claim_name: true,
+  sso_claim_values: true,
 } as const satisfies Prisma.EventRegistrationSettingsSelect;
 
 type StoredRow = Prisma.EventRegistrationSettingsGetPayload<{ select: typeof SETTINGS_SELECT }>;
@@ -143,6 +153,9 @@ function valuesOf(row: StoredRow): SettingsValues {
     ask_department: row.ask_department,
     consent_keys: [...row.consent_keys],
     styled_form_controls: row.styled_form_controls,
+    // Both or none, as the table checks; a row that holds one without the other reads as no restriction.
+    sso_claim_name: row.sso_claim_values.length > 0 ? row.sso_claim_name : null,
+    sso_claim_values: row.sso_claim_name === null ? [] : [...row.sso_claim_values],
   };
 }
 
@@ -155,11 +168,30 @@ async function readStoredSettings(db: Client, eventId: string): Promise<StoredSe
   return { values: row ? valuesOf(row) : defaultSettings(), passwordSet: withPassword > 0 };
 }
 
+/**
+ * The restriction of the company sign-in after a save. It is for that way in alone, so an event that does not have it as its
+ * way in has none: a restriction that waits for the way in must not come back by itself when the event returns to the
+ * company sign-in (as a password does not).
+ */
+function claimAfter(
+  current: SettingsValues,
+  patch: RegistrationSettingsPatch,
+  hasSso: boolean,
+): Pick<SettingsValues, "sso_claim_name" | "sso_claim_values"> {
+  const none = { sso_claim_name: null, sso_claim_values: [] };
+  if (!hasSso) return none;
+  const name = patch.sso_claim_name === undefined ? current.sso_claim_name : patch.sso_claim_name;
+  const values = patch.sso_claim_values === undefined ? current.sso_claim_values : [...new Set(patch.sso_claim_values)];
+  // The two move together (a CHECK of the table): a name with no values, or values with no name, is no restriction.
+  return name === null || values.length === 0 ? none : { sso_claim_name: name, sso_claim_values: values };
+}
+
 /** The settings with the patch laid over them. A list given twice is kept once. */
 function mergeSettings(current: SettingsValues, patch: RegistrationSettingsPatch): SettingsValues {
+  const accessMethods = patch.access_methods ?? current.access_methods;
   return {
     mode: patch.mode === undefined ? current.mode : patch.mode,
-    access_methods: patch.access_methods ?? current.access_methods,
+    access_methods: accessMethods,
     waitlist_enabled: patch.waitlist_enabled ?? current.waitlist_enabled,
     verify_email: patch.verify_email ?? current.verify_email,
     max_companions: patch.max_companions ?? current.max_companions,
@@ -167,6 +199,7 @@ function mergeSettings(current: SettingsValues, patch: RegistrationSettingsPatch
     ask_department: patch.ask_department ?? current.ask_department,
     consent_keys: patch.consent_keys === undefined ? current.consent_keys : [...new Set(patch.consent_keys)],
     styled_form_controls: patch.styled_form_controls ?? current.styled_form_controls,
+    ...claimAfter(current, patch, accessMethods.includes("sso")),
   };
 }
 
@@ -299,6 +332,9 @@ async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest):
   const after = mergeSettings(stored.values, patch);
   const published = publishedConsentKeys(legalRows);
   if (patch.consent_keys?.some((key) => !published.includes(key))) return { kind: "consent_not_published" };
+  // A restriction is sent for the company sign-in only: one sent with another way in is refused, not dropped without a word.
+  const sendsRestriction = patch.sso_claim_name !== undefined && patch.sso_claim_name !== null;
+  if (sendsRestriction && !after.access_methods.includes("sso")) return { kind: "sso_claim_needs_sso" };
 
   const fields = await loadRegistrantFormFields(tx, eventId);
   // The clock is read here, with the locks held, and not when the request came in.

@@ -1,6 +1,7 @@
 /**
- * Instance settings of guest registration: the Cloudflare Turnstile keys and the access methods
- * (public link, event password, SSO) the organisation makes available (D-C1, D-C2, D-A6).
+ * Instance settings of guest registration: the Cloudflare Turnstile keys, the access methods
+ * (public link, event password, SSO) the organisation makes available (D-C1, D-C2, D-A6) and the identity provider guests
+ * sign in with when an event uses the company sign-in (D-C4).
  *
  * Superadmin only, checked on the server for every route. The secret key is write-only: it goes
  * in, encrypted, and never comes back in an answer, an audit row or a log line. Per event choices
@@ -18,6 +19,13 @@ import {
   setEnabledAccessMethods,
   type AccessMethodAvailability,
 } from "../registration/access-methods.js";
+import {
+  getSsoProviderId,
+  listSelectableSsoProviders,
+  resolveGuestSsoProvider,
+  setSsoProviderId,
+  type GuestSsoProviderState,
+} from "../registration/sso-provider.js";
 import {
   clearTurnstileSettings,
   describeTurnstileSettings,
@@ -42,6 +50,26 @@ const accessMethodsPutSchema = z
 
 function serializeTurnstile(settings: TurnstileSettingsPublic) {
   return { site_key: settings.siteKey, secret_set: settings.secretSet, status: settings.state };
+}
+
+const ssoProviderPutSchema = z.object({ provider_id: z.string().trim().min(1).max(128).nullable() }).strict();
+
+function serializeSsoProvider(
+  providerId: string | null,
+  state: GuestSsoProviderState,
+  providers: { id: string; display_name: string }[],
+) {
+  return { provider_id: providerId, state, providers };
+}
+
+/** The choice, how it stands, and what can be chosen. Never a field of a provider but its id and the name staff gave it. */
+async function readSsoProvider(db: PrismaClient | Prisma.TransactionClient) {
+  const [providerId, resolved, providers] = await Promise.all([
+    getSsoProviderId(db),
+    resolveGuestSsoProvider(db),
+    listSelectableSsoProviders(db),
+  ]);
+  return serializeSsoProvider(providerId, resolved.state, providers);
 }
 
 function serializeAvailability(list: AccessMethodAvailability[]) {
@@ -186,4 +214,52 @@ export async function handlePutRegistrationAccessMethods(c: Context, db: PrismaC
     return resolveAccessMethodAvailability(tx);
   });
   return c.json(serializeAvailability(availability));
+}
+
+/**
+ * GET /api/admin/registration/sso-provider - the identity provider guests sign in with (D-C4): its id (`provider_id`, null
+ * for none), where the choice stands (`state`: `ready`, `not_selected`, `missing` for a provider that was deleted, `disabled`)
+ * and the providers that can be chosen (`providers`: the enabled OIDC providers, by id and display name).
+ */
+export async function handleGetRegistrationSsoProvider(c: Context, db: PrismaClient): Promise<Response> {
+  const denied = await requireSuperadmin(c, db);
+  if (denied) return denied;
+  return c.json(await readSsoProvider(db));
+}
+
+/**
+ * PUT /api/admin/registration/sso-provider - `{ "provider_id": "<id>" }` chooses the provider, `{ "provider_id": null }`
+ * removes the choice. Only an enabled OIDC provider can be chosen (422 `provider_not_available`, whatever the reason). The
+ * choice is audited with the ids before and after; a provider that is later disabled or deleted closes the form of the
+ * events that use the sign-in and deletes nothing.
+ */
+export async function handlePutRegistrationSsoProvider(c: Context, db: PrismaClient): Promise<Response> {
+  const denied = await requireSuperadmin(c, db);
+  if (denied) return denied;
+  const actor = requireAuditActor(c);
+  if (actor instanceof Response) return actor;
+
+  const parsed = await parseBody(c, ssoProviderPutSchema);
+  if (parsed.response) return parsed.response;
+  const next = parsed.data.provider_id;
+
+  const organizationId = await resolveInstanceOrganizationId(db, process.env);
+  const answer = await db.$transaction(async (tx) => {
+    if (next !== null && !(await listSelectableSsoProviders(tx)).some((provider) => provider.id === next)) return null;
+    const previous = await getSsoProviderId(tx);
+    await setSsoProviderId(tx, next);
+    await writeAdminAuditLog(tx, {
+      organizationId,
+      actorUserId: actor.operator,
+      sessionId: actor.sessionId,
+      ip: actor.ip,
+      timezone: actor.timezone,
+      actionType: "registration_sso_provider_updated",
+      // Ids only: the choice, not a field of the provider.
+      metadata: { provider_id: next, previous_provider_id: previous },
+    });
+    return readSsoProvider(tx);
+  });
+  if (answer === null) return c.json({ error: "provider_not_available" }, 422);
+  return c.json(answer);
 }

@@ -393,8 +393,10 @@ import {
 import {
   handleDeleteRegistrationTurnstile,
   handleGetRegistrationAccessMethods,
+  handleGetRegistrationSsoProvider,
   handleGetRegistrationTurnstile,
   handlePutRegistrationAccessMethods,
+  handlePutRegistrationSsoProvider,
   handlePutRegistrationTurnstile,
 } from "./admin/registration-settings-routes.js";
 import {
@@ -2013,6 +2015,16 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     (c) => handlePutRegistrationAccessMethods(c, db),
+  );
+  app.get("/api/admin/registration/sso-provider", staffAdminGate, (c) =>
+    handleGetRegistrationSsoProvider(c, db),
+  );
+  app.put(
+    "/api/admin/registration/sso-provider",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutRegistrationSsoProvider(c, db),
   );
   app.get("/api/admin/notification-settings", staffAdminGate, (c) =>
     handleGetNotificationSettings(c, db),
