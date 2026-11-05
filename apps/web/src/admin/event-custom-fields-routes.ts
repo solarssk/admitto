@@ -517,8 +517,13 @@ function suggestedFieldsLimitResponse(c: Context, err: SuggestedFieldsLimitError
 
 const SENSITIVE_SUGGESTED_KEYS = SUGGESTED_EVENT_FIELDS.filter((suggested) => suggested.sensitive === true).map((suggested) => suggested.source_field);
 
-/** One transaction of "add the suggested questions". Null when the plan adds a sensitive question and `lockJobs` was false, with nothing written. */
-async function addSuggestedFields(c: Context, db: PrismaClient, eventId: string, lockJobs: boolean) {
+type SuggestedPlan = ReturnType<typeof planSuggestedFields>;
+
+/** One transaction of "add the suggested questions". Null when the plan adds a sensitive question and `lockJobs` was false, with nothing
+ * written; with the jobs locked it is never null. */
+function addSuggestedFields(c: Context, db: PrismaClient, eventId: string, lockJobs: true): Promise<SuggestedPlan>;
+function addSuggestedFields(c: Context, db: PrismaClient, eventId: string, lockJobs: boolean): Promise<SuggestedPlan | null>;
+function addSuggestedFields(c: Context, db: PrismaClient, eventId: string, lockJobs: boolean): Promise<SuggestedPlan | null> {
   return db.$transaction(async (tx) => {
     if (lockJobs) await lockOpenAttendeeJobs(tx, eventId);
     await acquireEventCustomFieldsLock(tx, eventId);
@@ -574,7 +579,6 @@ export async function handleAddSuggestedEventCustomFields(c: Context, db: Prisma
       select: { source_field: true },
     });
     const plan = (await addSuggestedFields(c, db, eventId, present.length < SENSITIVE_SUGGESTED_KEYS.length)) ?? (await addSuggestedFields(c, db, eventId, true));
-    if (plan === null) throw new Error("the suggested questions were not planned");
     const outcome: AddSuggestedFieldsDto = {
       added: plan.add.map((suggested) => suggested.source_field),
       skipped: [
