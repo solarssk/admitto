@@ -1196,6 +1196,13 @@ describe("AuditLogPanel rendering", () => {
 
     const table = await screen.findByRole("table");
     expect(within(table).getByText("Sensitive answers shown").className).toContain("at-badge--neutral");
+    // Details names the person, how many values were shown and the keys of their questions; the event is in the Scope column.
+    fireEvent.click(within(table).getByText("View"));
+    const valueOf = (label: string) => within(table).getByText(label).nextElementSibling?.textContent;
+    expect(valueOf("Subject")).toBe("attendee");
+    expect(valueOf("Field count")).toBe("2");
+    expect(valueOf("Fields")).toBe("allergy");
+    expect(valueOf("Companion fields")).toBe("access");
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
     expect(screen.getByRole("button", { name: "Sensitive answers shown" })).toBeTruthy();
