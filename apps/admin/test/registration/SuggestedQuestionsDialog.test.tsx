@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_CUSTOM_FIELDS_PER_EVENT, SUGGESTED_EVENT_FIELDS, type SuggestedEventField } from "@admitto/shared";
 import { ApiError } from "../../src/api/client.js";
 import type { AddSuggestedFieldsResponse, EventCustomFieldDto } from "../../src/api/types.js";
-import { SENSITIVE_SUGGESTION_WARNING } from "../../src/registration/suggestedQuestions.js";
+import { PRESENT_ORDINARY_WARNING, SENSITIVE_SUGGESTION_WARNING } from "../../src/registration/suggestedQuestions.js";
 import { SuggestedQuestionsDialog, type SuggestedQuestionsDialogProps } from "../../src/registration/SuggestedQuestionsDialog.js";
 import { deferred, isOff } from "../test-utils.js";
 
@@ -183,6 +183,25 @@ describe("SuggestedQuestionsDialog: an event that has some of them", () => {
     expect(isOff(confirmButton())).toBe(true);
     fireEvent.click(confirmButton());
     expect(addSuggestedEventCustomFields).not.toHaveBeenCalled();
+  });
+
+  const ACCESS = "Do you have any accessibility needs we should know about?";
+  const accessField = () => created(SUGGESTED_EVENT_FIELDS.find((suggested) => suggested.source_field === "accessibility_needs")!);
+
+  it("does not promise the protection of a sensitive question for an ordinary question the event already has under that key", () => {
+    renderDialog([accessField()]);
+
+    expect(badgeOf(ACCESS)).toBe("Already in your list");
+    const warning = rowOf(ACCESS).querySelector(".suggested-questions__warning");
+    expect(warning?.textContent?.trim()).toBe(PRESENT_ORDINARY_WARNING);
+    expect(dialog().textContent).not.toContain(SENSITIVE_SUGGESTION_WARNING);
+  });
+
+  it("says nothing about privacy for a question the event already has that is sensitive", () => {
+    renderDialog([{ ...accessField(), sensitive: true }]);
+
+    expect(badgeOf(ACCESS)).toBe("Already in your list");
+    expect(dialog().querySelectorAll(".suggested-questions__warning")).toHaveLength(0);
   });
 
   it("says that nothing can be added when the only question left cannot be", () => {

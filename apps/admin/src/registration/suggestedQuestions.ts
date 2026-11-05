@@ -30,6 +30,11 @@ export interface SuggestedRow {
 export const SENSITIVE_SUGGESTION_WARNING =
   "Answers about accessibility can be health data. This question is optional and its answers are sensitive: they are hidden in lists and exports and shown only on request to administrators.";
 
+/** Said under the sensitive suggestion when the event already has a question with its key that is not sensitive: the window leaves that
+ * question as it is, so it cannot promise the protection it promises for a question it adds. */
+export const PRESENT_ORDINARY_WARNING =
+  "This question is already on your form as an ordinary question and stays as it is: its answers are not hidden. Turn on Sensitive in its editor if they should be.";
+
 const quoted = (name: string): string => `“${name}”`;
 
 /** What a question of the set that depends on another is called in a sentence: the label of the field the event has under that key, and
@@ -60,6 +65,15 @@ function stateOf(plan: SuggestedFieldsPlan, key: string): SuggestedRowState {
   return "present";
 }
 
+/** What the window says about the privacy of a sensitive suggestion: the assurance only for a question it adds; for one the event
+ * already has, only when that one is not sensitive (it is left as it is), and nothing when it is. */
+function warningOf(suggested: SuggestedEventField, state: SuggestedRowState, fields: readonly EventCustomFieldDto[]): string {
+  if (suggested.sensitive !== true) return "";
+  if (state === "add") return SENSITIVE_SUGGESTION_WARNING;
+  const existing = state === "present" ? fields.find((field) => field.source_field === suggested.source_field) : undefined;
+  return existing !== undefined && existing.sensitive !== true ? PRESENT_ORDINARY_WARNING : "";
+}
+
 /** The questions of the set in their own order, each with what will happen to it in an event that has these fields. */
 export function suggestedRows(plan: SuggestedFieldsPlan, fields: readonly EventCustomFieldDto[]): SuggestedRow[] {
   return SUGGESTED_EVENT_FIELDS.map((suggested) => {
@@ -70,7 +84,7 @@ export function suggestedRows(plan: SuggestedFieldsPlan, fields: readonly EventC
       state,
       meta: metaOf(suggested, fields),
       note: state === "blocked" ? blockedNote(suggested, fields) : "",
-      warning: suggested.sensitive === true ? SENSITIVE_SUGGESTION_WARNING : "",
+      warning: warningOf(suggested, state, fields),
     };
   });
 }
