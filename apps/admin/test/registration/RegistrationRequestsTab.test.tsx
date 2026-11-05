@@ -391,7 +391,8 @@ describe("RegistrationRequestsTab: the focus when the empty list goes", () => {
 
     await listLoaded();
     expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
-    expect(document.activeElement).toBe(panelOfCard());
+    // The hand-over of the focus runs in an effect after the list is drawn, which a slow runner may do after `findBy` has returned.
+    await waitFor(() => expect(document.activeElement).toBe(panelOfCard()));
   });
 
   it("goes to the card also when the list that comes back is empty for good, and the button goes with its words", async () => {
@@ -403,7 +404,7 @@ describe("RegistrationRequestsTab: the focus when the empty list goes", () => {
     fireEvent.click(clear);
 
     expect(await screen.findByText("No requests yet")).toBeTruthy();
-    expect(document.activeElement).toBe(panelOfCard());
+    await waitFor(() => expect(document.activeElement).toBe(panelOfCard()));
   });
 
   it("leaves the focus alone when it has moved on before the list came back", async () => {
