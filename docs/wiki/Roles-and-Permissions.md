@@ -33,6 +33,8 @@ A question can be marked sensitive, for example one about health or accessibilit
 
 Every time someone shows sensitive answers, Admitto writes an entry to the audit log: who did it, when, which guest or registration, and which questions. The entry never holds the answers themselves. It is written even when the guest gave no sensitive answer. Showing many guests in a short time is limited per person (20 a minute and 200 an hour), which slows a script down and leaves one audit entry for every guest it shows.
 
+The **Show** button is on the attendee's page (one for the guest and one on the companion's card) and in the request window (one for the guest and one for each companion). It asks you to confirm that the click is recorded, and the answers disappear again after **Hide**, after two minutes, or when you leave the page. An Operator is not offered the button. See [Sensitive questions](Custom-Attendee-Fields#sensitive-questions).
+
 An erased guest has no answers left to show. Showing is also allowed on an archived event.
 
 ## Operator
