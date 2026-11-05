@@ -9,6 +9,7 @@ import { decryptFromString, encryptToString, SECRET_CONTEXTS } from "@admitto/cr
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
+import { SSO_PROVIDER_SETTINGS_KEY } from "../../src/registration/sso-provider.js";
 import { verifyBotChallenge, botChallengeCData } from "../../src/registration/bot-challenge.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
@@ -42,6 +43,8 @@ const ROUTES: Array<{ method: string; path: string; body?: unknown }> = [
   { method: "DELETE", path: "/api/admin/registration/turnstile" },
   { method: "GET", path: "/api/admin/registration/access-methods" },
   { method: "PUT", path: "/api/admin/registration/access-methods", body: { methods: ["link"] } },
+  { method: "GET", path: "/api/admin/registration/sso-provider" },
+  { method: "PUT", path: "/api/admin/registration/sso-provider", body: { provider_id: null } },
 ];
 
 function call(route: (typeof ROUTES)[number], cookie?: string, extra: Record<string, string> = {}) {
@@ -61,7 +64,9 @@ async function storedValue(key: string): Promise<string | null> {
 }
 
 async function cleanSettings() {
-  await prisma.systemSettings.deleteMany({ where: { key: { in: [TURNSTILE_SETTINGS_KEY, ACCESS_METHODS_SETTINGS_KEY] } } });
+  await prisma.systemSettings.deleteMany({
+    where: { key: { in: [TURNSTILE_SETTINGS_KEY, ACCESS_METHODS_SETTINGS_KEY, SSO_PROVIDER_SETTINGS_KEY] } },
+  });
 }
 
 async function auditRows() {
@@ -383,18 +388,6 @@ describe("registration_captcha in the Health check", () => {
 });
 
 describe("access methods, end to end", () => {
-  // SSO counts as available when ANY identity provider is enabled. A provider that another test file left in this
-  // worker's schema would make "no provider" untrue here, so park the others for the length of this block.
-  let parked: string[] = [];
-  beforeAll(async () => {
-    const others = await prisma.identityProvider.findMany({ where: { enabled: true, issuer: { not: IDP_ISSUER } }, select: { id: true } });
-    parked = others.map((row) => row.id);
-    await prisma.identityProvider.updateMany({ where: { id: { in: parked } }, data: { enabled: false } });
-  });
-  afterAll(async () => {
-    await prisma.identityProvider.updateMany({ where: { id: { in: parked } }, data: { enabled: true } });
-  });
-
   it("start empty and unavailable", async () => {
     await cleanSettings();
     const res = await app.request("/api/admin/registration/access-methods", { headers: { Cookie: superCookie } });
@@ -407,7 +400,7 @@ describe("access methods, end to end", () => {
     ]);
   });
 
-  it("make the link and the password available only with the keys, and SSO only with a provider", async () => {
+  it("make the link and the password available only with the keys, and SSO only with the provider chosen for guests", async () => {
     const enable = await put("/api/admin/registration/access-methods", { methods: ["link", "password", "sso"] });
     expect(enable.status).toBe(200);
     const before = (await enable.json()) as { methods: Array<{ method: string; available: boolean; blocked_by: string | null }> };
@@ -418,7 +411,7 @@ describe("access methods, end to end", () => {
     ]);
 
     await put("/api/admin/registration/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
-    await prisma.identityProvider.create({
+    const provider = await prisma.identityProvider.create({
       data: {
         issuer: IDP_ISSUER,
         client_id: "reg-settings-client",
@@ -429,18 +422,22 @@ describe("access methods, end to end", () => {
         enabled: true,
       },
     });
-    const after = await app.request("/api/admin/registration/access-methods", { headers: { Cookie: superCookie } });
-    const body = (await after.json()) as { methods: Array<{ method: string; available: boolean }> };
-    expect(body.methods.map((m) => [m.method, m.available])).toEqual([
-      ["link", true],
-      ["password", true],
-      ["sso", true],
-    ]);
+    const availability = async () => {
+      const res = await app.request("/api/admin/registration/access-methods", { headers: { Cookie: superCookie } });
+      return ((await res.json()) as { methods: Array<{ method: string; available: boolean }> }).methods.map((m) => [m.method, m.available]);
+    };
+    // An enabled provider is not enough: guests sign in with the one a superadmin chose.
+    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", false]]);
 
-    await prisma.identityProvider.updateMany({ where: { issuer: IDP_ISSUER }, data: { enabled: false } });
-    const disabled = await app.request("/api/admin/registration/access-methods", { headers: { Cookie: superCookie } });
-    const disabledBody = (await disabled.json()) as { methods: Array<{ method: string; available: boolean }> };
-    expect(disabledBody.methods.find((m) => m.method === "sso")!.available).toBe(false);
+    expect((await put("/api/admin/registration/sso-provider", { provider_id: provider.id })).status).toBe(200);
+    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", true]]);
+
+    await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: false } });
+    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", false]]);
+    await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: true } });
+    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", true]]);
+    await prisma.identityProvider.delete({ where: { id: provider.id } });
+    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", false]]);
   });
 
   it("are audited with the list that is now enabled", async () => {
@@ -454,5 +451,130 @@ describe("access methods, end to end", () => {
     const res = await put("/api/admin/registration/access-methods", { methods: ["password", "carrier-pigeon"] });
     expect(res.status).toBe(400);
     expect(await storedValue(ACCESS_METHODS_SETTINGS_KEY)).toBe(before);
+  });
+});
+
+describe("the identity provider guests sign in with, end to end (D-C4)", () => {
+  let providerId = "";
+
+  beforeAll(async () => {
+    await prisma.identityProvider.deleteMany({ where: { issuer: IDP_ISSUER } });
+    providerId = (
+      await prisma.identityProvider.create({
+        data: {
+          issuer: IDP_ISSUER,
+          client_id: "reg-settings-client",
+          authorization_endpoint: `${IDP_ISSUER}/authorize`,
+          token_endpoint: `${IDP_ISSUER}/token`,
+          jwks_uri: `${IDP_ISSUER}/jwks`,
+          display_name: "Reg Settings IdP",
+          client_secret_enc: "must-never-leave",
+          enabled: true,
+        },
+      })
+    ).id;
+  });
+  afterAll(async () => {
+    await prisma.identityProvider.deleteMany({ where: { issuer: IDP_ISSUER } });
+    await cleanSettings();
+  });
+  beforeEach(async () => {
+    await cleanSettings();
+  });
+
+  const read = (cookie = superCookie) => app.request("/api/admin/registration/sso-provider", { headers: { Cookie: cookie } });
+
+  it("is for a superadmin alone: signed out is 401, an admin and an operator are 403, and nothing is written", async () => {
+    for (const route of ROUTES.filter((candidate) => candidate.path.endsWith("/sso-provider"))) {
+      expect((await call(route)).status, route.method).toBe(401);
+      for (const cookie of [adminCookie, operatorCookie]) {
+        const res = await call(route, cookie);
+        expect(res.status, `${route.method} ${cookie.slice(0, 6)}`).toBe(403);
+        expect(await res.json()).toEqual({ error: "forbidden" });
+      }
+    }
+    expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBeNull();
+  });
+
+  it("refuses a write from another site", async () => {
+    const res = await app.request("/api/admin/registration/sso-provider", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Origin: "https://evil.example.net", Cookie: superCookie },
+      body: JSON.stringify({ provider_id: providerId }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBeNull();
+  });
+
+  it("lists the providers that can be chosen, chooses one, and audits it", async () => {
+    expect(await (await read()).json()).toEqual({
+      provider_id: null,
+      state: "not_selected",
+      providers: [{ id: providerId, display_name: "Reg Settings IdP" }],
+    });
+
+    const chosen = await put("/api/admin/registration/sso-provider", { provider_id: providerId });
+
+    expect(chosen.status).toBe(200);
+    expect(await chosen.json()).toMatchObject({ provider_id: providerId, state: "ready" });
+    expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBe(JSON.stringify(providerId));
+    const entry = (await auditRows()).filter((row) => row.action_type === "registration_sso_provider_updated").at(-1);
+    expect(entry?.metadata).toEqual({ provider_id: providerId, previous_provider_id: null });
+  });
+
+  it("never sends a field of the provider but its id and its name", async () => {
+    await put("/api/admin/registration/sso-provider", { provider_id: providerId });
+
+    const text = await (await read()).text();
+
+    expect(text).not.toContain("must-never-leave");
+    expect(text).not.toContain(IDP_ISSUER);
+    expect(text).not.toContain("reg-settings-client");
+  });
+
+  it("says the choice is gone or off when the provider was deleted or switched off, and keeps the row", async () => {
+    await put("/api/admin/registration/sso-provider", { provider_id: providerId });
+
+    await prisma.identityProvider.update({ where: { id: providerId }, data: { enabled: false } });
+    expect(await (await read()).json()).toMatchObject({ provider_id: providerId, state: "disabled", providers: [] });
+    await prisma.identityProvider.update({ where: { id: providerId }, data: { enabled: true } });
+    expect(await (await read()).json()).toMatchObject({ state: "ready" });
+    await prisma.identityProvider.delete({ where: { id: providerId } });
+    expect(await (await read()).json()).toMatchObject({ provider_id: providerId, state: "missing" });
+    expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBe(JSON.stringify(providerId));
+  });
+
+  it("refuses a provider that is not there or is off, with one answer, and saves nothing", async () => {
+    const other = await prisma.identityProvider.create({
+      data: {
+        issuer: `${IDP_ISSUER}/off`,
+        client_id: "reg-settings-off",
+        authorization_endpoint: `${IDP_ISSUER}/authorize`,
+        token_endpoint: `${IDP_ISSUER}/token`,
+        jwks_uri: `${IDP_ISSUER}/jwks`,
+        display_name: "Off",
+        enabled: false,
+      },
+    });
+    try {
+      for (const id of ["nobody", other.id]) {
+        const res = await put("/api/admin/registration/sso-provider", { provider_id: id });
+        expect(res.status).toBe(422);
+        expect(await res.json()).toEqual({ error: "provider_not_available" });
+      }
+      expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBeNull();
+    } finally {
+      await prisma.identityProvider.delete({ where: { id: other.id } });
+    }
+  });
+
+  it("removes the choice with null", async () => {
+    await put("/api/admin/registration/sso-provider", { provider_id: providerId });
+
+    const res = await put("/api/admin/registration/sso-provider", { provider_id: null });
+
+    expect(await res.json()).toMatchObject({ provider_id: null, state: "not_selected" });
+    expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBeNull();
   });
 });

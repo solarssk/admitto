@@ -3,9 +3,11 @@ import { loadRegistrantFormFields, type RegistrantFormField } from "@admitto/tic
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadRegistrationPage, resolveConfirmation, resolveRegistration } from "../../src/registration/form-model.js";
 import { resolveAccessMethodAvailability } from "../../src/registration/access-methods.js";
+import { getSsoProviderId } from "../../src/registration/sso-provider.js";
 import { resolveTurnstileKeys } from "../../src/registration/turnstile-settings.js";
 
 vi.mock("../../src/registration/access-methods.js", () => ({ resolveAccessMethodAvailability: vi.fn() }));
+vi.mock("../../src/registration/sso-provider.js", () => ({ getSsoProviderId: vi.fn(async () => null) }));
 vi.mock("../../src/registration/turnstile-settings.js", () => ({ resolveTurnstileKeys: vi.fn() }));
 vi.mock("../../src/legal/registration-gate.js", () => ({
   loadRequiredLegalDocuments: vi.fn(async () => ({
@@ -61,6 +63,7 @@ const availability = (available: boolean) => [
 beforeEach(() => {
   vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(true));
   vi.mocked(resolveTurnstileKeys).mockResolvedValue({ state: "ready", siteKey: "site-key", secret: "secret" });
+  vi.mocked(getSsoProviderId).mockResolvedValue(null);
 });
 
 describe("loadRegistrationPage, when the answers of its dependencies do not agree", () => {
@@ -565,7 +568,7 @@ describe("the password as the way in (D-C3)", () => {
     }
   });
 
-  it("is not found for a way in that is not built (the company sign-in), for none, and for more than one", async () => {
+  it("is not found for a way in that is not built, for none, for more than one, and for the company sign-in while no provider is chosen", async () => {
     for (const access_methods of [["sso"], [], ["password", "link"], ["link", "password"], ["unknown"]]) {
       expect(await resolveRegistration(withSettings({ access_methods }), "northwind-summit", NOW), access_methods.join()).toEqual({ kind: "not_found" });
     }
@@ -599,5 +602,118 @@ describe("the styled boxes switch (D-E9)", () => {
     expect(fake.event.findUnique).toHaveBeenCalledTimes(1);
     const select = (fake.event.findUnique.mock.calls[0] as unknown as [{ select: { registration_settings: { select: Record<string, boolean> } } }])[0].select;
     expect(select.registration_settings.select.styled_form_controls).toBe(true);
+  });
+});
+
+describe("the company sign-in as the way in (D-C4)", () => {
+  const withSettings = (changes: Record<string, unknown> = {}) =>
+    ({
+      event: {
+        findUnique: vi.fn(async () => ({
+          ...row,
+          registration_settings: { ...row.registration_settings, access_methods: ["sso"], sso_claim_name: null, sso_claim_values: [], ...changes },
+        })),
+      },
+    }) as unknown as PrismaClient;
+  const ssoAvailability = (available: boolean) => [
+    { method: "link" as const, enabled: false, available: false, blockedBy: null },
+    { method: "password" as const, enabled: false, available: false, blockedBy: null },
+    { method: "sso" as const, enabled: true, available, blockedBy: available ? null : ("identity_provider" as const) },
+  ];
+  const OVER = new Date("2099-05-15T12:00:00Z");
+
+  beforeEach(() => {
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(ssoAvailability(true));
+    vi.mocked(getSsoProviderId).mockResolvedValue("idp-1");
+  });
+
+  it("opens an event whose way in is the company sign-in while the provider chosen for guests is available, and tells the route which", async () => {
+    const state = await resolveRegistration(withSettings(), "northwind-summit", NOW);
+
+    expect(state.kind).toBe("open");
+    if (state.kind !== "open") return;
+    expect(state.access).toEqual({ method: "sso", providerId: "idp-1", restriction: null });
+    expect(state.form.needsSso).toBe(true);
+    expect(state.form.needsPassword).toBe(false);
+  });
+
+  it("needs no Turnstile keys: the form stands behind a sign-in, so it opens without them and holds no site key", async () => {
+    vi.mocked(resolveTurnstileKeys).mockResolvedValue({ state: "incomplete" });
+
+    const state = await resolveRegistration(withSettings(), "northwind-summit", NOW);
+
+    expect(state.kind).toBe("open");
+    expect(state.kind === "open" ? state.form.turnstileSiteKey : null).toBe("");
+  });
+
+  it("holds no site key even when the keys are saved, and no link to confirm: the provider vouches for the address (D-C5)", async () => {
+    const state = await resolveRegistration(withSettings({ verify_email: true }), "northwind-summit", NOW);
+
+    expect(state.kind === "open" ? state.form.turnstileSiteKey : null).toBe("");
+    expect(state.kind === "open" ? state.form.verifyEmail : null).toBe(false);
+    // Only for the company sign-in: the link, with the same setting, still confirms the address.
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(true));
+    const link = await resolveRegistration(withSettings({ access_methods: ["link"], verify_email: true }), "northwind-summit", NOW);
+    expect(link.kind === "open" ? link.form.verifyEmail : null).toBe(true);
+  });
+
+  it("reads the restriction of the event: one claim and the values that may register", async () => {
+    const state = await resolveRegistration(
+      withSettings({ sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b"] }),
+      "northwind-summit",
+      NOW,
+    );
+
+    expect(state.kind === "open" ? state.access : null).toEqual({
+      method: "sso",
+      providerId: "idp-1",
+      restriction: { name: "tid", values: ["tenant-a", "tenant-b"] },
+    });
+  });
+
+  it("reads a restriction that is half there as none, and never as one nobody can meet", async () => {
+    for (const changes of [{ sso_claim_name: "tid", sso_claim_values: [] }, { sso_claim_name: null, sso_claim_values: ["tenant-a"] }]) {
+      const state = await resolveRegistration(withSettings(changes), "northwind-summit", NOW);
+
+      expect(state.kind === "open" ? state.access : null, JSON.stringify(changes)).toMatchObject({ restriction: null });
+    }
+  });
+
+  it("is not found while no provider is chosen, and while the one chosen is not available: gone, or switched off", async () => {
+    vi.mocked(getSsoProviderId).mockResolvedValue(null);
+    expect(await resolveRegistration(withSettings(), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+
+    vi.mocked(getSsoProviderId).mockResolvedValue("idp-1");
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(ssoAvailability(false));
+    expect(await resolveRegistration(withSettings(), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+  });
+
+  it("asks the availability of the company sign-in, not of the link: a link that is available does not open it", async () => {
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(true));
+
+    expect(await resolveRegistration(withSettings(), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+  });
+
+  it("is closed, like any event, once it is over", async () => {
+    expect((await resolveRegistration(withSettings(), "northwind-summit", OVER)).kind).toBe("closed");
+  });
+
+  it("keeps the provider, the restriction and everything of the person out of the model of the page", async () => {
+    const fake = withSettings({ sso_claim_name: "tid", sso_claim_values: ["tenant-secret-guid"] });
+    const page = await loadRegistrationPage(fake, "northwind-summit", NOW);
+
+    const text = JSON.stringify(page);
+    expect(text).not.toContain("idp-1");
+    expect(text).not.toContain("tenant-secret-guid");
+    expect(text).not.toContain("restriction");
+    expect(page.kind === "open" ? Object.keys(page.form) : []).not.toContain("access");
+  });
+
+  it("leaves the link and the password as they were: no sign-in asked, the site key still there", async () => {
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(true));
+    const link = await resolveRegistration(withSettings({ access_methods: ["link"] }), "northwind-summit", NOW);
+
+    expect(link.kind === "open" ? link.form.needsSso : null).toBe(false);
+    expect(link.kind === "open" ? link.form.turnstileSiteKey : null).toBe("site-key");
   });
 });

@@ -40,11 +40,6 @@
  *   are kept apart from the guest's own (`askedCompanion`), and a condition refers only to the questions of its own panel.
  *   What is sent is `companions: [{ name, answers }]`, read from the fields of the panel. The companion is kept nowhere else.
  *
- * - turns the guest back to the sign-in when the server says the sign-in of an event with the company sign-in (D-C4) is no
- *   longer good (`401 sign_in_required`): the page is reloaded, and the server draws its sign-in screen. The form of such an
- *   event has no security check, so the box and the widget are not there and nothing here waits for them; its address field
- *   is read-only and is sent like any other, though the server does not read it.
- *
  * Nothing the guest typed is put in an address, and the page has no cookie.
  *
  * An event that switched the styled boxes on (D-E9) gets a second script after this one (./form-controls-script.ts). This one does
@@ -379,11 +374,6 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     setBusy(false);
     if (status === 403 && gate && data && data.error === "access_denied") {
       turnBack();
-      return;
-    }
-    // The company sign-in ran out or was never good (D-C4): the page asks for it again, and reloading is how it does.
-    if (status === 401 && data && data.error === "sign_in_required") {
-      window.location.reload();
       return;
     }
     var invalid = status === 400 || status === 422;

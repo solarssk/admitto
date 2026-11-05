@@ -51,8 +51,6 @@ export const REGISTRATION_PAGE_CSS = `
 }
 /* Mobile Safari lays a date input out by its own rules unless it is told to drop them: it does not take the product's border-box sizing, so the box is wider than its field and its right and bottom edges are cut off. It also centres the date it shows. */
 .reg-form .at-input[type="date"], .reg-form .at-input[type="datetime-local"] { -webkit-appearance: none; appearance: none; }
-/* The address a company sign-in gave: shown, not editable. It reads as a value that is there, not as a box waiting for text. */
-.reg-form .at-input[readonly] { background: var(--surface-sunken); color: var(--text-secondary); cursor: default; }
 .reg-form .at-input::-webkit-date-and-time-value { text-align: left; }
 /* The note and the error sit in one grid cell, so the slot is as tall as the taller of the two and an error that takes the place of a note moves nothing below it, whether the note is one line or several. */
 .reg-slot { display: grid; min-height: 1rem; line-height: 1rem; }
@@ -261,6 +259,18 @@ const WHITE = "#ffffff";
 /** Dark ink for a light brand colour: the product's own `--at-ink`. */
 const DARK_INK = "#1d273b";
 /** For the mid-tone accents, a mid blue or a grey, where neither white nor the dark ink reaches AA. */
+/**
+ * What the pages of the company sign-in add (D-C4): the address the provider gave, which the form shows locked, and the sign-in
+ * screen. Only those pages carry these rules; every other page is the page it was, byte for byte.
+ */
+export const REGISTRATION_SSO_CSS = `
+/* The address a company sign-in gave: shown, not editable. It reads as a value that is there, not as a box waiting for text. */
+.reg-form .at-input[readonly] { background: var(--surface-sunken); color: var(--text-secondary); cursor: default; }
+/* The sign-in screen: its title is a level under the event's, and the sentence of a refused sign-in is as wide as the button. */
+.reg-center h2 { margin: 0; font-size: var(--fs-h3); line-height: 1.3; overflow-wrap: anywhere; }
+.reg-center .at-notice { width: 100%; max-width: 360px; text-align: left; }
+`;
+
 const BLACK = "#000000";
 /** WCAG AA for the 14 px and 18 px text of a button. */
 const MIN_TEXT_CONTRAST = 4.5;
@@ -286,8 +296,13 @@ export function inkOnPrimaryRule(theme?: BrandingTheme | null): string {
 
 /** The whole stylesheet of a guest page, for the instance branding `theme`. `styled`: what the form of an event that switched the
  * styled boxes on needs (see `styledNeedsOf` of ./form-controls.ts); only that page has their rules, and the rules of the date and
- * the time only when the form asks a date or a time. */
-export function buildRegistrationPageStyles(theme?: BrandingTheme | null, styled: StyledNeeds | null = null): string {
+ * the time only when the form asks a date or a time. `companySignIn`: the page is one of an event whose way in is the company
+ * sign-in, which has the rules of REGISTRATION_SSO_CSS and no other page has. */
+export function buildRegistrationPageStyles(
+  theme?: BrandingTheme | null,
+  styled: StyledNeeds | null = null,
+  companySignIn = false,
+): string {
   return [
     GUEST_PAGE_PRODUCT_CSS,
     buildTicketPageStyles(theme),
@@ -295,6 +310,7 @@ export function buildRegistrationPageStyles(theme?: BrandingTheme | null, styled
     REGISTRATION_PAGE_CSS,
     styled ? REGISTRATION_STYLED_CONTROLS_CSS : "",
     styled?.date ? REGISTRATION_DATE_CONTROLS_CSS : "",
+    companySignIn ? REGISTRATION_SSO_CSS : "",
   ]
     .filter((part) => part !== "")
     .join("\n");

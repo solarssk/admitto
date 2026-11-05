@@ -32,6 +32,7 @@ import { legalLink, renderAgreement, renderCompanion, renderPasswordField, rende
 import { icon, renderIconSprite } from "./form-icons.js";
 import type { ClosedFormModel, FormContact, FormEvent, RegistrationFormModel } from "./form-model.js";
 import { renderFormScript } from "./form-script.js";
+import { renderSsoScript } from "./sso-page-script.js";
 import { buildRegistrationPageStyles } from "./form-style.js";
 import type { SsoNotice } from "./sso-identity.js";
 
@@ -52,7 +53,14 @@ const TURNSTILE_SCRIPT_URL = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
 /** Both pages tell iOS not to turn what looks like a phone number into a call link: an organiser's example of a phone
  * answer ("For example: +1 555 0100") would become one, and so would any other run of digits in a note. */
-export function renderDocument(title: string, content: string, scripts: string, theme?: BrandingTheme | null, styled: StyledNeeds | null = null): string {
+export function renderDocument(
+  title: string,
+  content: string,
+  scripts: string,
+  theme?: BrandingTheme | null,
+  styled: StyledNeeds | null = null,
+  companySignIn = false,
+): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -61,7 +69,7 @@ export function renderDocument(title: string, content: string, scripts: string, 
   <meta name="format-detection" content="telephone=no">
   <title>${esc(title)}</title>
   ${renderAdmittoFaviconLink()}
-  <style>${buildRegistrationPageStyles(theme, styled)}</style>
+  <style>${buildRegistrationPageStyles(theme, styled, companySignIn)}</style>
 </head>
 <body class="ticket-page">
   ${renderIconSprite()}
@@ -174,7 +182,7 @@ function renderSignInPage(model: RegistrationFormModel, notice: SsoNotice | null
     renderHero(model.event, ""),
     `<section class="reg-center" id="reg-sign-in" aria-labelledby="reg-sign-in-title">
       <div class="reg-badge">${icon("lock")}</div>
-      <h2 id="reg-sign-in-title" class="reg-center__title">Sign in to register</h2>
+      <h2 id="reg-sign-in-title">Sign in to register</h2>
       <p>This registration is for people with a company account. Sign in with it to fill in the form.</p>
       ${renderSsoNotice(notice)}
       <a class="at-btn at-btn--primary at-btn--lg" id="reg-sign-in-link" href="/r/${slug}/sso/start" rel="nofollow">Sign in</a>
@@ -182,7 +190,7 @@ function renderSignInPage(model: RegistrationFormModel, notice: SsoNotice | null
     </section>`,
     renderFoot(model.contact),
   ].join("\n    ");
-  return renderDocument(`Registration - ${model.event.title}`, content, "", options.theme);
+  return renderDocument(`Registration - ${model.event.title}`, content, "", options.theme, null, true);
 }
 
 /** The form page, for the nonce of one response. */
@@ -214,10 +222,12 @@ export function renderRegistrationFormPage(model: RegistrationFormModel, options
     .filter((part) => part !== "")
     .join("\n    ");
   const styled = styledNeedsOf(model);
-  // The widget's script only where there is a widget: the company sign-in has none.
-  const widget = model.needsSso ? "" : `\n  <script src="${TURNSTILE_SCRIPT_URL}" async defer></script>`;
-  const scripts = `${renderFormScript(options.nonce, styled)}${widget}`;
-  return renderDocument(`Registration - ${model.event.title}`, content, scripts, options.theme, styled);
+  // The widget's script only where there is a widget; the company sign-in has none, and has a small script of its own.
+  const extra = model.needsSso
+    ? `\n  ${renderSsoScript(options.nonce)}`
+    : `\n  <script src="${TURNSTILE_SCRIPT_URL}" async defer></script>`;
+  const scripts = `${renderFormScript(options.nonce, styled)}${extra}`;
+  return renderDocument(`Registration - ${model.event.title}`, content, scripts, options.theme, styled, model.needsSso);
 }
 
 /** The page of an event that is over. No form, no script, no widget. */

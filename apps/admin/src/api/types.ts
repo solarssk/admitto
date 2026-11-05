@@ -1600,6 +1600,7 @@ export type RegistrationReadinessKey =
   | "access_method"
   | "access_method_enabled"
   | "bot_protection"
+  | "identity_provider"
   | "password"
   | "legal_documents"
   | "form_questions"
@@ -1641,6 +1642,11 @@ export interface RegistrationSettingsDto {
   consent_keys: string[];
   /** The guest form draws its date, time and phone boxes in the product's style, not the browser's. */
   styled_form_controls: boolean;
+  /** The company sign-in only: the one claim of the identity provider's token that a guest must hold (for example `tid`), or
+   * null for no restriction. Sent and saved together with `sso_claim_values`. */
+  sso_claim_name: string | null;
+  /** The values of that claim that may register, exactly as the provider sends them. Empty for no restriction. */
+  sso_claim_values: string[];
   password_set: boolean;
   guest_url: string | null;
   readiness: RegistrationReadinessCheckDto[];
@@ -1650,7 +1656,7 @@ export interface RegistrationSettingsDto {
 /** PUT of the settings: a part of them, and only the part that changed. An unknown key is refused (400). */
 export interface SaveRegistrationSettingsBody {
   mode?: RegistrationMode | null;
-  access_methods?: Array<"link" | "password">;
+  access_methods?: Array<"link" | "password" | "sso">;
   waitlist_enabled?: boolean;
   verify_email?: boolean;
   max_companions?: number;
@@ -1658,6 +1664,10 @@ export interface SaveRegistrationSettingsBody {
   ask_department?: boolean;
   consent_keys?: string[];
   styled_form_controls?: boolean;
+  /** Sent together with `sso_claim_values`: both set, or `null` and `[]` to remove the restriction. A restriction for an event
+   * whose way in is not the company sign-in is refused (422 `sso_claim_needs_sso`). */
+  sso_claim_name?: string | null;
+  sso_claim_values?: string[];
 }
 
 /** What the request list is asked for; a left-out filter selects every request. */
