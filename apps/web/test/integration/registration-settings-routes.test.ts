@@ -484,6 +484,13 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
 
   const read = (cookie = superCookie) => app.request("/api/admin/registration/sso-provider", { headers: { Cookie: cookie } });
 
+  type Offered = { provider_id: string | null; state: string; providers: { id: string; display_name: string }[] };
+  const byId = (a: { id: string }, b: { id: string }): number => a.id.localeCompare(b.id);
+  /** The providers the route can offer: the enabled ones of this worker's schema, in which another test file may have left rows. */
+  const enabledProviders = async () =>
+    (await prisma.identityProvider.findMany({ where: { enabled: true }, select: { id: true, display_name: true } })).sort(byId);
+  const offered = (body: Offered) => [...body.providers].sort(byId);
+
   it("is for a superadmin alone: signed out is 401, an admin and an operator are 403, and nothing is written", async () => {
     for (const route of ROUTES.filter((candidate) => candidate.path.endsWith("/sso-provider"))) {
       expect((await call(route)).status, route.method).toBe(401);
@@ -508,11 +515,10 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
   });
 
   it("lists the providers that can be chosen, chooses one, and audits it", async () => {
-    expect(await (await read()).json()).toEqual({
-      provider_id: null,
-      state: "not_selected",
-      providers: [{ id: providerId, display_name: "Reg Settings IdP" }],
-    });
+    const before = (await (await read()).json()) as Offered;
+    expect(before).toMatchObject({ provider_id: null, state: "not_selected" });
+    expect(offered(before)).toEqual(await enabledProviders());
+    expect(offered(before)).toContainEqual({ id: providerId, display_name: "Reg Settings IdP" });
 
     const chosen = await put("/api/admin/registration/sso-provider", { provider_id: providerId });
 
@@ -537,7 +543,10 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
     await put("/api/admin/registration/sso-provider", { provider_id: providerId });
 
     await prisma.identityProvider.update({ where: { id: providerId }, data: { enabled: false } });
-    expect(await (await read()).json()).toMatchObject({ provider_id: providerId, state: "disabled", providers: [] });
+    const off = (await (await read()).json()) as Offered;
+    expect(off).toMatchObject({ provider_id: providerId, state: "disabled" });
+    expect(offered(off).map((provider) => provider.id)).not.toContain(providerId);
+    expect(offered(off)).toEqual(await enabledProviders());
     await prisma.identityProvider.update({ where: { id: providerId }, data: { enabled: true } });
     expect(await (await read()).json()).toMatchObject({ state: "ready" });
     await prisma.identityProvider.delete({ where: { id: providerId } });
