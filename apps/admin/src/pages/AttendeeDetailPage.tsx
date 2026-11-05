@@ -987,7 +987,8 @@ function AttendeeOverviewTab({
   ticketTypes,
   attendeeSource,
   customDataEntries,
-  sensitiveAnswers,
+  guestQuestions,
+  canReveal,
   companionCard,
   eventItems,
   event,
@@ -997,8 +998,9 @@ function AttendeeOverviewTab({
   ticketTypes: TicketTypeDto[];
   attendeeSource: string | null;
   customDataEntries: Array<[string, string, string]>;
-  /** The masked sensitive questions of the guest and the administrator's "Show", or nothing when the event has none for the guest. */
-  sensitiveAnswers: ReactNode;
+  /** The questions about the guest: the sensitive ones are drawn masked, with "Show" for whoever `canReveal`. */
+  guestQuestions: CustomDataFieldDef[];
+  canReveal: boolean;
   /** The card of the person the guest brings, or nothing for a guest who brings nobody. */
   companionCard: ReactNode;
   eventItems: AttendeeDetailDto["event_items"];
@@ -1008,6 +1010,19 @@ function AttendeeOverviewTab({
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
   const deliveryCounts = countDeliveryOutcomes(detail.deliveries);
+  const sensitiveAnswers =
+    sensitiveQuestions(guestQuestions).length > 0 ? (
+      <AttendeeSensitiveAnswers
+        key={detail.id}
+        eventId={event.id}
+        attendeeId={detail.id}
+        questions={guestQuestions}
+        slot={null}
+        who="guest"
+        canReveal={canReveal}
+        timezone={event.timezone}
+      />
+    ) : null;
   // The install links open the public Add to Wallet route, which does nothing for a pass that was
   // removed at the provider, so an admin must not be offered them to copy and send.
   const removedAtProvider = !!detail.wallet_pass?.provider_removed_at;
@@ -3016,20 +3031,8 @@ export function AttendeeDetailPage() {
           ticketTypes={ticketTypes}
           attendeeSource={attendeeSource}
           customDataEntries={customDataEntries}
-          sensitiveAnswers={
-            sensitiveQuestions(attributeFields).length > 0 ? (
-              <AttendeeSensitiveAnswers
-                key={detail.id}
-                eventId={event.id}
-                attendeeId={detail.id}
-                questions={attributeFields}
-                slot={null}
-                who="guest"
-                canReveal={orgAdmin}
-                timezone={event.timezone}
-              />
-            ) : null
-          }
+          guestQuestions={attributeFields}
+          canReveal={orgAdmin}
           companionCard={
             detail.companion ? (
               <CompanionCard
