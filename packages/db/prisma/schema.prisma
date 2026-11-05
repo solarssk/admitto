@@ -120,6 +120,7 @@ model Event {
   admin_jobs                   AdminJob[]
   registration_settings        EventRegistrationSettings?
   registrations                Registration[]
+  registration_sso_states      RegistrationSsoState[]
   registration_mails           RegistrationMail[]
   legal_documents              LegalDocument[]
 
@@ -903,6 +904,11 @@ model EventRegistrationSettings {
   // The guest form draws its date, time and phone boxes in the product's own style instead of the browser's (D-E9).
   // One switch for the event, not one per field; off until an organiser turns it on.
   styled_form_controls Boolean  @default(false)
+  // Company sign-in only (method "sso", D-C4): ONE trusted claim of the provider's verified ID token (for example `tid`) and
+  // the values of it that may register. Both are set or both are empty (EventRegistrationSettings_sso_claim_pair_check).
+  // Never the end of an address. The guest's value is not stored beyond the 30 minutes of the sign-in cookie.
+  sso_claim_name       String?
+  sso_claim_values     String[] @default([])
   created_at           DateTime @default(now())
   updated_at           DateTime @updatedAt
 }
@@ -943,6 +949,12 @@ model Registration {
   // given (consent key -> ISO time). No text version is stored.
   accepted_at        DateTime?
   consents           Json               @default("{}")
+  // Company sign-in (D-C4): the provider and the provider's stable id of the person (`sub`), set together or not at all
+  // (Registration_sso_pair_check), for a registration made through method "sso" and null for every other. The identity of the
+  // guest is this pair, not the address (the address is contact data). No FK: the provider can be deleted later, and the
+  // registration, which has the person's data, stays. Personal data: erased with the row.
+  sso_provider_id    String?
+  sso_subject        String?
   // Set exactly while status = accepted. Named attendee_id on purpose: the erasure inventory
   // test finds every table that points at an attendee by this column and relation. The key is
   // composite with event_id, so the attendee must belong to the registration's own event.
@@ -953,11 +965,37 @@ model Registration {
   mails              RegistrationMail[]
 
   @@unique([event_id, email])
+  // One registration per person and event for the company sign-in; NULLs (the other ways in) never collide.
+  @@unique([event_id, sso_provider_id, sso_subject])
   // One registration per attendee (the composite key above already pins the attendee to this event).
   @@unique([attendee_id, event_id])
   // Target of RegistrationMail's composite key: a mail row cannot name another event's registration.
   @@unique([id, event_id])
   @@index([event_id, status, created_at, id])
+}
+
+// The state of one guest sign-in with the company's identity provider (v0.8, D-C4): what the callback needs to finish the
+// flow that `GET /r/:slug/sso/start` began, and nothing of the guest. A row has the OAuth state, the nonce and the PKCE
+// verifier (single use, 10 minutes), the event and the provider the flow was begun for. The callback spends it with one
+// conditional update (consumed_at), so two callbacks with one state cannot both win. Not personal data: no address, no
+// `sub`, no token. A separate table from OidcAuthState on purpose, so the flow of a guest and the flow of staff cannot be
+// taken for each other. The worker's registration job deletes the expired rows.
+model RegistrationSsoState {
+  id            String           @id @default(cuid())
+  state         String           @unique
+  nonce         String
+  code_verifier String
+  event_id      String
+  event         Event            @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  provider_id   String
+  provider      IdentityProvider @relation(fields: [provider_id], references: [id], onDelete: Cascade)
+  expires_at    DateTime
+  consumed_at   DateTime?
+  created_at    DateTime         @default(now())
+
+  @@index([expires_at])
+  @@index([event_id])
+  @@index([provider_id])
 }
 
 // Outgoing mail queue for registrations (D-D1, D-D2). Rows are inserted in the transaction that
@@ -1355,11 +1393,12 @@ model IdentityProvider {
   created_at             DateTime @default(now())
   updated_at             DateTime @updatedAt
 
-  external_identities ExternalIdentity[]
-  group_role_mappings OidcGroupRoleMapping[]
-  oidc_role_grants    OidcRoleGrant[]
-  oidc_auth_states    OidcAuthState[]
-  sessions            Session[]
+  external_identities     ExternalIdentity[]
+  group_role_mappings     OidcGroupRoleMapping[]
+  oidc_role_grants        OidcRoleGrant[]
+  oidc_auth_states        OidcAuthState[]
+  registration_sso_states RegistrationSsoState[]
+  sessions                Session[]
 
   @@unique([issuer, client_id])
 }

@@ -57,11 +57,19 @@ export type RegistrantSubmission = {
   locale?: string | null;
 };
 
+/**
+ * Who a guest is when they signed in with the company's identity provider (D-C4): the provider and the provider's stable id of
+ * the person (`sub`). The address is contact data, so the person is this pair, and a person registers once per event.
+ */
+export type SsoIdentity = { providerId: string; subject: string };
+
 export type PlaceRegistrationInput = {
   eventId: string;
   /** How the guest got to the form (D-C1). Link and password mail an address a confirmation link first (unless the event switched that off); single sign-on does not: the provider vouches for the address. */
   method: RegistrationAccessMethod;
   registrant: RegistrantSubmission;
+  /** The person, for `method: "sso"` and required for it; stored with the registration. Not read for another method. */
+  sso?: SsoIdentity;
 };
 
 /**
@@ -210,6 +218,8 @@ type SubmissionContext = {
   /** The companions that are stored and whose seats were counted: the registrant's, as readRegistrationCompanions reads them. */
   companions: readonly RegistrationCompanion[];
   verifiedByProvider: boolean;
+  /** Who signed in, for the company sign-in; null for the other ways in. */
+  sso: SsoIdentity | null;
   /** Whether the event has budget left for one more mail (see SubmissionMailLimits). */
   eventBudgetLeft: boolean;
   /** The most mail the event may queue in the window (eventMailCap), or null when the caller set no budget for it. */
@@ -238,8 +248,10 @@ async function queueMailFor(context: SubmissionContext, registrationId: string, 
   if (await mailBudgetAllows(context)) await enqueueMailsForMoment(context.tx, context.eventId, [registrationId], moment);
 }
 
-function registrationColumns({ eventId, now, registrant, companions }: SubmissionContext) {
+function registrationColumns({ eventId, now, registrant, companions, sso }: SubmissionContext) {
   return {
+    sso_provider_id: sso?.providerId ?? null,
+    sso_subject: sso?.subject ?? null,
     event_id: eventId,
     email: registrant.email,
     first_name: registrant.first_name,
@@ -332,8 +344,22 @@ async function lookUpAddress(context: SubmissionContext): Promise<AddressState> 
     existing?.status === "awaiting_email" && existing.confirm_expires_at !== null && existing.confirm_expires_at <= now;
   if (existing && expired && !heldByAttendee) await tx.registration.delete({ where: { id: existing.id } });
   if (heldByAttendee) return { taken: true, registration: null };
-  if (existing === null || expired) return { taken: false };
+  if (existing === null || expired) {
+    // The same person under another address (the provider now holds a new one): the place they have is theirs, and a
+    // second one is not made. Only the company sign-in has a person to look for.
+    const sameSubject = await findRegistrationOfSubject(context);
+    return sameSubject ? { taken: true, registration: sameSubject } : { taken: false };
+  }
   return { taken: true, registration: existing };
+}
+
+/** The registration the signed-in person already has in the event, whatever its state and address. */
+async function findRegistrationOfSubject({ tx, eventId, sso }: SubmissionContext): Promise<KnownRegistration | null> {
+  if (sso === null) return null;
+  return tx.registration.findFirst({
+    where: { event_id: eventId, sso_provider_id: sso.providerId, sso_subject: sso.subject },
+    select: { id: true, status: true, confirm_expires_at: true },
+  });
 }
 
 /**
@@ -386,6 +412,7 @@ async function submitInTransaction(
   tx: Prisma.TransactionClient,
   input: PlaceRegistrationInput,
   registrant: RegistrantSubmission,
+  sso: SsoIdentity | null,
   now: Date,
   mail: SubmissionMailLimits | undefined,
 ): Promise<Exclude<PlaceRegistrationResult, { outcome: "busy" }>> {
@@ -414,6 +441,7 @@ async function submitInTransaction(
     registrant,
     companions,
     verifiedByProvider: input.method === "sso",
+    sso,
     eventBudgetLeft: await eventBudgetLeft(tx, eventId, event.capacity, now, mail?.event),
     mailCap: mail?.event ? eventMailCap(mail.event.base, event.capacity) : null,
     mail,
@@ -427,6 +455,14 @@ async function submitInTransaction(
   if (needsAddressConfirmation(event.settings, input.method)) await insertAwaitingEmail(context);
   else await insertPlaced(context, placement);
   return { outcome: "received" };
+}
+
+/** The person of a company sign-in, and none for another way in. A sign-in without a person is a bug of the caller: the
+ * registration would have no identity, and the person could register again. */
+function ssoOf({ method, sso }: Pick<PlaceRegistrationInput, "method" | "sso">): SsoIdentity | null {
+  if (method !== "sso") return null;
+  if (!sso?.providerId || !sso.subject) throw new Error("placeRegistration: method sso needs the provider and the subject");
+  return sso;
 }
 
 /**
@@ -466,6 +502,7 @@ export async function placeRegistration(
   options: PlacementOptions = {},
 ): Promise<PlaceRegistrationResult> {
   const registrant = checkedRegistrant(input.registrant);
+  const sso = ssoOf(input);
   const written = await runPublicWrite(
     () =>
       runEventCapacityTransaction(
@@ -474,7 +511,7 @@ export async function placeRegistration(
         noPrepare,
         // The clock is read here, inside the transaction and under the locks, on every try: the call may have waited for
         // a permit and for a lock, and an event that ended meanwhile is closed.
-        (tx) => submitInTransaction(tx, input, registrant, options.now ?? new Date(), options.mail),
+        (tx) => submitInTransaction(tx, input, registrant, sso, options.now ?? new Date(), options.mail),
         PUBLIC_TRANSACTION_POLICY,
         { tryLock: true },
       ),
