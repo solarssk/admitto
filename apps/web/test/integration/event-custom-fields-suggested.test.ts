@@ -201,12 +201,13 @@ describe("who may add the suggested questions", () => {
 });
 
 describe("what it adds", () => {
-  it("adds the five questions to an event with none, in the order of the set, and says so", async () => {
+  it("adds the six questions to an event with none, in the order of the set, and says so", async () => {
     const res = await addSuggested();
 
     expect(res.status).toBe(201);
-    expect(await outcomeOf(res)).toEqual({ added: ["parking", "parking_plate", "travel", "arrival", "accommodation"], skipped: [] });
-    expect(await keysOf()).toEqual(["parking", "parking_plate", "travel", "arrival", "accommodation"]);
+    expect(await outcomeOf(res)).toEqual({ added: SUGGESTED_KEYS, skipped: [] });
+    expect(await keysOf()).toEqual(SUGGESTED_KEYS);
+    expect(SUGGESTED_KEYS).toHaveLength(6);
   });
 
   it("creates each as an optional question on the registration form, as the set describes it", async () => {
@@ -222,6 +223,8 @@ describe("what it adds", () => {
       expect(row?.show_on_form, suggested.source_field).toBe(true);
       expect(row?.options, suggested.source_field).toEqual(suggested.options ?? null);
       expect(row?.rules, suggested.source_field).toEqual(suggested.rules ?? null);
+      // The accessibility question is created sensitive (D-E6) and the others are not.
+      expect(row?.sensitive, suggested.source_field).toBe(suggested.source_field === "accessibility_needs");
       // Like a field added by hand: no place of its own, so the new fields are listed last.
       expect(row?.display_order, suggested.source_field).toBeNull();
     }
@@ -340,7 +343,7 @@ describe("a second request", () => {
     expect(res.status).toBe(201);
     expect(await outcomeOf(res)).toEqual({
       added: ["travel"],
-      skipped: ["parking", "parking_plate", "arrival", "accommodation"].map((source_field) => ({ source_field, reason: "exists" })),
+      skipped: ["parking", "parking_plate", "arrival", "accommodation", "accessibility_needs"].map((source_field) => ({ source_field, reason: "exists" })),
     });
     expect((await fieldsOf()).filter((row) => row.source_field !== "travel")).toEqual(others);
   });
@@ -362,7 +365,7 @@ describe("a second request", () => {
     const res = await addSuggested();
 
     expect(await outcomeOf(res)).toEqual({
-      added: ["parking", "parking_plate", "arrival", "accommodation"],
+      added: ["parking", "parking_plate", "arrival", "accommodation", "accessibility_needs"],
       skipped: [{ source_field: "travel", reason: "exists" }],
     });
     expect((await fieldsOf()).find((row) => row.source_field === "travel")).toEqual(own);
@@ -381,13 +384,13 @@ describe("a field of the event's own that would make the registration number una
 
     expect(res.status).toBe(201);
     expect(await outcomeOf(res)).toEqual({
-      added: ["travel", "arrival", "accommodation"],
+      added: ["travel", "arrival", "accommodation", "accessibility_needs"],
       skipped: [
         { source_field: "parking", reason: "exists" },
         { source_field: "parking_plate", reason: "condition" },
       ],
     });
-    expect(await keysOf()).toEqual(["parking", "travel", "arrival", "accommodation"]);
+    expect(await keysOf()).toEqual(["parking", "travel", "arrival", "accommodation", "accessibility_needs"]);
     expect((await fieldsOf())[0]).toEqual(before);
   });
 });
@@ -399,7 +402,7 @@ describe("the limit on fields: all or nothing", () => {
     const res = await addSuggested();
 
     expect(res.status).toBe(422);
-    expect(await res.json()).toEqual({ error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT, free: 4, needed: 5 });
+    expect(await res.json()).toEqual({ error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT, free: 5, needed: 6 });
     expect(await keysOf()).not.toContain("parking");
     expect(await prisma.eventCustomField.count({ where: { event_id: EVENT_A } })).toBe(MAX_CUSTOM_FIELDS_PER_EVENT - SUGGESTED_KEYS.length + 1);
     expect(await createdLog()).toEqual([]);
@@ -420,10 +423,10 @@ describe("the limit on fields: all or nothing", () => {
     const res = await addSuggested();
 
     expect(res.status).toBe(422);
-    expect(await res.json()).toEqual({ error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT, free: 0, needed: 5 });
+    expect(await res.json()).toEqual({ error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT, free: 0, needed: 6 });
   });
 
-  describe("with two of the questions there already, three are left to add", () => {
+  describe("with two of the questions there already, four are left to add", () => {
     async function addTwoAndOwnFields(own: number): Promise<void> {
       await prisma.eventCustomField.createMany({
         data: [
@@ -434,24 +437,24 @@ describe("the limit on fields: all or nothing", () => {
       await addOwnFields(own);
     }
 
-    it("adds them when they fit: 2 of the questions and 15 of the organiser's own leave room for exactly three", async () => {
-      await addTwoAndOwnFields(MAX_CUSTOM_FIELDS_PER_EVENT - 5);
+    it("adds them when they fit: 2 of the questions and 14 of the organiser's own leave room for exactly four", async () => {
+      await addTwoAndOwnFields(MAX_CUSTOM_FIELDS_PER_EVENT - 6);
 
       const res = await addSuggested();
 
       expect(res.status).toBe(201);
-      expect((await outcomeOf(res)).added).toEqual(["parking_plate", "arrival", "accommodation"]);
+      expect((await outcomeOf(res)).added).toEqual(["parking_plate", "arrival", "accommodation", "accessibility_needs"]);
       expect(await prisma.eventCustomField.count({ where: { event_id: EVENT_A } })).toBe(MAX_CUSTOM_FIELDS_PER_EVENT);
     });
 
-    it("adds none of them when one field too many would be left: three needed, two free", async () => {
-      await addTwoAndOwnFields(MAX_CUSTOM_FIELDS_PER_EVENT - 4);
+    it("adds none of them when one field too many would be left: four needed, three free", async () => {
+      await addTwoAndOwnFields(MAX_CUSTOM_FIELDS_PER_EVENT - 5);
 
       const res = await addSuggested();
 
       expect(res.status).toBe(422);
-      expect(await res.json()).toEqual({ error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT, free: 2, needed: 3 });
-      expect(await prisma.eventCustomField.count({ where: { event_id: EVENT_A } })).toBe(MAX_CUSTOM_FIELDS_PER_EVENT - 2);
+      expect(await res.json()).toEqual({ error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT, free: 3, needed: 4 });
+      expect(await prisma.eventCustomField.count({ where: { event_id: EVENT_A } })).toBe(MAX_CUSTOM_FIELDS_PER_EVENT - 3);
     });
   });
 
@@ -467,17 +470,17 @@ describe("the limit on fields: all or nothing", () => {
 });
 
 describe("two requests at once", () => {
-  it("add each question once: one request adds the five and the other finds them there", async () => {
+  it("add each question once: one request adds the six and the other finds them there", async () => {
     const [first, second] = await Promise.all([addSuggested(), addSuggested()]);
 
     const outcomes = await Promise.all([outcomeOf(first), outcomeOf(second)]);
     expect([first.status, second.status].sort((a, b) => a - b)).toEqual([200, 201]);
-    expect(outcomes.map((outcome) => outcome.added.length).sort((a, b) => a - b)).toEqual([0, 5]);
+    expect(outcomes.map((outcome) => outcome.added.length).sort((a, b) => a - b)).toEqual([0, 6]);
     expect(await keysOf()).toEqual(SUGGESTED_KEYS);
     expect(await createdLog()).toHaveLength(SUGGESTED_KEYS.length);
   });
 
-  it("never leave the event over the limit or with some of the questions: the five are added together or not at all", async () => {
+  it("never leave the event over the limit or with some of the questions: the six are added together or not at all", async () => {
     await addOwnFields(MAX_CUSTOM_FIELDS_PER_EVENT - SUGGESTED_KEYS.length - 1);
     const byHand = (key: string) =>
       app.request(`/api/admin/events/${EVENT_A}/custom-fields`, {
@@ -486,7 +489,7 @@ describe("two requests at once", () => {
         body: JSON.stringify({ source_field: key, label: key }),
       });
 
-    // 14 fields, the five would make 19, and three more by hand would make 22: whoever comes second to the limit is refused.
+    // 13 fields, the six would make 19, and three more by hand would make 22: whoever comes second to the limit is refused.
     const [suggested] = await Promise.all([addSuggested(), byHand("hand_a"), byHand("hand_b"), byHand("hand_c")]);
 
     const keys = await keysOf();
