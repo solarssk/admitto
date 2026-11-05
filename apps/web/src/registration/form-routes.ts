@@ -25,7 +25,7 @@ import { recordSystemLog } from "@admitto/shared/system-log";
 import { createAuthPageScriptNonce } from "../auth-page-security.js";
 import { isSecureRequest } from "../is-secure-request.js";
 import { getRegistrationPageSecurityHeaders, respondRegistrationNotFound } from "../registration-page-security.js";
-import type { ClosedFormModel, RegistrationFormModel, ResolvedRegistration } from "./form-model.js";
+import type { ClosedFormModel, ResolvedRegistration } from "./form-model.js";
 import { resolveRegistration } from "./form-model.js";
 import { renderRegistrationClosedPage, renderRegistrationFormPage, type SsoPageState } from "./form-page.js";
 import { noticeFromQuery } from "./sso-identity.js";
