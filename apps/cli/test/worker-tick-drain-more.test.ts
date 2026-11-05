@@ -220,7 +220,7 @@ describe("runWorkerTick — signalling a backlog beyond one tick's capacity", ()
 });
 
 describe("runWorkerTick - the registration mail job", () => {
-  const { drainRegistrationMails, sweepExpiredRegistrations } = registrationMailMock;
+  const { drainRegistrationMails, sweepExpiredRegistrations, sweepRegistrationSsoStates } = registrationMailMock;
   const idleDrain = { claimed: 0, sent: 0, failed: 0, cancelled: 0, skipped: 0, eventIds: [] as string[] };
   const idleSweep = { deleted: 0, eventIds: [] as string[], more: false };
   let logLines: string[];
@@ -236,6 +236,8 @@ describe("runWorkerTick - the registration mail job", () => {
     drainRegistrationMails.mockResolvedValue(idleDrain);
     sweepExpiredRegistrations.mockReset();
     sweepExpiredRegistrations.mockResolvedValue(idleSweep);
+    sweepRegistrationSsoStates.mockReset();
+    sweepRegistrationSsoStates.mockResolvedValue({ deleted: 0, more: false });
     vi.mocked(publishActivityChanged).mockClear();
     vi.mocked(resolveInstanceBaseUrl).mockReset();
     vi.mocked(resolveInstanceBaseUrl).mockResolvedValue("https://example.test");
@@ -435,5 +437,44 @@ describe("runWorkerTick - the registration mail job", () => {
     expect(drainRegistrationMails).toHaveBeenCalledOnce();
     expect(registrationLines()).toEqual([expect.stringMatching(/FAILED sweep error_class=unknown$/), expect.stringMatching(/idle$/)]);
     expect(logLines.join("\n")).not.toContain("example.com");
+  });
+
+  it("cleans up the state of unfinished company sign-ins once a tick, and logs a count only when it deleted some", async () => {
+    await tick();
+    expect(sweepRegistrationSsoStates).toHaveBeenCalledOnce();
+    expect(registrationLines()).toEqual([expect.stringMatching(/idle$/)]);
+
+    logLines = [];
+    sweepRegistrationSsoStates.mockResolvedValue({ deleted: 7, more: false });
+    await tick();
+    expect(registrationLines()).toEqual([expect.stringMatching(/sso_states deleted=7$/), expect.stringMatching(/idle$/)]);
+  });
+
+  it("signals more to do when the clean-up of sign-in states stopped at its limit", async () => {
+    sweepRegistrationSsoStates.mockResolvedValue({ deleted: 10_000, more: true });
+
+    await expect(tick()).resolves.toBe(true);
+  });
+
+  it("does not let a failed clean-up of sign-in states stop the mail, and logs the class of the failure alone", async () => {
+    sweepRegistrationSsoStates.mockRejectedValue(Object.assign(new Error("could not connect"), { name: "ConnectionError" }));
+    drainRegistrationMails.mockResolvedValue({ claimed: 1, sent: 1, failed: 0, cancelled: 0, skipped: 0, eventIds: ["evt1"] });
+
+    await expect(tick()).resolves.toBe(false);
+
+    expect(drainRegistrationMails).toHaveBeenCalledOnce();
+    expect(registrationLines()).toEqual([
+      expect.stringMatching(/FAILED sso_state_sweep error_class=ConnectionError$/),
+      expect.stringMatching(/ok claimed=1 sent=1/),
+    ]);
+    expect(logLevel("FAILED sso_state_sweep error_class=ConnectionError")).toBe("error");
+  });
+
+  it("does not clean up the state of sign-ins while another worker holds the job", async () => {
+    const locks = { ...fakeLocks(), tryAcquire: vi.fn(async (job: string) => job !== "registration_mail") };
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    expect(sweepRegistrationSsoStates).not.toHaveBeenCalled();
   });
 });

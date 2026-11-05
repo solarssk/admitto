@@ -28,8 +28,10 @@ import {
   parseBounceIngestTickSeconds,
   resolveDeliverySnapshotRetentionDays,
   sweepExpiredRegistrations,
+  sweepRegistrationSsoStates,
   workerHeartbeatStaleMs,
   type SweepExpiredRegistrationsResult,
+  type SweepRegistrationSsoStatesResult,
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
@@ -198,6 +200,22 @@ async function sweepExpiredRegistrationsOrLog(db: PrismaClient): Promise<SweepEx
   }
 }
 
+/**
+ * The clean-up of the state of company sign-ins that were never finished (D-C4), after the clean-up above and apart from it:
+ * a row holds no guest, so it is not personal data and a failure of it stops nothing. One line when it deleted something, and
+ * the class of the error alone when it failed, as for the clean-up of registrations.
+ */
+async function sweepSsoStatesOrLog(db: PrismaClient): Promise<SweepRegistrationSsoStatesResult> {
+  try {
+    const swept = await sweepRegistrationSsoStates(db);
+    if (swept.deleted > 0) log("registration_mail", `sso_states deleted=${swept.deleted}`);
+    return swept;
+  } catch (err) {
+    log("registration_mail", `FAILED sso_state_sweep error_class=${err instanceof Error ? err.name : "unknown"}`);
+    return { deleted: 0, more: false };
+  }
+}
+
 const NO_REGISTRATION_DRAIN = { claimed: 0, sent: 0, failed: 0, cancelled: 0, skipped: 0, eventIds: [] as string[] };
 
 /**
@@ -246,20 +264,21 @@ async function runRegistrationMailJob(db: PrismaClient, locks: WorkerLockClient)
     // take as long: either can outlast the time the heartbeat stays fresh, so it is refreshed while each runs, as for the
     // other jobs that call out.
     const expired = await withHeartbeatRefresh(db, "registration_mail", () => sweepExpiredRegistrationsOrLog(db));
+    const ssoStates = await sweepSsoStatesOrLog(db);
     const drained =
       (await whileNoOtherWorkerSendsTickets(locks, () =>
         withHeartbeatRefresh(db, "registration_mail", () => drainRegistrationMailsOfTheTick(db)),
       )) ?? NO_REGISTRATION_DRAIN;
     if (drained.claimed === 0 && expired.deleted === 0) {
       log("registration_mail", "idle");
-      return false;
+      return ssoStates.more;
     }
     log(
       "registration_mail",
       `ok claimed=${drained.claimed} sent=${drained.sent} failed=${drained.failed} cancelled=${drained.cancelled} skipped=${drained.skipped} expired=${expired.deleted}`,
     );
     await publishActivityChanged([...new Set([...drained.eventIds, ...expired.eventIds])]);
-    return drained.claimed >= DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT || expired.more;
+    return drained.claimed >= DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT || expired.more || ssoStates.more;
   } catch (err) {
     throw new Error(`error_class=${err instanceof Error ? err.name : "unknown"}`);
   } finally {
