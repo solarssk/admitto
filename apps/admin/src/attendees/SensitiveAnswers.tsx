@@ -90,7 +90,8 @@ export function SensitiveAnswers({ fields, canReveal, load, who, timezone }: Rea
         ) : null}
       </div>
       {step === "asking" ? (
-        <div className="sensitive-answers__confirm" role="group" aria-label={`Show sensitive answers${named}?`}>
+        <fieldset className="sensitive-answers__confirm">
+          <legend className="sr-only">{`Show sensitive answers${named}?`}</legend>
           <p className="sensitive-answers__confirm-text">{REVEAL_CONFIRM_TEXT}</p>
           <div className="sensitive-answers__confirm-actions">
             <Button ref={confirmRef} size="sm" onClick={reveal.confirm}>
@@ -100,7 +101,7 @@ export function SensitiveAnswers({ fields, canReveal, load, who, timezone }: Rea
               Cancel
             </Button>
           </div>
-        </div>
+        </fieldset>
       ) : null}
       {reveal.error ? (
         <Notice variant="error" role="alert">
