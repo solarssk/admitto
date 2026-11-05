@@ -456,6 +456,13 @@ describe("runWorkerTick - the registration mail job", () => {
     await expect(tick()).resolves.toBe(true);
   });
 
+  it("signals more to do when one mail was taken and the clean-up of sign-in states stopped at its limit", async () => {
+    drainRegistrationMails.mockResolvedValue({ ...idleDrain, claimed: 1, sent: 1, eventIds: ["evt1"] });
+    sweepRegistrationSsoStates.mockResolvedValue({ deleted: 10_000, more: true });
+
+    await expect(tick()).resolves.toBe(true);
+  });
+
   it("does not let a failed clean-up of sign-in states stop the mail, and logs the class of the failure alone", async () => {
     sweepRegistrationSsoStates.mockRejectedValue(Object.assign(new Error("could not connect"), { name: "ConnectionError" }));
     drainRegistrationMails.mockResolvedValue({ claimed: 1, sent: 1, failed: 0, cancelled: 0, skipped: 0, eventIds: ["evt1"] });

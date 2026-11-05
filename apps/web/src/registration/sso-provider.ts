@@ -49,6 +49,13 @@ export async function setSsoProviderId(db: ProviderDb, providerId: string | null
   });
 }
 
+/** The state of a choice from the stored id and the provider row found for it (null: none). One id, so the two cannot disagree. */
+export function ssoProviderState(id: string | null, provider: { enabled: boolean } | null): GuestSsoProviderState {
+  if (id === null) return "not_selected";
+  if (!provider) return "missing";
+  return provider.enabled ? "ready" : "disabled";
+}
+
 /** The chosen provider with its state. The provider's secret is part of the row, so a caller that answers a request from it
  * picks the fields it needs and never passes the row on. */
 export async function resolveGuestSsoProvider(db: ProviderDb): Promise<GuestSsoProvider> {

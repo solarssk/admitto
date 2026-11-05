@@ -264,7 +264,7 @@ async function runRegistrationMailJob(db: PrismaClient, locks: WorkerLockClient)
     // take as long: either can outlast the time the heartbeat stays fresh, so it is refreshed while each runs, as for the
     // other jobs that call out.
     const expired = await withHeartbeatRefresh(db, "registration_mail", () => sweepExpiredRegistrationsOrLog(db));
-    const ssoStates = await sweepSsoStatesOrLog(db);
+    const ssoStates = await withHeartbeatRefresh(db, "registration_mail", () => sweepSsoStatesOrLog(db));
     const drained =
       (await whileNoOtherWorkerSendsTickets(locks, () =>
         withHeartbeatRefresh(db, "registration_mail", () => drainRegistrationMailsOfTheTick(db)),

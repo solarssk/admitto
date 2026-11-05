@@ -230,6 +230,59 @@ describe("the callback: a guest who signs in", () => {
   });
 });
 
+describe("the callback: a refusal also takes away the sign-in the browser still holds", () => {
+  const SESSION_LINE = new RegExp(`^${GUEST_SSO_SESSION_COOKIE}=;.*Max-Age=0`, "i");
+
+  /** A browser that is signed in as the previous guest, on the page of `slug`. */
+  async function signedInJar(slug: string): Promise<Jar> {
+    const jar = new Jar();
+    await walk(h.app, jar, slug, idp);
+    expect(jar.has(GUEST_SSO_SESSION_COOKIE)).toBe(true);
+    return jar;
+  }
+
+  const pageHtml = async (slug: string, jar: Jar) => (await browse(h.app, jar, `/r/${slug}`)).text();
+
+  it.each([
+    ["a callback without the flow cookie", "csrf"],
+    ["a callback without a code and a state", "params"],
+    ["a callback with a state the system never wrote", "unknown-state"],
+  ])("deletes the session cookie on %s, and the next visit to the page shows the sign-in", async (_label, kind) => {
+    const slug = await addEvent(`refuse-${kind}`);
+    const jar = await signedInJar(slug);
+    expect(await pageHtml(slug, jar)).toContain('id="reg-form"');
+    let path = callbackPath(slug);
+    if (kind === "csrf") {
+      const other = await goToProvider(h.app, new Jar(), slug, idp);
+      path = `${other.callbackUrl.pathname}${other.callbackUrl.search}`;
+    } else if (kind === "unknown-state") {
+      jar.set(GUEST_SSO_FLOW_COOKIE, "never-written-state", `/r/${slug}/sso`);
+      path = `${callbackPath(slug)}?code=abc&state=never-written-state`;
+    }
+
+    const res = await browse(h.app, jar, path);
+
+    expect(res.headers.get("location")).toBe(failedAt(slug));
+    expect(res.headers.getSetCookie().some((line) => SESSION_LINE.test(line))).toBe(true);
+    expect(jar.has(GUEST_SSO_SESSION_COOKIE)).toBe(false);
+    const html = await pageHtml(slug, jar);
+    expect(html).not.toContain('id="reg-form"');
+    expect(html).toContain('id="reg-sign-in-link"');
+  });
+
+  it("deletes the session cookie when the company restriction turns the guest away (not_allowed)", async () => {
+    const slug = await addEvent("refuse-not-allowed", { settings: { sso_claim_name: "tid", sso_claim_values: ["tenant-a"] } });
+    const jar = new Jar();
+    await walk(h.app, jar, slug, idp, { claims: { tid: "tenant-a" } });
+    expect(jar.has(GUEST_SSO_SESSION_COOKIE)).toBe(true);
+
+    const w = await walk(h.app, jar, slug, idp, { claims: { tid: "tenant-evil" } });
+
+    expect(w.callback.headers.get("location")).toBe(failedAt(slug, "not_allowed"));
+    expect(jar.has(GUEST_SSO_SESSION_COOKIE)).toBe(false);
+  });
+});
+
 describe("the callback: every way to make a guest sign in as somebody else, or as nobody", () => {
   it("refuses a callback that comes without the flow cookie (login CSRF), before it asks the provider for anything", async () => {
     const slug = await addEvent("csrf");

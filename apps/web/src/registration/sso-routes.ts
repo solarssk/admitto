@@ -42,6 +42,7 @@ import { resolveRegistration, type GuestAccess, type ResolvedRegistration } from
 import { identityFromToken, noticeFor, type SsoNotice, type SsoRefusal } from "./sso-identity.js";
 import {
   clearGuestSsoFlowCookie,
+  clearGuestSsoSessionCookie,
   guestSsoFlowCookieMatches,
   setGuestSsoFlowCookie,
   setGuestSsoSessionCookie,
@@ -105,6 +106,9 @@ function backToPage(c: Context, slug: string, notice: SsoNotice | null): Respons
 
 function refuse(c: Context, slug: string, reason: FailureReason, notice: SsoNotice, eventId?: string): Response {
   emitSystemLog("security", "warn", "registration_sso_refused", { reason, ...(eventId === undefined ? {} : { event_id: eventId }) });
+  // A refused callback also takes away a sign-in the browser may still hold (up to 30 minutes), so the page cannot
+  // show the previous person's address and a submit cannot use their identity.
+  clearGuestSsoSessionCookie(c, slug);
   return backToPage(c, slug, notice);
 }
 

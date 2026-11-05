@@ -11,6 +11,7 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { Prisma, REGISTRATION_ACCESS_METHOD, type PrismaClient } from "@admitto/db";
+import { findOidcProviderById } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { requireAuditActor, requireSuperadmin } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
@@ -22,7 +23,7 @@ import {
 import {
   getSsoProviderId,
   listSelectableSsoProviders,
-  resolveGuestSsoProvider,
+  ssoProviderState,
   setSsoProviderId,
   type GuestSsoProviderState,
 } from "../registration/sso-provider.js";
@@ -64,12 +65,13 @@ function serializeSsoProvider(
 
 /** The choice, how it stands, and what can be chosen. Never a field of a provider but its id and the name staff gave it. */
 async function readSsoProvider(db: PrismaClient | Prisma.TransactionClient) {
-  const [providerId, resolved, providers] = await Promise.all([
-    getSsoProviderId(db),
-    resolveGuestSsoProvider(db),
+  // The stored id is read once and the state is derived from it, so a change of provider between reads cannot make the two disagree.
+  const providerId = await getSsoProviderId(db);
+  const [provider, providers] = await Promise.all([
+    providerId === null ? null : findOidcProviderById(db, providerId),
     listSelectableSsoProviders(db),
   ]);
-  return serializeSsoProvider(providerId, resolved.state, providers);
+  return serializeSsoProvider(providerId, ssoProviderState(providerId, provider), providers);
 }
 
 function serializeAvailability(list: AccessMethodAvailability[]) {
