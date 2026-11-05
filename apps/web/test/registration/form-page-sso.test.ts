@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderRegistrationFormPage } from "../../src/registration/form-page.js";
 import { REGISTRATION_SSO_SCRIPT } from "../../src/registration/sso-page-script.js";
 import { SSO_NOTICES } from "../../src/registration/sso-identity.js";
-import { formModel } from "../helpers/registration-form-fixtures.js";
+import { formModel, type Dom } from "../helpers/registration-form-fixtures.js";
 
 const AXE_SOURCE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
 const NONCE = "bm9uY2U=";
@@ -172,17 +172,18 @@ describe("the form of a guest who signed in", () => {
     const fetchMock = vi.fn(async (_input: string, _init?: RequestInit) => ({ status: 200, json: async () => ({ ok: true }) }));
     (window as unknown as { fetch: unknown }).fetch = fetchMock;
     for (const script of window.document.querySelectorAll("script[nonce]")) (window as unknown as { eval: (code: string) => void }).eval(script.textContent ?? "");
+    const doc = window.document as Dom;
     const set = (id: string, value: string) => {
-      (window.document.getElementById(id) as HTMLInputElement).value = value;
+      doc.getElementById(id).value = value;
     };
     set("f-first_name", "Ada");
     set("f-last_name", "Lovelace");
-    (window.document.getElementById("f-terms") as HTMLInputElement).checked = true;
+    doc.getElementById("f-terms").checked = true;
     // Questions the fixture asks that are required.
     set("f-q0", "Both days");
-    (window.document.getElementById("f-q4") as HTMLInputElement).value = "true";
+    set("f-q4", "true");
 
-    (window.document.getElementById("reg-submit") as HTMLButtonElement).click();
+    doc.getElementById("reg-submit").click();
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1), { timeout: 4000, interval: 10 });
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
