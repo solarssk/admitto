@@ -22,22 +22,31 @@ vi.mock("../../src/admin/instance-org.js", () => ({ resolveInstanceOrganizationI
 import {
   handleDeleteRegistrationTurnstile,
   handleGetRegistrationAccessMethods,
+  handleGetRegistrationSsoProvider,
   handleGetRegistrationTurnstile,
   handlePutRegistrationAccessMethods,
+  handlePutRegistrationSsoProvider,
   handlePutRegistrationTurnstile,
 } from "../../src/admin/registration-settings-routes.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
+import { SSO_PROVIDER_SETTINGS_KEY } from "../../src/registration/sso-provider.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { memorySystemSettings } from "../helpers/memory-system-settings.js";
 
 const SITE_KEY = "0x4AAAAAAAsiteKEY";
 const SECRET = "0x4AAAAAAAsecretKEYvalue";
 
-/** SystemSettings in memory, with a transaction that really rolls back when its callback throws. */
-function memoryDb(options: { enabledProviders?: number } = {}) {
-  const memory = memorySystemSettings();
+type ProviderRow = { id: string; display_name: string; enabled: boolean; provider_type?: string };
+
+/** SystemSettings in memory, with a transaction that really rolls back when its callback throws, and an identity provider table. */
+function memoryDb(options: { providers?: ProviderRow[]; values?: Record<string, string> } = {}) {
+  const memory = memorySystemSettings(options.values);
+  const all = (options.providers ?? []).map((provider) => ({ provider_type: "oidc", ...provider }));
   const identityProvider = {
-    findMany: vi.fn(async () => Array.from({ length: options.enabledProviders ?? 0 }, (_, i) => ({ id: `idp-${i}` }))),
+    findMany: vi.fn(async () => all.filter((provider) => provider.enabled && provider.provider_type === "oidc")),
+    findFirst: vi.fn(async ({ where }: { where: { id: string; provider_type: string } }) =>
+      all.find((provider) => provider.id === where.id && provider.provider_type === where.provider_type) ?? null,
+    ),
   };
   const executeRaw = vi.fn(async () => 1);
   const db = {
@@ -68,6 +77,8 @@ function makeApp(db: PrismaClient) {
   app.delete("/turnstile", (c) => handleDeleteRegistrationTurnstile(c, db));
   app.get("/access-methods", (c) => handleGetRegistrationAccessMethods(c, db));
   app.put("/access-methods", (c) => handlePutRegistrationAccessMethods(c, db));
+  app.get("/sso-provider", (c) => handleGetRegistrationSsoProvider(c, db));
+  app.put("/sso-provider", (c) => handlePutRegistrationSsoProvider(c, db));
   return app;
 }
 
@@ -87,6 +98,8 @@ describe("who may call the registration settings routes", () => {
     ["DELETE", "/turnstile", undefined],
     ["GET", "/access-methods", undefined],
     ["PUT", "/access-methods", { methods: ["link"] }],
+    ["GET", "/sso-provider", undefined],
+    ["PUT", "/sso-provider", { provider_id: "idp-1" }],
   ];
 
   it.each(requests)("%s %s is forbidden for anyone who is not a superadmin, and touches nothing", async (method, path, body) => {
@@ -291,10 +304,11 @@ describe("access methods", () => {
     });
   });
 
-  it("make link and password available once the Turnstile keys are saved, and SSO with a provider", async () => {
-    const { db } = memoryDb({ enabledProviders: 1 });
+  it("make link and password available once the Turnstile keys are saved, and SSO with the provider chosen for guests", async () => {
+    const { db } = memoryDb({ providers: [{ id: "idp-1", display_name: "Company IdP", enabled: true }] });
     const app = makeApp(db);
     await sendJson(app, "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
+    await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-1" });
     const res = await sendJson(app, "PUT", "/access-methods", { methods: ["link", "password", "sso"] });
     const body = (await res.json()) as { methods: Array<{ available: boolean }> };
     expect(body.methods.map((entry) => entry.available)).toEqual([true, true, true]);
@@ -329,5 +343,112 @@ describe("access methods", () => {
     expect(res.status).toBe(400);
     expect(rows().size).toBe(0);
     expect(writeAdminAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("the identity provider guests sign in with (D-C4)", () => {
+  const company = { id: "idp-1", display_name: "Company IdP", enabled: true };
+  const other = { id: "idp-2", display_name: "Other IdP", enabled: true };
+  const off = { id: "idp-off", display_name: "Switched off", enabled: false };
+  const saml = { id: "idp-saml", display_name: "Not OIDC", enabled: true, provider_type: "cloudflare_access" };
+
+  it("starts with no choice, and lists the enabled OIDC providers by id and name and nothing else", async () => {
+    const res = await makeApp(memoryDb({ providers: [company, off, saml, other] }).db).request("/sso-provider");
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      provider_id: null,
+      state: "not_selected",
+      providers: [
+        { id: "idp-1", display_name: "Company IdP" },
+        { id: "idp-2", display_name: "Other IdP" },
+      ],
+    });
+  });
+
+  it("chooses an enabled provider, saves its id and nothing of it, and audits the ids before and after", async () => {
+    const { db, rows } = memoryDb({ providers: [company, other] });
+    const app = makeApp(db);
+
+    const first = await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-1" });
+    const second = await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-2" });
+
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ provider_id: "idp-1", state: "ready" });
+    expect(await second.json()).toMatchObject({ provider_id: "idp-2", state: "ready" });
+    expect(rows().get(SSO_PROVIDER_SETTINGS_KEY)).toBe('"idp-2"');
+    expect(writeAdminAuditLog.mock.calls.map((call) => call[1])).toEqual([
+      expect.objectContaining({
+        actionType: "registration_sso_provider_updated",
+        organizationId: "org-instance",
+        actorUserId: "user-1",
+        metadata: { provider_id: "idp-1", previous_provider_id: null },
+      }),
+      expect.objectContaining({
+        actionType: "registration_sso_provider_updated",
+        metadata: { provider_id: "idp-2", previous_provider_id: "idp-1" },
+      }),
+    ]);
+  });
+
+  it("removes the choice with null", async () => {
+    const { db, rows } = memoryDb({ providers: [company], values: { [SSO_PROVIDER_SETTINGS_KEY]: '"idp-1"' } });
+
+    const res = await sendJson(makeApp(db), "PUT", "/sso-provider", { provider_id: null });
+
+    expect(await res.json()).toMatchObject({ provider_id: null, state: "not_selected" });
+    expect(rows().has(SSO_PROVIDER_SETTINGS_KEY)).toBe(false);
+    expect(writeAdminAuditLog.mock.calls[0]![1]).toMatchObject({ metadata: { provider_id: null, previous_provider_id: "idp-1" } });
+  });
+
+  it.each([
+    ["one that does not exist", "idp-nowhere"],
+    ["one that is switched off", "idp-off"],
+    ["one that is not an OIDC provider", "idp-saml"],
+  ])("refuses %s with one answer, and writes and audits nothing", async (_name, providerId) => {
+    const { db, rows } = memoryDb({ providers: [company, off, saml] });
+
+    const res = await sendJson(makeApp(db), "PUT", "/sso-provider", { provider_id: providerId });
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: "provider_not_available" });
+    expect(rows().size).toBe(0);
+    expect(writeAdminAuditLog).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no field", {}],
+    ["a number", { provider_id: 7 }],
+    ["an empty id", { provider_id: "" }],
+    ["an id that is a blank", { provider_id: "   " }],
+    ["an unknown field", { provider_id: "idp-1", enabled: true }],
+  ])("refuses %s with a 400 and writes nothing", async (_name, body) => {
+    const { db, rows } = memoryDb({ providers: [company] });
+
+    const res = await sendJson(makeApp(db), "PUT", "/sso-provider", body);
+
+    expect(res.status).toBe(400);
+    expect(rows().size).toBe(0);
+    expect(writeAdminAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("says where the choice stands when the provider was switched off or deleted since, and keeps the choice", async () => {
+    const values = { [SSO_PROVIDER_SETTINGS_KEY]: '"idp-off"' };
+
+    const switchedOff = await makeApp(memoryDb({ providers: [company, off], values }).db).request("/sso-provider");
+    const deleted = await makeApp(memoryDb({ providers: [company], values }).db).request("/sso-provider");
+
+    expect(await switchedOff.json()).toMatchObject({ provider_id: "idp-off", state: "disabled" });
+    expect(await deleted.json()).toMatchObject({ provider_id: "idp-off", state: "missing" });
+  });
+
+  it("saves nothing when the audit entry cannot be written", async () => {
+    const { db, rows } = memoryDb({ providers: [company] });
+    writeAdminAuditLog.mockRejectedValueOnce(new Error("audit table unavailable"));
+
+    const res = await sendJson(makeApp(db), "PUT", "/sso-provider", { provider_id: "idp-1" });
+
+    expect(res.status).toBe(500);
+    expect(rows().has(SSO_PROVIDER_SETTINGS_KEY)).toBe(false);
   });
 });

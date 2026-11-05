@@ -408,6 +408,7 @@ export type {
   ConfirmRegistrationInput,
   ConfirmRegistrationResult,
   PlaceRegistrationInput,
+  SsoIdentity,
   PlaceRegistrationResult,
   PlacementOptions,
   RegistrantSubmission,

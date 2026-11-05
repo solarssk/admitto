@@ -71,3 +71,27 @@ export function extractClaims(
     phone: asString(claimValue(payload, provider.claim_phone)),
   };
 }
+
+/**
+ * The values of ONE claim of a validated ID token, for a check that compares them with a list (the restriction of a guest
+ * event to the people of one company, which reads a claim such as `tid`). A string is one value and an array of strings is
+ * its members; a claim that is missing, of another type, or an array with a member that is not a string is `undefined`:
+ * not asserted, never an empty list that would match a list of nothing. Only a claim the token owns is read, so a name such
+ * as `__proto__` or `constructor` finds nothing.
+ */
+export function readClaimStrings(payload: JWTPayload, claimName: string): string[] | undefined {
+  return parseStringArrayClaim(claimValue(payload, claimName));
+}
+
+/**
+ * Whether the provider says it did NOT verify the address in the token. `email_verified` that is missing is not a denial
+ * (Microsoft Entra ID never sends it, and an administrator maps `claim_email` to what the directory holds). One that is
+ * `true`, or the string "true" that Amazon Cognito sends, is a yes. Anything else is a denial: `false`, "false", `null`, a
+ * number, an object. Reads the token's own claim, not an inherited one.
+ */
+export function isEmailVerificationDenied(payload: JWTPayload): boolean {
+  const descriptor = Object.getOwnPropertyDescriptor(payload, "email_verified");
+  if (descriptor === undefined) return false;
+  const value: unknown = descriptor.value;
+  return value !== true && value !== "true";
+}

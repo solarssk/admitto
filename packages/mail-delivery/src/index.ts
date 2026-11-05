@@ -11,6 +11,8 @@ export type {
   DrainRegistrationMailsResult,
 } from "./registration-mail-drain.js";
 export { sweepExpiredRegistrations, REGISTRATION_EXPIRY_BATCH_SIZE } from "./registration-mail-sweep.js";
+export { sweepRegistrationSsoStates, SSO_STATE_SWEEP_BATCH_SIZE } from "./registration-sso-sweep.js";
+export type { SweepRegistrationSsoStatesResult } from "./registration-sso-sweep.js";
 export type { SweepExpiredRegistrationsResult } from "./registration-mail-sweep.js";
 export { cancelBulkSendBatch } from "./cancel.js";
 export type { CancelBulkSendBatchResult } from "./cancel.js";

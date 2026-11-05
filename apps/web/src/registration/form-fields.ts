@@ -167,6 +167,11 @@ interface TextFieldSpec {
   /** The kind of styled box the second script (./form-controls-script.ts) is to make of this field, for an event that
    * switched the styled boxes on. Absent: the browser's box stays, as it is on every other page. */
   styled?: StyledKind;
+  /** The value the box holds when the page is drawn, for a field the guest does not type (the address a sign-in gave). */
+  value?: string;
+  /** The box shows its value and cannot be changed. It is `readonly`, not `disabled`: it stays in the order of the keys, is read
+   * out, and is sent with the form. */
+  readOnly?: boolean;
 }
 
 /**
@@ -220,6 +225,8 @@ function renderTextField(spec: TextFieldSpec): string {
     ["autocomplete", spec.autocomplete ?? "off"],
     ["maxlength", nativeMaxLength(spec)],
     ["placeholder", spec.placeholder],
+    ["value", spec.value],
+    ["readonly", spec.readOnly ? true : undefined],
     ["inputmode", spec.inputMode ?? (spec.inputType === "email" ? "email" : undefined)],
     ["autocapitalize", spec.inputType === "email" ? "none" : undefined],
     ["spellcheck", spec.inputType === "email" ? "false" : undefined],
@@ -241,7 +248,8 @@ function renderTextField(spec: TextFieldSpec): string {
   return `<div class="at-field"${wrapper}>${labelOf(spec.id, spec.label, spec.required)}${control}${slot(spec.id, spec.note)}</div>`;
 }
 
-function emailNote(model: RegistrationFormModel): string {
+function emailNote(model: RegistrationFormModel, locked: boolean): string {
+  if (locked) return "This is the address from your company sign-in. We send our messages to it.";
   return model.verifyEmail ? "We send a confirmation link to this address." : "We send our messages to this address.";
 }
 
@@ -250,8 +258,12 @@ function pair(first: string, second: string): string {
   return `<div class="reg-row">${first}${second}</div>`;
 }
 
-/** First and last name, the email, and the company and department when the event asks for them. */
-export function renderPersonalFields(model: RegistrationFormModel): string {
+/**
+ * First and last name, the email, and the company and department when the event asks for them. `signedInEmail`: the guest signed
+ * in with the company's identity provider (D-C4), and the address the provider gave is the one the form shows, locked: it is
+ * contact data from the provider, and the server takes it from the signed cookie and ignores what the body says.
+ */
+export function renderPersonalFields(model: RegistrationFormModel, signedInEmail: string | null = null): string {
   const name = (id: string, errorKey: string, label: string, message: string, autocomplete: string) =>
     renderTextField({ id, errorKey, kind: "name", label, required: true, message, note: null, maxLength: REGISTRANT_NAME_MAX, autocomplete });
   const profile = (id: string, errorKey: string, label: string, leadingIcon: GuestIcon, autocomplete?: string) =>
@@ -269,12 +281,13 @@ export function renderPersonalFields(model: RegistrationFormModel): string {
       label: "Email",
       required: true,
       message: "Enter a full address, like name@company.com.",
-      note: emailNote(model),
+      note: emailNote(model, signedInEmail !== null),
       maxLength: REGISTRANT_EMAIL_MAX,
       inputType: "email",
       autocomplete: "email",
       placeholder: "name@company.com",
-      leadingIcon: "mail",
+      leadingIcon: signedInEmail === null ? "mail" : "lock",
+      ...(signedInEmail === null ? {} : { value: signedInEmail, readOnly: true }),
     }),
   ];
   const company = model.askCompany ? profile("f-company", ERROR_KEY_COMPANY, "Company", "building", "organization") : "";
@@ -730,7 +743,7 @@ export function renderCompanion(model: RegistrationFormModel): string {
 }
 
 /** A link to a legal text. It opens in a new tab: the form keeps what the guest has typed. */
-function legalLink(path: string, text: string): string {
+export function legalLink(path: string, text: string): string {
   return `<a href="${esc(path)}" target="_blank" rel="noopener noreferrer">${esc(text)}<span class="reg-sr"> (opens in a new tab)</span></a>`;
 }
 
@@ -800,7 +813,9 @@ function submitLabel(mode: RegistrationFormModel["mode"]): string {
 /** "Before you send": the terms, the extra consents, the challenge, the button and the privacy link. */
 export function renderAgreement(model: RegistrationFormModel): string {
   const checks = [renderTermsRow(model), ...model.consents.map((consent, index) => renderConsentRow(consent, index))].join("");
+  // The company sign-in has no bot check: the form stands behind a sign-in of the provider.
+  const challenge = model.needsSso ? "" : renderChallenge(model);
   const button = `<button class="at-btn at-btn--primary at-btn--block at-btn--lg" type="submit" id="reg-submit" disabled>${icon("send", "ic reg-btn-icon")}<span id="reg-submit-label">${esc(submitLabel(model.mode))}</span></button>`;
   const fine = `<p class="reg-fine">How we use your details is in the ${legalLink(model.privacyPath, "privacy notice")}.</p>`;
-  return `<div class="reg-section"><p class="reg-section__label">Before you send</p><div class="reg-checks">${checks}</div>${renderChallenge(model)}${button}${fine}</div>`;
+  return `<div class="reg-section"><p class="reg-section__label">Before you send</p><div class="reg-checks">${checks}</div>${challenge}${button}${fine}</div>`;
 }

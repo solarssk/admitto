@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IdentityProvider } from "@admitto/db";
 import type { JWTPayload } from "jose";
-import { extractClaims } from "../src/oidc/claims.js";
+import { extractClaims, isEmailVerificationDenied, readClaimStrings } from "../src/oidc/claims.js";
 
 const provider = {
   claim_email: "email",
@@ -59,5 +59,49 @@ describe("extractClaims", () => {
     const payload = {} as JWTPayload;
 
     expect(extractClaims(payload, provider).name).toBeUndefined();
+  });
+});
+
+describe("readClaimStrings", () => {
+  it("reads a string as one value and an array of strings as its members", () => {
+    expect(readClaimStrings({ tid: "tenant-a" } as JWTPayload, "tid")).toEqual(["tenant-a"]);
+    expect(readClaimStrings({ roles: ["a", "b"] } as JWTPayload, "roles")).toEqual(["a", "b"]);
+  });
+
+  it("is undefined, not an empty list, for a claim that is missing or not strings", () => {
+    expect(readClaimStrings({} as JWTPayload, "tid")).toBeUndefined();
+    expect(readClaimStrings({ tid: 7 } as JWTPayload, "tid")).toBeUndefined();
+    expect(readClaimStrings({ tid: "  " } as JWTPayload, "tid")).toBeUndefined();
+    expect(readClaimStrings({ roles: ["a", 3] } as JWTPayload, "roles")).toBeUndefined();
+    expect(readClaimStrings({ roles: [{}] } as JWTPayload, "roles")).toBeUndefined();
+  });
+
+  it("reads only a claim the token owns", () => {
+    const payload = Object.create({ tid: "inherited" }) as JWTPayload;
+    expect(readClaimStrings(payload, "tid")).toBeUndefined();
+    expect(readClaimStrings({} as JWTPayload, "__proto__")).toBeUndefined();
+    expect(readClaimStrings({} as JWTPayload, "constructor")).toBeUndefined();
+  });
+});
+
+describe("isEmailVerificationDenied", () => {
+  it("is not a denial when the provider sends no email_verified (Microsoft Entra ID)", () => {
+    expect(isEmailVerificationDenied({} as JWTPayload)).toBe(false);
+  });
+
+  it("accepts true and the string true", () => {
+    expect(isEmailVerificationDenied({ email_verified: true } as JWTPayload)).toBe(false);
+    expect(isEmailVerificationDenied({ email_verified: "true" } as JWTPayload)).toBe(false);
+  });
+
+  it("denies false, the string false and anything that is not a yes", () => {
+    for (const value of [false, "false", "FALSE", null, 0, 1, "", {}, []]) {
+      expect(isEmailVerificationDenied({ email_verified: value } as JWTPayload)).toBe(true);
+    }
+  });
+
+  it("does not take an inherited claim for the token's own", () => {
+    const payload = Object.create({ email_verified: false }) as JWTPayload;
+    expect(isEmailVerificationDenied(payload)).toBe(false);
   });
 });

@@ -67,9 +67,12 @@ const INVENTORY: Record<string, ModelInventory> = {
   // Deleted by attendee_id and, for a pending, waitlisted or rejected row of the same
   // person, by the event and the normalised address (scrubAttendeeTraces). RegistrationMail hangs off the
   // registration (no address or text of its own) and goes with it.
+  // The company sign-in (D-C4) adds sso_provider_id and sso_subject: the provider's stable id of the person is an identifier of
+  // the person, so it goes with the row like the address does. RegistrationSsoState (the state of a sign-in that is not finished)
+  // has no attendee_id, no address and no `sub`, so it has no entry here; the worker deletes it when it has run out.
   Registration: {
     deleted:
-      "id event_id email first_name last_name name company department custom_data companions status confirm_expires_at email_verified_at decided_at decided_by locale accepted_at consents attendee_id created_at updated_at",
+      "id event_id email first_name last_name name company department custom_data companions status confirm_expires_at email_verified_at decided_at decided_by locale accepted_at consents sso_provider_id sso_subject attendee_id created_at updated_at",
   },
 };
 

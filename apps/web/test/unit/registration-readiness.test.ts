@@ -24,6 +24,7 @@ const PUBLISHED = new Date("2026-10-20T10:00:00Z");
 const environment = (overrides: Partial<ReadinessEnvironment> = {}): ReadinessEnvironment => ({
   availability: computeAccessMethodAvailability({ enabled: ["link", "password"], botProtectionReady: true, identityProviderEnabled: false }),
   botProtectionReady: true,
+  identityProviderReady: true,
   mailConfigured: true,
   instanceBaseUrl: "https://events.example.com",
   ...overrides,
@@ -64,14 +65,60 @@ describe("a ready event", () => {
 
     expect(checks.every((check) => check.ok)).toBe(true);
     expect(readinessBlockers(checks)).toEqual([]);
-    // The checks that do not apply to the link (the password) are not in the list; the rest keep the order.
-    expect(keysOf(ready())).toEqual(READINESS_KEYS.filter((key) => key !== "password"));
+    // The checks that do not apply to the link (the password, the identity provider) are not in the list; the rest keep the order.
+    expect(keysOf(ready())).toEqual(READINESS_KEYS.filter((key) => key !== "password" && key !== "identity_provider"));
   });
 
   it("lists the password check, and only that one more, when the way in is the password", () => {
     const input = ready({ settings: { access_methods: ["password"], consent_keys: [], password_set: true } });
 
-    expect(keysOf(input)).toEqual([...READINESS_KEYS]);
+    expect(keysOf(input)).toEqual(READINESS_KEYS.filter((key) => key !== "identity_provider"));
+    expect(blockersOf(input)).toEqual([]);
+  });
+});
+
+describe("the company sign-in (D-C4)", () => {
+  const sso = (overrides: Partial<ReadinessInput> = {}) =>
+    ready({
+      settings: { access_methods: ["sso"], consent_keys: [], password_set: false },
+      environment: environment({
+        availability: computeAccessMethodAvailability({ enabled: ["sso"], botProtectionReady: true, identityProviderEnabled: true }),
+      }),
+      ...overrides,
+    });
+
+  it("asks for the identity provider in the place of the bot check, and for neither the password nor anything else", () => {
+    const input = sso();
+
+    expect(keysOf(input)).toEqual(READINESS_KEYS.filter((key) => key !== "password" && key !== "bot_protection"));
+    expect(keysOf(input)).toContain("identity_provider");
+    expect(blockersOf(input)).toEqual([]);
+  });
+
+  it("is not held up by the Turnstile keys: the form stands behind a sign-in, not a challenge", () => {
+    const input = sso();
+
+    expect(blockersOf({ ...input, environment: { ...input.environment, botProtectionReady: false } })).toEqual([]);
+  });
+
+  it("is held up by an identity provider that is not chosen, deleted or switched off", () => {
+    const input = sso();
+
+    expect(blockersOf({ ...input, environment: { ...input.environment, identityProviderReady: false } })).toEqual(["identity_provider"]);
+  });
+
+  it("needs the system to have turned the way in on", () => {
+    const off = environment({
+      availability: computeAccessMethodAvailability({ enabled: ["link"], botProtectionReady: true, identityProviderEnabled: true }),
+    });
+
+    expect(blockersOf(sso({ environment: off }))).toEqual(["access_method_enabled"]);
+  });
+
+  it("does not ask the link or the password for the identity provider, whatever state it is in", () => {
+    const input = ready({ environment: environment({ identityProviderReady: false }) });
+
+    expect(keysOf(input)).not.toContain("identity_provider");
     expect(blockersOf(input)).toEqual([]);
   });
 });
@@ -80,7 +127,7 @@ describe("each check alone", () => {
   const rows: [RegistrationReadinessKey, ReadinessInput][] = [
     ["access_method", ready({ settings: { access_methods: [], consent_keys: [], password_set: false } })],
     ["access_method", ready({ settings: { access_methods: ["link", "password"], consent_keys: [], password_set: true } })],
-    ["access_method", ready({ settings: { access_methods: ["sso"], consent_keys: [], password_set: false } })],
+    ["access_method", ready({ settings: { access_methods: ["sso", "link"], consent_keys: [], password_set: false } })],
     [
       "access_method_enabled",
       ready({
@@ -158,8 +205,9 @@ describe("chosenAccessMethod", () => {
     [[], null],
     [["link"], "link"],
     [["password"], "password"],
-    [["sso"], null],
+    [["sso"], "sso"],
     [["link", "password"], null],
+    [["sso", "link"], null],
     [["unknown"], null],
   ] as const)("%j is %s", (methods, expected) => {
     expect(chosenAccessMethod(methods)).toBe(expected);

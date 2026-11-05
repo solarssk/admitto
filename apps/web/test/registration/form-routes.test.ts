@@ -2,17 +2,17 @@ import { Hono } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleGetRegistrationForm } from "../../src/registration/form-routes.js";
-import { loadRegistrationPage, type RegistrationPageState } from "../../src/registration/form-model.js";
+import { resolveRegistration, type ResolvedRegistration } from "../../src/registration/form-model.js";
 import { renderRegistrationNotFound } from "../../src/registration-page-security.js";
 import { closedModel, formModel } from "../helpers/registration-form-fixtures.js";
 import { headersOf } from "../helpers/response-headers.js";
 
 vi.mock("../../src/registration/form-model.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/registration/form-model.js")>()),
-  loadRegistrationPage: vi.fn(),
+  resolveRegistration: vi.fn(),
 }));
 
-const loadPage = vi.mocked(loadRegistrationPage);
+const loadPage = vi.mocked(resolveRegistration);
 const loadTheme = vi.fn(async () => null as { primary?: string } | null);
 const serverError = vi.fn(() => new Response("server error", { status: 500 }));
 const db = {} as PrismaClient;
@@ -22,8 +22,15 @@ app.get("/r/:slug", (c) => handleGetRegistrationForm(c, { db, loadTheme: loadThe
 
 const get = (path = "/r/northwind-summit") => app.request(`https://tickets.example.com${path}`);
 
-function answer(state: RegistrationPageState) {
-  loadPage.mockResolvedValue(state);
+type Answer = ResolvedRegistration | { kind: "open"; form: ReturnType<typeof formModel> };
+
+/** What the lookup of the event answers. An open form is the link's, with the event, the questions and the way in the route does not look at. */
+function answer(state: Answer) {
+  loadPage.mockResolvedValue(
+    state.kind === "open" && !("eventId" in state)
+      ? { kind: "open", form: state.form, eventId: "evt-1", fields: [], access: { method: "link" } }
+      : (state as ResolvedRegistration),
+  );
 }
 
 const nonceOf = (res: Response) => /script-src 'nonce-([^']+)'/.exec(res.headers.get("content-security-policy") ?? "")?.[1];

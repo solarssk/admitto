@@ -40,8 +40,11 @@ afterAll(async () => {
   await migrated?.drop();
 });
 
+let subjects = 0;
+/** The person of a company sign-in, new on every call: the way in `sso` cannot place a guest without one. */
+const person = () => ({ providerId: "provider-test", subject: `subject-${(subjects += 1)}` });
 const place = (eventId: string, registrant: RegistrantSubmission, method: RegistrationAccessMethod = "link", client = db) =>
-  placeRegistration(client, { eventId, method, registrant });
+  placeRegistration(client, { eventId, method, registrant, ...(method === "sso" ? { sso: person() } : {}) });
 const RECEIVED = { outcome: "received" };
 
 describe("placeRegistration: where a guest goes, and the one mail that goes with it (D-B2 to D-B6, D-B16, D-D2)", () => {
@@ -112,7 +115,7 @@ describe("placeRegistration: where a guest goes, and the one mail that goes with
     const registrant = make.registrant();
     const now = new Date();
 
-    expect(await placeRegistration(db, { eventId, method, registrant }, { now })).toEqual(RECEIVED);
+    expect(await placeRegistration(db, { eventId, method, registrant, ...(method === "sso" ? { sso: person() } : {}) }, { now })).toEqual(RECEIVED);
 
     const row = await make.registrationByEmail(eventId, registrant.email);
     expect(row?.status).toBe(status);
@@ -370,7 +373,11 @@ describe("placeRegistration: the guest sends the form again while the address wa
     });
   /** The same address again, with other names: what a stranger who typed it would send. */
   const again = (eventId: string, registrant: RegistrantSubmission, options: PlacementOptions = {}, method: RegistrationAccessMethod = "link") =>
-    placeRegistration(db, { eventId, method, registrant: { ...registrant, first_name: "Somebody", last_name: "Else" } }, options);
+    placeRegistration(
+      db,
+      { eventId, method, registrant: { ...registrant, first_name: "Somebody", last_name: "Else" }, ...(method === "sso" ? { sso: person() } : {}) },
+      options,
+    );
   const mailRow = (id: string) => db.registrationMail.findUniqueOrThrow({ where: { id } });
 
   it.each([["link" as const], ["password" as const]])(

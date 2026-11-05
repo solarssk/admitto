@@ -23,6 +23,11 @@
  *   is wrong, missing or not one. The page goes back to its password screen with its own sentence under the field, keeps
  *   what the guest typed in the form, and asks for the check again. The same answer, byte for byte, whatever the address
  *   of the guest is and whichever way the password is wrong.
+ * - `401 { error: "sign_in_required" }`: only for an event whose way in is the company sign-in (D-C4), and when the signed
+ *   cookie of the sign-in is missing, forged, expired, of another event or provider, or no longer let in by the event's
+ *   restriction. One answer for every reason. The page reloads, which shows its sign-in screen. Such an event has no
+ *   `challenge` and no `password`: a body that carries them is not refused, and they are not read. The `email` of the body is
+ *   not read either: the address that is registered is the one the provider gave, which the page shows locked.
  * - `429` or `503`: the page says "Try again in a moment." Any other status gets a general message.
  *
  * The route (./submit-route.ts) also answers with statuses that get the general message: the one 404 of a form that is
@@ -98,6 +103,14 @@ export const ACCESS_DENIED_ERROR = "access_denied";
 /** `403` answer. */
 export interface RegistrationSubmitDenied {
   error: typeof ACCESS_DENIED_ERROR;
+}
+
+/** The `error` of the `401` answer to a request without a sign-in that checks out. One code for every reason. */
+export const SIGN_IN_REQUIRED_ERROR = "sign_in_required";
+
+/** `401` answer. */
+export interface RegistrationSubmitSignIn {
+  error: typeof SIGN_IN_REQUIRED_ERROR;
 }
 
 /** The names of the fixed fields in `errors`. */
