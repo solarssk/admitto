@@ -7,6 +7,7 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { attendeeFieldAttrs } from "../utils/no-autofill.js";
 import { answerFor, companionAnswerEntries, companionFormChanged, companionFormFrom, type CompanionFormState } from "./companionForm.js";
 import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
+import { AttendeeSensitiveAnswers } from "./SensitiveAnswers.js";
 import { isLongAnswer, shownCustomFields, type CustomDataFieldDef } from "./customData.js";
 import { useCompanionActions, type CompanionActionsInput } from "./useCompanionActions.js";
 import "./attendees.css";
@@ -20,6 +21,8 @@ export interface CompanionCardProps extends Pick<CompanionActionsInput, "eventId
   /** Whether the questions could be read. The dialog replaces the companion's answers with what it holds, so one that could not know the
    * questions would clear them: it is not offered. */
   fieldsLoaded: boolean;
+  /** An administrator of the organization or a superadmin: only they are offered "Show" for the companion's sensitive answers. */
+  canReveal?: boolean;
 }
 
 const FIELDS_NOT_LOADED = "The questions about the companion could not be loaded. Reload the page to edit.";
@@ -91,6 +94,7 @@ function CompanionEditDialog({
               eventTimeZone={event.timezone}
               value={answerFor(form.answers, field.source_field)}
               disabled={saving}
+              mode="replace"
               onChange={(next) => setForm({ ...form, answers: { ...form.answers, [field.source_field]: next } })}
             />
           ))}
@@ -118,7 +122,7 @@ function CompanionEditDialog({
  * said in the dialog in those words. Both are off on an archived event, as every change is. The page shows the card only for a guest
  * who has a companion; the registration window shows the same person, read-only, as the guest sent them.
  */
-export function CompanionCard({ event, companion, fields, fieldsLoaded, ...actionInput }: Readonly<CompanionCardProps>) {
+export function CompanionCard({ event, companion, fields, fieldsLoaded, canReveal = false, ...actionInput }: Readonly<CompanionCardProps>) {
   const actions = useCompanionActions({ ...actionInput, fields });
   const answers = companionAnswerEntries(companion, fields, event.timezone);
   const editButtonRef = useRef<HTMLButtonElement>(null);
@@ -166,6 +170,16 @@ export function CompanionCard({ event, companion, fields, fieldsLoaded, ...actio
               <span>{value}</span>
             </div>
           ))}
+          <AttendeeSensitiveAnswers
+            key={companion.slot}
+            eventId={actionInput.eventId}
+            attendeeId={actionInput.attendeeId}
+            questions={fields}
+            slot={companion.slot}
+            who="companion"
+            canReveal={canReveal}
+            timezone={event.timezone}
+          />
         </div>
       </Card>
       {actions.edit.open && (

@@ -77,6 +77,7 @@ import {
   humanizeFieldKey,
 } from "../attendees/attendeeTimeline.js";
 import { CompanionCard } from "../attendees/CompanionCard.js";
+import { AttendeeSensitiveAnswers } from "../attendees/SensitiveAnswers.js";
 import { EraseAttendeeDialog, EraseWalletResultDialog } from "../attendees/EraseDialogs.js";
 import { ErasedAttendeeView } from "../attendees/ErasedAttendeeView.js";
 import {
@@ -986,6 +987,7 @@ function AttendeeOverviewTab({
   ticketTypes,
   attendeeSource,
   customDataEntries,
+  sensitiveAnswers,
   companionCard,
   eventItems,
   event,
@@ -995,6 +997,8 @@ function AttendeeOverviewTab({
   ticketTypes: TicketTypeDto[];
   attendeeSource: string | null;
   customDataEntries: Array<[string, string, string]>;
+  /** The masked sensitive questions of the guest and the administrator's "Show", or nothing when the event has none for the guest. */
+  sensitiveAnswers: ReactNode;
   /** The card of the person the guest brings, or nothing for a guest who brings nobody. */
   companionCard: ReactNode;
   eventItems: AttendeeDetailDto["event_items"];
@@ -1073,7 +1077,7 @@ function AttendeeOverviewTab({
         {companionCard}
 
         <Card title="Additional information">
-          {customDataEntries.length === 0 ? (
+          {customDataEntries.length === 0 && !sensitiveAnswers ? (
             <EmptyState
               icon={<i className="ti ti-list-details" aria-hidden="true" />}
               title="No additional information"
@@ -1087,6 +1091,7 @@ function AttendeeOverviewTab({
                   <span>{value}</span>
                 </div>
               ))}
+              {sensitiveAnswers}
             </div>
           )}
         </Card>
@@ -1678,6 +1683,24 @@ function AttendeeNotesTab({
   );
 }
 
+/** The answers an edit changes, by key. Only the questions that are asked: what is typed for one that a condition hides is not sent, and what
+ * is saved for it stays. A sensitive question is write-only (D-E6): an empty box is no change and is never sent, so it cannot clear the answer. */
+function customDataPatchOf(
+  form: AttendeeFormState,
+  detail: AttendeeDetailDto,
+  attributeFields: CustomDataFieldDef[],
+): Record<string, string | null> {
+  const customDataPatch: Record<string, string | null> = {};
+  for (const field of shownCustomFields(attributeFields, form.customFields)) {
+    const key = field.source_field;
+    const next = form.customFields[key] ?? "";
+    if (field.sensitive === true && next === "") continue;
+    const current = readCustomDataField(detail.custom_data, key) ?? "";
+    if (next !== current) customDataPatch[key] = next || null;
+  }
+  return customDataPatch;
+}
+
 /** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
 /** Diffs the edit form against the loaded attendee to build the PATCH body — top-level fields
  * plus any changed custom-data attributes — extracted out of handleSave (SonarCloud S3776). */
@@ -1695,14 +1718,7 @@ function buildAttendeePatch(
   if (form.ticket_type !== (detail.ticket_type ?? "")) patch.ticket_type = form.ticket_type || null;
   if (form.rsvp_status !== detail.rsvp_status) patch.rsvp_status = form.rsvp_status;
 
-  const customDataPatch: Record<string, string | null> = {};
-  // Only the questions that are asked: what is typed for one that a condition hides is not sent, and what is saved for it stays.
-  for (const field of shownCustomFields(attributeFields, form.customFields)) {
-    const key = field.source_field;
-    const next = form.customFields[key] ?? "";
-    const current = readCustomDataField(detail.custom_data, key) ?? "";
-    if (next !== current) customDataPatch[key] = next || null;
-  }
+  const customDataPatch = customDataPatchOf(form, detail, attributeFields);
   if (Object.keys(customDataPatch).length > 0) patch.custom_data_fields = customDataPatch;
 
   return patch;
@@ -2324,7 +2340,7 @@ export function AttendeeDetailPage() {
 
     const patch = buildAttendeePatch(form, detail, attributeFields);
 
-    const customValidation = validateCustomFieldsForm(attributeFields, form.customFields);
+    const customValidation = validateCustomFieldsForm(attributeFields, form.customFields, true);
     if (customValidation) {
       setError(customValidation);
       return;
@@ -3000,6 +3016,18 @@ export function AttendeeDetailPage() {
           ticketTypes={ticketTypes}
           attendeeSource={attendeeSource}
           customDataEntries={customDataEntries}
+          sensitiveAnswers={
+            <AttendeeSensitiveAnswers
+              key={detail.id}
+              eventId={event.id}
+              attendeeId={detail.id}
+              questions={attributeFields}
+              slot={null}
+              who="guest"
+              canReveal={orgAdmin}
+              timezone={event.timezone}
+            />
+          }
           companionCard={
             detail.companion ? (
               <CompanionCard
@@ -3010,6 +3038,7 @@ export function AttendeeDetailPage() {
                 companion={detail.companion}
                 fields={companionFields}
                 fieldsLoaded={itemsWarning === null}
+                canReveal={orgAdmin}
                 onChanged={handleCompanionChanged}
                 onArchived={() => void refreshEvent?.()}
                 onOutOfDate={() => void loadDetail()}
@@ -3231,6 +3260,7 @@ export function AttendeeDetailPage() {
                           customFields: { ...form.customFields, [field.source_field]: next },
                         })
                       }
+                      mode="replace"
                     />
                   ))}
                 </div>

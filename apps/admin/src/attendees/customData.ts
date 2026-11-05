@@ -89,9 +89,12 @@ function choiceProblem(field: CustomDataFieldDef, trimmed: string): string | nul
   return null;
 }
 
+/** `editing` is a form that corrects answers that are saved: a sensitive question is write-only there, so its box is empty and an empty box
+ * keeps the saved answer, which a required one does not forbid. */
 export function validateCustomFieldsForm(
   fields: CustomDataFieldDef[],
   values: Record<string, string>,
+  editing = false,
 ): string | null {
   for (const field of fields) {
     // A question that is not asked is not required, and what is typed for it is not sent, so it is not judged either.
@@ -99,7 +102,7 @@ export function validateCustomFieldsForm(
     const raw = values[field.source_field] ?? "";
     const trimmed = raw.trim();
 
-    if (field.required && !trimmed) {
+    if (field.required && !trimmed && !(editing && field.sensitive === true)) {
       return `${field.label} is required.`;
     }
     if (!trimmed) continue;

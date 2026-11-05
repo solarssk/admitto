@@ -24,7 +24,8 @@ function customFieldsFromDetail(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const field of attributeFields) {
-    out[field.source_field] = readCustomDataField(detail.custom_data, field.source_field) ?? "";
+    // A sensitive answer is write-only (D-E6): its box starts empty, whatever the detail holds.
+    out[field.source_field] = field.sensitive === true ? "" : (readCustomDataField(detail.custom_data, field.source_field) ?? "");
   }
   return out;
 }

@@ -4,6 +4,8 @@ import { Badge, Button, IconButton, ModalBackdrop, Notice, StatusBadge } from "@
 import { fetchRegistration } from "../api/client.js";
 import type { RegistrationCompanionDto, RegistrationDetailDto, RegistrationListItemDto, RegistrationMailDto } from "../api/types.js";
 import { allCustomDataEntries, isLongAnswer } from "../attendees/customData.js";
+import { RequestSensitiveAnswers } from "../attendees/SensitiveAnswers.js";
+import { companionQuestions, guestQuestions } from "../utils/questionRecipient.js";
 import { humanizeFieldKey } from "../attendees/attendeeTimeline.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
@@ -31,6 +33,8 @@ export interface RequestDetailDialogProps {
   /** The request as the list shows it: the header and the decisions are drawn from it at once, while the rest is read. */
   row: RegistrationListItemDto;
   lookups: () => Promise<RequestLookups>;
+  /** An administrator of the organization or a superadmin: only they are offered "Show" for the sensitive answers. */
+  canReveal?: boolean;
   /** A confirmation is open over this window: its own focus trap and Escape step aside. */
   suspended: boolean;
   busy: BusyDecision;
@@ -96,7 +100,8 @@ function CompanionSection({
   title,
   lookups,
   timezone,
-}: Readonly<{ companion: RegistrationCompanionDto; title: string; lookups: RequestLookups; timezone: string }>) {
+  sensitive,
+}: Readonly<{ companion: RegistrationCompanionDto; title: string; lookups: RequestLookups; timezone: string; sensitive: ReactNode }>) {
   const answers = allCustomDataEntries(companion.custom_data, lookups.fields, humanizeFieldKey, timezone);
   return (
     <div>
@@ -105,11 +110,46 @@ function CompanionSection({
         <Pair label="Name">{companion.name}</Pair>
       </dl>
       {answers.length > 0 ? <Answers entries={answers} /> : null}
+      {sensitive}
     </div>
   );
 }
 
-function RequestSection({ detail, lookups, timezone }: Readonly<{ detail: RegistrationDetailDto; lookups: RequestLookups; timezone: string }>) {
+/** The Show of one person of the request: their sensitive questions, masked, and the button for those who may use it. */
+function PersonSensitive({
+  eventId,
+  detail,
+  lookups,
+  timezone,
+  canReveal,
+  slot,
+}: Readonly<{ eventId: string; detail: RegistrationDetailDto; lookups: RequestLookups; timezone: string; canReveal: boolean; slot: number | null }>) {
+  return (
+    <RequestSensitiveAnswers
+      key={slot ?? 0}
+      eventId={eventId}
+      requestId={detail.id}
+      questions={slot === null ? guestQuestions(lookups.fields) : companionQuestions(lookups.fields)}
+      slot={slot}
+      who={slot === null ? "guest" : `companion ${slot}`}
+      canReveal={canReveal}
+      timezone={timezone}
+    />
+  );
+}
+
+/** Whether the event has a sensitive question about the people `of` picks out. */
+function hasSensitive(fields: RequestLookups["fields"], of: (fields: RequestLookups["fields"]) => RequestLookups["fields"]): boolean {
+  return of(fields).some((field) => field.sensitive === true);
+}
+
+function RequestSection({
+  eventId,
+  detail,
+  lookups,
+  timezone,
+  canReveal,
+}: Readonly<{ eventId: string; detail: RegistrationDetailDto; lookups: RequestLookups; timezone: string; canReveal: boolean }>) {
   const answers = allCustomDataEntries(detail.custom_data, lookups.fields, humanizeFieldKey, timezone);
   const consents = Object.entries(detail.consents);
   return (
@@ -135,10 +175,11 @@ function RequestSection({ detail, lookups, timezone }: Readonly<{ detail: Regist
           {detail.locale ? <Pair label="Language">{detail.locale}</Pair> : null}
         </dl>
       </div>
-      {answers.length > 0 ? (
+      {answers.length > 0 || hasSensitive(lookups.fields, guestQuestions) ? (
         <div>
           <h3 className="delivery-modal__section-title">Answers</h3>
-          <Answers entries={answers} />
+          {answers.length > 0 ? <Answers entries={answers} /> : null}
+          <PersonSensitive eventId={eventId} detail={detail} lookups={lookups} timezone={timezone} canReveal={canReveal} slot={null} />
         </div>
       ) : null}
       {consents.length > 0 ? (
@@ -160,6 +201,7 @@ function RequestSection({ detail, lookups, timezone }: Readonly<{ detail: Regist
           title={detail.companions.length === 1 ? "Companion" : `Companion ${index + 1}`}
           lookups={lookups}
           timezone={timezone}
+          sensitive={<PersonSensitive eventId={eventId} detail={detail} lookups={lookups} timezone={timezone} canReveal={canReveal} slot={index + 1} />}
         />
       ))}
     </>
@@ -284,7 +326,7 @@ function MailsSection({
  * It is for one request: the tab mounts it when a request is opened and drops it when it closes, so its read never follows a changing `row`.
  * A link to the attendee needs no close of its own: the page it leads to takes the tab, and this window, away.
  */
-export function RequestDetailDialog({ eventId, event, row, lookups, suspended, busy, onClose, onAsk, onRetryMail }: Readonly<RequestDetailDialogProps>) {
+export function RequestDetailDialog({ eventId, event, row, lookups, canReveal = false, suspended, busy, onClose, onAsk, onRetryMail }: Readonly<RequestDetailDialogProps>) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -342,7 +384,7 @@ export function RequestDetailDialog({ eventId, event, row, lookups, suspended, b
             )}
             {view === "ready" && loaded && (
               <>
-                <RequestSection detail={loaded.detail} lookups={loaded.lookups} timezone={event.timezone} />
+                <RequestSection eventId={eventId} detail={loaded.detail} lookups={loaded.lookups} timezone={event.timezone} canReveal={canReveal} />
                 <MailsSection
                   detail={loaded.detail}
                   eventId={eventId}
