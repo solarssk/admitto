@@ -20,6 +20,9 @@ export interface MockOidcIdp {
   setNextToken(token: MockIdTokenOverrides): void;
   /** How many times the token endpoint was called: a callback that is refused before it asks the provider leaves this alone. */
   tokenRequests(): number;
+  /** A real provider spends a code on its first use. With `true` this one does not, so that a test of the guest sign-in can
+   * show that it is the state, and not the provider, that stops a second callback. */
+  reuseCodes(on: boolean): void;
 }
 
 export interface MockIdTokenOverrides {
@@ -44,6 +47,7 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
   let nextGroups: string[] = [];
   let nextToken: MockIdTokenOverrides = {};
   let tokenRequests = 0;
+  let reuseCodes = false;
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", issuer || "http://127.0.0.1");
@@ -75,7 +79,7 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
         res.end("invalid code");
         return;
       }
-      codeState.delete(code);
+      if (!reuseCodes) codeState.delete(code);
       tokenRequests += 1;
       const idToken = await new jose.SignJWT({
         nonce: state.token.nonce ?? state.nonce,
@@ -137,6 +141,9 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
       nextToken = token;
     },
     tokenRequests: () => tokenRequests,
+    reuseCodes: (on: boolean) => {
+      reuseCodes = on;
+    },
   };
 }
 
