@@ -67,6 +67,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Fix Escape closing a whole dialog, and what was typed in it, together with an open date or time picker ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Keep Bitwarden from offering to fill an attendee's email, name, company and phone with the staff member's own in the Add attendee and Edit attendee forms ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Fix the date picker for a date before the year 1000, which was written without its leading zeros and showed the calendar of 19xx ([#1784](https://github.com/solarssk/admitto/pull/1784))
+- Respect reduced-motion preferences when opening font styles, and preserve autocomplete sizing and setup retry colours without forced CSS overrides ([#1846](https://github.com/solarssk/admitto/pull/1846)).
 
 ### Security
 
