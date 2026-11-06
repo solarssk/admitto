@@ -2021,14 +2021,14 @@ export function createApp(options: CreateAppOptions = {}) {
     (c) => handlePutRegistrationAccessMethods(c, db),
   );
   app.get("/api/admin/registration/sso-provider", staffAdminGate, (c) =>
-    handleGetRegistrationSsoProvider(c, db),
+    handleGetRegistrationSsoProvider(c, db, oidcPublicBaseUrl),
   );
   app.put(
     "/api/admin/registration/sso-provider",
     mailSettingsBodyLimit,
     jsonPostCsrf,
     staffAdminGate,
-    (c) => handlePutRegistrationSsoProvider(c, db),
+    (c) => handlePutRegistrationSsoProvider(c, db, oidcPublicBaseUrl),
   );
   app.get("/api/admin/notification-settings", staffAdminGate, (c) =>
     handleGetNotificationSettings(c, db),

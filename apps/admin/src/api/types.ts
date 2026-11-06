@@ -1502,6 +1502,25 @@ export interface SaveRegistrationAccessMethodsBody {
   methods: RegistrationAccessMethod[];
 }
 
+/** Where the choice of the identity provider for the company sign-in stands: `ready` (it exists and is on), `not_selected`,
+ * `missing` (the chosen one was deleted) or `disabled` (the chosen one is turned off). */
+export type RegistrationSsoProviderState = "ready" | "not_selected" | "missing" | "disabled";
+
+/** GET and PUT /api/admin/registration/sso-provider: the identity provider guests sign in with. `providers` are the ones that can
+ * be chosen (turned on), by id and the name staff gave them. `redirect_uri` is the one address the provider must list as a
+ * redirect, built from the address of the instance; null while the instance has none. Superadmin only. */
+export interface RegistrationSsoProviderDto {
+  provider_id: string | null;
+  state: RegistrationSsoProviderState;
+  providers: Array<{ id: string; display_name: string }>;
+  redirect_uri: string | null;
+}
+
+/** PUT: the provider to use, or `null` for none. Only a provider that is turned on can be chosen (422 `provider_not_available`). */
+export interface SaveRegistrationSsoProviderBody {
+  provider_id: string | null;
+}
+
 /** One legal text of an event (`/api/admin/events/:eventId/legal-documents`): the privacy notice, the event
  * terms or an extra consent. `ref` names it in the address (`privacy-notice`, `event-terms`, `consent-<key>`). */
 export interface LegalDocumentDto {

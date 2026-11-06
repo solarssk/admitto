@@ -5,7 +5,7 @@ import type { EventDto, LegalDocumentDto, RegistrationSettingsDto } from "../api
 import { isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SettingsFooter } from "../settings/mailTransportFormParts.js";
-import { missingChecks } from "./accessSettings.js";
+import { claimErrors, missingChecks } from "./accessSettings.js";
 import { AccessFormCard } from "./AccessFormCard.js";
 import { AccessModeCard } from "./AccessModeCard.js";
 import { AccessQuestionsCard } from "./AccessQuestionsCard.js";
@@ -66,6 +66,7 @@ export function RegistrationAccessForm({
   const form = useAccessForm({ eventId, settings, legalItems, refreshEvent });
   const { server, draft, base, dirty, saving, problem, confirmOffOpen } = form;
   const archived = isEventArchived(event);
+  const errors = claimErrors(draft);
   const missing = missingChecks(server.readiness);
   // A move between the two modes that are on is never refused, so only an event that has registration off needs to be ready.
   const canTurnOn = server.mode !== null || missing.length === 0;
@@ -96,9 +97,12 @@ export function RegistrationAccessForm({
         event={event}
         method={draft.method}
         savedMethod={base.method}
+        claim={draft}
+        claimErrors={errors}
         passwordSet={server.password_set}
         disabled={archived || saving}
         onMethodChange={(method) => form.edit({ method })}
+        onClaimChange={form.edit}
         onPasswordChanged={form.passwordChanged}
         onArchived={form.eventArchived}
       />

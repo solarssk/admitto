@@ -54,6 +54,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a Sensitive switch to the field editor and a Show button for one person's sensitive answers, logged in the audit log ([#1849](https://github.com/solarssk/admitto/pull/1849))
 - Add an optional, sensitive question about accessibility needs to Add suggested questions, with a warning that such answers can be health data ([#1849](https://github.com/solarssk/admitto/pull/1849))
 - Use one return address for the guests' company sign-in on the whole instance, so the identity provider needs a single entry and not one per event ([#1850](https://github.com/solarssk/admitto/pull/1850))
+- Add the company sign-in to Ways in, with a provider picker, a return address to copy and an optional limit to one company for each event
 
 ### Changed
 

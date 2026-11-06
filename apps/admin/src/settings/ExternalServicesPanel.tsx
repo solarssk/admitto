@@ -17,10 +17,8 @@ import {
 } from "@admitto/ui";
 import {
   fetchExternalServices,
-  fetchRegistrationAccessMethods,
   fetchRegistrationTurnstile,
   saveMapsSettings,
-  saveRegistrationAccessMethods,
   saveRegistrationTurnstile,
   saveWeatherSettings,
   testWeatherConnection,
@@ -28,7 +26,6 @@ import {
 } from "../api/client.js";
 import type {
   ExternalServicesResponse,
-  RegistrationAccessMethodsDto,
   RegistrationTurnstileDto,
   WeatherProviderId,
 } from "../api/types.js";
@@ -42,8 +39,12 @@ import { RegistrationTurnstileCard } from "./RegistrationTurnstileCard.js";
 import {
   accessMethodsDirty,
   accessMethodsDraftFrom,
+  afterWaysInSave,
   buildAccessMethodsSaveBody,
+  buildSsoProviderSaveBody,
+  mergeWaysIn,
   type AccessMethodsDraft,
+  type WaysIn,
 } from "./registrationAccessMethods.js";
 import {
   buildTurnstileSaveBody,
@@ -53,6 +54,7 @@ import {
   type TurnstileDraft,
 } from "./registrationTurnstile.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
+import { fetchWaysIn, NOTHING_SAVED, saveWaysIn } from "./waysInRequests.js";
 
 /** The cards of the panel, for its placeholder: Weather, Maps, Guest registration and Ways in, each with an intro and fields or rows. */
 const EXTERNAL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
@@ -279,7 +281,6 @@ function buildWeatherSaveBody(draft: WeatherDraft): {
 type SettledSave = PromiseSettledResult<ExternalServicesResponse["weather"] | null>;
 type SettledMapsSave = PromiseSettledResult<ExternalServicesResponse["maps"] | null>;
 type SettledTurnstileSave = PromiseSettledResult<RegistrationTurnstileDto | null>;
-type SettledAccessSave = PromiseSettledResult<RegistrationAccessMethodsDto | null>;
 
 function toastExternalServicesSaveResult(
   addToast: (message: string, variant: "success" | "error" | "info") => void,
@@ -287,11 +288,11 @@ function toastExternalServicesSaveResult(
     saveWeather: boolean;
     saveMaps: boolean;
     saveTurnstile: boolean;
-    saveAccess: boolean;
     weatherResult: SettledSave;
     mapsResult: SettledMapsSave;
     turnstileResult: SettledTurnstileSave;
-    accessResult: SettledAccessSave;
+    /** The reasons the Ways in requests failed: none when they all worked. */
+    accessFailures: readonly unknown[];
   },
 ): void {
   const failures: string[] = [];
@@ -310,8 +311,8 @@ function toastExternalServicesSaveResult(
       operatorApiErrorMessage(opts.turnstileResult.reason, "Failed to save guest registration settings."),
     );
   }
-  if (opts.saveAccess && opts.accessResult.status === "rejected") {
-    failures.push(operatorApiErrorMessage(opts.accessResult.reason, "Failed to save the registration ways in."));
+  for (const reason of opts.accessFailures) {
+    failures.push(operatorApiErrorMessage(reason, "Failed to save the registration ways in."));
   }
   if (failures.length === 0) {
     addToast("External services saved.", "success");
@@ -347,7 +348,7 @@ export function ExternalServicesPanel() {
   const [turnstile, setTurnstile] = useState<RegistrationTurnstileDto | null>(null);
   const [turnstileDraft, setTurnstileDraft] = useState<TurnstileDraft | null>(null);
   const turnstileSavedRef = useRef<TurnstileDraft | null>(null);
-  const [accessMethods, setAccessMethods] = useState<RegistrationAccessMethodsDto | null>(null);
+  const [ways, setWays] = useState<WaysIn | null>(null);
   const [accessDraft, setAccessDraft] = useState<AccessMethodsDraft | null>(null);
   const accessSavedRef = useRef<AccessMethodsDraft | null>(null);
   const [weatherTesting, setWeatherTesting] = useState(false);
@@ -355,24 +356,24 @@ export function ExternalServicesPanel() {
 
   const panel = usePanelLoad({
     fetch: async (signal) => {
-      const [services, registration, ways] = await Promise.all([
+      const [services, registration, waysIn] = await Promise.all([
         fetchExternalServices(signal),
         fetchRegistrationTurnstile(signal),
-        fetchRegistrationAccessMethods(signal),
+        fetchWaysIn(signal),
       ]);
-      return { services, registration, ways };
+      return { services, registration, waysIn };
     },
-    apply: ({ services, registration, ways }) => {
+    apply: ({ services, registration, waysIn }) => {
       setData(services);
       const w = weatherDraftFrom(services.weather);
       const m = mapsDraftFrom(services.maps);
       const t = turnstileDraftFrom(registration);
-      const a = accessMethodsDraftFrom(ways);
+      const a = accessMethodsDraftFrom(waysIn);
       setWeatherDraft(w);
       setMapsDraft(m);
       setTurnstile(registration);
       setTurnstileDraft(t);
-      setAccessMethods(ways);
+      setWays(waysIn);
       setAccessDraft(a);
       weatherSavedRef.current = w;
       mapsSavedRef.current = m;
@@ -441,14 +442,14 @@ export function ExternalServicesPanel() {
 
   // Every part has its answer once the panel is ready; these checks only narrow the types for the code below.
   /* v8 ignore if */
-  if (!data || !weatherDraft || !mapsDraft || !turnstile || !turnstileDraft || !accessMethods || !accessDraft) return null;
+  if (!data || !weatherDraft || !mapsDraft || !turnstile || !turnstileDraft || !ways || !accessDraft) return null;
 
   // Narrowed locals: nested handlers do not keep the null-check narrowing on state.
   const weather = weatherDraft;
   const maps = mapsDraft;
   const registration = turnstileDraft;
   const access = accessDraft;
-  const accessAnswer = accessMethods;
+  const waysIn = ways;
 
   function handleReset() {
     setWeatherDraft({ ...weatherSavedRef.current! });
@@ -516,8 +517,8 @@ export function ExternalServicesPanel() {
     const saveMaps = mapsDirty(maps, savedMaps);
     const turnstileBody = buildTurnstileSaveBody(registration, turnstileSavedRef.current!);
     const saveTurnstile = turnstileBody !== null;
-    const accessBody = buildAccessMethodsSaveBody(access, accessSavedRef.current!, accessAnswer);
-    const saveAccess = accessBody !== null;
+    const savedAccess = accessSavedRef.current!;
+    const saveAccess = buildAccessMethodsSaveBody(access, savedAccess) !== null || buildSsoProviderSaveBody(access, savedAccess) !== null;
     const errors = [
       ...collectSaveValidationErrors({
         apiKeyMissing,
@@ -546,12 +547,14 @@ export function ExternalServicesPanel() {
         geocodingBaseUrl: maps.geocodingBaseUrl.trim(),
       };
 
-      const [weatherResult, mapsResult, turnstileResult, accessResult] = await Promise.allSettled([
+      // Started with the others, so that the requests run together; it never rejects (it reports each failure in its result).
+      const waysSaving = saveAccess ? saveWaysIn(access, savedAccess) : Promise.resolve(NOTHING_SAVED);
+      const [weatherResult, mapsResult, turnstileResult] = await Promise.allSettled([
         saveWeather ? saveWeatherSettings(weatherBody) : Promise.resolve(null),
         saveMaps ? saveMapsSettings(mapsBody) : Promise.resolve(null),
         saveTurnstile ? saveRegistrationTurnstile(turnstileBody) : Promise.resolve(null),
-        saveAccess ? saveRegistrationAccessMethods(accessBody) : Promise.resolve(null),
       ]);
+      const waysResult = await waysSaving;
 
       if (weatherResult.status === "fulfilled" && weatherResult.value) {
         const w = weatherDraftFrom(weatherResult.value);
@@ -571,22 +574,19 @@ export function ExternalServicesPanel() {
         setTurnstileDraft(t);
         turnstileSavedRef.current = t;
       }
-      if (accessResult.status === "fulfilled" && accessResult.value) {
-        const a = accessMethodsDraftFrom(accessResult.value);
-        setAccessMethods(accessResult.value);
-        setAccessDraft(a);
-        accessSavedRef.current = a;
-      }
+      const afterWays = afterWaysInSave(access, savedAccess, waysResult.saved);
+      setWays(mergeWaysIn(waysIn, waysResult.saved));
+      setAccessDraft(afterWays.draft);
+      accessSavedRef.current = afterWays.saved;
 
       toastExternalServicesSaveResult(addToast, {
         saveWeather,
         saveMaps,
         saveTurnstile,
-        saveAccess,
         weatherResult,
         mapsResult,
         turnstileResult,
-        accessResult,
+        accessFailures: waysResult.failures,
       });
     } finally {
       setSaving(false);
@@ -866,7 +866,7 @@ export function ExternalServicesPanel() {
 
       <RegistrationTurnstileCard dto={turnstile} draft={registration} onChange={setTurnstileDraft} />
 
-      <RegistrationAccessMethodsCard draft={access} keys={turnstile.status} disabled={saving} onChange={setAccessDraft} />
+      <RegistrationAccessMethodsCard draft={access} keys={turnstile.status} sso={waysIn.sso} disabled={saving} onChange={setAccessDraft} />
 
       <SettingsFooter
         validationErrors={validationErrors}

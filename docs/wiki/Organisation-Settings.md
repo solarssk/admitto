@@ -63,11 +63,20 @@ Shared outbound connections. They are configured in this tab, not through deploy
 
 **Ways in**
 
-- Turn **Link** or **Password** on to let organisers choose it for their events. An organiser picks one way in for each event, on the **Access** tab of its **Registration** page.
+- Turn **Link**, **Password** or **Company sign-in** on to let organisers choose it for their events. An organiser picks one way in for each event, on the **Access** tab of its **Registration** page.
 - A way that is off cannot be chosen. Turning one off closes the form of every event that uses it, at once: guests see a page that is not found.
 - Nothing is deleted when you turn a way off. Turn it on again and those forms open again.
-- A way that is on opens a form only while the Turnstile keys are ready. The card warns you when they are not.
+- A link or a password opens a form only while the Turnstile keys are ready. The card warns you when they are not. The company sign-in needs no Turnstile keys.
 - Save once for the whole tab. The change is recorded in **Logs**, on the **Audit** view, as "Guest registration access methods updated".
+
+**Company sign-in**
+
+- With **Company sign-in** on, pick the **Identity provider** guests sign in with. The list holds the OIDC providers that are turned on, by the name you gave them under **Identity**. A guest who signs in this way does not get an Admitto account.
+- The sentence under the picker says where the choice stands: no provider chosen yet, the chosen provider was deleted, the chosen provider is turned off, or ready. Unless it is ready, the forms of events that use the company sign-in stay closed. Nothing is deleted.
+- The choice is saved with the one **Save** of the tab, and recorded in **Logs**, on the **Audit** view, as "Guest registration company sign-in provider updated". If the choice is refused, the switch is still saved and the provider stays as you left it.
+- **Return address** is the one address to enter at the identity provider, as an allowed redirect (callback) address. It is the same for every event that uses the company sign-in, so you enter it once. It comes from the Instance URL under **General**. Without that address the card says so.
+- If a gateway such as Cloudflare Access stands in front of Admitto, it must let `/sso/callback` through without a sign-in, together with `/r/*`.
+- The organiser limits the sign-in to one company per event, on the **Access** tab. See [Registration Access](Registration-Access).
 
 **Support contact and Test connection**
 

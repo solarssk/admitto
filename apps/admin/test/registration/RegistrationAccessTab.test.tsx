@@ -237,11 +237,12 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(screen.getByText("Guests cannot open the form. The requests you already have stay on the Requests tab.")).toBeTruthy();
   });
 
-  it.each<[string[]]>([[[]], [["sso"]], [["link", "password"]]])("shows no way in as chosen for %j, as the server counts none, and has nothing to save", async (methods) => {
+  it.each<[string[]]>([[[]], [["link", "password"]], [["sso", "link"]]])("shows no way in as chosen for %j, as the server counts none, and has nothing to save", async (methods) => {
     await renderLoaded(settings({ access_methods: methods as RegistrationSettingsDto["access_methods"], readiness: checks("access_method") }));
 
     expect(radio("Link").getAttribute("aria-checked")).toBe("false");
     expect(radio("Password").getAttribute("aria-checked")).toBe("false");
+    expect(radio("Company sign-in").getAttribute("aria-checked")).toBe("false");
     expect(screen.getByText("Choose how guests open the form. You can use one way in at a time.")).toBeTruthy();
     expect(isOff(saveButton())).toBe(true);
   });
@@ -371,7 +372,7 @@ describe("RegistrationAccessTab: the checklist", () => {
     await renderLoaded(settings({ access_methods: [], readiness: checks("access_method") }));
 
     const row = checklistRows()[0] as HTMLElement;
-    expect(row.textContent).toContain("Choose how guests get in: with a link or with a password.");
+    expect(row.textContent).toContain("Choose how guests get in: with a link, with a password or with the company sign-in.");
     expect(within(row).queryByRole("link")).toBeNull();
   });
 

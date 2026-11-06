@@ -95,6 +95,8 @@ import type {
   SaveRegistrationTurnstileBody,
   RegistrationAccessMethodsDto,
   SaveRegistrationAccessMethodsBody,
+  RegistrationSsoProviderDto,
+  SaveRegistrationSsoProviderBody,
   LegalDocumentDto,
   LegalDocumentsListResponse,
   LegalDocumentWithContentDto,
@@ -2629,6 +2631,18 @@ export async function fetchRegistrationAccessMethods(signal?: AbortSignal): Prom
 export async function saveRegistrationAccessMethods(body: SaveRegistrationAccessMethodsBody): Promise<RegistrationAccessMethodsDto> {
   const res = await fetch("/api/admin/registration/access-methods", jsonPutInit(body));
   return parseJson<RegistrationAccessMethodsDto>(res);
+}
+
+/** The identity provider guests sign in with, the ones that can be chosen and the address to list at the provider. Superadmin only. */
+export async function fetchRegistrationSsoProvider(signal?: AbortSignal): Promise<RegistrationSsoProviderDto> {
+  const res = await fetch("/api/admin/registration/sso-provider", { credentials: "same-origin", signal });
+  return parseJson<RegistrationSsoProviderDto>(res);
+}
+
+/** Chooses the identity provider for the company sign-in (`null` removes the choice) and answers like the read. */
+export async function saveRegistrationSsoProvider(body: SaveRegistrationSsoProviderBody): Promise<RegistrationSsoProviderDto> {
+  const res = await fetch("/api/admin/registration/sso-provider", jsonPutInit(body));
+  return parseJson<RegistrationSsoProviderDto>(res);
 }
 
 function legalDocumentsUrl(eventId: string, ref?: string): string {
