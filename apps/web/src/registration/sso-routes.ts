@@ -55,7 +55,7 @@ import {
   setGuestSsoFlowCookie,
   setGuestSsoSessionCookie,
 } from "./sso-session.js";
-import { createGuestSsoState, spendGuestSsoState } from "./sso-state.js";
+import { createGuestSsoState, spendGuestSsoState, type SpentGuestSsoState } from "./sso-state.js";
 import { EVENT_SLUG, newGuestSsoStateValue, parseGuestSsoStateValue, type GuestSsoStateValue } from "./sso-state-value.js";
 
 /**
@@ -227,15 +227,31 @@ export async function handleSsoCallback(c: Context, deps: RegistrationSsoDeps): 
   try {
     return await finishSignIn(c, deps, flow, code);
   } catch (error) {
+    // Only the spending of the state can end up here: the hint of the state is all there is to go back by.
     return failed(c, flow, flow.slug, error);
   }
 }
 
 async function finishSignIn(c: Context, deps: RegistrationSsoDeps, flow: GuestSsoStateValue, code: string): Promise<Response> {
-  const { db } = deps;
-  const spent = await spendGuestSsoState(db, flow.value, new Date());
+  const spent = await spendGuestSsoState(deps.db, flow.value, new Date());
   if (spent === null) return refuse(c, flow, flow.slug, "state_invalid", "failed");
-  // From here on the event, its slug and the provider are the ones the state was written for, not anything the request said.
+  try {
+    return await signInForEvent(c, deps, flow, spent, code);
+  } catch (error) {
+    // From here on the page to go back to, and the sign-in cookie to take away, are the event's own (the row), not the hint.
+    return failed(c, flow, spent.eventSlug, error);
+  }
+}
+
+async function signInForEvent(
+  c: Context,
+  deps: RegistrationSsoDeps,
+  flow: GuestSsoStateValue,
+  spent: SpentGuestSsoState,
+  code: string,
+): Promise<Response> {
+  const { db } = deps;
+  // The event, its slug and the provider are the ones the state was written for, not anything the request said.
   const { eventId, eventSlug: slug } = spent;
 
   const target = await openSsoEvent(db, slug);

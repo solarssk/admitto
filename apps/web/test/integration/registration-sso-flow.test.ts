@@ -471,8 +471,11 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
     const { state } = await goToProvider(h.app, jar, slug, idp);
 
     for (const query of [`?state=${state}`, `?code=&state=${state}`, `?code=${"c".repeat(5_000)}&state=${state}`]) {
+      // A refusal takes the flow cookie away, so each case needs it again to reach the check of the code.
+      holdFlow(jar, state);
       const res = await browse(h.app, jar, `${callbackPath()}${query}`);
       expect(res.headers.get("location"), query.slice(0, 20)).toBe(failedAt(slug));
+      expect((await stateRows())[0]?.consumed_at, query.slice(0, 20)).toBeNull();
     }
     expect(calls()).toBe(0);
   });
