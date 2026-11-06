@@ -538,6 +538,28 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
     expect(written.redirect_uri).toBe(read1.redirect_uri);
   });
 
+  it("builds the address from the saved Instance URL when the server has no BASE_URL and none is injected, on the read and on the write", async () => {
+    const savedEnv = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    const saved = JSON.stringify("https://saved.example.com");
+    await prisma.systemSettings.upsert({ where: { key: "instance_url" }, create: { key: "instance_url", value_json: saved }, update: { value_json: saved } });
+    try {
+      const fromSaved = createApp({ prisma, rateLimitStore: new InMemoryRateLimitStore(), skipCheckinBootValidation: true, adminDistRoot });
+      const readOnce = await fromSaved.request("/api/admin/registration/sso-provider", { headers: { Cookie: superCookie } });
+      const written = await fromSaved.request("/api/admin/registration/sso-provider", {
+        method: "PUT",
+        headers: { ...jsonHeaders, Cookie: superCookie },
+        body: JSON.stringify({ provider_id: providerId }),
+      });
+
+      expect(((await readOnce.json()) as Offered).redirect_uri).toBe("https://saved.example.com/sso/callback");
+      expect(((await written.json()) as Offered).redirect_uri).toBe("https://saved.example.com/sso/callback");
+    } finally {
+      if (savedEnv !== undefined) process.env.BASE_URL = savedEnv;
+      await prisma.systemSettings.deleteMany({ where: { key: "instance_url" } });
+    }
+  });
+
   it("never sends a field of the provider but its id and its name", async () => {
     await put("/api/admin/registration/sso-provider", { provider_id: providerId });
 

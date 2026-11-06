@@ -1,7 +1,8 @@
 import { useId } from "react";
+import { SSO_CLAIM_NAME_MAX, SSO_CLAIM_VALUE_MAX, SSO_CLAIM_VALUES_MAX } from "@admitto/shared";
 import { Input } from "@admitto/ui";
 import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
-import { SSO_CLAIM_NAME_MAX, SSO_CLAIM_VALUE_MAX, SSO_CLAIM_VALUES_MAX, type AccessDraft, type ClaimErrors } from "./accessSettings.js";
+import type { AccessDraft, ClaimErrors } from "./accessSettings.js";
 import "./registration-access.css";
 
 const INTRO =

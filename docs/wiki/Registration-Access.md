@@ -28,7 +28,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 1. Under **Way in**, choose **Link**, **Password** or **Company sign-in**. An event has one way in at a time.
 2. For **Password**, select **Set password**, type a password of 8 to 128 characters and select **Save password**. This is saved at once, apart from the **Save** button of the page.
-3. For **Company sign-in**, optionally limit the form to one company. See [Limit the company sign-in to one company](#limit-the-company-sign-in-to-one-company).
+3. For **Company sign-in**, optionally limit the form to one company. See **Limit the company sign-in to one company** below.
 4. Select **Save** at the bottom of the page.
 
 **Limit the company sign-in to one company**
@@ -141,6 +141,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 - Guests confirm their address with a link in an email. The link works for 24 hours.
 - A request that is not confirmed in that time is deleted.
 - The guest's confirmation email replaces the "received" email.
+- With the company sign-in this switch has no effect: the identity provider has already verified the address, so no confirmation link is sent. The switch is greyed out and keeps its setting for the other ways in.
 
 ## What changes after this action
 

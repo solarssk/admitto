@@ -1,7 +1,5 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { SSO_CLAIM_NAME_MAX, SSO_CLAIM_VALUE_MAX, SSO_CLAIM_VALUES_MAX } from "@admitto/shared";
 import {
   chosenMethod,
   claimErrors,
@@ -10,9 +8,6 @@ import {
   missingChecks,
   parseClaim,
   settingsPatch,
-  SSO_CLAIM_NAME_MAX,
-  SSO_CLAIM_VALUE_MAX,
-  SSO_CLAIM_VALUES_MAX,
   type AccessDraft,
 } from "../../src/registration/accessSettings.js";
 import { checks, legalAnswer, settings, texts } from "./accessData.js";
@@ -227,15 +222,6 @@ describe("claimErrors", () => {
 
   it("has nothing to check for another way in, even with a restriction typed", () => {
     expect(claimErrors(base({ method: "link", sso_claim_name: "bad name", sso_claim_values: "" }))).toEqual({});
-  });
-
-  it("keeps the limits the server keeps to", () => {
-    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../web/src/registration/sso-claim.ts"), "utf8");
-    const limit = (name: string) => Number(new RegExp(`export const ${name} = (\\d+);`).exec(source)?.[1]);
-
-    expect(SSO_CLAIM_NAME_MAX).toBe(limit("SSO_CLAIM_NAME_MAX"));
-    expect(SSO_CLAIM_VALUE_MAX).toBe(limit("SSO_CLAIM_VALUE_MAX"));
-    expect(SSO_CLAIM_VALUES_MAX).toBe(limit("SSO_CLAIM_VALUES_MAX"));
   });
 });
 

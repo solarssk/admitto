@@ -28,6 +28,15 @@ const TOGGLES: ReadonlyArray<{ key: ToggleKey; title: string; text: string }> = 
   },
 ];
 
+/** What the confirmation switch says under the company sign-in: the identity provider has verified the address, so no link is sent. */
+const VERIFY_EMAIL_PROVIDER_TEXT =
+  "Not used with the company sign-in: the identity provider has already verified the address, so guests are sent no confirmation link. Your choice is kept for the other ways in.";
+
+/** Whether the provider's sign-in makes this switch meaningless (the server skips the link for the company sign-in). */
+function providerDecides(key: ToggleKey, draft: AccessDraft): boolean {
+  return key === "verify_email" && draft.method === "sso";
+}
+
 /**
  * What the form asks beyond the questions of the Fields tab: the switches of the form, and the extra consents a guest must accept.
  * The consents are chosen from the texts the event has published (the Legal tab writes them); one that is chosen and not published
@@ -47,15 +56,18 @@ export function AccessFormCard({
   const options = consentOptions(legalItems, draft.consent_keys);
   return (
     <Card title="Form">
-      {TOGGLES.map(({ key, title, text }) => (
-        <div key={key} className="settings-row settings-row--switch">
-          <div className="settings-row__text">
-            <strong>{title}</strong>
-            <p>{text}</p>
+      {TOGGLES.map(({ key, title, text }) => {
+        const byProvider = providerDecides(key, draft);
+        return (
+          <div key={key} className="settings-row settings-row--switch">
+            <div className="settings-row__text">
+              <strong>{title}</strong>
+              <p>{byProvider ? VERIFY_EMAIL_PROVIDER_TEXT : text}</p>
+            </div>
+            <Switch checked={draft[key]} disabled={disabled || byProvider} aria-label={title} onChange={(event) => onChange({ [key]: event.target.checked })} />
           </div>
-          <Switch checked={draft[key]} disabled={disabled} aria-label={title} onChange={(event) => onChange({ [key]: event.target.checked })} />
-        </div>
-      ))}
+        );
+      })}
       <div className="access-consents">
         <MultiSelect
           id="access-consents"

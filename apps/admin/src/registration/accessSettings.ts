@@ -1,14 +1,18 @@
 import type { RegistrationMode } from "@admitto/db/status";
+import {
+  SSO_CLAIM_NAME_MAX,
+  SSO_CLAIM_VALUE_MAX,
+  SSO_CLAIM_VALUES_MAX,
+  ssoClaimNameProblem,
+  ssoClaimValueProblem,
+  type SsoClaimNameProblem,
+  type SsoClaimValueProblem,
+} from "@admitto/shared";
 import type { LegalDocumentDto, RegistrationReadinessCheckDto, RegistrationSettingsDto, SaveRegistrationSettingsBody } from "../api/types.js";
 import type { SearchableSelectOption } from "../components/SearchableSelect.js";
 
 /** The ways in this screen offers. */
 export type AccessMethod = "link" | "password" | "sso";
-
-/** The limits the server keeps to (`SSO_CLAIM_*` in `apps/web/src/registration/sso-claim.ts`): a test holds the two in step. */
-export const SSO_CLAIM_NAME_MAX = 100;
-export const SSO_CLAIM_VALUE_MAX = 128;
-export const SSO_CLAIM_VALUES_MAX = 20;
 
 /**
  * What the Access tab edits: the settings as a form holds them. The way in is one choice or none, and the person a guest may
@@ -64,20 +68,28 @@ export interface ClaimErrors {
   values?: string;
 }
 
-const CLAIM_NAME_PATTERN = /^[\x21-\x7e]+$/;
-const CONTROL_CHARACTER = /\p{Cc}/u;
+/** What the person reads for each thing the shared rules (`@admitto/shared`, ssoClaim.ts) can find wrong. */
+const NAME_PROBLEMS: Record<SsoClaimNameProblem, string> = {
+  too_long: `The name can have at most ${SSO_CLAIM_NAME_MAX} characters.`,
+  bad_characters: "The name has letters, digits and signs only, with no spaces.",
+};
+const VALUE_PROBLEMS: Record<SsoClaimValueProblem, string> = {
+  too_long: `A value can have at most ${SSO_CLAIM_VALUE_MAX} characters.`,
+  control_character: "A value cannot hold a control character.",
+};
 
 function nameError(name: string, hasValues: boolean): string | undefined {
   if (name === "") return hasValues ? "Enter the name of the claim these values belong to." : undefined;
-  if (name.length > SSO_CLAIM_NAME_MAX) return `The name can have at most ${SSO_CLAIM_NAME_MAX} characters.`;
-  return CLAIM_NAME_PATTERN.test(name) ? undefined : "The name has letters, digits and signs only, with no spaces.";
+  const problem = ssoClaimNameProblem(name);
+  return problem === null ? undefined : NAME_PROBLEMS[problem];
 }
 
 function valuesError(values: readonly string[], hasName: boolean): string | undefined {
   if (values.length === 0) return hasName ? "Enter at least one value, or clear the name." : undefined;
   if (values.length > SSO_CLAIM_VALUES_MAX) return `List at most ${SSO_CLAIM_VALUES_MAX} values.`;
-  if (values.some((value) => value.length > SSO_CLAIM_VALUE_MAX)) return `A value can have at most ${SSO_CLAIM_VALUE_MAX} characters.`;
-  return values.some((value) => CONTROL_CHARACTER.test(value)) ? "A value cannot hold a control character." : undefined;
+  const problems = values.map(ssoClaimValueProblem);
+  const found = problems.includes("too_long") ? "too_long" : problems.find((problem) => problem !== null);
+  return found === undefined || found === null ? undefined : VALUE_PROBLEMS[found];
 }
 
 /**
@@ -111,9 +123,11 @@ function sameKeys(a: readonly string[], b: readonly string[]): boolean {
 /**
  * The restriction of the company sign-in, when it changed: the name and the values together, `null` and an empty list to take it away.
  * A way in other than the company sign-in has no restriction: the server clears it when the way in changes, so none is sent then.
+ * Turning registration off must always be possible, so a restriction that is not complete is left out of that save.
  */
 function claimPatch(draft: AccessDraft, base: AccessDraft): Pick<SaveRegistrationSettingsBody, "sso_claim_name" | "sso_claim_values"> {
   if (draft.method !== "sso" || !claimChanged(draft, base)) return {};
+  if (draft.mode === null && base.mode !== null && Object.keys(claimErrors(draft)).length > 0) return {};
   const { name, values } = parseClaim(draft);
   return { sso_claim_name: name === "" ? null : name, sso_claim_values: values };
 }

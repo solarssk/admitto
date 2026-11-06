@@ -123,8 +123,9 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     // The Save button is off while nothing has changed and busy while a save runs, so a click never gets here then.
     /* v8 ignore if */
     if (saving || !dirty) return;
-    // The fields of the restriction say what is wrong with them; this says why nothing was saved.
-    if (Object.keys(claimErrors(draft)).length > 0) {
+    // The fields of the restriction say what is wrong with them; this says why nothing was saved. A save that turns registration off
+    // does not wait for it: that save leaves the restriction out (settingsPatch), and the form shows the saved one afterwards.
+    if (patch.mode !== null && Object.keys(claimErrors(draft)).length > 0) {
       setProblem({ kind: "message", text: "Fix the restriction of the company sign-in before you save." });
       return;
     }

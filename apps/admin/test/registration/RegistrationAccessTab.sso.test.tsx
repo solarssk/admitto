@@ -7,7 +7,7 @@ import type { RegistrationSettingsDto } from "../../src/api/types.js";
 import { isOff } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
 import { archivedEvent, settings, ssoChecks } from "./accessData.js";
-import { card, radio, renderLoaded, resetApi, saveButton } from "./accessFixtures.js";
+import { card, radio, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const { api: mocks } = await import("./accessApiMocks.js");
@@ -55,6 +55,31 @@ describe("the company sign-in as the way in of an event", () => {
     expect(screen.getByText(/Guests sign in with the company's identity provider to open the form\. The email address comes from that sign-in and cannot be changed on the form\./)).toBeTruthy();
     expect(screen.queryByText("Event password")).toBeNull();
     expect(screen.queryByText("Choosing another way in later removes the password.")).toBeNull();
+  });
+
+  it("greys out the confirmation of the address for the company sign-in and says why, and gives the switch back, unchanged, with the other ways in", async () => {
+    await renderLoaded(settings({ verify_email: true }));
+    expect(isOff(toggle("Confirm email addresses"))).toBe(false);
+
+    fireEvent.click(radio("Company sign-in"));
+
+    expect(isOff(toggle("Confirm email addresses"))).toBe(true);
+    expect(screen.getByText(/Not used with the company sign-in: the identity provider has already verified the address, so guests are sent no confirmation link\./)).toBeTruthy();
+    expect(screen.queryByText(/Guests confirm their address with a link/)).toBeNull();
+    fireEvent.click(radio("Link"));
+    expect(isOff(toggle("Confirm email addresses"))).toBe(false);
+    expect(toggle("Confirm email addresses").checked).toBe(true);
+    expect(screen.getByText(/Guests confirm their address with a link/)).toBeTruthy();
+  });
+
+  it("does not send the confirmation of the address when the way in is the company sign-in, though it is on", async () => {
+    await renderLoaded(settings({ verify_email: true }));
+    api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ verify_email: true }));
+
+    fireEvent.click(radio("Company sign-in"));
+    await save();
+
+    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["sso"] });
   });
 
   it("shows the fields of the restriction for the company sign-in only", async () => {
@@ -183,6 +208,49 @@ describe("what is wrong with the restriction", () => {
     expect(screen.getByText("Enter at least one value, or clear the name.")).toBeTruthy();
     expect(claimValues()?.getAttribute("aria-invalid")).toBe("true");
     expect(alertText()).toBe("Fix the restriction of the company sign-in before you save.");
+    expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
+  });
+
+  it("lets registration be turned off with a restriction that is not complete, and leaves the restriction out of that save", async () => {
+    await renderLoaded(ssoSettings({ mode: "automatic" }));
+    api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ mode: null }));
+    type(claimName(), "tid");
+
+    fireEvent.click(radio("Off"));
+    fireEvent.click(saveButton());
+    const dialog = await screen.findByRole("dialog", { name: "Turn off registration?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Turn off registration" }));
+
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { mode: null }));
+    // The form shows what is saved afterwards: no restriction.
+    await waitFor(() => expect(claimName()?.value).toBe(""));
+  });
+
+  it("still sends a restriction that is complete along with turning registration off", async () => {
+    await renderLoaded(ssoSettings({ mode: "automatic" }));
+    api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ mode: null, sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
+    type(claimName(), "tid");
+    type(claimValues(), "aaa-111");
+
+    fireEvent.click(radio("Off"));
+    fireEvent.click(saveButton());
+    const dialog = await screen.findByRole("dialog", { name: "Turn off registration?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Turn off registration" }));
+
+    await waitFor(() =>
+      expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { mode: null, sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }),
+    );
+  });
+
+  it("still stops a save that keeps registration on at a restriction that is not complete", async () => {
+    await renderLoaded(ssoSettings({ mode: "automatic" }));
+    type(claimName(), "tid");
+
+    fireEvent.click(radio("With approval"));
+    fireEvent.click(saveButton());
+
+    expect(alertText()).toBe("Fix the restriction of the company sign-in before you save.");
+    expect(screen.queryByRole("dialog", { name: "Turn off registration?" })).toBeNull();
     expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
   });
 
