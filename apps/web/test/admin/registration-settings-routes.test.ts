@@ -66,7 +66,10 @@ function memoryDb(options: { providers?: ProviderRow[]; values?: Record<string, 
   return { db: db as unknown as PrismaClient, rows: memory.rows, systemSettings: memory.systemSettings, identityProvider, executeRaw };
 }
 
-function makeApp(db: PrismaClient) {
+/** The address of the instance of these tests; the return address of the company sign-in is built on it. */
+const INSTANCE_URL = "https://tickets.example.com";
+
+function makeApp(db: PrismaClient, baseUrl: () => Promise<string> = async () => INSTANCE_URL) {
   const app = new Hono();
   app.use("*", async (c, next) => {
     c.set("auth" as never, { userId: "user-1", sessionId: "sess-1" } as never);
@@ -77,8 +80,8 @@ function makeApp(db: PrismaClient) {
   app.delete("/turnstile", (c) => handleDeleteRegistrationTurnstile(c, db));
   app.get("/access-methods", (c) => handleGetRegistrationAccessMethods(c, db));
   app.put("/access-methods", (c) => handlePutRegistrationAccessMethods(c, db));
-  app.get("/sso-provider", (c) => handleGetRegistrationSsoProvider(c, db));
-  app.put("/sso-provider", (c) => handlePutRegistrationSsoProvider(c, db));
+  app.get("/sso-provider", (c) => handleGetRegistrationSsoProvider(c, db, baseUrl));
+  app.put("/sso-provider", (c) => handlePutRegistrationSsoProvider(c, db, baseUrl));
   return app;
 }
 
@@ -363,7 +366,29 @@ describe("the identity provider guests sign in with (D-C4)", () => {
         { id: "idp-1", display_name: "Company IdP" },
         { id: "idp-2", display_name: "Other IdP" },
       ],
+      redirect_uri: `${INSTANCE_URL}/sso/callback`,
     });
+  });
+
+  it("gives a null return address, on the read and on the write, while the instance has no address, and still answers", async () => {
+    const noAddress = () => Promise.reject(new Error("no instance url"));
+    const app = makeApp(memoryDb({ providers: [company] }).db, noAddress);
+
+    const read = await app.request("/sso-provider");
+    const write = await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-1" });
+
+    expect(read.status).toBe(200);
+    expect(await read.json()).toMatchObject({ provider_id: null, redirect_uri: null });
+    expect(write.status).toBe(200);
+    expect(await write.json()).toMatchObject({ provider_id: "idp-1", state: "ready", redirect_uri: null });
+  });
+
+  it("gives the same return address on the write as on the read", async () => {
+    const app = makeApp(memoryDb({ providers: [company] }).db);
+
+    const write = await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-1" });
+
+    expect(await write.json()).toMatchObject({ redirect_uri: `${INSTANCE_URL}/sso/callback` });
   });
 
   it("chooses an enabled provider, saves its id and nothing of it, and audits the ids before and after", async () => {
