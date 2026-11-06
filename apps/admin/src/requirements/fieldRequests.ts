@@ -17,6 +17,8 @@ export interface FieldSave {
   required: boolean;
   /** Whose answer the field asks for: the guest's own, or the person the guest brings. */
   appliesTo: EventCustomFieldRecipient;
+  /** Whether the answers are sensitive (D-E6): hidden in lists, exports and the rest, shown only to an administrator on request. */
+  sensitive: boolean;
   /** The options of a single choice field, trimmed, with no empty one. */
   options: string[];
   /** All the rules the field has once it is saved, the ones of the form and the ones it has no control for (`rulesToSave`): null for
@@ -32,6 +34,7 @@ export function fieldSaveOf(field: EventCustomFieldDto): FieldSave {
     description: field.description ?? "",
     required: field.required,
     appliesTo: recipientOfField(field),
+    sensitive: field.sensitive === true,
     options: field.type === "select" ? (field.options ?? []) : [],
     rules: field.rules,
   };
@@ -45,6 +48,7 @@ export function sameFieldSave(a: FieldSave, b: FieldSave): boolean {
     a.description === b.description &&
     a.required === b.required &&
     a.appliesTo === b.appliesTo &&
+    a.sensitive === b.sensitive &&
     JSON.stringify(a.options) === JSON.stringify(b.options) &&
     sameAllRules(a.rules, b.rules)
   );
@@ -64,6 +68,7 @@ export function createFieldBody(sourceField: string, save: FieldSave, showOnForm
     ...(save.rules ? { rules: save.rules } : {}),
     ...(showOnForm ? { show_on_form: true } : {}),
     ...(save.appliesTo === "companion" ? { applies_to: "companion" as const } : {}),
+    ...(save.sensitive ? { sensitive: true } : {}),
   };
 }
 
@@ -74,6 +79,8 @@ export function createFieldBody(sourceField: string, save: FieldSave, showOnForm
  *   the same list again could rewrite the stored options with a round-trip artifact.
  * - `applies_to` only when it changed: the server judges a move to the other recipient like any change of the conditions between
  *   fields, so a save that does not move the field does not ask it to.
+ * - `sensitive` only when it changed: a 409 `field_in_use` answers a change to sensitive while an item shows the question, so a save that
+ *   does not change it must not ask for it.
  * - `rules` only when they changed: an object replaces them, null clears them. `save.rules` is what the field keeps (the icon and
  *   the condition of any type, the format rules of a type that takes them, the suggestions of a text field), so a type that no
  *   longer takes format rules or suggestions loses those and nothing else, and the server is never sent rules that do not fit
@@ -89,6 +96,7 @@ export function updateFieldPatch(field: EventCustomFieldDto, save: FieldSave): U
     required: save.required,
     ...(optionsChanged ? { options: save.type === "select" ? save.options : null } : {}),
     ...(save.appliesTo === recipientOfField(field) ? {} : { applies_to: save.appliesTo }),
+    ...(save.sensitive === (field.sensitive === true) ? {} : { sensitive: save.sensitive }),
     ...(sameAllRules(save.rules, field.rules) ? {} : { rules: save.rules }),
   };
 }

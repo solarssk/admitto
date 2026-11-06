@@ -54,3 +54,9 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+/* The note under the box of a sensitive question: the answer is write-only. */
+.custom-data-field__write-only {
+  display: block;
+  margin-top: var(--space-1);
+}

@@ -24,6 +24,8 @@ import { REQUEST_PAGE_SIZE_OPTIONS, useRegistrationRequests, type RequestsAnswer
 import { useRequestLookups } from "./useRequestLookups.js";
 import { useRequestSelection, type RequestSelection } from "./useRequestSelection.js";
 import { useRequestStatus } from "./useRequestStatus.js";
+import { isOrgAdmin } from "../auth/capabilities.js";
+import { useOptionalAuth } from "../auth/AuthProvider.js";
 import "./registration-requests.css";
 
 const NO_ROWS: RegistrationListItemDto[] = [];
@@ -113,6 +115,8 @@ function useOpenRequest() {
 function RegistrationRequestsBody({ eventId, counts }: Readonly<{ eventId: string; counts: ListLoad<RegistrationCountsDto> }>) {
   const { event, refreshEvent } = useOutletContext<{ event: EventDto; refreshEvent?: () => Promise<unknown> }>();
   const { reportApiError } = useConnectionState();
+  // Only an administrator of the organization (or a superadmin) is offered "Show" for the sensitive answers; the server refuses the others.
+  const canReveal = isOrgAdmin(useOptionalAuth()?.assignments ?? [], event.organization_id);
   const { status, known, setStatus } = useRequestStatus(counts);
   const requests = useRegistrationRequests(eventId, status, reportApiError, { enabled: known });
   const { list, answer, page, pageSize, clearFilters } = requests;
@@ -221,6 +225,7 @@ function RegistrationRequestsBody({ eventId, counts }: Readonly<{ eventId: strin
           event={event}
           row={openRow}
           lookups={lookups}
+          canReveal={canReveal}
           suspended={decisions.pending !== null}
           busy={decisions.busy}
           onClose={detail.close}

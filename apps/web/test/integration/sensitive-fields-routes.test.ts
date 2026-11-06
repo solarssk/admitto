@@ -13,9 +13,10 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { drainExportJobs, IMPORT_STOPPED_BY_FIELD_DELETION_ERROR } from "@admitto/tickets";
+import { drainExportJobs, ERASE_TRANSACTION_TIMEOUT_MS, IMPORT_STOPPED_BY_FIELD_DELETION_ERROR } from "@admitto/tickets";
 import { executeImportCommit, ImportStoppedError } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
+import { SUGGESTED_EVENT_FIELDS } from "@admitto/shared";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
@@ -576,6 +577,206 @@ describe("a field that becomes sensitive", () => {
     expect((await download(jobId)).status).toBe(404);
     const after = await builtExport();
     expect((await download(after)).status).toBe(200);
+  });
+});
+
+describe("adding the suggested questions, one of which is sensitive", () => {
+  const path = `/api/admin/events/${EVENT}/custom-fields`;
+  const suggestedKeys = SUGGESTED_EVENT_FIELDS.map((suggested) => suggested.source_field);
+  const sensitiveKey = SUGGESTED_EVENT_FIELDS.find((suggested) => suggested.sensitive === true)?.source_field ?? "";
+
+  async function builtExport(): Promise<string> {
+    const queued = await get(`/api/admin/events/${EVENT}/attendees/export?format=csv`);
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+    for (let i = 0; i < 40; i += 1) {
+      const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId }, select: { status: true } });
+      if (job.status === "succeeded" || job.status === "failed") break;
+      await drainExportJobs(prisma, getDefaultStorage(), { limit: 10 });
+    }
+    return jobId;
+  }
+  const download = (jobId: string) => get(`/api/admin/events/${EVENT}/export/jobs/${jobId}/download`);
+  const addSuggested = () => send("POST", `${path}/suggested`, {});
+
+  /** Holds the row of an open import job as a running import does, and lets go on `release`. */
+  async function holdOpenJob() {
+    const job = await prisma.adminJob.create({ data: { type: "import_commit", status: "running", organization_id: ORG, event_id: EVENT } });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let held!: (pid: number) => void;
+    const heldPromise = new Promise<number>((resolve) => (held = resolve));
+    const holding = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT "status" FROM "AdminJob" WHERE "id" = ${job.id} FOR UPDATE`;
+        const session = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid()::int AS "pid"`;
+        held(session[0]!.pid);
+        await gate;
+      },
+      { timeout: 30_000 },
+    );
+    const pid = await heldPromise;
+    return { release, done: holding, pid };
+  }
+
+  /** How many sessions wait for what the session `holderPid` holds: the request under test, and not a wait of another test in the same database. */
+  const jobRowWaiters = async (holderPid: number) =>
+    Number(
+      (
+        await prisma.$queryRaw<{ waiting: bigint }[]>`
+          SELECT count(*)::bigint AS "waiting" FROM pg_stat_activity
+          WHERE datname = current_database() AND ${holderPid}::int = ANY(pg_blocking_pids(pid))`
+      )[0]?.waiting ?? 0,
+    );
+
+  beforeEach(async () => {
+    // The tests above leave questions of their own behind, and the suggested ones must fit under the cap on fields.
+    const seeded = ["diet", "allergy", "rh", "shirt", "size", "mobility", "plate", "rhnote"];
+    await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT, source_field: { notIn: seeded } } });
+  });
+
+  afterEach(async () => {
+    await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT, source_field: { in: suggestedKeys } } });
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT, type: "import_commit" } });
+  });
+
+  it("makes an export built before unavailable, as when a sensitive question is created by hand", async () => {
+    const before = await builtExport();
+    expect((await download(before)).status).toBe(200);
+
+    const res = await addSuggested();
+
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { added: string[] }).added).toContain(sensitiveKey);
+    expect((await download(before)).status).toBe(404);
+    expect(((await prisma.adminJob.findUniqueOrThrow({ where: { id: before } })).result_json as Record<string, unknown>).invalidated).toBe(true);
+    const after = await builtExport();
+    expect((await download(after)).status).toBe(200);
+  });
+
+  it("leaves the exports as they are when the batch creates no sensitive question (it exists already)", async () => {
+    await prisma.eventCustomField.create({ data: { event_id: EVENT, source_field: sensitiveKey, label: "Already here", sensitive: true } });
+    const before = await builtExport();
+
+    const res = await addSuggested();
+
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { added: string[] }).added).not.toContain(sensitiveKey);
+    expect((await download(before)).status).toBe(200);
+  });
+
+  it("waits for the rows of the open jobs of the event when it creates a sensitive question, as the ordinary create does", async () => {
+    const held = await holdOpenJob();
+    const adding = Promise.resolve(addSuggested());
+    try {
+      await vi.waitFor(async () => expect(await jobRowWaiters(held.pid)).toBeGreaterThan(0), { timeout: 5000, interval: 25 });
+    } finally {
+      held.release();
+    }
+    await held.done;
+
+    expect((await adding).status).toBe(201);
+  });
+
+  it("does not wait for the open jobs when it creates no sensitive question", async () => {
+    await prisma.eventCustomField.create({ data: { event_id: EVENT, source_field: sensitiveKey, label: "Already here", sensitive: true } });
+    const held = await holdOpenJob();
+    try {
+      const res = await addSuggested();
+
+      expect(res.status).toBe(201);
+    } finally {
+      held.release();
+    }
+    await held.done;
+  });
+
+  it("does not let an export that is running when the sensitive question is added record its file, and takes the file back", async () => {
+    const storage = getDefaultStorage();
+    const stored: string[] = [];
+    const deleted: string[] = [];
+    const queued = await get(`/api/admin/events/${EVENT}/attendees/export?format=csv`);
+    const { jobId } = (await queued.json()) as { jobId: string };
+
+    await drainExportJobs(
+      prisma,
+      {
+        put: async (bytes, options) => {
+          const result = await storage.put(bytes, options);
+          stored.push(result.key);
+          // The file is built and stored; the batch adds the sensitive question before the job writes its result.
+          expect((await addSuggested()).status).toBe(201);
+          return result;
+        },
+        delete: async (key) => {
+          deleted.push(key);
+          return storage.delete(key);
+        },
+      },
+      { limit: 10 },
+    );
+
+    expect(stored).toHaveLength(1);
+    expect(deleted).toEqual(stored);
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    expect(job.status).not.toBe("succeeded");
+    expect(job.storage_key).toBeNull();
+    expect((job.result_json as Record<string, unknown>).invalidated).toBe(true);
+    expect((await download(jobId)).status).toBe(404);
+    expect((await download(await builtExport())).status).toBe(200);
+  });
+
+  it("repeats the run with the open jobs locked when the sensitive question it found is gone by the time the plan is made", async () => {
+    await prisma.eventCustomField.create({ data: { event_id: EVENT, source_field: sensitiveKey, label: "Already here", sensitive: true } });
+    const held = await holdOpenJob();
+    // The route reads the sensitive questions the event has (all of them: so it takes no locks), and before it plans, one is deleted.
+    app = buildTestApp({
+      prisma: withHookAfterFirst("eventCustomField", "findMany", async () => {
+        await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT, source_field: sensitiveKey } });
+      }),
+      checkinToken: "sensitive-checkin-token-32-chars!!",
+      adminDistRoot,
+    });
+    const adding = Promise.resolve(addSuggested());
+    try {
+      // The second run is the one that takes the job rows: it waits for the import that holds one.
+      await vi.waitFor(async () => expect(await jobRowWaiters(held.pid)).toBeGreaterThan(0), { timeout: 5000, interval: 25 });
+    } finally {
+      held.release();
+    }
+    await held.done;
+
+    const res = await adding;
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { added: string[] }).added).toContain(sensitiveKey);
+  });
+
+  it("gives every transaction that can wait for the open jobs the room an erasure has, not the 5 seconds of an interactive one", async () => {
+    const given: unknown[] = [];
+    app = buildTestApp({
+      prisma: new Proxy(prisma, {
+        get(target, prop) {
+          const value: unknown = Reflect.get(target, prop);
+          if (typeof value !== "function") return value;
+          if (prop !== "$transaction") return value.bind(target);
+          return (...args: unknown[]) => {
+            given.push(args[1]);
+            return value.apply(target, args);
+          };
+        },
+      }) as PrismaClient,
+      checkinToken: "sensitive-checkin-token-32-chars!!",
+      adminDistRoot,
+    });
+
+    const created = await send("POST", path, { source_field: "tx_room", label: "Tx room", sensitive: true });
+    const { id } = (await created.json()) as { id: string };
+    const patched = await send("PATCH", `${path}/${id}`, { label: "Tx room again" });
+    const suggested = await addSuggested();
+    const removed = await remove(`${path}/${id}`);
+
+    expect([created.status, patched.status, suggested.status, removed.status]).toEqual([201, 200, 201, 200]);
+    expect(given).toEqual(Array.from({ length: 4 }, () => ({ timeout: ERASE_TRANSACTION_TIMEOUT_MS, maxWait: 10_000 })));
   });
 });
 

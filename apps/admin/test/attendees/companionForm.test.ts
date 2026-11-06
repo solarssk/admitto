@@ -137,3 +137,37 @@ describe("companionBody", () => {
     expect(companionBody({ name: "Anna", answers: {} }, [])).toEqual({ name: "Anna", custom_data: {} });
   });
 });
+
+describe("a sensitive question of the companion is write-only", () => {
+  const allergy = answerField("allergy", "Allergies", "text", { applies_to: "companion", sensitive: true, required: true });
+  const fields = [diet, allergy];
+  const stored = { slot: 1, name: "Piotr", custom_data: { diet: "vegan", allergy: "peanuts" } };
+
+  it("starts its box empty, whatever the companion holds, and an empty box is no edit", () => {
+    const form = companionFormFrom(stored, fields);
+
+    expect(form.answers).toEqual({ diet: "vegan", allergy: "" });
+    expect(companionFormChanged(form, companionFormFrom(stored, fields), fields)).toBe(false);
+  });
+
+  it("counts a value typed into it as an edit, and sends it", () => {
+    const base = companionFormFrom(stored, fields);
+    const form = { ...base, answers: { ...base.answers, allergy: "  nuts " } };
+
+    expect(companionFormChanged(form, base, fields)).toBe(true);
+    expect(companionBody(form, fields)).toEqual({ name: "Piotr", custom_data: { diet: "vegan", allergy: "nuts" } });
+  });
+
+  it("sends no key for an empty box, and a required one does not block the form", () => {
+    const form = companionFormFrom(stored, fields);
+
+    expect(companionProblem(form, fields)).toBeNull();
+    expect(companionBody(form, fields)).toEqual({ name: "Piotr", custom_data: { diet: "vegan" } });
+  });
+
+  it("still holds a required ordinary question", () => {
+    const form = companionFormFrom({ slot: 1, name: "Piotr", custom_data: {} }, [plate]);
+
+    expect(companionProblem(form, [plate])).toBe("Plate is required.");
+  });
+});

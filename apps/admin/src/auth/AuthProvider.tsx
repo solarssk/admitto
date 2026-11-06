@@ -180,6 +180,12 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   );
 }
 
+/** The session when there is one, and null where no provider is mounted (a part of a screen that is rendered alone): a caller that uses it
+ * to decide whether to offer something treats null as "not allowed", never as "allowed". */
+export function useOptionalAuth(): AuthContextValue | null {
+  return useContext(AuthContext);
+}
+
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth requires AuthProvider");

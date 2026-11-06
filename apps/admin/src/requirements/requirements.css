@@ -818,3 +818,18 @@
   align-items: center;
   gap: var(--space-2);
 }
+
+/* The "Sensitive" switch of the field editor: the text and its effects on the left, the switch at the middle of the block. */
+.custom-field-sensitive {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.custom-field-sensitive__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}

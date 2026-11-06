@@ -6,11 +6,13 @@ import {
   CUSTOM_FIELD_NOT_ANSWERED_KEY,
   EVENT_CUSTOM_FIELD_TYPES,
   planSuggestedFields,
+  SUGGESTED_EVENT_FIELDS,
   type EventCustomFieldRules,
   type EventCustomFieldType,
   type SuggestedEventField,
 } from "@admitto/shared";
 import {
+  ERASE_TRANSACTION_TIMEOUT_MS,
   MAX_CUSTOM_FIELDS_PER_EVENT,
   controlsOtherFields,
   eventCustomFieldOrderBy,
@@ -37,6 +39,11 @@ import {
   requireEventId,
 } from "./admin-helpers.js";
 import { isRequiredFieldOffForm } from "../registration/field-on-form.js";
+
+/** The transactions that wait for the open exports and imports of the event (lockOpenAttendeeJobs, an import holds its job row for as long
+ * as it runs) or write the answers of many people have the room an erasure and a removal have, not the 5 seconds of an interactive
+ * transaction, which a normal import outlasts. */
+const JOB_LOCKING_TRANSACTION_OPTIONS = { timeout: ERASE_TRANSACTION_TIMEOUT_MS, maxWait: 10_000 } as const;
 
 /** Thrown when the per-event cap is still exceeded on the transaction-scoped recheck (two
  * concurrent creates could otherwise both pass the earlier, non-transactional count check before
@@ -472,7 +479,7 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
         metadata: { source_field: row.source_field, ...(row.sensitive ? { sensitive: true } : {}) },
       });
       return row;
-    });
+    }, JOB_LOCKING_TRANSACTION_OPTIONS);
     return c.json(serializeCustomField(created), 201);
   } catch (err) {
     return createFieldFailure(c, err);
@@ -489,6 +496,7 @@ function suggestedFieldInput(suggested: SuggestedEventField): z.infer<typeof cre
     type: suggested.type,
     required: false,
     show_on_form: true,
+    sensitive: suggested.sensitive === true ? true : undefined,
     options: suggested.options ? [...suggested.options] : undefined,
     rules: suggested.rules ? structuredClone(suggested.rules) : undefined,
   };
@@ -513,6 +521,40 @@ function suggestedFieldsLimitResponse(c: Context, err: SuggestedFieldsLimitError
   return c.json({ error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT, free: err.free, needed: err.needed }, 422);
 }
 
+const SENSITIVE_SUGGESTED_KEYS = SUGGESTED_EVENT_FIELDS.filter((suggested) => suggested.sensitive === true).map((suggested) => suggested.source_field);
+
+type SuggestedPlan = ReturnType<typeof planSuggestedFields>;
+
+/** One transaction of "add the suggested questions". Null when the plan adds a sensitive question and `lockJobs` was false, with nothing
+ * written; with the jobs locked it is never null. */
+function addSuggestedFields(c: Context, db: PrismaClient, eventId: string, lockJobs: true): Promise<SuggestedPlan>;
+function addSuggestedFields(c: Context, db: PrismaClient, eventId: string, lockJobs: boolean): Promise<SuggestedPlan | null>;
+function addSuggestedFields(c: Context, db: PrismaClient, eventId: string, lockJobs: boolean): Promise<SuggestedPlan | null> {
+  return db.$transaction(async (tx) => {
+    if (lockJobs) await lockOpenAttendeeJobs(tx, eventId);
+    await acquireEventCustomFieldsLock(tx, eventId);
+    // Read under the lock, so what the plan is made from is what the rows are written next to.
+    const fields = await loadConditionFields(tx, eventId);
+    const planned = planSuggestedFields(fields);
+    if (planned.overLimitBy > 0) {
+      throw new SuggestedFieldsLimitError(Math.max(0, MAX_CUSTOM_FIELDS_PER_EVENT - fields.length), planned.add.length);
+    }
+    const addsSensitive = planned.add.some((suggested) => suggested.sensitive === true);
+    if (addsSensitive && !lockJobs) return null;
+    for (const suggested of planned.add) {
+      const row = await tx.eventCustomField.create({ data: newFieldData(eventId, suggestedFieldInput(suggested)) }); // NOSONAR - statements in one transaction run one at a time, in the order of the set
+      await writeBulkActionLog(tx, { // NOSONAR - statements in one transaction run one at a time
+        event_id: eventId,
+        action_type: "event_custom_field_created",
+        audit: adminAuditFromContext(c),
+        metadata: { source_field: row.source_field },
+      });
+    }
+    if (addsSensitive) await invalidateEventExports(tx, eventId);
+    return planned;
+  }, JOB_LOCKING_TRANSACTION_OPTIONS);
+}
+
 /** POST /api/admin/events/:eventId/custom-fields/suggested
  * Adds the suggested questions the event does not have yet (SUGGESTED_EVENT_FIELDS), each the way "Add field" adds one, in one
  * transaction under the custom-fields lock, so the cap is counted again there and no other write to the event's fields comes between.
@@ -533,25 +575,16 @@ export async function handleAddSuggestedEventCustomFields(c: Context, db: Prisma
   if (refused) return refused;
 
   try {
-    const plan = await db.$transaction(async (tx) => {
-      await acquireEventCustomFieldsLock(tx, eventId);
-      // Read under the lock, so what the plan is made from is what the rows are written next to.
-      const fields = await loadConditionFields(tx, eventId);
-      const planned = planSuggestedFields(fields);
-      if (planned.overLimitBy > 0) {
-        throw new SuggestedFieldsLimitError(Math.max(0, MAX_CUSTOM_FIELDS_PER_EVENT - fields.length), planned.add.length);
-      }
-      for (const suggested of planned.add) {
-        const row = await tx.eventCustomField.create({ data: newFieldData(eventId, suggestedFieldInput(suggested)) }); // NOSONAR - statements in one transaction run one at a time, in the order of the set
-        await writeBulkActionLog(tx, { // NOSONAR - statements in one transaction run one at a time
-          event_id: eventId,
-          action_type: "event_custom_field_created",
-          audit: adminAuditFromContext(c),
-          metadata: { source_field: row.source_field },
-        });
-      }
-      return planned;
+    // A question created sensitive meets exports and open jobs as the ordinary create does: the jobs are locked first and the
+    // exports made unavailable after the write (docs/dev/attendee-erasure.md, "Taking locks"). What the batch creates is known only
+    // under the custom-fields lock, which comes after the jobs in that order, so the jobs are locked up front when a sensitive
+    // question is missing, and when the plan turns out to add one nobody locked for (it appeared meanwhile), the run is repeated
+    // with the jobs locked first.
+    const present = await db.eventCustomField.findMany({
+      where: { event_id: eventId, source_field: { in: SENSITIVE_SUGGESTED_KEYS } },
+      select: { source_field: true },
     });
+    const plan = (await addSuggestedFields(c, db, eventId, present.length < SENSITIVE_SUGGESTED_KEYS.length)) ?? (await addSuggestedFields(c, db, eventId, true));
     const outcome: AddSuggestedFieldsDto = {
       added: plan.add.map((suggested) => suggested.source_field),
       skipped: [
@@ -719,7 +752,7 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
         metadata: { source_field: row.source_field, ...(parsed.data.sensitive === undefined ? {} : { sensitive: row.sensitive }) },
       });
       return row;
-    });
+    }, JOB_LOCKING_TRANSACTION_OPTIONS);
     return c.json(serializeCustomField(updated));
   } catch (err) {
     return patchFieldFailure(c, err);
@@ -898,7 +931,7 @@ export async function handleDeleteEventCustomField(c: Context, db: PrismaClient)
         // Counts of the rows whose answers were removed, never an answer.
         metadata: { source_field: existing.source_field, ...(removed ? { answers_removed: removed } : {}) },
       });
-    });
+    }, JOB_LOCKING_TRANSACTION_OPTIONS);
     return c.json({ ok: true });
   } catch (err) {
     if (err instanceof FieldInUseError) {

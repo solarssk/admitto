@@ -16,7 +16,8 @@ export function answerFor(answers: Readonly<Record<string, string>>, sourceField
 /** The form of the companion as the page has it: every question about the companion has a box, empty until it is answered. */
 export function companionFormFrom(companion: AttendeeCompanionDto, fields: readonly CustomDataFieldDef[]): CompanionFormState {
   const answers: Record<string, string> = {};
-  for (const field of fields) answers[field.source_field] = companion.custom_data?.[field.source_field] ?? "";
+  // A sensitive answer is write-only (D-E6): its box starts empty, whatever the companion holds, and an empty box keeps the saved answer.
+  for (const field of fields) answers[field.source_field] = field.sensitive === true ? "" : (companion.custom_data?.[field.source_field] ?? "");
   return { name: companion.name, answers };
 }
 
@@ -49,7 +50,7 @@ export function companionAnswerEntries(
  * the questions take (a required one answered, a choice among its options, a format). The server judges the same again. */
 export function companionProblem(form: CompanionFormState, fields: readonly CustomDataFieldDef[]): string | null {
   if (form.name.trim() === "") return "Enter the companion's name.";
-  return validateCustomFieldsForm([...fields], form.answers);
+  return validateCustomFieldsForm([...fields], form.answers, true);
 }
 
 /**

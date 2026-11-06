@@ -542,3 +542,27 @@ describe("validateCustomFieldsForm: a question that is not asked", () => {
     expect(validateCustomFieldsForm([plate], { plate: "" })).toBeNull();
   });
 });
+
+describe("sensitive questions in the forms and the lists of answers", () => {
+  const access = answerField("access", "Accessibility needs", "text", { sensitive: true, required: true });
+  const shirt = answerField("shirt", "Shirt size", "text");
+
+  it("never lists the answer to a sensitive question, even one that comes with the data, and lists an ordinary one", () => {
+    const entries = allCustomDataEntries({ access: "needs a ramp", shirt: "M" }, [access, shirt], (key) => key, "UTC");
+
+    expect(entries).toEqual([["shirt", "Shirt size", "M"]]);
+  });
+
+  it("holds a required sensitive question to its answer when the form creates, and not when it edits what is saved", () => {
+    expect(validateCustomFieldsForm([access], { access: "" })).toBe("Accessibility needs is required.");
+    expect(validateCustomFieldsForm([access], { access: "" }, true)).toBeNull();
+    expect(validateCustomFieldsForm([shirt, access], { shirt: "", access: "" }, true)).toBeNull();
+  });
+
+  it("still holds a required ordinary question in an edit, and judges a sensitive answer that is typed", () => {
+    const required = answerField("size", "Size", "text", { required: true });
+    expect(validateCustomFieldsForm([required], { size: "" }, true)).toBe("Size is required.");
+    const choice = answerField("pick", "Pick", "select", { sensitive: true, options: ["a", "b"] });
+    expect(validateCustomFieldsForm([choice], { pick: "c" }, true)).toBe("Pick must be one of: a, b.");
+  });
+});

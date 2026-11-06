@@ -72,7 +72,7 @@ Text, long text and phone fields can limit what an answer looks like. Open **For
 
 ### Suggested questions
 
-**Add suggested questions** gives an event a ready set of questions about parking, travel and accommodation. You press it yourself. Admitto never adds these questions on its own: a new event has no custom fields until you add them.
+**Add suggested questions** gives an event a ready set of questions about parking, travel, accommodation and accessibility needs. You press it yourself. Admitto never adds these questions on its own: a new event has no custom fields until you add them.
 
 The button is on the **Fields** tab of the event's **Registration** page, next to **Add field**. The page is in the event menu.
 
@@ -83,15 +83,16 @@ The button is on the **Fields** tab of the event's **Registration** page, next t
 | How will you get here? | Single choice: Car, Train, Plane, Other | |
 | Arrival (date and time) | Date and time | The description tells the guest that an estimate is fine |
 | Do you need accommodation? | Yes / No | |
+| Do you have any accessibility needs we should know about? | Long text | Optional, and created **sensitive** (see below). The window warns that answers about accessibility can be health data |
 
 1. Open the **Fields** tab and select **Add suggested questions**.
 2. Read the list. Each question says what will happen to it: **Will be added**, **Already in your list** or **Not added**.
-3. Select **Add** and the number of questions, for example **Add 5 questions**.
+3. Select **Add** and the number of questions, for example **Add 6 questions**.
 
 - Every question is optional and is on the registration form. Change or delete it afterwards like any other field.
 - The questions go to the end of the list, in the order above.
 - Press the button again whenever you like. A question that is in the list stays exactly as you left it. Only a question you deleted comes back.
-- The set has no question about health, disability or accessibility needs. If you add one yourself, it is special-category personal data, and your organisation decides whether it may ask for it.
+- The accessibility question can hold health data, which is special-category personal data. Your organisation decides whether it may ask for it and on what basis; Admitto adds no consent of its own. That is why the question is created sensitive: its answers are hidden in lists and exports and shown only to an Administrator on request. You can delete the question, or turn **Sensitive** off, like any other field.
 - The button is off for an archived event, like **Add field**.
 
 What the window does when something is in the way:
@@ -101,6 +102,17 @@ What the window does when something is in the way:
 | The event has a field with the same ID as a suggested question | **Already in your list** | That field is left as it is |
 | The event's own **parking** field is not a Yes / No question on the registration form | **Not added** on the registration number, with the reason | The other questions are added. Fix the field and press the button again |
 | The questions would take the event over 20 fields | **Would be added** on each question, and a warning that says how many fields to delete | Nothing is added. Delete fields, or add the questions you want one at a time with **Add field** |
+
+### Sensitive questions
+
+Turn on **Sensitive** in the field editor for a question whose answers should not be seen by everyone, for example one about health or accessibility. It is off by default, and the list of fields marks a sensitive question with a **Sensitive** badge.
+
+- The answers are hidden in lists, search, filters, exports, reports, wallet passes, emails and on the operator card. The guest still answers the question on the registration form.
+- Only an Administrator of the organisation or a Superadmin can see the answers, by selecting **Show** on the attendee's page or in the request window. Every click is recorded in the audit log: who, when and which questions, never the answers. See [Roles and Permissions](Roles-and-Permissions#sensitive-answers).
+- Deleting the question deletes its answers.
+- When you turn **Sensitive** on for a question that already has answers, exports that are ready and include it are cancelled when you save. A question that an item still shows on the Requirements page cannot be made sensitive: the editor says so, and you uncheck the field on the item first.
+- When you turn **Sensitive** off, the answers already given are visible again in lists and exports. The editor warns you before you save.
+- In the forms where staff add or correct answers, the box of a sensitive question is always empty and says **Hidden after saving**. Type a new value to replace the answer; leave the box empty to keep the current one. An empty box never clears an answer, and a required question does not stop you from saving an edit.
 
 ### Questions about a companion
 
