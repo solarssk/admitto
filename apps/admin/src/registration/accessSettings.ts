@@ -87,7 +87,7 @@ function nameError(name: string, hasValues: boolean): string | undefined {
 function valuesError(values: readonly string[], hasName: boolean): string | undefined {
   if (values.length === 0) return hasName ? "Enter at least one value, or clear the name." : undefined;
   if (values.length > SSO_CLAIM_VALUES_MAX) return `List at most ${SSO_CLAIM_VALUES_MAX} values.`;
-  const problems = values.map(ssoClaimValueProblem);
+  const problems = values.map((value) => ssoClaimValueProblem(value));
   const found = problems.includes("too_long") ? "too_long" : problems.find((problem) => problem !== null);
   return found === undefined || found === null ? undefined : VALUE_PROBLEMS[found];
 }
