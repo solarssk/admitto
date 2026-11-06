@@ -18,6 +18,9 @@ export interface CustomDataFieldInputProps {
   onChange: (value: string) => void;
   /** The event's time zone: a date and time answer is the time on the clock there, and the input says so. */
   eventTimeZone?: string;
+  /** Where the box is drawn: when the form creates the answer (`new`) or corrects one that is saved (`replace`). A sensitive question is
+   * write-only in both: the box is empty, never filled with what is saved (the server does not send it), and a note says so. */
+  mode?: "new" | "replace";
 }
 
 /** A long answer: a box that grows by hand, with a count of the characters as the server counts them (an emoji is one) against
@@ -174,8 +177,28 @@ function LineInput({ field, value, disabled, onChange }: Readonly<CustomDataFiel
   );
 }
 
-/** Render one event-item custom_data field with type-aware controls. */
+/** What a sensitive question's box says under it: its answer is hidden after saving, and an empty box in an edit keeps it. */
+export const WRITE_ONLY_NEW_NOTE = "Hidden after saving.";
+export const WRITE_ONLY_REPLACE_NOTE = "Hidden after saving. Type a new value to replace it; leave it empty to keep the current one.";
+
+/** Render one event-item custom_data field with type-aware controls. A sensitive question is the same control, empty, with the note
+ * that it is write-only; in an edit it is not required (an empty box keeps the answer that is saved), so the browser does not block
+ * the save for it. */
 export function CustomDataFieldInput(props: Readonly<CustomDataFieldInputProps>) {
+  const { field, mode = "new" } = props;
+  if (field.sensitive !== true) return <TypedFieldInput {...props} />;
+  const shown = mode === "replace" && field.required ? { ...field, required: false } : field;
+  return (
+    <div className={field.type === "long_text" ? "custom-data-field--wide" : undefined}>
+      <TypedFieldInput {...props} field={shown} />
+      <span className="at-hint custom-data-field__write-only">
+        <i className="ti ti-lock" aria-hidden="true" /> {mode === "replace" ? WRITE_ONLY_REPLACE_NOTE : WRITE_ONLY_NEW_NOTE}
+      </span>
+    </div>
+  );
+}
+
+function TypedFieldInput(props: Readonly<CustomDataFieldInputProps>) {
   const { field, value, disabled, onChange } = props;
   const label = customDataFieldLabel(field);
   const type = field.type ?? "text";

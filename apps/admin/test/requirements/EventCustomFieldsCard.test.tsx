@@ -190,6 +190,17 @@ describe("EventCustomFieldsCard", () => {
     expect(rowNames()).toEqual(["Dietary requirements", "Badge name"]);
   });
 
+  it("marks a sensitive question with a Sensitive badge (a lock and the word), and no other", () => {
+    const access: EventCustomFieldDto = { ...dietaryField, id: "field-access", source_field: "access", label: "Accessibility needs", sensitive: true };
+    renderCard([dietaryField, access]);
+
+    const mark = within(screen.getByText("Accessibility needs").closest("tr")!).getByText("Sensitive");
+    expect(mark.closest(".at-badge")).not.toBeNull();
+    expect(mark.closest(".at-badge")?.querySelector("i.ti-lock")).not.toBeNull();
+    expect(within(screen.getByText("Dietary requirements").closest("tr")!).queryByText("Sensitive")).toBeNull();
+    expect(rowNames()).toEqual(["Dietary requirements", "Accessibility needs"]);
+  });
+
   it("marks a field that says nothing of its recipient as the guest's: no badge", () => {
     renderCard([dietaryField, { ...shirtField, applies_to: "guest" }]);
     expect(screen.queryByText("Companion")).toBeNull();
@@ -359,7 +370,7 @@ describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
   });
 
   describe("the Add suggested questions button", () => {
-    const ADDED = { added: ["parking", "parking_plate", "travel", "arrival", "accommodation"], skipped: [] };
+    const ADDED = { added: ["parking", "parking_plate", "travel", "arrival", "accommodation", "accessibility_needs"], skipped: [] };
     const suggestButton = () => screen.getByRole("button", { name: "Add suggested questions" });
     const suggestDialog = () => screen.queryByRole("dialog", { name: "Add suggested questions" });
 
@@ -400,11 +411,11 @@ describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
       const { onChanged } = renderCard([]);
       fireEvent.click(suggestButton());
 
-      fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 5 questions" }));
+      fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 6 questions" }));
 
       await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
       expect(addSuggestedEventCustomFields).toHaveBeenCalledWith("evt-1");
-      expect(addToast).toHaveBeenCalledWith("Added 5 suggested questions.", "success");
+      expect(addToast).toHaveBeenCalledWith("Added 6 suggested questions.", "success");
       expect(suggestDialog()).toBeNull();
       expect(document.activeElement).toBe(suggestButton());
     });
@@ -417,7 +428,7 @@ describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
       const { onChanged } = renderCard([]);
       fireEvent.click(suggestButton());
 
-      fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 5 questions" }));
+      fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 6 questions" }));
 
       await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
       expect(addToast).toHaveBeenCalledWith("The suggested questions are already in your list.", "info");
@@ -428,7 +439,7 @@ describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
       const { onChanged } = renderCard([]);
       fireEvent.click(suggestButton());
 
-      fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 5 questions" }));
+      fireEvent.click(within(suggestDialog() as HTMLElement).getByRole("button", { name: "Add 6 questions" }));
 
       expect((await screen.findByRole("alert")).textContent).toBe("This event has reached its custom field limit.");
       expect(suggestDialog()).not.toBeNull();
@@ -442,7 +453,7 @@ describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
 
       fireEvent.click(suggestButton());
 
-      expect((suggestDialog() as HTMLElement).textContent).toContain("This event has 18 of 20 fields, and adding 5 questions would take it to 23. Delete 3 fields first");
+      expect((suggestDialog() as HTMLElement).textContent).toContain("This event has 18 of 20 fields, and adding 6 questions would take it to 24. Delete 4 fields first");
       expect(addSuggestedEventCustomFields).not.toHaveBeenCalled();
     });
 

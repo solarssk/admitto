@@ -158,6 +158,13 @@ function CustomFieldRow({
               ) : null}
               {name}
             </div>
+            {field.sensitive === true ? (
+              <div className="requirements-item-recipient">
+                <Badge variant="warn">
+                  <i className="ti ti-lock" aria-hidden="true" /> Sensitive
+                </Badge>
+              </div>
+            ) : null}
             {isCompanionQuestion(field) ? (
               <div className="requirements-item-recipient">
                 <Badge variant="info">

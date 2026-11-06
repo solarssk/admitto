@@ -413,12 +413,12 @@ describe("RegistrationFieldsTab: a change", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add suggested questions" }));
     const dialog = screen.getByRole("dialog", { name: "Add suggested questions" });
-    expect(within(dialog).getAllByText("Will be added")).toHaveLength(5);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add 5 questions" }));
+    expect(within(dialog).getAllByText("Will be added")).toHaveLength(6);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add 6 questions" }));
 
     await waitFor(() => expect(rowNames()).toEqual(["Dietary requirements", ...SUGGESTED_EVENT_FIELDS.map((suggested) => suggested.label)]));
     expect(addSuggestedEventCustomFields).toHaveBeenCalledWith("evt-1");
-    expect(addToast).toHaveBeenCalledWith("Added 5 suggested questions.", "success");
+    expect(addToast).toHaveBeenCalledWith("Added 6 suggested questions.", "success");
     expect(fetchEventCustomFields).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect((screen.getByRole("switch", { name: "Do you need accommodation? on the form" }) as HTMLInputElement).checked).toBe(true);

@@ -89,9 +89,12 @@ function choiceProblem(field: CustomDataFieldDef, trimmed: string): string | nul
   return null;
 }
 
+/** `editing` is a form that corrects answers that are saved: a sensitive question is write-only there, so its box is empty and an empty box
+ * keeps the saved answer, which a required one does not forbid. */
 export function validateCustomFieldsForm(
   fields: CustomDataFieldDef[],
   values: Record<string, string>,
+  editing = false,
 ): string | null {
   for (const field of fields) {
     // A question that is not asked is not required, and what is typed for it is not sent, so it is not judged either.
@@ -99,7 +102,7 @@ export function validateCustomFieldsForm(
     const raw = values[field.source_field] ?? "";
     const trimmed = raw.trim();
 
-    if (field.required && !trimmed) {
+    if (field.required && !trimmed && !(editing && field.sensitive === true)) {
       return `${field.label} is required.`;
     }
     if (!trimmed) continue;
@@ -193,6 +196,12 @@ function formatCustomDataValue(
   }
 }
 
+/** The answer to `field` as a reader sees it (a yes or no as Yes or No, a date in the account's format): for a sensitive answer that "Show" has
+ * returned, which `allCustomDataEntries` never lists. */
+export function formatAnswerFor(field: CustomDataFieldDef, value: string, eventTimeZone?: string): string {
+  return formatCustomDataValue(value, field.type, eventTimeZone);
+}
+
 const LONG_ANSWER_CHARS = 60;
 
 /** True for an answer that is long enough, or has line breaks, to read better under its label than beside it. */
@@ -220,6 +229,9 @@ export function allCustomDataEntries(
       (pair): pair is [string, string] =>
         pair[0] !== "company" && pair[0] !== "department" && typeof pair[1] === "string" && pair[1].trim() !== "",
     )
+    // A sensitive answer is never listed here (D-E6): the server leaves it out, and this keeps the page from drawing one that comes anyway.
+    // It is shown by "Show", in its own block (SensitiveAnswers), and nowhere else.
+    .filter(([key]) => fieldsByKey.get(key)?.sensitive !== true)
     .map(([key, value]) => {
       const field = fieldsByKey.get(key);
       return [key, field?.label ?? humanizeKey(key), formatCustomDataValue(value, field?.type, eventTimeZone)];

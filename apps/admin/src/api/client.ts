@@ -1,6 +1,7 @@
 import type { SystemTemplateName } from "@admitto/mail-templates/systemTemplates";
 import type {
   AddSuggestedFieldsResponse,
+  SensitiveRevealDto,
   AttendeeCardDto,
   AttendeeDetailDto,
   AttendeeMailStatusFilter,
@@ -1087,6 +1088,23 @@ export async function updateAttendeeCompanion(
     jsonPatchInit(body),
   );
   return parseJson<AttendeeDetailDto>(res);
+}
+
+/** The administrator's "Show" of an attendee (D-E6): the answers to the sensitive questions of the guest and the companion, written to the
+ * audit log as one entry without the answers. 403 `forbidden` (an operator), 409 `attendee_erased`, 429 `sensitive_reveal_limit`. */
+export async function revealAttendeeSensitive(eventId: string, attendeeId: string): Promise<SensitiveRevealDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/reveal-sensitive`,
+    jsonPostInit({}),
+  );
+  return parseJson<SensitiveRevealDto>(res);
+}
+
+/** The administrator's "Show" of a registration request: same answer and audit entry as `revealAttendeeSensitive`. 404 `not_found` for a
+ * request that is gone, plus the same refusals. */
+export async function revealRegistrationSensitive(eventId: string, registrationId: string): Promise<SensitiveRevealDto> {
+  const res = await fetch(registrationsUrl(eventId, `/${encodeURIComponent(registrationId)}/reveal`), jsonPostInit({}));
+  return parseJson<SensitiveRevealDto>(res);
 }
 
 /** Removes the person the guest brings: their name and answers, the copy in the guest's registration, and the seat. Returns the

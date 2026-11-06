@@ -35,7 +35,7 @@ Admitto creates an active event and opens its **Overview** page directly.
 - Capacity is not part of this modal. New events remain unlimited until capacity is set in **Event settings**.
 - The timezone controls event-day timestamps and reports; do not use the browser default without checking it.
 - Location is optional at create time. Agency ticket links use the auto-generated event ID; ordinary `/t/{token}` tickets do not.
-- A new event has no custom attendee fields. To start from a ready set of questions about parking, travel and accommodation, select **Add suggested questions** on the **Fields** tab of the event's **Registration** page. See [Custom Attendee Fields](Custom-Attendee-Fields#suggested-questions).
+- A new event has no custom attendee fields. To start from a ready set of questions about parking, travel, accommodation and accessibility needs, select **Add suggested questions** on the **Fields** tab of the event's **Registration** page. See [Custom Attendee Fields](Custom-Attendee-Fields#suggested-questions).
 
 ## What changes after this action
 

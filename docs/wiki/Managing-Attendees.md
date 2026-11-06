@@ -65,9 +65,10 @@ Open the correct event. Check its ticket types and custom attendee fields before
 ### Review or update one attendee
 
 1. Open the attendee detail page. The header shows the attendee's initials in an avatar before the name. On a phone the avatar is left out.
-2. The profile is read-only until you open **Edit** in the header. Save profile changes from that dialog. The event's own fields are under the heading **Custom fields**, as in the Filters panel. A question that is shown only for a certain answer follows the same rule as in **Add attendee**.
+2. The profile is read-only until you open **Edit** in the header. Save profile changes from that dialog. The event's own fields are under the heading **Custom fields**, as in the Filters panel. The box of a sensitive question is empty and says **Hidden after saving**: type a new value to replace the answer, or leave it empty to keep it. A question that is shown only for a certain answer follows the same rule as in **Add attendee**.
 3. Review the status strip: **Pass**, Attendance, Ticket delivery, Check-in, and Wallet.
 4. Use **Additional information** for custom fields, **Companion** for the person the guest brings (see [Correct or remove a guest's companion](#correct-or-remove-a-guests-companion)), **Notes** for shared operator notes, and **Activity** for a plain-language history of changes, newest first.
+   - **Additional information** and the **Companion** card show a sensitive question as **Hidden**. An Administrator or a Superadmin selects **Show** under it, confirms that the click is recorded in the audit log, and sees the answers of that person; **Hide** (or two minutes) hides them again. An Operator sees no button. A question with no answer reads **No answer**. See [Sensitive questions](Custom-Attendee-Fields#sensitive-questions).
    - **Additional information** shows a date in your date format. A date and time shows the time at the event, with the event's time zone named, so every colleague reads the same text. A long answer shows under its label with its line breaks.
    - Activity is paged like the other tables. Pick **Rows per page** (10, 25, 50, or 100) and use **Previous** and **Next** at the bottom to reach older entries.
    - While you browse older pages, the list stays fixed even if colleagues add entries. Go back to page 1 to see the newest.
@@ -101,6 +102,7 @@ A guest can bring one companion when the event allows it (see [A guest's compani
 | **Edit** | Replaces the name and the answers to the questions asked of the companion with what you saved. An answer you clear is removed. An answer to a question that is not asked of the companion any more (the question was deleted, or is asked of the guest now) stays as it is. It takes no place and adds none |
 | **Remove** | Deletes the companion's name and answers, also the copy in the guest's registration, and frees the place they held |
 
+- A sensitive question is empty in the dialog and says **Hidden after saving**. Type a new value to replace the answer; leave it empty to keep the current one.
 - The dialog asks the event's questions about a companion, including the ones that are not on the registration form. A required question must be answered. A question that is shown only for a certain answer follows the same rule as on the registration form.
 - The name follows the same rules as on the form: up to 100 characters, with no link and no email address.
 - Both actions are for an Administrator or a Superadmin. They are turned off on an archived event, and an erased attendee has no companion card.

@@ -72,7 +72,7 @@ async function answersOf(eventId: string, email: string) {
 }
 
 describe("the registration form of an event that has the suggested questions", () => {
-  it("opens, and draws the five questions in the order of the set, each with its own icon but the choice", async () => {
+  it("opens, and draws the six questions in the order of the set, each with its own icon but the choice", async () => {
     const { slug, h } = await eventWithSuggestedQuestions();
 
     const res = await h.get(`/r/${slug}`);
@@ -89,6 +89,8 @@ describe("the registration form of an event that has the suggested questions", (
     ] as const) {
       expect(blockOf(html, key), key).toContain(`href="#${symbol}"`);
     }
+    // The accessibility question is sensitive in the admin app, and the guest form still asks it, in a long text box (D-E6).
+    expect(blockOf(html, "accessibility_needs")).toContain("<textarea");
     expect(blockOf(html, "travel")).toContain('<option value="Car">Car</option><option value="Train">Train</option><option value="Plane">Plane</option><option value="Other">Other</option>');
   });
 
@@ -105,7 +107,7 @@ describe("the registration form of an event that has the suggested questions", (
 describe("a guest answering the suggested questions", () => {
   it("is taken with an answer to every one of them, and the answers are kept as given", async () => {
     const { slug, eventId, h } = await eventWithSuggestedQuestions();
-    const answers = { parking: "true", parking_plate: "AB 123 CD", travel: "Plane", arrival: "2099-09-30T14:30", accommodation: "true" };
+    const answers = { parking: "true", parking_plate: "AB 123 CD", travel: "Plane", arrival: "2099-09-30T14:30", accommodation: "true", accessibility_needs: "Step-free access, please." };
     const payload = h.body(slug, { custom_data: answers });
 
     expect((await h.post(slug, payload)).status).toBe(200);

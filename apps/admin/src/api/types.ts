@@ -795,6 +795,14 @@ export interface CreateEventCustomFieldBody {
   rules?: EventCustomFieldRules | null;
 }
 
+/** What the administrator's "Show" answers (D-E6): the answers to the questions that are sensitive now and have a value, by `source_field`
+ * (`guest`: the person's own; for a request or an attendee the guest's), and for each companion that has one the answers by slot. A
+ * question with no answer has no key and a companion with none is not in the list, so a screen never assumes an entry is there. */
+export interface SensitiveRevealDto {
+  guest: Record<string, string>;
+  companions: { slot: number; answers: Record<string, string> }[];
+}
+
 /** What adding the suggested questions answers: the keys it created, in the order it created them, and those it left out (`exists`: the
  * event has a field under that key already; `condition`: it depends on a field that cannot be what it depends on). Mirrors
  * `AddSuggestedFieldsDto` of the server. */

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_CUSTOM_FIELDS_PER_EVENT, SUGGESTED_EVENT_FIELDS, type SuggestedEventField } from "@admitto/shared";
 import { ApiError } from "../../src/api/client.js";
 import type { AddSuggestedFieldsResponse, EventCustomFieldDto } from "../../src/api/types.js";
+import { PRESENT_ORDINARY_OFF_FORM_WARNING, PRESENT_ORDINARY_WARNING, SENSITIVE_SUGGESTION_WARNING } from "../../src/registration/suggestedQuestions.js";
 import { SuggestedQuestionsDialog, type SuggestedQuestionsDialogProps } from "../../src/registration/SuggestedQuestionsDialog.js";
 import { deferred, isOff } from "../test-utils.js";
 
@@ -69,7 +70,7 @@ afterEach(() => {
 });
 
 describe("SuggestedQuestionsDialog: an event with none of the questions", () => {
-  it("says that the questions can be changed afterwards, and lists the five, each one to be added", () => {
+  it("says that the questions can be changed afterwards, and lists the six, each one to be added", () => {
     renderDialog();
 
     expect(dialog().textContent).toContain("These questions go on the registration form. You can change or remove them afterwards.");
@@ -78,7 +79,7 @@ describe("SuggestedQuestionsDialog: an event with none of the questions", () => 
       .map((item) => item.querySelector(".suggested-questions__title")?.textContent);
     expect(labels).toEqual(SUGGESTED_EVENT_FIELDS.map((suggested) => suggested.label));
     for (const suggested of SUGGESTED_EVENT_FIELDS) expect(badgeOf(suggested.label), suggested.label).toBe("Will be added");
-    expect(confirmButton().textContent).toBe("Add 5 questions");
+    expect(confirmButton().textContent).toBe("Add 6 questions");
     expect(isOff(confirmButton())).toBe(false);
   });
 
@@ -90,6 +91,18 @@ describe("SuggestedQuestionsDialog: an event with none of the questions", () => 
     expect(rowOf("How will you get here?").textContent).toContain("Single choice: Car, Train, Plane, Other");
     expect(rowOf("Arrival (date and time)").textContent).toContain("Date and time");
     expect(rowOf("Do you need accommodation?").textContent).toContain("Yes / No");
+    expect(rowOf("Do you have any accessibility needs we should know about?").textContent).toContain("Long text");
+  });
+
+  it("warns, under the accessibility question only, that its answers can be health data and are sensitive", () => {
+    renderDialog();
+
+    const warning = rowOf("Do you have any accessibility needs we should know about?").querySelector(".suggested-questions__warning");
+    expect(warning?.textContent?.trim()).toBe(SENSITIVE_SUGGESTION_WARNING);
+    expect(SENSITIVE_SUGGESTION_WARNING).toBe(
+      "Answers about accessibility can be health data. This question is optional and its answers are sensitive: they are hidden in lists and exports and shown only on request to administrators.",
+    );
+    expect(dialog().querySelectorAll(".suggested-questions__warning")).toHaveLength(1);
   });
 
   it("starts on the safe choice: the focus is on Cancel, not on the button that adds", () => {
@@ -134,10 +147,10 @@ describe("SuggestedQuestionsDialog: an event that has some of them", () => {
     renderDialog([created(SUGGESTED_EVENT_FIELDS[2]!), ...own(1)]);
 
     expect(badgeOf("How will you get here?")).toBe("Already in your list");
-    for (const label of ["Do you need a parking space?", "Registration number", "Arrival (date and time)", "Do you need accommodation?"]) {
+    for (const label of ["Do you need a parking space?", "Registration number", "Arrival (date and time)", "Do you need accommodation?", "Do you have any accessibility needs we should know about?"]) {
       expect(badgeOf(label), label).toBe("Will be added");
     }
-    expect(confirmButton().textContent).toBe("Add 4 questions");
+    expect(confirmButton().textContent).toBe("Add 5 questions");
   });
 
   it("names the event's own question when the registration number waits for it", () => {
@@ -146,7 +159,7 @@ describe("SuggestedQuestionsDialog: an event that has some of them", () => {
     expect(badgeOf("Do you need a parking space?")).toBe("Already in your list");
     expect(rowOf("Registration number").textContent).toContain("Shown only when “Parking space” is Yes");
     expect(badgeOf("Registration number")).toBe("Will be added");
-    expect(confirmButton().textContent).toBe("Add 4 questions");
+    expect(confirmButton().textContent).toBe("Add 5 questions");
   });
 
   it("says that the registration number is not added when the event's own parking field cannot be what it waits for, and why", () => {
@@ -154,7 +167,7 @@ describe("SuggestedQuestionsDialog: an event that has some of them", () => {
 
     expect(badgeOf("Registration number")).toBe("Not added");
     expect(rowOf("Registration number").textContent).toContain("It needs “Parking notes” to be a Yes / No question on the registration form.");
-    expect(confirmButton().textContent).toBe("Add 3 questions");
+    expect(confirmButton().textContent).toBe("Add 4 questions");
     expect(isOff(confirmButton())).toBe(false);
   });
 
@@ -170,6 +183,35 @@ describe("SuggestedQuestionsDialog: an event that has some of them", () => {
     expect(isOff(confirmButton())).toBe(true);
     fireEvent.click(confirmButton());
     expect(addSuggestedEventCustomFields).not.toHaveBeenCalled();
+  });
+
+  const ACCESS = "Do you have any accessibility needs we should know about?";
+  const accessField = () => created(SUGGESTED_EVENT_FIELDS.find((suggested) => suggested.source_field === "accessibility_needs")!);
+
+  it("does not promise the protection of a sensitive question for an ordinary question the event already has under that key", () => {
+    renderDialog([accessField()]);
+
+    expect(badgeOf(ACCESS)).toBe("Already in your list");
+    const warning = rowOf(ACCESS).querySelector(".suggested-questions__warning");
+    expect(warning?.textContent?.trim()).toBe(PRESENT_ORDINARY_WARNING);
+    expect(dialog().textContent).not.toContain(SENSITIVE_SUGGESTION_WARNING);
+  });
+
+  it("does not say an ordinary question is on the form when the event has it but the form does not ask it", () => {
+    renderDialog([{ ...accessField(), show_on_form: false }]);
+
+    expect(badgeOf(ACCESS)).toBe("Already in your list");
+    const warning = rowOf(ACCESS).querySelector(".suggested-questions__warning");
+    expect(warning?.textContent?.trim()).toBe(PRESENT_ORDINARY_OFF_FORM_WARNING);
+    expect(PRESENT_ORDINARY_OFF_FORM_WARNING).not.toContain("on your form");
+    expect(dialog().textContent).not.toContain(PRESENT_ORDINARY_WARNING);
+  });
+
+  it("says nothing about privacy for a question the event already has that is sensitive", () => {
+    renderDialog([{ ...accessField(), sensitive: true }]);
+
+    expect(badgeOf(ACCESS)).toBe("Already in your list");
+    expect(dialog().querySelectorAll(".suggested-questions__warning")).toHaveLength(0);
   });
 
   it("says that nothing can be added when the only question left cannot be", () => {
@@ -188,7 +230,7 @@ describe("SuggestedQuestionsDialog: the limit on fields", () => {
 
     const notice = within(dialog()).getByText(/This event has 17 of 20 fields/);
     expect(notice.textContent).toBe(
-      "This event has 17 of 20 fields, and adding 5 questions would take it to 22. Delete 2 fields first, or add the questions you want one at a time with Add field.",
+      "This event has 17 of 20 fields, and adding 6 questions would take it to 23. Delete 3 fields first, or add the questions you want one at a time with Add field.",
     );
     for (const suggested of SUGGESTED_EVENT_FIELDS) expect(badgeOf(suggested.label), suggested.label).toBe("Would be added");
     expect(isOff(confirmButton())).toBe(true);
@@ -198,9 +240,9 @@ describe("SuggestedQuestionsDialog: the limit on fields", () => {
   });
 
   it("says it in the singular when one field has to go", () => {
-    renderDialog(own(MAX_CUSTOM_FIELDS_PER_EVENT - 4));
+    renderDialog(own(MAX_CUSTOM_FIELDS_PER_EVENT - 5));
 
-    expect(within(dialog()).getByText(/This event has 16 of 20 fields/).textContent).toContain("adding 5 questions would take it to 21. Delete 1 field first");
+    expect(within(dialog()).getByText(/This event has 15 of 20 fields/).textContent).toContain("adding 6 questions would take it to 21. Delete 1 field first");
   });
 
   it("offers to add when the questions fit exactly up to the limit", () => {
@@ -211,11 +253,11 @@ describe("SuggestedQuestionsDialog: the limit on fields", () => {
     expect(isOff(confirmButton())).toBe(false);
   });
 
-  it("counts only the questions it would add: with two of them there, three fit in a list of 17", () => {
-    renderDialog([created(SUGGESTED_EVENT_FIELDS[0]!), created(SUGGESTED_EVENT_FIELDS[2]!), ...own(MAX_CUSTOM_FIELDS_PER_EVENT - 5)]);
+  it("counts only the questions it would add: with two of them there, four fit in a list of 16", () => {
+    renderDialog([created(SUGGESTED_EVENT_FIELDS[0]!), created(SUGGESTED_EVENT_FIELDS[2]!), ...own(MAX_CUSTOM_FIELDS_PER_EVENT - 6)]);
 
     expect(within(dialog()).queryByText(/This event has/)).toBeNull();
-    expect(confirmButton().textContent).toBe("Add 3 questions");
+    expect(confirmButton().textContent).toBe("Add 4 questions");
   });
 });
 

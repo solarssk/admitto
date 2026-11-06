@@ -12,21 +12,15 @@
  *             that must stay in the file, here the call that writes the entry, so the answers cannot leave without it.
  * - n/a:      the file never shows a stored answer to anyone who did not give it: the form a guest fills in, the code that
  *             only stores or validates, a type, an error text. `why` says which.
- * - later:    a surface that a later pull request of the same feature closes (117b, 117c or 117d); it stays listed until it does.
  *
- * A file may be `redacted` or `n/a` and also carry a `pending` surface of a later pull request.
+ * There is no "later" any more: the admin screens (117c) were the last open surfaces, so every file has one of the three decisions.
  */
 import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-type Pending = { pr: "117b" | "117c" | "117d"; what: string };
-type Decision =
-  | { decision: "redacted"; via: string; pending?: Pending }
-  | { decision: "reveals"; via: string; pending?: Pending }
-  | { decision: "n/a"; why: string; pending?: Pending }
-  | { decision: "later"; pending: Pending };
+type Decision = { decision: "redacted"; via: string } | { decision: "reveals"; via: string } | { decision: "n/a"; why: string };
 
 const READS_ONLY_NAMES = "Reads the answers by the names of the fields the server sends and renders what it is given; the server leaves sensitive answers out.";
 const GUEST_FORM = "The registration form a guest fills in: it asks the question, and nothing there shows a stored answer.";
@@ -37,19 +31,20 @@ const INVENTORY: Record<string, Decision> = {
   "apps/admin/src/api/client.ts": { decision: "n/a", why: "Transport and types of the admin API; carries whatever the server sends." },
   "apps/admin/src/api/operator-api-error.ts": { decision: "n/a", why: "Error texts keyed by code; no answer is in an error." },
   "apps/admin/src/api/types.ts": { decision: "n/a", why: "Types of the admin API; no code that reads an answer." },
-  "apps/admin/src/attendees/AddAttendeeModal.tsx": { decision: "later", pending: { pr: "117c", what: "the box of a sensitive question says it is write-only" } },
-  "apps/admin/src/attendees/CompanionCard.tsx": { decision: "later", pending: { pr: "117c", what: "mask and Show for the companion's sensitive answers" } },
-  "apps/admin/src/attendees/CustomDataFieldInput.tsx": { decision: "later", pending: { pr: "117c", what: "the write-only box of a sensitive question" } },
-  "apps/admin/src/attendees/attendeeDetailForm.ts": { decision: "later", pending: { pr: "117c", what: "an empty sensitive box means unchanged" } },
+  "apps/admin/src/attendees/AddAttendeeModal.tsx": { decision: "n/a", why: "Sends the answers of a new attendee; the box of a sensitive question is write-only (CustomDataFieldInput) and nothing here shows a stored answer." },
+  "apps/admin/src/attendees/CompanionCard.tsx": { decision: "redacted", via: "AttendeeSensitiveAnswers" },
+  "apps/admin/src/attendees/CustomDataFieldInput.tsx": { decision: "redacted", via: "field.sensitive !== true" },
+  "apps/admin/src/attendees/attendeeDetailForm.ts": { decision: "redacted", via: "field.sensitive === true ?" },
+  "apps/admin/src/attendees/SensitiveAnswers.tsx": { decision: "reveals", via: "revealAttendeeSensitive" },
   "apps/admin/src/attendees/attendeeTimeline.ts": { decision: "n/a", why: "Names the fields an edit changed (their keys), never their values." },
-  "apps/admin/src/attendees/companionForm.ts": { decision: "later", pending: { pr: "117c", what: "the write-only box of a sensitive companion question" } },
-  "apps/admin/src/attendees/customData.ts": { decision: "later", pending: { pr: "117c", what: "mask in the details view; a required sensitive question is not blocked when its box is empty" } },
+  "apps/admin/src/attendees/companionForm.ts": { decision: "redacted", via: "field.sensitive === true ?" },
+  "apps/admin/src/attendees/customData.ts": { decision: "redacted", via: "?.sensitive !== true" },
   "apps/admin/src/attendees/erasedAttendee.ts": { decision: "n/a", why: "Placeholder for an erased attendee; holds no answer." },
   "apps/admin/src/attendees/useCompanionActions.ts": { decision: "n/a", why: "Sends the companion form; shows no stored answer." },
-  "apps/admin/src/pages/AttendeeDetailPage.tsx": { decision: "later", pending: { pr: "117c", what: "mask and Show on the attendee page" } },
+  "apps/admin/src/pages/AttendeeDetailPage.tsx": { decision: "redacted", via: "field.sensitive === true && next === \"\"" },
   "apps/admin/src/pages/AttendeesPage.tsx": { decision: "redacted", via: "field.sensitive !== true" },
   "apps/admin/src/pages/ImportPage.tsx": { decision: "n/a", why: "Shows the preview of the server, whose sample rows leave a sensitive cell empty." },
-  "apps/admin/src/registration/RequestDetailDialog.tsx": { decision: "later", pending: { pr: "117c", what: "mask and Show in the request window" } },
+  "apps/admin/src/registration/RequestDetailDialog.tsx": { decision: "redacted", via: "RequestSensitiveAnswers" },
   "apps/admin/src/registration/useRequestLookups.ts": { decision: "n/a", why: READS_ONLY_NAMES },
 
   // The server.
@@ -170,21 +165,8 @@ describe("sensitive attendee fields inventory", () => {
     expect(thin.map(([file]) => file)).toEqual([]);
   });
 
-  it("names what a later pull request closes, for each surface that is still open", () => {
-    const open = Object.entries(INVENTORY)
-      .filter(([, entry]) => entry.pending !== undefined)
-      .map(([file, entry]) => `${entry.pending!.pr} ${file}`)
-      .sort();
-    // 117c (the admin screens) removes its lines from this list. The deliberate "Show" of 117b is `reveals`, not open.
-    expect(open).toEqual([
-      "117c apps/admin/src/attendees/AddAttendeeModal.tsx",
-      "117c apps/admin/src/attendees/CompanionCard.tsx",
-      "117c apps/admin/src/attendees/CustomDataFieldInput.tsx",
-      "117c apps/admin/src/attendees/attendeeDetailForm.ts",
-      "117c apps/admin/src/attendees/companionForm.ts",
-      "117c apps/admin/src/attendees/customData.ts",
-      "117c apps/admin/src/pages/AttendeeDetailPage.tsx",
-      "117c apps/admin/src/registration/RequestDetailDialog.tsx",
-    ]);
+  it("has no open surface: every file is redacted, reveals or n/a", () => {
+    const decisions = new Set(["redacted", "reveals", "n/a"]);
+    expect(Object.entries(INVENTORY).filter(([, entry]) => !decisions.has(entry.decision)).map(([file]) => file)).toEqual([]);
   });
 });

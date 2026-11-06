@@ -19,10 +19,10 @@ function others(count: number): ConditionField[] {
 }
 
 const keys = (list: readonly SuggestedEventField[]) => list.map((suggested) => suggested.source_field);
-const ALL_KEYS = ["parking", "parking_plate", "travel", "arrival", "accommodation"];
+const ALL_KEYS = ["parking", "parking_plate", "travel", "arrival", "accommodation", "accessibility_needs"];
 
 describe("SUGGESTED_EVENT_FIELDS", () => {
-  it("is parking, the registration number, travel, arrival and accommodation, in that order", () => {
+  it("is parking, the registration number, travel, arrival, accommodation and accessibility needs, in that order", () => {
     expect(keys(SUGGESTED_EVENT_FIELDS)).toEqual(ALL_KEYS);
   });
 
@@ -55,8 +55,18 @@ describe("SUGGESTED_EVENT_FIELDS", () => {
     }
   });
 
-  it("asks no question about health, disability or accessibility, and none about a companion", () => {
-    const text = JSON.stringify(SUGGESTED_EVENT_FIELDS).toLowerCase();
+  it("asks one question about accessibility needs: long text, optional, created sensitive, and no other question is sensitive (D-E6)", () => {
+    const accessibility = SUGGESTED_EVENT_FIELDS.find((suggested) => suggested.source_field === "accessibility_needs");
+    expect(accessibility?.type).toBe("long_text");
+    expect(accessibility?.sensitive).toBe(true);
+    expect(accessibility?.label).toBe("Do you have any accessibility needs we should know about?");
+    expect(accessibility?.description).toBe("Optional. We use it only to prepare the event.");
+    expect(SUGGESTED_EVENT_FIELDS.filter((suggested) => suggested.sensitive === true)).toHaveLength(1);
+  });
+
+  it("asks no other question about health or disability, and none about a companion", () => {
+    const others = SUGGESTED_EVENT_FIELDS.filter((suggested) => suggested.source_field !== "accessibility_needs");
+    const text = JSON.stringify(others).toLowerCase();
     for (const word of ["accessib", "mobility", "disab", "health", "medical", "companion", "guest name", "plus one", "+1"]) {
       expect(text, word).not.toContain(word);
     }
@@ -109,14 +119,14 @@ describe("planSuggestedFields", () => {
 
     expect(keys(plan.present)).toEqual(["parking", "travel"]);
     // The plate would be on the form while the question it depends on is not, so it is left out as well.
-    expect(keys(plan.add)).toEqual(["arrival", "accommodation"]);
+    expect(keys(plan.add)).toEqual(["arrival", "accommodation", "accessibility_needs"]);
     expect(keys(plan.blocked)).toEqual(["parking_plate"]);
   });
 
   it("adds a question that depends on one it adds in the same go, and one that depends on a yes/no question the event has", () => {
     expect(keys(planSuggestedFields([]).add)).toContain("parking_plate");
     const own = planSuggestedFields([field("parking", "boolean")]);
-    expect(keys(own.add)).toEqual(["parking_plate", "travel", "arrival", "accommodation"]);
+    expect(keys(own.add)).toEqual(["parking_plate", "travel", "arrival", "accommodation", "accessibility_needs"]);
     expect(own.blocked).toEqual([]);
   });
 
@@ -129,7 +139,7 @@ describe("planSuggestedFields", () => {
       const plan = planSuggestedFields([parking, field("other", "boolean")]);
       expect(keys(plan.present), JSON.stringify(parking)).toEqual(["parking"]);
       expect(keys(plan.blocked), JSON.stringify(parking)).toEqual(["parking_plate"]);
-      expect(keys(plan.add), JSON.stringify(parking)).toEqual(["travel", "arrival", "accommodation"]);
+      expect(keys(plan.add), JSON.stringify(parking)).toEqual(["travel", "arrival", "accommodation", "accessibility_needs"]);
     }
   });
 
@@ -137,7 +147,7 @@ describe("planSuggestedFields", () => {
     const plan = planSuggestedFields([field("parking_plate", "text")]);
 
     expect(keys(plan.present)).toEqual(["parking_plate"]);
-    expect(keys(plan.add)).toEqual(["parking", "travel", "arrival", "accommodation"]);
+    expect(keys(plan.add)).toEqual(["parking", "travel", "arrival", "accommodation", "accessibility_needs"]);
   });
 
   it("counts a key that is only a prefix of a suggested one as a different field", () => {
@@ -155,11 +165,11 @@ describe("planSuggestedFields", () => {
   });
 
   it("counts only the questions that would be added against the limit", () => {
-    // Two suggested keys are there already, so three are to add: 17 fields fit them, 18 do not.
+    // Two suggested keys are there already, so four are to add: 16 fields fit them, 17 do not.
     const withTwo = [field("parking", "boolean"), field("travel", "select", { options: ["Car"] })];
 
-    expect(planSuggestedFields([...withTwo, ...others(MAX_CUSTOM_FIELDS_PER_EVENT - 5)]).overLimitBy).toBe(0);
-    expect(planSuggestedFields([...withTwo, ...others(MAX_CUSTOM_FIELDS_PER_EVENT - 4)]).overLimitBy).toBe(1);
+    expect(planSuggestedFields([...withTwo, ...others(MAX_CUSTOM_FIELDS_PER_EVENT - 6)]).overLimitBy).toBe(0);
+    expect(planSuggestedFields([...withTwo, ...others(MAX_CUSTOM_FIELDS_PER_EVENT - 5)]).overLimitBy).toBe(1);
   });
 
   it("is not over the limit when there is nothing to add, even in an event at or above it", () => {

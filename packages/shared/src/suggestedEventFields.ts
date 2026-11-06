@@ -17,16 +17,22 @@ export type SuggestedEventField = {
   /** The options of a single choice. */
   readonly options?: readonly string[];
   readonly rules?: Readonly<EventCustomFieldRules>;
+  /** The answers are sensitive (D-E6): the field is created with the flag, so they are hidden in lists and exports and shown only to an
+   * administrator on request. Left out = an ordinary question. */
+  readonly sensitive?: boolean;
 };
 
 /**
- * The questions that "Add suggested questions" offers: parking, travel and accommodation. Plain data, defined once: the admin app lists
+ * The questions that "Add suggested questions" offers: parking, travel, accommodation and accessibility needs. Plain data, defined once: the admin app lists
  * them before they are added, the server creates the fields from them, and the tests hold them to the schemas and the checks of a field
  * that is added by hand. A question comes after the one it depends on, because that is the order they are created in.
  *
- * Deliberately not in the set: a question about accessibility or mobility needs (health data, GDPR Art. 9: it needs the organiser's own
- * decision and basis, and Admitto adds none by itself), a question about a companion (that is a setting of the event), and company and
- * department (switches of the form). The set is a first version: the wording, the order and the icons are what an organiser changes.
+ * The accessibility question is the one that can hold health data (GDPR Art. 9), so it is created sensitive: its answers are hidden everywhere
+ * and shown only to an administrator on request, and the window that offers it says so. It is optional like the others; the organiser still
+ * decides whether to ask it and on what basis, and Admitto adds no consent of its own.
+ *
+ * Deliberately not in the set: a question about a companion (that is a setting of the event), and company and department (switches of the
+ * form). The set is a first version: the wording, the order and the icons are what an organiser changes.
  */
 export const SUGGESTED_EVENT_FIELDS: readonly SuggestedEventField[] = [
   {
@@ -62,6 +68,13 @@ export const SUGGESTED_EVENT_FIELDS: readonly SuggestedEventField[] = [
     label: "Do you need accommodation?",
     type: "boolean",
     rules: { icon: "bed" },
+  },
+  {
+    source_field: "accessibility_needs",
+    label: "Do you have any accessibility needs we should know about?",
+    description: "Optional. We use it only to prepare the event.",
+    type: "long_text",
+    sensitive: true,
   },
 ];
 

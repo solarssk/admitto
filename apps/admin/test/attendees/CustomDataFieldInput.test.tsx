@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CustomDataFieldInput } from "../../src/attendees/CustomDataFieldInput.js";
+import { CustomDataFieldInput, WRITE_ONLY_REPLACE_NOTE } from "../../src/attendees/CustomDataFieldInput.js";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
 import { setPreferredLocale, setPreferredTimeFormat } from "../../src/utils/locale-store.js";
 import { bitwardenTreatsAsSearchField } from "../checkin/bitwardenSearchField.js";
@@ -404,5 +404,45 @@ describe("CustomDataFieldInput: text with rules", () => {
   it("treats a type this version does not know as a plain text line", () => {
     renderInput({ ...postcode, type: "mystery" as never });
     expect((screen.getByLabelText("Postcode") as HTMLInputElement).type).toBe("text");
+  });
+});
+
+describe("CustomDataFieldInput: a sensitive question is write-only", () => {
+  afterEach(cleanup);
+  const sensitive = { ...baseField, sensitive: true };
+
+  it.each([
+    ["text", {}],
+    ["long_text", {}],
+    ["select", { options: ["a", "b"] }],
+    ["boolean", {}],
+    ["date", {}],
+    ["datetime", {}],
+    ["phone", {}],
+  ] as const)("draws a %s box empty, with the note that it is hidden after saving", (type, extra) => {
+    const { container } = render(<CustomDataFieldInput field={{ ...sensitive, type, ...extra } as EventCustomFieldDto} value="" onChange={vi.fn()} />);
+
+    expect(container.textContent).toContain("Hidden after saving.");
+    expect(container.textContent).not.toContain("leave it empty");
+    expect(container.querySelectorAll(".custom-data-field__write-only")).toHaveLength(1);
+  });
+
+  it("says what an empty box does when it corrects an answer that is saved, and does not ask for a required one natively", () => {
+    render(<CustomDataFieldInput field={{ ...sensitive, type: "text", required: true } as EventCustomFieldDto} value="" mode="replace" onChange={vi.fn()} />);
+
+    expect(screen.getByText(WRITE_ONLY_REPLACE_NOTE)).toBeTruthy();
+    expect((screen.getByRole("textbox") as HTMLInputElement).required).toBe(false);
+  });
+
+  it("keeps a required sensitive box required when the answer is first given", () => {
+    render(<CustomDataFieldInput field={{ ...sensitive, type: "text", required: true } as EventCustomFieldDto} value="" onChange={vi.fn()} />);
+
+    expect((screen.getByRole("textbox") as HTMLInputElement).required).toBe(true);
+  });
+
+  it("adds nothing to an ordinary question", () => {
+    const { container } = render(<CustomDataFieldInput field={{ ...baseField, type: "text" } as EventCustomFieldDto} value="" onChange={vi.fn()} />);
+
+    expect(container.querySelector(".custom-data-field__write-only")).toBeNull();
   });
 });
