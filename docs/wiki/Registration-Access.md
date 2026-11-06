@@ -146,13 +146,13 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 
 | Action | Result |
 |---|---|
-| **Save** | Only the settings you changed are saved. Each save is recorded in the audit log as "Guest registration settings changed", with the names of what changed and never a password |
+| **Save** | Only the settings you changed are saved. Each save is recorded in the audit log as "Guest registration settings changed", with the names and the new values of what changed, and never a password |
 | Turn registration on | The form opens at once. It is refused while a row of the checklist is not done |
 | Change the way in or the consents of an event that is on | Refused while a row is not done, like turning on |
 | Move between **Automatic** and **With approval** | The new mode applies to new requests |
 | Switch **Styled form boxes** on or off | The next guest who opens the form gets the boxes you chose. A form that is already open keeps the boxes it has |
 | Turn registration off | The form answers "not found" at once |
-| Save a limit to one company | The form accepts only guests whose sign-in matches. The change is recorded in the audit log as "Guest registration settings changed", with the names of what changed and never a value |
+| Save a limit to one company | The form accepts only guests whose sign-in matches. The change is recorded in the audit log as "Guest registration settings changed", with the claim and its values. They are settings, not guests' data |
 | Set, change or remove the password | The password is saved or removed at once. Removing it closes the form until you set a new one |
 
 When you turn registration off:
