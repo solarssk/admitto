@@ -23,6 +23,8 @@ export interface NewGuestSsoState {
 /** What a spent state hands to the callback. */
 export interface SpentGuestSsoState {
   eventId: string;
+  /** The slug of that event, from the row of the event: the one thing the callback needs to name the page to go back to. */
+  eventSlug: string;
   providerId: string;
   nonce: string;
   codeVerifier: string;
@@ -42,19 +44,19 @@ export async function createGuestSsoState(db: PrismaClient, input: NewGuestSsoSt
 }
 
 /**
- * Spends the state, once. The row is read, and then marked spent by a conditional update that wins only while the row is
- * neither spent nor expired: of two callbacks with one state, the database lets exactly one change the row, and the other
+ * Spends the state, once. The state is looked up by its whole value (the slug it carries is a hint and is not read here).
+ * The row is read, and then marked spent by a conditional update that wins only while the row is neither spent nor expired: of two callbacks with one state, the database lets exactly one change the row, and the other
  * finds nothing to change. Null for a state that is unknown, expired or already spent, whichever it is.
  *
  * The clock is the caller's, passed in and compared as a JavaScript date, as the row was written (the columns are naive UTC).
  */
 export async function spendGuestSsoState(db: PrismaClient, state: string, now: Date): Promise<SpentGuestSsoState | null> {
-  const row = await db.registrationSsoState.findUnique({ where: { state } });
+  const row = await db.registrationSsoState.findUnique({ where: { state }, include: { event: { select: { slug: true } } } });
   if (!row) return null;
   const won = await db.registrationSsoState.updateMany({
     where: { id: row.id, consumed_at: null, expires_at: { gt: now } },
     data: { consumed_at: now },
   });
   if (won.count !== 1) return null;
-  return { eventId: row.event_id, providerId: row.provider_id, nonce: row.nonce, codeVerifier: row.code_verifier };
+  return { eventId: row.event_id, eventSlug: row.event.slug, providerId: row.provider_id, nonce: row.nonce, codeVerifier: row.code_verifier };
 }

@@ -1,5 +1,5 @@
 /**
- * `GET /r/:slug/sso/start` and `/sso/callback` (D-C4) against a real database and a stand-in identity provider, through the
+ * `GET /r/:slug/sso/start` and the one `GET /sso/callback` (D-C4) against a real database and a stand-in identity provider, through the
  * real app: what the start does, what a callback is refused for (every way to make a guest sign in as somebody else), what
  * it hands out, and that the whole flow creates nothing of staff and logs nothing of the guest.
  *
@@ -17,14 +17,17 @@ import { setEnabledAccessMethods } from "../../src/registration/access-methods.j
 import { handleSsoCallback, handleSsoStart } from "../../src/registration/sso-routes.js";
 import { setSsoProviderId } from "../../src/registration/sso-provider.js";
 import { verifyGuestSsoSession } from "../../src/registration/sso-session.js";
+import { createGuestSsoState } from "../../src/registration/sso-state.js";
+import { newGuestSsoStateValue } from "../../src/registration/sso-state-value.js";
 import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/mock-oidc-idp.js";
 import {
-  GUEST_SSO_FLOW_COOKIE,
+  GUEST_SSO_CALLBACK_PATH,
   GUEST_SSO_SESSION_COOKIE,
   Jar,
   PROVIDER_ID,
   browse,
   callbackPath,
+  flowCookieName,
   goToProvider,
   installProvider,
   removeProvider,
@@ -56,6 +59,34 @@ let baseline = 0;
 const calls = () => idp.tokenRequests() - baseline;
 const stateRows = () => prisma.registrationSsoState.findMany({ orderBy: { created_at: "asc" } });
 const failedAt = (slug: string, word = "failed") => `/r/${slug}?sso=${word}`;
+/** A browser that holds the flow cookie of `state`, the way the start puts it there. */
+const holdFlow = (jar: Jar, state: string) => jar.set(flowCookieName(state), state, GUEST_SSO_CALLBACK_PATH);
+
+/**
+ * `db`, but the provider is switched off the moment after it was read for the first time: after the check that the event is
+ * open (which reads the provider to know the company sign-in is available), before the read that fetches the provider's settings.
+ */
+function switchProviderOffAfterFirstRead(db: PrismaClient): PrismaClient {
+  let reads = 0;
+  const provider = new Proxy(db.identityProvider, {
+    get(model, key) {
+      if (key !== "findFirst") return Reflect.get(model, key);
+      return async (args: Parameters<typeof model.findFirst>[0]) => {
+        const row = await model.findFirst(args);
+        reads += 1;
+        if (reads === 1) await model.update({ where: { id: PROVIDER_ID }, data: { enabled: false } });
+        return row;
+      };
+    },
+  });
+  return new Proxy(db, {
+    get(client, key) {
+      if (key === "identityProvider") return provider;
+      const value: unknown = Reflect.get(client, key);
+      return typeof value === "function" ? value.bind(client) : value;
+    },
+  });
+}
 
 beforeAll(async () => {
   prisma = createTestPrismaClient();
@@ -100,10 +131,11 @@ describe("the start", () => {
     const query = authorizeUrl.searchParams;
     expect(query.get("response_type")).toBe("code");
     expect(query.get("client_id")).toBe("test-oidc-client");
-    expect(query.get("redirect_uri")).toBe(`https://tickets.example.com/r/${slug}/sso/callback`);
+    expect(query.get("redirect_uri")).toBe("https://tickets.example.com/sso/callback");
     expect(query.get("scope")).toBe("openid email profile");
     expect(query.get("code_challenge_method")).toBe("S256");
-    expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(state).toBe(`${state.slice(0, 43)}.${slug}`);
+    expect(state.slice(0, 43)).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(nonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(state).not.toBe(nonce);
 
@@ -121,10 +153,10 @@ describe("the start", () => {
 
     const { start, state } = await goToProvider(h.app, jar, slug, idp);
 
-    expect(jar.names()).toEqual([GUEST_SSO_FLOW_COOKIE]);
-    expect(jar.value(GUEST_SSO_FLOW_COOKIE)).toBe(state);
+    expect(jar.names()).toEqual([flowCookieName(state)]);
+    expect(jar.value(flowCookieName(state))).toBe(state);
     const line = start.headers.getSetCookie()[0]!;
-    expect(line).toContain(`Path=/r/${slug}/sso`);
+    expect(line).toContain("Path=/sso/callback;");
     expect(line).toContain("HttpOnly");
   });
 
@@ -210,7 +242,7 @@ describe("the callback: a guest who signs in", () => {
     expect(w.callback.headers.get("referrer-policy")).toBe("no-referrer");
     expect(jar.names()).toEqual([GUEST_SSO_SESSION_COOKIE]);
     const lines = w.callback.headers.getSetCookie();
-    expect(lines.find((line) => line.startsWith(`${GUEST_SSO_FLOW_COOKIE}=`))).toMatch(/Max-Age=0/);
+    expect(lines.find((line) => line.startsWith(`${flowCookieName(w.state)}=`))).toMatch(/Max-Age=0/);
     expect(lines.find((line) => line.startsWith(`${GUEST_SSO_SESSION_COOKIE}=`))).toContain(`Path=/r/${slug}`);
     const identity = verifyGuestSsoSession(jar.value(GUEST_SSO_SESSION_COOKIE), { eventId: eventIds.get(slug)!, slug, providerId: PROVIDER_ID }, Date.now());
     expect(identity).toMatchObject({ providerId: PROVIDER_ID, subject: SUBJECT, email: EMAIL, proof: null });
@@ -245,19 +277,23 @@ describe("the callback: a refusal also takes away the sign-in the browser still 
 
   it.each([
     ["a callback without the flow cookie", "csrf"],
-    ["a callback without a code and a state", "params"],
+    ["a callback without a code", "params"],
     ["a callback with a state the system never wrote", "unknown-state"],
   ])("deletes the session cookie on %s, and the next visit to the page shows the sign-in", async (_label, kind) => {
     const slug = await addEvent(`refuse-${kind}`);
     const jar = await signedInJar(slug);
     expect(await pageHtml(slug, jar)).toContain('id="reg-form"');
-    let path = callbackPath(slug);
+    let path: string;
     if (kind === "csrf") {
       const other = await goToProvider(h.app, new Jar(), slug, idp);
       path = `${other.callbackUrl.pathname}${other.callbackUrl.search}`;
     } else if (kind === "unknown-state") {
-      jar.set(GUEST_SSO_FLOW_COOKIE, "never-written-state", `/r/${slug}/sso`);
-      path = `${callbackPath(slug)}?code=abc&state=never-written-state`;
+      const made = `${"n".repeat(43)}.${slug}`;
+      holdFlow(jar, made);
+      path = `${callbackPath()}?code=abc&state=${made}`;
+    } else {
+      const own = await goToProvider(h.app, jar, slug, idp);
+      path = `${callbackPath()}?state=${own.state}`;
     }
 
     const res = await browse(h.app, jar, path);
@@ -280,6 +316,116 @@ describe("the callback: a refusal also takes away the sign-in the browser still 
 
     expect(w.callback.headers.get("location")).toBe(failedAt(slug, "not_allowed"));
     expect(jar.has(GUEST_SSO_SESSION_COOKIE)).toBe(false);
+  });
+});
+
+describe("the one callback of the instance", () => {
+  it("is the same address for every event, so the provider is told of it once", async () => {
+    const first = await addEvent("one-address-a");
+    const second = await addEvent("one-address-b");
+
+    const a = await goToProvider(h.app, new Jar(), first, idp);
+    const b = await goToProvider(h.app, new Jar(), second, idp);
+
+    expect(a.authorizeUrl.searchParams.get("redirect_uri")).toBe("https://tickets.example.com/sso/callback");
+    expect(b.authorizeUrl.searchParams.get("redirect_uri")).toBe(a.authorizeUrl.searchParams.get("redirect_uri"));
+    expect(a.callbackUrl.pathname).toBe(GUEST_SSO_CALLBACK_PATH);
+  });
+
+  it("is not under the pages of the events, and the callback of an event's own path is gone", async () => {
+    const slug = await addEvent("old-path");
+    const jar = new Jar();
+    const before = await goToProvider(h.app, jar, slug, idp);
+    const unknown = await signature(await browse(h.app, new Jar(), "/r/reg118a-no-such-event/sso/nothing"));
+
+    const old = await browse(h.app, jar, `/r/${slug}/sso/callback${before.callbackUrl.search}`);
+
+    expect(old.status).toBe(404);
+    expect(old.headers.get("location")).toBeNull();
+    expect(await signature(old)).toEqual(unknown);
+    expect((await stateRows())[0]?.consumed_at).toBeNull();
+  });
+
+  it("lets one browser sign in for two events at once: two flows in two tabs, and neither cookie is overwritten", async () => {
+    const first = await addEvent("tabs-a");
+    const second = await addEvent("tabs-b");
+    const jar = new Jar();
+
+    const a = await goToProvider(h.app, jar, first, idp);
+    const b = await goToProvider(h.app, jar, second, idp);
+    expect(jar.flowNames().sort((x, y) => x.localeCompare(y, "en"))).toEqual([flowCookieName(a.state), flowCookieName(b.state)].sort((x, y) => x.localeCompare(y, "en")));
+    // The second tab finishes first.
+    const backB = await browse(h.app, jar, `${b.callbackUrl.pathname}${b.callbackUrl.search}`);
+    const backA = await browse(h.app, jar, `${a.callbackUrl.pathname}${a.callbackUrl.search}`);
+
+    expect(backB.headers.get("location")).toBe(`/r/${second}`);
+    expect(backA.headers.get("location")).toBe(`/r/${first}`);
+    expect(jar.flowNames()).toEqual([]);
+    // Each answer set the cookie of its own event, for the path of that event, signed for that event.
+    for (const [slug, back] of [[first, backA], [second, backB]] as const) {
+      const line = back.headers.getSetCookie().find((entry) => entry.startsWith(`${GUEST_SSO_SESSION_COOKIE}=`))!;
+      expect(line, slug).toContain(`Path=/r/${slug};`);
+      const value = line.slice(GUEST_SSO_SESSION_COOKIE.length + 1, line.indexOf(";"));
+      expect(verifyGuestSsoSession(value, { eventId: eventIds.get(slug)!, slug, providerId: PROVIDER_ID }, Date.now()), slug).toMatchObject({ subject: SUBJECT });
+    }
+  });
+
+  it("goes back only to /r/<a slug> or to the 404, whatever the slug in the state says", async () => {
+    const hostile = [
+      "https://evil.example",
+      "//evil.example",
+      "../",
+      "..%2F..%2Fadmin",
+      "a/b",
+      "evil.example",
+      "UPPER",
+      "",
+      "s".repeat(81),
+      "x\r\nLocation: https://evil.example",
+    ];
+    for (const hint of hostile) {
+      const state = `${"h".repeat(43)}.${hint}`;
+
+      const res = await browse(h.app, new Jar(), `${callbackPath()}?code=abc&state=${encodeURIComponent(state)}`);
+
+      expect(res.status, hint).toBe(404);
+      expect(res.headers.get("location"), hint).toBeNull();
+    }
+    // A hint that is a slug, of an event that does not exist, goes to the 404 page of that path: still only /r/<slug>.
+    const state = `${"h".repeat(43)}.no-such-event`;
+    const jar = new Jar();
+    holdFlow(jar, state);
+    const res = await browse(h.app, jar, `${callbackPath()}?code=abc&state=${state}`);
+    expect(res.headers.get("location")).toBe(failedAt("no-such-event"));
+    expect(calls()).toBe(0);
+  });
+
+  it("refuses the code of one flow used in another: the provider spent it, and nobody is signed in", async () => {
+    const slug = await addEvent("same-code");
+    const first = await walk(h.app, new Jar(), slug, idp);
+    expect(first.callback.headers.get("location")).toBe(`/r/${slug}`);
+    const code = first.callbackUrl.searchParams.get("code")!;
+    const jar = new Jar();
+    const second = await goToProvider(h.app, jar, slug, idp);
+
+    const res = await browse(h.app, jar, `${callbackPath()}?code=${code}&state=${second.state}`);
+
+    expect(res.headers.get("location")).toBe(failedAt(slug));
+    expect(jar.has(GUEST_SSO_SESSION_COOKIE)).toBe(false);
+  });
+
+  it("goes back to the page of the event of the row, not to the one the slug in the state names", async () => {
+    const slug = await addEvent("row-wins");
+    const eventId = eventIds.get(slug)!;
+    const written = newGuestSsoStateValue("some-other-slug");
+    await createGuestSsoState(prisma, { state: written.value, nonce: "n", codeVerifier: "v", eventId, providerId: PROVIDER_ID }, new Date());
+    const jar = new Jar();
+    holdFlow(jar, written.value);
+
+    const res = await browse(h.app, jar, `${callbackPath()}?code=abc&state=${written.value}`);
+
+    // The provider does not know the code, so it is refused, and the guest goes back to the page of the event of the ROW.
+    expect(res.headers.get("location")).toBe(failedAt(slug));
   });
 });
 
@@ -307,24 +453,45 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
     const first = await goToProvider(h.app, new Jar(), slug, idp);
     const second = await goToProvider(h.app, new Jar(), slug, idp);
     const browser = new Jar();
-    browser.set(GUEST_SSO_FLOW_COOKIE, second.state, `/r/${slug}/sso`);
+    holdFlow(browser, second.state);
 
     const res = await browse(h.app, browser, `${first.callbackUrl.pathname}${first.callbackUrl.search}`);
 
     expect(res.headers.get("location")).toBe(failedAt(slug));
+    // The cookie of the other flow is no help to this callback, and is left where it is.
+    expect(browser.flowNames()).toEqual([flowCookieName(second.state)]);
     expect(browser.has(GUEST_SSO_SESSION_COOKIE)).toBe(false);
     expect((await stateRows()).every((row) => row.consumed_at === null)).toBe(true);
     expect(calls()).toBe(0);
   });
 
-  it("refuses a callback with no code, no state, an empty state, or a state or a code that is absurdly long", async () => {
+  it("refuses a callback with no code, or with a code that is empty or absurdly long, back to the form it began from", async () => {
     const slug = await addEvent("params");
     const jar = new Jar();
     const { state } = await goToProvider(h.app, jar, slug, idp);
 
-    for (const query of ["", `?state=${state}`, "?code=abc", `?code=&state=${state}`, `?code=abc&state=`, `?code=${"c".repeat(5_000)}&state=${state}`, `?code=abc&state=${"s".repeat(300)}`]) {
-      const res = await browse(h.app, jar, `${callbackPath(slug)}${query}`);
+    for (const query of [`?state=${state}`, `?code=&state=${state}`, `?code=${"c".repeat(5_000)}&state=${state}`]) {
+      // A refusal takes the flow cookie away, so each case needs it again to reach the check of the code.
+      holdFlow(jar, state);
+      const res = await browse(h.app, jar, `${callbackPath()}${query}`);
       expect(res.headers.get("location"), query.slice(0, 20)).toBe(failedAt(slug));
+      expect((await stateRows())[0]?.consumed_at, query.slice(0, 20)).toBeNull();
+    }
+    expect(calls()).toBe(0);
+  });
+
+  it("is the one 404, with nothing set, for a callback with no state, an empty state, a state that is absurdly long or one of no shape of ours", async () => {
+    const slug = await addEvent("no-state");
+    const jar = new Jar();
+    await goToProvider(h.app, jar, slug, idp);
+    const unknown = await signature(await browse(h.app, new Jar(), "/r/reg118a-no-such-event"));
+
+    for (const query of ["", "?code=abc", "?code=abc&state=", `?code=abc&state=${"s".repeat(300)}`, "?code=abc&state=made-up-state", `?code=abc&state=${"a".repeat(43)}`]) {
+      const res = await browse(h.app, jar, `${callbackPath()}${query}`);
+      expect(res.status, query.slice(0, 24)).toBe(404);
+      expect(res.headers.get("location"), query.slice(0, 24)).toBeNull();
+      expect(res.headers.getSetCookie(), query.slice(0, 24)).toEqual([]);
+      expect(await signature(res), query.slice(0, 24)).toEqual(unknown);
     }
     expect(calls()).toBe(0);
   });
@@ -334,7 +501,7 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
     const jar = new Jar();
     const { state } = await goToProvider(h.app, jar, slug, idp);
 
-    const res = await browse(h.app, jar, `${callbackPath(slug)}?error=access_denied&error_description=Ada%20Lovelace%20said%20no&state=${state}`);
+    const res = await browse(h.app, jar, `${callbackPath()}?error=access_denied&error_description=Ada%20Lovelace%20said%20no&state=${state}`);
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe(failedAt(slug));
@@ -345,9 +512,10 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
   it("refuses a callback with a state the system never wrote, though the cookie says it is that state", async () => {
     const slug = await addEvent("unknown-state");
     const jar = new Jar();
-    jar.set(GUEST_SSO_FLOW_COOKIE, "made-up-state", `/r/${slug}/sso`);
+    const made = `${"m".repeat(43)}.${slug}`;
+    holdFlow(jar, made);
 
-    const res = await browse(h.app, jar, `${callbackPath(slug)}?code=abc&state=made-up-state`);
+    const res = await browse(h.app, jar, `${callbackPath()}?code=abc&state=${made}`);
 
     expect(res.headers.get("location")).toBe(failedAt(slug));
     expect(calls()).toBe(0);
@@ -360,7 +528,7 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
     expect(first.callback.headers.get("location")).toBe(`/r/${slug}`);
     idp.reuseCodes(true);
     const replayer = new Jar();
-    replayer.set(GUEST_SSO_FLOW_COOKIE, first.state, `/r/${slug}/sso`);
+    holdFlow(replayer, first.state);
 
     const second = await browse(h.app, replayer, `${first.callbackUrl.pathname}${first.callbackUrl.search}`);
 
@@ -398,7 +566,7 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
     const jar = new Jar();
     const { state } = await goToProvider(h.app, jar, slug, idp);
 
-    const res = await browse(h.app, jar, `${callbackPath(slug)}?code=not-a-code-of-the-provider&state=${state}`);
+    const res = await browse(h.app, jar, `${callbackPath()}?code=not-a-code-of-the-provider&state=${state}`);
 
     expect(res.headers.get("location")).toBe(failedAt(slug));
     expect((await stateRows())[0]?.consumed_at).not.toBeNull();
@@ -410,7 +578,7 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
     const first = new Jar();
     const before = await goToProvider(h.app, first, slug, idp);
     const second = new Jar();
-    second.set(GUEST_SSO_FLOW_COOKIE, before.state, `/r/${slug}/sso`);
+    holdFlow(second, before.state);
     const target = `${before.callbackUrl.pathname}${before.callbackUrl.search}`;
 
     const [one, two] = await Promise.all([browse(h.app, first, target), browse(h.app, second, target)]);
@@ -426,13 +594,35 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
     const slug = await addEvent("provider-off");
     const jar = new Jar();
     const before = await goToProvider(h.app, jar, slug, idp);
-    await installProvider(prisma, idp, { enabled: false });
+    await prisma.identityProvider.update({ where: { id: PROVIDER_ID }, data: { enabled: false } });
 
     const res = await browse(h.app, jar, `${before.callbackUrl.pathname}${before.callbackUrl.search}`);
 
     expect(res.status).toBe(404);
     expect(jar.names()).toEqual([]);
     expect(calls()).toBe(0);
+  });
+
+  it("goes back to the page with the general notice, with the flow cookie deleted and without asking the provider, when the provider is switched off in the instant after the event was found open", async () => {
+    const slug = await addEvent("provider-race");
+    const jar = new Jar();
+    const before = await goToProvider(h.app, jar, slug, idp);
+    const racing = new Hono();
+    racing.get(GUEST_SSO_CALLBACK_PATH, (c) =>
+      handleSsoCallback(c, { db: switchProviderOffAfterFirstRead(prisma), baseUrl: async () => "https://tickets.example.com" }),
+    );
+
+    const res = await racing.request(`${ORIGIN}${before.callbackUrl.pathname}${before.callbackUrl.search}`, {
+      headers: { Cookie: jar.header(before.callbackUrl.pathname) },
+    });
+    jar.absorb(res);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(failedAt(slug));
+    expect(jar.names()).toEqual([]);
+    expect(calls()).toBe(0);
+    const refusals = querySystemLogs({ source: "security" }).filter((entry) => entry.message === "registration_sso_refused");
+    expect(refusals.map((entry) => entry.fields)).toEqual([{ reason: "provider_unavailable", event_id: eventIds.get(slug) }]);
   });
 
   it("is the 404 when the event has closed between the start and the callback", async () => {
@@ -448,20 +638,26 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
     expect(calls()).toBe(0);
   });
 
-  it("refuses a state that was written for another event, and one that was written for another provider", async () => {
+  it("takes the event from the row of the state, never from the slug the state carries: a state that names another event signs the guest in for its own", async () => {
+    const slug = await addEvent("hint");
+    const other = await addEvent("hint-other");
+    const jar = new Jar();
+    const before = await goToProvider(h.app, jar, slug, idp);
+    // A guest who builds the request by hand puts the slug of ANOTHER event in the state of a real flow.
+    const forged = newGuestSsoStateValue(other).value;
+    await prisma.registrationSsoState.updateMany({ where: { state: before.state }, data: { state: forged } });
+    holdFlow(jar, forged);
+    const code = before.callbackUrl.searchParams.get("code");
+
+    const res = await browse(h.app, jar, `${callbackPath()}?code=${code}&state=${forged}`);
+
+    expect(res.headers.get("location")).toBe(`/r/${slug}`);
+    expect(res.headers.getSetCookie().find((line) => line.startsWith(`${GUEST_SSO_SESSION_COOKIE}=`))).toContain(`Path=/r/${slug};`);
+    expect(jar.has(GUEST_SSO_SESSION_COOKIE)).toBe(true);
+  });
+
+  it("refuses a state that was written for another provider than the one the event has now", async () => {
     const slug = await addEvent("mismatch");
-    const other = await addEvent("mismatch-other");
-    const browser = new Jar();
-    const before = await goToProvider(h.app, browser, slug, idp);
-    // A guest who builds the request by hand: the state of one event, with its cookie put on the callback of another.
-    const crafted = new Jar();
-    crafted.set(GUEST_SSO_FLOW_COOKIE, before.state, `/r/${other}/sso`);
-
-    const wrongEvent = await browse(h.app, crafted, `${callbackPath(other)}${before.callbackUrl.search}`);
-
-    expect(wrongEvent.headers.get("location")).toBe(failedAt(other));
-    expect(crafted.has(GUEST_SSO_SESSION_COOKIE)).toBe(false);
-
     const second = new Jar();
     const again = await goToProvider(h.app, second, slug, idp);
     await prisma.identityProvider.create({
@@ -490,19 +686,12 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
     }
   });
 
-  it("is the 404 for a callback to a path that is not an event's, with nothing read from the request", async () => {
-    const unknown = await signature(await browse(h.app, new Jar(), callbackPath("reg118a-no-such-event")));
-
-    expect((await browse(h.app, new Jar(), callbackPath("Bad Slug"))).status).toBe(404);
-    expect(await signature(await browse(h.app, new Jar(), `${callbackPath("reg118a-no-such-event")}?code=a&state=b`))).toEqual(unknown);
-  });
-
   it("goes back to the page with the general notice, without asking the provider, when the instance has no address to build the redirect on", async () => {
     const slug = await addEvent("callback-no-url");
     const jar = new Jar();
     const before = await goToProvider(h.app, jar, slug, idp);
     const bare = new Hono();
-    bare.get("/r/:slug/sso/callback", (c) => handleSsoCallback(c, { db: prisma, baseUrl: async () => Promise.reject(new Error("no address")) }));
+    bare.get(GUEST_SSO_CALLBACK_PATH, (c) => handleSsoCallback(c, { db: prisma, baseUrl: async () => Promise.reject(new Error("no address")) }));
 
     const res = await bare.request(`${ORIGIN}${before.callbackUrl.pathname}${before.callbackUrl.search}`, {
       headers: { Cookie: jar.header(before.callbackUrl.pathname) },
@@ -514,10 +703,9 @@ describe("the callback: every way to make a guest sign in as somebody else, or a
   });
 
   it("is held to the budget per client address", async () => {
-    const slug = await addEvent("callback-limit");
     (h.store as SelectiveStore).deny = (key) => key.startsWith("registration:sso:ip:");
 
-    const res = await browse(h.app, new Jar(), `${callbackPath(slug)}?code=a&state=b`);
+    const res = await browse(h.app, new Jar(), `${callbackPath()}?code=a&state=b`);
 
     expect(res.status).toBe(429);
   });
@@ -698,10 +886,11 @@ describe("what the flow writes to a log and to an answer", () => {
     }
     // And the failures that stop before the token: an unknown code, a state that is made up.
     const jar = new Jar();
-    jar.set(GUEST_SSO_FLOW_COOKIE, "made-up-state-value", `/r/${slug}/sso`);
-    const res = await browse(logged.app, jar, `${callbackPath(slug)}?code=made-up-code-value&state=made-up-state-value`);
+    const made = `${"q".repeat(43)}.${slug}`;
+    holdFlow(jar, made);
+    const res = await browse(logged.app, jar, `${callbackPath()}?code=made-up-code-value&state=${made}`);
     answers.push(JSON.stringify([...res.headers.entries()]), await res.text());
-    secrets.push("made-up-state-value", "made-up-code-value");
+    secrets.push(made, "made-up-code-value");
 
     const everything = [
       ...lines,
@@ -712,13 +901,15 @@ describe("what the flow writes to a log and to an answer", () => {
     expect(everything).not.toMatch(/eyJ[A-Za-z0-9_-]{10,}/);
     // The access log names the route and not what the provider sent back.
     const requests = lines.filter((line) => line.includes("http_request")).map((line) => JSON.parse(line) as { path: string });
-    expect(requests.some((entry) => entry.path === `/r/${slug}/sso/callback`)).toBe(true);
+    expect(requests.some((entry) => entry.path === GUEST_SSO_CALLBACK_PATH)).toBe(true);
     expect(requests.every((entry) => !entry.path.includes("?"))).toBe(true);
     // A refusal is one line with a reason from a fixed set and the id of the event.
     const refusals = querySystemLogs({ source: "security" }).filter((entry) => entry.message === "registration_sso_refused");
     expect(refusals.length).toBeGreaterThanOrEqual(5);
     for (const entry of refusals) {
-      expect(Object.keys(entry.fields ?? {}).sort((a, b) => String(a).localeCompare(String(b), "en"))).toEqual(["event_id", "reason"]);
+      // The reason, and the id of the event once the state has named it.
+      const keys = Object.keys(entry.fields ?? {}).sort((a, b) => String(a).localeCompare(String(b), "en"));
+      expect(["reason", "event_id,reason"]).toContain(keys.join(","));
       expect(entry.fields?.["reason"]).toMatch(/^[a-z_]+$/);
     }
   });

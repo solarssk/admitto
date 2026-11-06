@@ -7,7 +7,6 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getEncryptionKey } from "@admitto/crypto";
 import {
-  GUEST_SSO_FLOW_COOKIE,
   GUEST_SSO_SESSION_COOKIE,
   GUEST_SSO_SESSION_TTL_MS,
   GUEST_SSO_STATE_TTL_MS,
@@ -21,9 +20,11 @@ import {
   verifyGuestSsoSession,
   type GuestSsoScope,
 } from "../../src/registration/sso-session.js";
+import { GUEST_SSO_FLOW_COOKIE_PREFIX, newGuestSsoStateValue, parseGuestSsoStateValue } from "../../src/registration/sso-state-value.js";
 
 const NOW = Date.UTC(2026, 10, 5, 12, 0, 0);
 const scope: GuestSsoScope = { eventId: "evt-1", slug: "northwind-summit", providerId: "idp-1" };
+const flow = newGuestSsoStateValue("northwind-summit");
 const identity = { subject: "00uabc123", email: "ada@example.com", issuedAt: NOW, proof: null };
 
 afterEach(() => {
@@ -150,12 +151,12 @@ describe("the cookies as they are set", () => {
     const hono = new Hono();
     hono.get("/set", (c) => {
       setGuestSsoSessionCookie(c, scope, identity);
-      setGuestSsoFlowCookie(c, scope.slug, "state-abc");
+      setGuestSsoFlowCookie(c, flow);
       return c.body(null, 204);
     });
     hono.get("/clear", (c) => {
       clearGuestSsoSessionCookie(c, scope.slug);
-      clearGuestSsoFlowCookie(c, scope.slug);
+      clearGuestSsoFlowCookie(c, flow);
       return c.body(null, 204);
     });
     return hono;
@@ -174,14 +175,14 @@ describe("the cookies as they are set", () => {
     expect(cookie).not.toMatch(/Domain=/i);
   });
 
-  it("sets the flow cookie to the path of the callback only, for the length of the state, with the state as its value", async () => {
-    const cookie = line(await app().request("https://tickets.example.com/set"), GUEST_SSO_FLOW_COOKIE);
+  it("sets the flow cookie to the path of the one callback only, for the length of the state, with the state as its value", async () => {
+    const cookie = line(await app().request("https://tickets.example.com/set"), flow.cookieName);
 
-    expect(cookie.startsWith(`${GUEST_SSO_FLOW_COOKIE}=state-abc;`)).toBe(true);
+    expect(cookie.startsWith(`${flow.cookieName}=${flow.value};`)).toBe(true);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("Secure");
     expect(cookie).toContain("SameSite=Lax");
-    expect(cookie).toContain("Path=/r/northwind-summit/sso;");
+    expect(cookie).toContain("Path=/sso/callback;");
     expect(cookie).toContain(`Max-Age=${GUEST_SSO_STATE_TTL_MS / 1000}`);
     expect(cookie).not.toMatch(/Domain=/i);
   });
@@ -196,7 +197,7 @@ describe("the cookies as they are set", () => {
     const res = await app().request("http://localhost:3000/set");
 
     expect(line(res, GUEST_SSO_SESSION_COOKIE)).not.toContain("Secure");
-    expect(line(res, GUEST_SSO_FLOW_COOKIE)).not.toContain("Secure");
+    expect(line(res, flow.cookieName)).not.toContain("Secure");
     expect(line(res, GUEST_SSO_SESSION_COOKIE)).toContain("HttpOnly");
   });
 
@@ -205,15 +206,15 @@ describe("the cookies as they are set", () => {
 
     expect(line(res, GUEST_SSO_SESSION_COOKIE)).toMatch(/Max-Age=0/);
     expect(line(res, GUEST_SSO_SESSION_COOKIE)).toContain("Path=/r/northwind-summit;");
-    expect(line(res, GUEST_SSO_FLOW_COOKIE)).toMatch(/Max-Age=0/);
-    expect(line(res, GUEST_SSO_FLOW_COOKIE)).toContain("Path=/r/northwind-summit/sso;");
+    expect(line(res, flow.cookieName)).toMatch(/Max-Age=0/);
+    expect(line(res, flow.cookieName)).toContain("Path=/sso/callback;");
   });
 });
 
 describe("reading the cookies of a request", () => {
   const app = new Hono();
   app.get("/session", (c) => c.json(readGuestSsoSession(c, scope, NOW) ?? null));
-  app.get("/flow/:state", (c) => c.json(guestSsoFlowCookieMatches(c, c.req.param("state"))));
+  app.get("/flow/:state", (c) => c.json(guestSsoFlowCookieMatches(c, parseGuestSsoStateValue(c.req.param("state"))!)));
   const withCookie = (path: string, cookie?: string) => app.request(`https://tickets.example.com${path}`, cookie ? { headers: { Cookie: cookie } } : {});
 
   it("reads the session from the cookie of its name", async () => {
@@ -226,13 +227,46 @@ describe("reading the cookies of a request", () => {
 
   it("holds the flow cookie to be exactly the state of the callback, and to be there", async () => {
     const matches = async (state: string, cookie?: string) => (await (await withCookie(`/flow/${state}`, cookie)).json()) as boolean;
+    const mine = newGuestSsoStateValue("northwind-summit");
+    const name = mine.cookieName;
 
-    expect(await matches("state-abc", `${GUEST_SSO_FLOW_COOKIE}=state-abc`)).toBe(true);
-    expect(await matches("state-abc", `${GUEST_SSO_FLOW_COOKIE}=state-abd`)).toBe(false);
-    expect(await matches("state-abc", `${GUEST_SSO_FLOW_COOKIE}=state-ab`)).toBe(false);
-    expect(await matches("state-abc", `${GUEST_SSO_FLOW_COOKIE}=state-abcd`)).toBe(false);
-    expect(await matches("state-abc", `${GUEST_SSO_FLOW_COOKIE}=`)).toBe(false);
-    expect(await matches("state-abc", `${GUEST_SSO_SESSION_COOKIE}=state-abc`)).toBe(false);
-    expect(await matches("state-abc")).toBe(false);
+    expect(await matches(mine.value, `${name}=${mine.value}`)).toBe(true);
+    expect(await matches(mine.value, `${name}=${mine.value.slice(0, -1)}x`)).toBe(false);
+    expect(await matches(mine.value, `${name}=${mine.value.slice(0, -1)}`)).toBe(false);
+    expect(await matches(mine.value, `${name}=${mine.value}x`)).toBe(false);
+    expect(await matches(mine.value, `${name}=`)).toBe(false);
+    // The cookie of another name, of the session or of another flow, is not this flow's.
+    expect(await matches(mine.value, `${GUEST_SSO_SESSION_COOKIE}=${mine.value}`)).toBe(false);
+    expect(await matches(mine.value, `${newGuestSsoStateValue("northwind-summit").cookieName}=${mine.value}`)).toBe(false);
+    expect(await matches(mine.value)).toBe(false);
+  });
+});
+
+describe("the state of a flow", () => {
+  it("is 43 random characters, a dot and the slug, and the name of its cookie comes from the random part", () => {
+    const one = newGuestSsoStateValue("northwind-summit");
+    const two = newGuestSsoStateValue("northwind-summit");
+
+    expect(one.value).toMatch(/^[A-Za-z0-9_-]{43}\.northwind-summit$/);
+    expect(one.cookieName).toMatch(new RegExp(`^${GUEST_SSO_FLOW_COOKIE_PREFIX}[A-Za-z0-9_-]{16}$`));
+    expect(one.cookieName).not.toBe(two.cookieName);
+    expect(parseGuestSsoStateValue(one.value)).toEqual(one);
+  });
+
+  it.each([
+    "",
+    "no-dot",
+    "short.northwind",
+    `${"a".repeat(43)}.`,
+    `${"a".repeat(43)}.Upper`,
+    `${"a".repeat(43)}.../etc`,
+    `${"a".repeat(43)}.//evil.example`,
+    `${"a".repeat(43)}.https://evil.example`,
+    `${"a".repeat(43)}.${"s".repeat(81)}`,
+    `${"a".repeat(44)}.slug`,
+    `${"a".repeat(43)}.slug.extra`,
+    `${"a".repeat(43)}.slug\n`,
+  ])("is not a state of ours: %s", (value) => {
+    expect(parseGuestSsoStateValue(value)).toBeNull();
   });
 });

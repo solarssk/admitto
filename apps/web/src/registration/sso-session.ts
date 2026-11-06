@@ -3,8 +3,10 @@
  *
  * - The FLOW cookie binds the callback to the browser that began the flow (login CSRF): without it, anyone could hand a
  *   guest a link to the callback with a `code` and a `state` of their own, and the guest would register under the
- *   attacker's identity. Its value is the `state` of the flow, it is read only by `/r/<slug>/sso/callback`, and it is
- *   deleted by every callback, whatever came of it.
+ *   attacker's identity. The callback is one address for the whole instance (`/sso/callback`), so there is one flow cookie
+ *   PER FLOW: its name is the prefix and the first characters of the random part of the `state`, its value is the whole
+ *   `state`, and two flows of one browser (two events in two tabs) never overwrite each other. It is read only by the
+ *   callback, whose path it has, and it is deleted by every callback, whatever came of it.
  * - The SESSION cookie says who signed in: the provider, the provider's id of the person (`sub`), the address the provider
  *   gave, when, and which allowed value the claim of the event's restriction held. It is signed, so it cannot be made or
  *   changed by the guest, and it is the only thing the page and `POST /r/<slug>` trust about the person. It is NOT a row of
@@ -24,8 +26,12 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { OIDC_AUTH_STATE_TTL_MS } from "@admitto/auth";
 import { getEncryptionKey } from "@admitto/crypto";
 import type { ClaimProof } from "./sso-claim.js";
+import type { GuestSsoStateValue } from "./sso-state-value.js";
 
-export const GUEST_SSO_FLOW_COOKIE = "admitto_reg_sso_flow";
+/** The one address the provider sends every guest back to, on the host the guest began on. Not under `/r/`, so it can never
+ * be the page of an event, whatever slug an event has. The flow cookies have it as their path. */
+export const GUEST_SSO_CALLBACK_PATH = "/sso/callback";
+
 export const GUEST_SSO_SESSION_COOKIE = "admitto_reg_sso";
 
 /** How long the state of a flow lives: that of the staff flow. */
@@ -89,34 +95,33 @@ interface SessionPayload {
 
 const secure = (): boolean => process.env["NODE_ENV"] !== "development";
 
-const flowPath = (slug: string): string => `/r/${slug}/sso`;
 const sessionPath = (slug: string): string => `/r/${slug}`;
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The flow cookie
 
-/** Sets the flow cookie for the sign-in that was begun for `slug`. It lives as long as the state does, and no longer. */
-export function setGuestSsoFlowCookie(c: Context, slug: string, state: string): void {
-  setCookie(c, GUEST_SSO_FLOW_COOKIE, state, {
+/** Sets the flow cookie of the sign-in that was begun with this `state`. It lives as long as the state does, and no longer. */
+export function setGuestSsoFlowCookie(c: Context, flow: GuestSsoStateValue): void {
+  setCookie(c, flow.cookieName, flow.value, {
     httpOnly: true,
     secure: secure(),
     sameSite: "Lax",
-    path: flowPath(slug),
+    path: GUEST_SSO_CALLBACK_PATH,
     maxAge: Math.floor(GUEST_SSO_STATE_TTL_MS / 1000),
   });
 }
 
-/** Deletes the flow cookie. Every callback does it, whether the sign-in worked or not. */
-export function clearGuestSsoFlowCookie(c: Context, slug: string): void {
-  deleteCookie(c, GUEST_SSO_FLOW_COOKIE, { path: flowPath(slug), secure: secure() });
+/** Deletes the flow cookie of this flow. Every callback does it, whether the sign-in worked or not. */
+export function clearGuestSsoFlowCookie(c: Context, flow: GuestSsoStateValue): void {
+  deleteCookie(c, flow.cookieName, { path: GUEST_SSO_CALLBACK_PATH, secure: secure() });
 }
 
 /** Whether the browser holds the flow cookie of this very flow: it is there, and it is the `state` of the callback. */
-export function guestSsoFlowCookieMatches(c: Context, state: string): boolean {
-  const value = getCookie(c, GUEST_SSO_FLOW_COOKIE);
+export function guestSsoFlowCookieMatches(c: Context, flow: GuestSsoStateValue): boolean {
+  const value = getCookie(c, flow.cookieName);
   if (value === undefined || value === "") return false;
   const held = Buffer.from(value);
-  const expected = Buffer.from(state);
+  const expected = Buffer.from(flow.value);
   return held.length === expected.length && timingSafeEqual(held, expected);
 }
 

@@ -757,7 +757,7 @@ Key points for this deployment model:
 - Origin invariant: reachable only via Cloudflare or WireGuard tunnel
 - Pre-linking staff identities and selecting the direct OIDC source before enabling `CF_ACCESS_ENABLED`
 
-Public attendee paths (`/t/*`, `/q/*`, `/legal/*`) must stay bypassed at Cloudflare.
+Public attendee and guest paths must stay bypassed at Cloudflare: `/t/*`, `/q/*`, `/legal/*`, the guest registration pages `/r/*`, and, when guests sign in with the company's identity provider, `/sso/callback`. That last one is the single return address of the instance, outside `/r/`: the provider sends the guest's browser there, so an Access policy on it stops the sign-in.
 
 ## Admitto worker (mail, import/export, bounce, retention)
 
