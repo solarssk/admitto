@@ -5,7 +5,9 @@ import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { baseAttendeeDetailEvent, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
-import { setPreferredLocale } from "../../src/utils/locale-store.js";
+import { setPreferredLocale, setPreferredTimeFormat } from "../../src/utils/locale-store.js";
+import { ANSWER_TYPE_FIELDS, answerField } from "./answerTypeFixtures.js";
+import { bitwardenTreatsAsSearchField } from "../checkin/bitwardenSearchField.js";
 
 const updateAttendee = vi.fn();
 const resendTicket = vi.fn();
@@ -1082,5 +1084,380 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     });
 
     vi.unstubAllGlobals();
+  });
+});
+
+// The first mount of the date and time pickers is slow on a loaded runner (the admin suite took 405 s on CI against 100 s on a laptop, and two
+// of these tests ran out of the 10 s of the suite): a test that waits for them has 30 s, so that it fails for what it checks and not for the clock.
+describe("AttendeeDetailPage: the answer types of a custom field", { timeout: 30_000 }, () => {
+  const FIELDS = ANSWER_TYPE_FIELDS;
+  const ANSWERS = {
+    abstract: "One\nTwo",
+    arrival_day: "2026-11-03",
+    arrival: "2026-11-04T10:30",
+    mobile: "+15550100",
+    postcode: "01234",
+  };
+
+  beforeEach(() => {
+    setPreferredLocale("en-GB");
+    setPreferredTimeFormat("24h");
+  });
+  afterEach(() => {
+    setPreferredLocale(null);
+    setPreferredTimeFormat(undefined);
+  });
+
+  async function openPage(customData: Record<string, string> = ANSWERS) {
+    const detail = baseDetail({ custom_data: customData });
+    loadAttendeeDetailData.mockResolvedValueOnce({ detail, attributeFields: FIELDS, itemsWarning: null });
+    fetchEventCustomFields.mockResolvedValue(FIELDS);
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" }, { timeout: 10_000 });
+  }
+  const openEdit = () => fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  const typeAndLeave = (label: string, text: string) => {
+    const box = screen.getByLabelText(label);
+    fireEvent.change(box, { target: { value: text } });
+    fireEvent.blur(box);
+  };
+  const rowOf = (label: string) => screen.getByText(label).closest(".attendee-detail-row") as HTMLElement;
+
+  it("shows each answer in the read-only card in the form of its type: a date in the account's format, a date and time with the event's zone, a long text under its label with its line breaks", async () => {
+    await openPage();
+    expect(rowOf("Arrival day").textContent).toBe("Arrival day03 Nov 2026");
+    expect(rowOf("Arrival").textContent).toBe("Arrival04 Nov 2026, 10:30 (Europe/Warsaw)");
+    expect(rowOf("Mobile").textContent).toBe("Mobile+15550100");
+    expect(rowOf("Postcode").textContent).toBe("Postcode01234");
+
+    const abstract = rowOf("Abstract");
+    expect(abstract.className).toContain("attendee-detail-row--long");
+    expect(abstract.lastElementChild!.textContent).toBe("One\nTwo");
+    expect(rowOf("Postcode").className).not.toContain("attendee-detail-row--long");
+  });
+
+  it("shows an answer that is not in the form of its type (the field was retyped after it was answered) as it is stored", async () => {
+    await openPage({ ...ANSWERS, arrival_day: "tomorrow", arrival: "next week" });
+    expect(rowOf("Arrival day").textContent).toBe("Arrival daytomorrow");
+    expect(rowOf("Arrival").textContent).toBe("Arrivalnext week");
+  });
+
+  it("opens the edit form with a control of its own for each type, holding the stored answer, and the zone of the event under the date and time", async () => {
+    await openPage();
+    openEdit();
+    expect((screen.getByLabelText("Abstract") as HTMLTextAreaElement).value).toBe("One\nTwo");
+    expect(screen.getByText("7 / 1000")).toBeTruthy();
+    expect((screen.getByLabelText("Arrival day") as HTMLInputElement).value).toBe("03 Nov 2026");
+    expect((screen.getByLabelText("Arrival, date") as HTMLInputElement).value).toBe("04 Nov 2026");
+    expect((screen.getByLabelText("Arrival, time") as HTMLInputElement).value).toBe("10:30");
+    expect(screen.getByText("Time at the event (Europe/Warsaw).")).toBeTruthy();
+    expect((screen.getByLabelText("Mobile") as HTMLInputElement).value).toBe("5550100");
+    expect((screen.getByLabelText("Mobile") as HTMLInputElement).type).toBe("tel");
+    expect(screen.getByRole("button", { name: /^Mobile country code, .+ \+1$/ })).toBeTruthy();
+    expect((screen.getByLabelText("Postcode") as HTMLInputElement).value).toBe("01234");
+    expect(screen.getByText("Digits only, exactly 5 characters, for example 01234.")).toBeTruthy();
+  });
+
+  it("lays the edit form out with Attendance and Ticket type side by side, and the custom fields under a labelled break", async () => {
+    await openPage();
+    openEdit();
+    const attendance = document.getElementById("attendee-edit-rsvp-status") as HTMLElement;
+    const ticketType = document.getElementById("attendee-edit-ticket-type") as HTMLElement;
+    // Neither select takes a whole row; the email does.
+    expect(attendance.closest(".attendee-fields-grid__full")).toBeNull();
+    expect(ticketType.closest(".attendee-fields-grid__full")).toBeNull();
+    expect(screen.getByLabelText("Email").closest(".attendee-fields-grid__full")).not.toBeNull();
+
+    const grid = document.querySelector(".attendee-fields-grid") as HTMLElement;
+    const label = within(grid).getByText("Custom fields");
+    expect(label.classList.contains("attendee-fields-grid__full")).toBe(true);
+    const follows = (before: Node, after: Node) => Boolean(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(attendance, ticketType)).toBe(true);
+    expect(follows(ticketType, screen.getByLabelText("Email"))).toBe(true);
+    expect(follows(screen.getByLabelText("Department"), label)).toBe(true);
+    expect(follows(label, screen.getByLabelText("Abstract"))).toBe(true);
+  });
+
+  it("keeps the details of the person in the edit form out of Bitwarden's inline menu, which honours the opt-out only for a user who asked", async () => {
+    await openPage();
+    openEdit();
+    for (const label of ["Email", "First name", "Last name", "Company", "Mobile"]) {
+      expect(bitwardenTreatsAsSearchField(screen.getByLabelText(label) as HTMLInputElement), label).toBe(true);
+    }
+    // The word "email" stays out of the name, since Safari's Hide My Email reads it.
+    expect((screen.getByLabelText("Email") as HTMLInputElement).name).not.toMatch(/mail/i);
+  });
+
+  it("shows the avatar of the attendee before the name in the header: the initials for now, hidden from assistive technology", async () => {
+    await openPage();
+    const avatar = document.querySelector(".attendee-detail-title .at-avatar") as HTMLElement;
+    expect(avatar.textContent).toBe("AN");
+    expect(avatar.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy();
+  });
+
+  it("saves only the answers that were changed, each in the form the API takes", async () => {
+    await openPage();
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: ANSWERS }));
+    openEdit();
+    fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "One\nTwo\nThree" } });
+    typeAndLeave("Arrival day", "2026-12-24");
+    typeAndLeave("Arrival, time", "0915");
+    fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "555 0199" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(updateAttendee).toHaveBeenCalledWith(
+      "evt-1",
+      "att-1",
+      expect.objectContaining({
+        custom_data_fields: {
+          abstract: "One\nTwo\nThree",
+          arrival_day: "2026-12-24",
+          arrival: "2026-11-04T09:15",
+          mobile: "+15550199",
+        },
+      }),
+    );
+  });
+
+  it("clears an answer that is emptied, with null, whatever its type", async () => {
+    await openPage();
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: {} }));
+    openEdit();
+    fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "" } });
+    typeAndLeave("Arrival day", "");
+    typeAndLeave("Arrival, date", "");
+    typeAndLeave("Arrival, time", "");
+    fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(updateAttendee).toHaveBeenCalledWith(
+      "evt-1",
+      "att-1",
+      expect.objectContaining({ custom_data_fields: { abstract: null, arrival_day: null, arrival: null, mobile: null } }),
+    );
+  });
+
+  it.each([
+    ["a date and time with the time taken away", () => typeAndLeave("Arrival, time", ""), "Arrival needs both a date and a time."],
+    ["a phone number that is too short, with the code +1 it was saved with", () => fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "2" } }), "Mobile must be a phone number with 3 to 15 digits."],
+    ["a postcode that breaks its rules", () => fireEvent.change(screen.getByLabelText("Postcode"), { target: { value: "12" } }), "Postcode must be digits only, exactly 5 characters."],
+    ["a long text over its limit", () => fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "x".repeat(1001) } }), "Abstract must be at most 1000 characters."],
+  ])("does not save %s, and says why", async (_name, change, message) => {
+    await openPage();
+    openEdit();
+    change();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(message, undefined, { timeout: 10_000 })).toBeTruthy();
+    expect(updateAttendee).not.toHaveBeenCalled();
+  });
+
+  it("refuses to save an attendee whose stored answer no longer fits the type, before the server does, and names the field", async () => {
+    await openPage({ ...ANSWERS, arrival_day: "tomorrow" });
+    openEdit();
+    fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "+1 555 0199" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Arrival day must be a valid date.", undefined, { timeout: 10_000 })).toBeTruthy();
+    expect(updateAttendee).not.toHaveBeenCalled();
+  });
+
+  it("asks for the number to be typed again when the server refuses a phone field, as it does for a number saved in another form", async () => {
+    await openPage();
+    const { ApiError } = await import("../../src/api/client.js");
+    updateAttendee.mockRejectedValueOnce(new ApiError(400, "validation_failed", "validation_failed", undefined, "mobile"));
+    openEdit();
+    fireEvent.change(screen.getByLabelText("Mobile"), { target: { value: "+1 555 0199" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Mobile could not be saved as a phone number. Type the number again.", undefined, { timeout: 10_000 })).toBeTruthy();
+  });
+
+  it("closes an open calendar on Escape and keeps the edit form, with what was typed in it, open", async () => {
+    await openPage();
+    openEdit();
+    fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "Changed" } });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Open calendar" })[0]!);
+    expect(screen.getByRole("dialog", { name: "Choose date" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
+    expect((screen.getByLabelText("Abstract") as HTMLTextAreaElement).value).toBe("Changed");
+    expect(screen.queryByText(/Discard/)).toBeNull();
+  });
+
+  it("holds every control still while the profile is saved", async () => {
+    await openPage();
+    let resolveSave!: (value: ReturnType<typeof baseDetail>) => void;
+    updateAttendee.mockReturnValueOnce(new Promise((resolve) => (resolveSave = resolve)));
+    openEdit();
+    fireEvent.change(screen.getByLabelText("Abstract"), { target: { value: "Changed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect((screen.getByLabelText("Abstract") as HTMLTextAreaElement).disabled).toBe(true));
+    for (const label of ["Arrival day", "Arrival, date", "Arrival, time", "Mobile", "Postcode"]) {
+      expect((screen.getByLabelText(label) as HTMLInputElement).disabled, label).toBe(true);
+    }
+    resolveSave(baseDetail({ custom_data: { ...ANSWERS, abstract: "Changed" } }));
+    await waitFor(() => expect(screen.queryByLabelText("Abstract")).toBeNull());
+  });
+});
+
+describe("AttendeeDetailPage: questions that are shown only for an answer", { timeout: 30_000 }, () => {
+  const parking = answerField("parking", "Parking", "boolean");
+  const plate = answerField("plate", "Plate number", "text", {
+    required: true,
+    rules: { show_when: { field: "parking", value: true }, max_length: 8 },
+  });
+  const meal = answerField("meal", "Meal", "select", { options: ["Standard", "Vegan"] });
+  const veganNote = answerField("vegan_note", "Vegan note", "text", { required: true, rules: { show_when: { field: "meal", value: "Vegan" } } });
+  const FIELDS = [parking, plate, meal, veganNote];
+
+  async function openPage(customData: Record<string, string>, fields = FIELDS) {
+    loadAttendeeDetailData.mockResolvedValueOnce({ detail: baseDetail({ custom_data: customData }), attributeFields: fields, itemsWarning: null });
+    fetchEventCustomFields.mockResolvedValue(fields);
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await screen.findByRole("button", { name: /^Parking,/ });
+  }
+  /** Picks `option` in the select whose label is `label`. */
+  const pick = (label: string, option: string) => {
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label},`) }));
+    fireEvent.click(screen.getByRole("button", { name: option, exact: true }));
+  };
+  const asked = (label: RegExp) => screen.queryByLabelText(label) !== null;
+  const save = () => fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const saveButton = () => screen.getByRole("button", { name: "Save" });
+  const sentPatch = () => updateAttendee.mock.calls[0]![2] as { custom_data_fields?: Record<string, string | null> };
+
+  it("asks a question that is shown for the answer the attendee has, with the answer that was saved in it", async () => {
+    await openPage({ parking: "true", plate: "AB 123" });
+    expect((screen.getByLabelText(/^Plate number/) as HTMLInputElement).value).toBe("AB 123");
+    expect(screen.queryByLabelText(/^Vegan note/)).toBeNull();
+  });
+
+  it("does not ask a question that the answer of the attendee hides, though an answer to it is saved", async () => {
+    await openPage({ parking: "false", plate: "KR 999", meal: "Standard" });
+    expect(asked(/^Plate number/)).toBe(false);
+    expect(asked(/^Vegan note/)).toBe(false);
+    expect(screen.getByRole("button", { name: "Parking, No" })).toBeTruthy();
+  });
+
+  it("does not ask a question whose condition has no answer at all", async () => {
+    await openPage({});
+    expect(asked(/^Plate number/)).toBe(false);
+  });
+
+  it("hides a question when the answer is changed so that it no longer shows it, and shows it again with what was typed", async () => {
+    await openPage({ parking: "true", plate: "AB 123" });
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "XY 789" } });
+    pick("Parking", "No");
+    expect(asked(/^Plate number/)).toBe(false);
+    pick("Parking", "Yes");
+    expect((screen.getByLabelText(/^Plate number/) as HTMLInputElement).value).toBe("XY 789");
+  });
+
+  it("saves the answer that was changed, and sends nothing for a question that is hidden: no value and no null, so what is saved for it stays", async () => {
+    await openPage({ parking: "true", plate: "AB 123" });
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { parking: "false", plate: "AB 123" } }));
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "XY 789" } });
+    pick("Parking", "No");
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ parking: "false" });
+    expect(Object.keys(sentPatch().custom_data_fields ?? {})).not.toContain("plate");
+  });
+
+  it("does not send a question that is hidden although it was cleared before it was hidden", async () => {
+    await openPage({ parking: "true", plate: "AB 123" });
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { parking: "false", plate: "AB 123" } }));
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "" } });
+    pick("Parking", "No");
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ parking: "false" });
+  });
+
+  it("asks for a required question once the answer shows it, empty, and does not save until it is answered", async () => {
+    await openPage({ parking: "false" });
+    pick("Parking", "Yes");
+    const input = screen.getByLabelText(/^Plate number/) as HTMLInputElement;
+    expect(input.value).toBe("");
+    // The browser holds the save back with its own prompt, as it does for any required field of the form.
+    expect(input.required).toBe(true);
+    save();
+    expect(input.validity.valueMissing).toBe(true);
+    expect(updateAttendee).not.toHaveBeenCalled();
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { parking: "true", plate: "AB 1" } }));
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "AB 1" } });
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ parking: "true", plate: "AB 1" });
+  });
+
+  it("does not make the browser ask for a required question while it is hidden, so an attendee can be saved without it", async () => {
+    await openPage({ parking: "false" });
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { parking: "false", meal: "Standard" } }));
+    pick("Meal", "Standard");
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ meal: "Standard" });
+  });
+
+  it("works for a choice question as it does for a yes/no question: the option shows the question, another hides it", async () => {
+    await openPage({ meal: "Vegan", vegan_note: "no eggs" });
+    expect((screen.getByLabelText(/^Vegan note/) as HTMLInputElement).value).toBe("no eggs");
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { meal: "Standard", vegan_note: "no eggs" } }));
+    pick("Meal", "Standard");
+    expect(asked(/^Vegan note/)).toBe(false);
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ meal: "Standard" });
+  });
+
+  it("draws the question that is shown right after the one that shows it, in the same grid", async () => {
+    await openPage({ parking: "true", plate: "AB 123", meal: "Vegan", vegan_note: "x" });
+    const labels = Array.from(document.querySelectorAll<HTMLElement>(".attendee-fields-grid label.at-label")).map((label) => label.textContent);
+    expect(labels.slice(labels.indexOf("Department") + 1)).toEqual(["Parking", "Plate number *", "Meal", "Vegan note *"]);
+    const parkingField = screen.getByRole("button", { name: /^Parking,/ }).closest(".searchable-select")!.parentElement!;
+    expect(parkingField.nextElementSibling?.contains(screen.getByLabelText(/^Plate number/))).toBe(true);
+    expect(document.querySelectorAll(".attendee-fields-grid__full").length).toBeGreaterThan(0);
+  });
+
+  it("takes what was typed in a question and then hidden for no edit: Save is off, and Cancel leaves without asking", async () => {
+    await openPage({});
+    expect(saveButton().hasAttribute("disabled") || saveButton().getAttribute("aria-disabled") === "true").toBe(true);
+    pick("Parking", "Yes");
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "AB 1" } });
+    expect(saveButton().getAttribute("aria-disabled")).not.toBe("true");
+    expect(saveButton().hasAttribute("disabled")).toBe(false);
+    // The answer goes back to what it was: nothing is left to save, though a text was typed for the question that it showed.
+    pick("Parking", "-");
+    expect(asked(/^Plate number/)).toBe(false);
+    expect(saveButton().hasAttribute("disabled") || saveButton().getAttribute("aria-disabled") === "true").toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(/Discard/)).toBeNull();
+  });
+
+  it("keeps the questions that have no condition as they were: asked, required and saved whatever the answers are", async () => {
+    const must = answerField("must", "Must have", "text", { required: true });
+    await openPage({ must: "x" }, [parking, plate, must]);
+    updateAttendee.mockResolvedValueOnce(baseDetail({ custom_data: { must: "y" } }));
+    fireEvent.change(screen.getByLabelText(/^Must have/), { target: { value: "y" } });
+    save();
+    await waitFor(() => expect(updateAttendee).toHaveBeenCalled());
+    expect(sentPatch().custom_data_fields).toEqual({ must: "y" });
+  });
+
+  it("is told by the server about a question it has found to be missing, in the words of the field, as before", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    await openPage({ parking: "false" });
+    updateAttendee.mockRejectedValueOnce(new ApiError(400, "required_custom_data_field_missing", "required_custom_data_field_missing", undefined, "plate"));
+    pick("Parking", "Yes");
+    fireEvent.change(screen.getByLabelText(/^Plate number/), { target: { value: "AB 1" } });
+    save();
+    expect(await screen.findByText("Plate number is required.")).toBeTruthy();
   });
 });

@@ -42,6 +42,10 @@
     "./region-date-format": {
       "types": "./dist/region-date-format.d.ts",
       "default": "./dist/region-date-format.js"
+    },
+    "./phone-countries": {
+      "types": "./dist/phoneCountries.d.ts",
+      "default": "./dist/phoneCountries.js"
     }
   },
   "scripts": {
@@ -53,6 +57,7 @@
   },
   "dependencies": {
     "@vvo/tzdb": "^6.201.1",
+    "countries-list": "^3.4.1",
     "ip-location-api": "5.0.2",
     "tzdata": "^1.0.50",
     "undici": "^8.11.2"

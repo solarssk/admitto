@@ -191,6 +191,19 @@ describe("POST /api/admin/events", () => {
     expect(JSON.stringify(entry)).not.toContain("Autumn Summit 2026");
   });
 
+  it("gives a new event no custom attendee fields: the suggested questions are added only when an organiser asks for them", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Event Without Seeded Fields",
+      slug: "event-without-seeded-fields",
+      date: "2026-09-29",
+      timezone: "UTC",
+    });
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: { id: string } };
+
+    expect(await prisma.eventCustomField.count({ where: { event_id: event.id } })).toBe(0);
+  });
+
   it("creates a geocoded EventLocation row from the selected location fields", async () => {
     const res = await postCreateEvent(superCookie, {
       title: "Geocoded Event",

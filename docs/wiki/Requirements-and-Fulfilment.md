@@ -4,6 +4,8 @@
 
 Use this area to decide what attendee information the event needs, what operators hand out, and how check-in behaves.
 
+The **Requirements** page holds the event items. The attendee fields are on the **Fields** tab of the event's **Registration** page.
+
 ## Choose the right page
 
 | Need | Page |

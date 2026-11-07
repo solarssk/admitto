@@ -137,6 +137,7 @@ describe("redactedAfterErasure", () => {
     check_in_status: "admitted",
     admitted_at: "2026-09-01T10:37:21.123Z",
     custom_data: { diet: "vegan" },
+    companion: { slot: 1, name: "Piotr Companion", custom_data: { diet: "halal" } },
     deliveries: [
       {
         id: "d-1",
@@ -173,6 +174,8 @@ describe("redactedAfterErasure", () => {
       company: null,
       department: null,
       custom_data: null,
+      // The person the guest brought goes with them: the page never shows what stays in the row.
+      companion: null,
       wallet_apple_link: null,
       wallet_google_link: null,
       action_log: [],
@@ -194,7 +197,7 @@ describe("redactedAfterErasure", () => {
       error: null,
     });
     expect(redacted.wallet_pass).toMatchObject({ status: "active", apple_url: null, android_url: null, user_agent: null, user_agent_captured_at: null });
-    expect(JSON.stringify(redacted)).not.toMatch(/anna|Anna|Private note|vegan/);
+    expect(JSON.stringify(redacted)).not.toMatch(/anna|Anna|Private note|vegan|Piotr|halal/);
   });
 
   it("copes with an attendee who has no wallet pass and no deliveries", () => {

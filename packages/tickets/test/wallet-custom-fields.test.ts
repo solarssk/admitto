@@ -61,6 +61,17 @@ describe("resolveWalletCustomFieldPlaceholders", () => {
     expect(result).toEqual({});
   });
 
+  it.each(["long_text", "date", "datetime", "phone"] as const)(
+    "excludes a %s field as well: only select and boolean can be mapped onto a pass",
+    async (type) => {
+      vi.mocked(loadEventCustomDataFields).mockResolvedValueOnce([{ label: "Answer", source_field: "answer", type }]);
+
+      const result = await resolveWalletCustomFieldPlaceholders(db, "evt-1", { answer: "+48600100200" }, { slot: "custom:answer" });
+
+      expect(result).toEqual({});
+    },
+  );
+
   it("skips a mappable field the attendee left unanswered", async () => {
     vi.mocked(loadEventCustomDataFields).mockResolvedValueOnce([
       { label: "T-Shirt size", source_field: "t_shirt_size", type: "select", options: ["S", "M", "L"] },

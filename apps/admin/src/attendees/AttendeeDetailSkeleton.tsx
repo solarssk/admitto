@@ -222,7 +222,12 @@ export function AttendeeDetailSkeleton({
   return (
     <>
       <PageHeader
-        title="Attendee"
+        title={
+          <span className="attendee-detail-title">
+            <Skeleton variant="circle" width={48} height={48} />
+            <span>Attendee</span>
+          </span>
+        }
         subtitle="Manage this attendee's profile, ticket, and check-in status."
         className="attendee-detail-pageheader"
         actions={

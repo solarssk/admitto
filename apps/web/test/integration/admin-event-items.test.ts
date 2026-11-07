@@ -91,6 +91,7 @@ async function seed(client: PrismaClient) {
       { event_id: EVENT_EI_A, source_field: "meal_choice", label: "Meal choice" },
       { event_id: EVENT_EI_A, source_field: "badge_color", label: "Badge color" },
       { event_id: EVENT_EI_A, source_field: "race_field", label: "Race field" },
+      { event_id: EVENT_EI_A, source_field: "health_note", label: "Health note", sensitive: true },
     ],
   });
 
@@ -293,6 +294,21 @@ describe("POST /api/admin/events/:eventId/items", () => {
     expect(body.field).toBe("no_such_field");
   });
 
+  it("rejects a content_fields reference to a sensitive question with 400 sensitive_content_field, and creates no item (D-E6)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        key: "new_item_sensitive_hint",
+        label: "New item sensitive hint",
+        config: { content_fields: ["meal_choice", "health_note"] },
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "sensitive_content_field", field: "health_note" });
+    expect(await prisma.eventItem.count({ where: { event_id: EVENT_EI_A, key: "new_item_sensitive_hint" } })).toBe(0);
+  });
+
   it("rejects a content_fields reference already assigned to a different item", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
       method: "POST",
@@ -460,6 +476,19 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
     const body = (await res.json()) as { error: string; field: string };
     expect(body.error).toBe("unknown_content_field");
     expect(body.field).toBe("no_such_field");
+  });
+
+  it("rejects a content_fields reference to a sensitive question with 400 sensitive_content_field, and leaves the item as it was (D-E6)", async () => {
+    const before = await prisma.eventItem.findUniqueOrThrow({ where: { id: ITEM_SOCKS }, select: { config: true } });
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ config: { content_fields: ["health_note"] } }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "sensitive_content_field", field: "health_note" });
+    const after = await prisma.eventItem.findUniqueOrThrow({ where: { id: ITEM_SOCKS }, select: { config: true } });
+    expect(after.config).toEqual(before.config);
   });
 
   it("rejects a content_fields reference already assigned to a different item", async () => {
@@ -1225,3 +1254,78 @@ type EventItemConfigBody = {
   issue_on_checkin?: boolean;
   content_fields?: string[];
 };
+
+describe("the audience of an item (who is offered it)", () => {
+  const post = (body: unknown) =>
+    app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify(body),
+    });
+  const patch = (itemId: string, body: unknown) =>
+    app.request(`/api/admin/events/${EVENT_EI_A}/items/${itemId}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify(body),
+    });
+  const storedConfig = async (itemId: string) => (await prisma.eventItem.findUniqueOrThrow({ where: { id: itemId } })).config;
+
+  it("creates an item for guests with a companion, and answers with the audience", async () => {
+    const res = await post({ key: "plus_one_bag", label: "Gift bag for a companion", config: { audience: "with_companion" } });
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; config: EventItemConfigBody };
+    expect(body.config).toEqual({ audience: "with_companion" });
+    expect(await storedConfig(body.id)).toEqual({ audience: "with_companion" });
+  });
+
+  it("lists the audience of an item beside its other settings, and leaves it out of an item that has none", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, { headers: { Cookie: adminCookie, ...sameOrigin } });
+    const { items } = (await res.json()) as { items: { key: string; config: unknown }[] };
+
+    expect(items.find((item) => item.key === "plus_one_bag")?.config).toEqual({ audience: "with_companion" });
+    // An item made before there was an audience has none in its answer: the same JSON as before.
+    expect(items.find((item) => item.key === "giftbag")?.config).not.toHaveProperty("audience");
+    expect(items.find((item) => item.key === "badge")?.config).toEqual({ issue_on_checkin: true, requires_return: false });
+  });
+
+  it("accepts 'all' as the audience", async () => {
+    const res = await post({ key: "for_everyone", label: "For everyone", config: { audience: "all", requires_return: true } });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { config: unknown }).config).toEqual({ audience: "all", requires_return: true });
+  });
+
+  it("refuses any other audience, on create and on change", async () => {
+    const created = await post({ key: "to_change", label: "To change" });
+    const { id } = (await created.json()) as { id: string };
+
+    for (const audience of ["everyone", "WITH_COMPANION", "", null, 1, true, ["with_companion"]]) {
+      const rejectedOnCreate = await post({ key: "bad_audience", label: "Bad", config: { audience } });
+      expect(rejectedOnCreate.status).toBe(400);
+      expect(((await rejectedOnCreate.json()) as { error: string }).error).toBe("validation_failed");
+      const rejectedOnChange = await patch(id, { config: { audience } });
+      expect(rejectedOnChange.status).toBe(400);
+      expect(((await rejectedOnChange.json()) as { error: string }).error).toBe("validation_failed");
+    }
+    expect(await storedConfig(id)).toBeNull();
+  });
+
+  it("changes the audience of an item, and back", async () => {
+    const created = await post({ key: "switchable", label: "Switchable" });
+    const { id } = (await created.json()) as { id: string };
+
+    const narrowed = await patch(id, { config: { audience: "with_companion" } });
+    expect(narrowed.status).toBe(200);
+    expect(((await narrowed.json()) as { config: unknown }).config).toEqual({ audience: "with_companion" });
+    expect(await storedConfig(id)).toEqual({ audience: "with_companion" });
+
+    const widened = await patch(id, { config: { audience: "all" } });
+    expect(widened.status).toBe(200);
+    expect(await storedConfig(id)).toEqual({ audience: "all" });
+  });
+
+  it("still refuses a key it does not know beside the audience", async () => {
+    const res = await post({ key: "unknown_key", label: "Unknown key", config: { audience: "with_companion", guests: "all" } });
+    expect(res.status).toBe(400);
+  });
+});

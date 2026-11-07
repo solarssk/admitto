@@ -31,10 +31,20 @@
  * `storage_key`s, and the files are deleted after the commit, because with the rows gone nothing
  * (the retention run included) could find them again. The keys are also written into the audit entry
  * of the deletion, so that a crash between the commit and the deletes does not lose them.
+ * Guest registrations (`Registration`) and their queued mail (`RegistrationMail`) cascade with the
+ * event and are not a deletability signal either: the audit entry says how many went.
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
-import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, lockAttendeeJobQueue, writeAdminAuditLog } from "@admitto/tickets";
+import {
+  BADGE_ITEM_KEY,
+  COMPANION_ITEM_KEY,
+  STANDARD_TICKET_TYPE_KEY,
+  lockAttendeeJobQueue,
+  lockRegistrationQueue,
+  writeAdminAuditLog,
+} from "@admitto/tickets";
+import { DEFAULT_TEMPLATE_NAME, SYSTEM_TEMPLATE_NAMES } from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 import { deleteEventJobFilesBestEffort } from "./purge-export-files.js";
@@ -61,7 +71,7 @@ export type EventDeletionBlocker =
 /** Zero-cost-to-compute signals of retained event content, used by the deletability guard. */
 export type EventActivitySignals = {
   attendeeCount: number;
-  nonBadgeItemCount: number;
+  customItemCount: number;
   nonStandardTicketTypeCount: number;
   contactCount: number;
   resourceCount: number;
@@ -75,27 +85,33 @@ export async function countEventActivitySignals(
 ): Promise<EventActivitySignals> {
   const [
     attendeeCount,
-    nonBadgeItemCount,
+    customItemCount,
     nonStandardTicketTypeCount,
     contactCount,
     resourceCount,
     eventMailTemplateCount,
   ] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
-    db.eventItem.count({ where: { event_id: eventId, key: { not: BADGE_ITEM_KEY } } }),
+    // The badge and the companion item are made by Admitto itself (the companion one by the first admission that saves a
+    // companion), not by the organiser, so they are not retained content: an event whose attendees are gone is deletable.
+    db.eventItem.count({ where: { event_id: eventId, key: { notIn: [BADGE_ITEM_KEY, COMPANION_ITEM_KEY] } } }),
     db.ticketType.count({ where: { event_id: eventId, key: { not: STANDARD_TICKET_TYPE_KEY } } }),
     db.eventContact.count({ where: { event_id: eventId } }),
     db.eventResource.count({ where: { event_id: eventId } }),
-    // A saved `ticket` row is only an event-local override of the built-in default. It cannot
-    // be deleted on its own, but permanent event deletion can safely discard it. Only additional
-    // templates represent retained event content.
+    // A saved `ticket` row, or a registration-* system mail, is only an event-local override of a
+    // built-in default. Permanent event deletion can safely discard it (a `ticket` one cannot be
+    // deleted on its own). Only additional templates represent retained event content.
     db.mailTemplate.count({
-      where: { scope_type: "event", scope_id: eventId, name: { not: "ticket" } },
+      where: {
+        scope_type: "event",
+        scope_id: eventId,
+        name: { notIn: [DEFAULT_TEMPLATE_NAME, ...SYSTEM_TEMPLATE_NAMES] },
+      },
     }),
   ]);
   return {
     attendeeCount,
-    nonBadgeItemCount,
+    customItemCount,
     nonStandardTicketTypeCount,
     contactCount,
     resourceCount,
@@ -115,7 +131,7 @@ export function listEventDeletionBlockers(
 ): EventDeletionBlocker[] {
   const blockers: EventDeletionBlocker[] = [];
   if (signals.attendeeCount > 0) blockers.push("attendees");
-  if (signals.nonBadgeItemCount > 0) blockers.push("custom_items");
+  if (signals.customItemCount > 0) blockers.push("custom_items");
   if (signals.nonStandardTicketTypeCount > 0) blockers.push("custom_ticket_types");
   if (signals.contactCount > 0) blockers.push("contacts");
   if (signals.resourceCount > 0) blockers.push("resources");
@@ -173,6 +189,12 @@ export async function deleteEvent(
       // would make the two wait for each other. A running import is waited for, and the people it created make
       // the event undeletable; a job that is deleted with the event makes the import that wakes up stop.
       await tx.$queryRaw`SELECT "id" FROM "AdminJob" WHERE "event_id" = ${eventId} ORDER BY "id" FOR UPDATE`;
+      // Then the registration queue (the order is in lockRegistrationQueue), before the event row: a transaction that
+      // is changing a registration of the event (an admission locks the registration, then inserts an attendee, which
+      // needs a share of the event row) finishes first, and none starts until this one ends. Taken after the event
+      // row, the two would wait for each other: this one for the registration that the cascade below deletes, the
+      // other for the event row.
+      await lockRegistrationQueue(tx, eventId);
       // The row of the event itself, before anything is counted or read. A job that is being created for the
       // event (an import that has stored its CSV and is about to name it) holds a share of this row until it
       // commits, so the deletion waits for it and then sees its row, and a job that starts after finds the
@@ -227,6 +249,13 @@ export async function deleteEvent(
       `;
       const jobFileKeys = deletedJobs.flatMap((job) => (job.storage_key ? [job.storage_key] : []));
 
+      // The guest registrations and their queued mail go with the event (cascade) and do not keep it. Counted for the
+      // audit entry: under the registration queue and the event row, nothing adds or removes one before the delete.
+      const [registrationsDeleted, registrationMailsDeleted] = await Promise.all([
+        tx.registration.count({ where: { event_id: eventId } }),
+        tx.registrationMail.count({ where: { event_id: eventId } }),
+      ]);
+
       await tx.event.delete({ where: { id: eventId } });
 
       await writeAdminAuditLog(tx, {
@@ -239,8 +268,14 @@ export async function deleteEvent(
         // Snapshot the title here: once the delete above commits, the audit log's usual
         // live-lookup-by-eventId has nothing left to resolve against. The keys of the job files go in too:
         // they are deleted after the commit, and if the process dies in between this entry is the only
-        // record of them (a key is org, event and a random name, no personal data).
-        metadata: { eventId, eventTitle: event.title, ...(jobFileKeys.length > 0 ? { jobFileKeys } : {}) },
+        // record of them (a key is org, event and a random name, no personal data). So do the numbers of
+        // registrations and registration mails that went with the event (counts only).
+        metadata: {
+          eventId,
+          eventTitle: event.title,
+          ...(jobFileKeys.length > 0 ? { jobFileKeys } : {}),
+          ...(registrationsDeleted > 0 ? { registrationsDeleted, registrationMailsDeleted } : {}),
+        },
       });
       return { kind: "ok", eventTitle: event.title, managedUploadUrls, jobFileKeys };
     });

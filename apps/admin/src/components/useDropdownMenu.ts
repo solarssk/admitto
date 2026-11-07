@@ -17,6 +17,28 @@ export function isAnyDropdownMenuOpen(): boolean {
   return openDropdownCount > 0;
 }
 
+/** For a popover that is not built on `useDropdownMenu` (the time picker): while it is open it counts as an open dropdown, so that the
+ * modal it sits in leaves Escape to it, and Escape closes it (`onEscape`), wherever the focus is. */
+export function usePopoverEscape(open: boolean, onEscape: () => void): void {
+  const onEscapeRef = useRef(onEscape);
+  useEffect(() => {
+    onEscapeRef.current = onEscape;
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    openDropdownCount += 1;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onEscapeRef.current();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      openDropdownCount -= 1;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+}
+
 export interface UseDropdownMenuOptions {
   /** Gap between trigger and panel, in px. Default 4. */
   gap?: number;

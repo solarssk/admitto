@@ -9,6 +9,9 @@ import {
   ADMITTABLE_STATUS_LIST,
   REVOCABLE_ITEM_STATES,
   keepLiveRows,
+  loadSensitiveCustomFields,
+  redactSensitiveCustomData,
+  sensitiveWalletMappingFields,
   writeAdminAuditLog,
   parseWalletFieldMapping,
 } from "@admitto/tickets";
@@ -126,7 +129,8 @@ const patchEventSchema = z
     // FIELD_PLACEHOLDER_PREFIX, packages/tickets/src/wallet-custom-fields.ts; source_field charset
     // matches event-custom-fields-routes.ts's own slugField). Not checked against the event's live
     // custom-field set here - a mapping pointing at a deleted/retyped field just resolves to
-    // nothing at send time, the same as any other stale placeholder (ROADMAP.md v0.7.1 decision).
+    // nothing at send time, the same as any other stale placeholder (ROADMAP.md v0.7.1 decision). A reference to a sensitive
+    // field is refused by guardSensitiveWalletMapping (D-E6).
     wallet_field_mapping: z
       .record(
         z.string().trim().min(1).max(60).regex(/^[A-Za-z]\w*$/),
@@ -1023,6 +1027,20 @@ async function pushWalletUpdatesBestEffort(
   await enqueueEventWideWalletPushJob(db, c, eventId, updated.organization_id, "settings", includeVoided);
 }
 
+/** Refuses a wallet field mapping that puts the answer to a sensitive question on the pass (D-E6): a pass is handed to the guest's
+ * phone and to the wallet provider. The pass leaves such a row out whatever is saved (`resolveWalletCustomFieldPlaceholders`), so
+ * this is the clear error for the one who saves it, and a mapping stored before the question became sensitive stays harmless. */
+async function guardSensitiveWalletMapping(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  mapping: PatchEventBody["wallet_field_mapping"],
+): Promise<Response | null> {
+  if (!mapping) return null;
+  const [field] = sensitiveWalletMappingFields(mapping, await loadSensitiveCustomFields(db, eventId));
+  return field === undefined ? null : c.json({ error: "sensitive_wallet_field", field }, 400);
+}
+
 /** Blocks a wallet credential change that would silently orphan already-issued passes.
  * PassCreator scopes a pass lookup to one template, permanently - there's no way to migrate an
  * already-issued pass to a different template, so once any pass has been issued under the current
@@ -1266,6 +1284,21 @@ function handlePatchEventTransactionError(
   return c.json({ error: "audit_failed" }, 500);
 }
 
+/** The refusals that apply to a wallet change, in order; the first one that applies is the answer. */
+async function guardWalletPatch(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  patch: PatchEventBody,
+  existing: EventSettingsRow,
+): Promise<Response | null> {
+  return (
+    (await guardWalletCredentialChange(c, db, eventId, patch, existing)) ??
+    (await guardSensitiveWalletMapping(c, db, eventId, patch.wallet_field_mapping)) ??
+    (await guardWalletExpirationModeChange(c, db, eventId, patch, existing))
+  );
+}
+
 /** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
 export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -1283,10 +1316,8 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   if (!existing) return c.json({ error: "not_found" }, 404);
 
   if (patchesWallet) {
-    const credentialGuardResponse = await guardWalletCredentialChange(c, db, eventId, patch, existing);
-    if (credentialGuardResponse) return credentialGuardResponse;
-    const expirationModeGuardResponse = await guardWalletExpirationModeChange(c, db, eventId, patch, existing);
-    if (expirationModeGuardResponse) return expirationModeGuardResponse;
+    const guardResponse = await guardWalletPatch(c, db, eventId, patch, existing);
+    if (guardResponse) return guardResponse;
   }
 
   const audit = adminAuditFromContext(c);
@@ -1474,6 +1505,8 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
   // The last check before the file is built: `erased_at: null` above is evaluated against the row
   // as it was before an erasure that is still open began, so such an attendee would be in the file.
   const attendees = await keepLiveRows(db, fetched);
+  // The file has no answer to a sensitive question either (D-E6): an export of everything held is still an export.
+  const sensitive = await loadSensitiveCustomFields(db, eventId);
 
   const columns = [
     "id",
@@ -1492,7 +1525,7 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
     const checkInStatus = row.admitted_at ? "admitted" : "not_admitted";
     const customData =
       row.custom_data != null && typeof row.custom_data === "object"
-        ? JSON.stringify(row.custom_data)
+        ? JSON.stringify(redactSensitiveCustomData(row.custom_data, sensitive))
         : "";
     return [
       row.id,
@@ -1521,7 +1554,7 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
     ip: audit.ip,
     timezone: audit.timezone,
     actionType: "event_pii_exported",
-    metadata: { eventId, rowCount: attendees.length, totalCount, truncated },
+    metadata: { eventId, rowCount: attendees.length, totalCount, truncated, sensitiveFieldCount: sensitive.length },
   });
 
   return new Response(bom + csvBody, {

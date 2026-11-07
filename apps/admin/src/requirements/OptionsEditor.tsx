@@ -18,6 +18,16 @@ export function optionRowsFromOptions(options: string[] | null): OptionRow[] {
   return (options ?? []).map((text, i) => ({ key: `row-${i}`, text, originalText: text }));
 }
 
+/** The number for the next row the operator adds: past the highest `new-N` key of `rows`, and never below their count. The editor
+ * can be mounted again over rows it added in an earlier life (it goes while the type of the field has no list, and the draft keeps
+ * them), so a count that starts at zero would give a new row the key of one that is already there. */
+function nextNewRowNumber(rows: readonly OptionRow[]): number {
+  return rows.reduce((next, row) => {
+    const added = /^new-(\d+)$/.exec(row.key);
+    return added ? Math.max(next, Number(added[1]) + 1) : next;
+  }, rows.length);
+}
+
 function usageOf(usageCounts: Record<string, number> | null, originalText: string): number {
   if (!usageCounts || !originalText) return 0;
   return usageCounts[originalText] ?? 0;
@@ -34,6 +44,22 @@ export interface OptionsEditorProps {
   /** The row's fields cannot be changed (a save is under way): a field stays focusable, read-only, since a disabled one would
    * drop the focus of an operator who pressed Enter in it. */
   disabled?: boolean;
+  /** What a row is called in the names of its controls ("Option text", "Remove option", "+ Add option"). */
+  noun?: string;
+  /** Say how many attendees hold each option, and warn before a rename or a removal that touches them. Off for a list that is not
+   * answered by attendees (the suggestions of a text field): it has no count, so nothing is read for it and `usageCounts` is not used. */
+  showUsage?: boolean;
+  /** The counts are hidden (a sensitive question): each row says so, and `usageCounts` is not used. Removing a row that exists is not
+   * done here but asked of `onConfirmRemove`, because it is not known whether anyone chose it. */
+  usageHidden?: boolean;
+  /** When given, the remove button of a row that exists calls it instead of removing (a caller whose counts are hidden confirms first and
+   * then changes the rows); a row that was added in this edit is always removed at once. */
+  onConfirmRemove?: (row: OptionRow) => void;
+  /** The most rows the list takes: "+ Add" is off when it has that many. */
+  max?: number;
+  /** The rows whose text is wrong: their field is marked invalid. What is wrong is said by the caller, in the element `errorId`. */
+  invalidKeys?: ReadonlySet<string>;
+  errorId?: string;
   onChange: (rows: OptionRow[]) => void;
 }
 
@@ -51,6 +77,13 @@ function UsageSkeleton({ held }: Readonly<{ held: boolean }>) {
 /** What a row says about how many attendees use its option. It is gated on the placeholder having had its minimum time
  * (`showContent`), not only on the counts being in: an answer that comes just after the 200ms would otherwise show its bar for a
  * few frames and flash. */
+/** What an edit of an existing row amounts to: blanked (the save treats that as a removal), renamed, or left as it was. A new row is never either. */
+export function editOf(row: OptionRow): "blanked" | "renamed" | "same" {
+  const trimmed = row.text.trim();
+  if (trimmed === "" && row.originalText !== "") return "blanked";
+  return trimmed !== "" && trimmed !== row.originalText ? "renamed" : "same";
+}
+
 function usageLabelFor(usage: number, usageKnown: boolean, gate: LoadingGate): ReactNode {
   if (!gate.showContent) return <UsageSkeleton held={!gate.showIndicator} />;
   if (!usageKnown) return "Unknown";
@@ -58,12 +91,59 @@ function usageLabelFor(usage: number, usageKnown: boolean, gate: LoadingGate): R
   return "Unused";
 }
 
+/** The text field of one row. A row that is wrong is marked for the eye and for assistive tech, and tied to the message that says what is
+ * wrong. It stays focusable while a save is under way, read-only, so that a field that Enter submitted keeps the focus. */
+function OptionTextInput({
+  rowKey,
+  text,
+  noun,
+  readOnly,
+  invalid,
+  errorId,
+  onChange,
+}: Readonly<{
+  rowKey: string;
+  text: string;
+  noun: string;
+  readOnly: boolean | undefined;
+  invalid: boolean;
+  errorId: string | undefined;
+  onChange: (text: string) => void;
+}>) {
+  return (
+    <input
+      name={`${noun}-text`}
+      className={`at-input options-editor__input${invalid ? " at-input--invalid" : ""}`}
+      data-key={rowKey}
+      value={text}
+      readOnly={readOnly}
+      aria-label={`${noun.charAt(0).toUpperCase()}${noun.slice(1)} text`}
+      aria-invalid={invalid ? true : undefined}
+      aria-describedby={invalid ? errorId : undefined}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
 /** Structured editor for a select field's option list - replaces the old plain "one per line"
  * textarea. Each row shows how many attendees currently have that value, warns inline when
  * renaming a value that's in use, and turns delete into an in-row confirm instead of removing
  * silently. Reordering is drag (mouse/touch/pen via Pointer Events - no DnD library in this
  * repo) with an Up/Down-arrow keyboard equivalent on the same handle. */
-export function OptionsEditor({ rows, usageCounts, usageLoading = false, disabled, onChange }: Readonly<OptionsEditorProps>) {
+export function OptionsEditor({
+  rows,
+  usageCounts,
+  usageLoading = false,
+  disabled,
+  noun = "option",
+  showUsage = true,
+  usageHidden = false,
+  onConfirmRemove,
+  max,
+  invalidKeys,
+  errorId,
+  onChange,
+}: Readonly<OptionsEditorProps>) {
   const usageGate = useLoadingGate(usageLoading);
   const usageSlow = useDelayedLoading(usageLoading, SLOW_NOTICE_MS);
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
@@ -72,7 +152,7 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
   rowsRef.current = rows;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const nextRowIdRef = useRef(rows.length);
+  const nextRowIdRef = useRef(0);
 
   function updateRow(key: string, text: string) {
     onChange(rows.map((r) => (r.key === key ? { ...r, text } : r)));
@@ -84,12 +164,16 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
   }
 
   function handleDeleteClick(row: OptionRow) {
-    if (usageOf(usageCounts, row.originalText) > 0) setConfirmingKey(row.key);
+    if (onConfirmRemove && row.originalText !== "") onConfirmRemove(row);
+    else if (usageOf(usageCounts, row.originalText) > 0) setConfirmingKey(row.key);
     else removeRow(row.key);
   }
 
   function addRow() {
-    const key = `new-${nextRowIdRef.current++}`;
+    // The rows may be ones that were added before this mount, or put in since (the draft is reset): look at them each time.
+    const number = Math.max(nextRowIdRef.current, nextNewRowNumber(rows));
+    nextRowIdRef.current = number + 1;
+    const key = `new-${number}`;
     onChange([...rows, newOptionRow(key)]);
     requestAnimationFrame(() => {
       listRef.current?.querySelector<HTMLInputElement>(`input[data-key="${key}"]`)?.focus();
@@ -229,22 +313,23 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
 
   return (
     <div className="options-editor">
-      <output>
-        {usageLoading && usageGate.showIndicator ? <span className="sr-only">Checking how many attendees use each option</span> : null}
-        {usageSlow ? <span className="at-hint options-editor__slow-note">{SLOW_NOTICE_TEXT}</span> : null}
-      </output>
-      <div className="options-editor__list" ref={listRef}>
+      {showUsage ? (
+        <output>
+          {usageLoading && usageGate.showIndicator ? <span className="sr-only">Checking how many attendees use each option</span> : null}
+          {usageSlow ? <span className="at-hint options-editor__slow-note">{SLOW_NOTICE_TEXT}</span> : null}
+        </output>
+      ) : null}
+      <div className={`options-editor__list${showUsage ? "" : " options-editor__list--plain"}`} ref={listRef}>
         {rows.map((row) => {
           const usage = usageOf(usageCounts, row.originalText);
-          const trimmed = row.text.trim();
           // Blanking an existing row's text is a removal, not a no-op - selectOptions (the
           // modal) drops empty rows from what actually gets saved, so this needs the same
           // in-place warning as a rename or it'd silently vanish from an in-use attendee's
           // allowed options with no confirmation at all.
-          const blanked = trimmed === "" && row.originalText !== "";
-          const renamed = !blanked && trimmed !== row.originalText && trimmed !== "";
-          const risky = (blanked || renamed) && usage > 0;
-          const usageKnown = usageCounts !== null;
+          const edit = editOf(row);
+          const risky = edit !== "same" && usage > 0;
+          // A list with no counts has nothing to wait for: its rows can always be removed.
+          const usageKnown = !showUsage || usageCounts !== null;
 
           if (confirmingKey === row.key) {
             return (
@@ -294,20 +379,22 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
               >
                 <i className="ti ti-grip-vertical" aria-hidden="true" />
               </button>
-              <input
-                name="option-text"
-                className="at-input options-editor__input"
-                data-key={row.key}
-                value={row.text}
+              <OptionTextInput
+                rowKey={row.key}
+                text={row.text}
+                noun={noun}
                 readOnly={disabled}
-                aria-label="Option text"
-                onChange={(e) => updateRow(row.key, e.target.value)}
+                invalid={invalidKeys?.has(row.key) === true}
+                errorId={errorId}
+                onChange={(text) => updateRow(row.key, text)}
               />
-              <span className={`options-editor__usage${usage === 0 ? " options-editor__usage--unused" : ""}`}>
-                {usageLabelFor(usage, usageKnown, usageGate)}
-              </span>
+              {showUsage ? (
+                <span className={`options-editor__usage${usage === 0 && !usageHidden ? " options-editor__usage--unused" : ""}`}>
+                  {usageHidden ? "Hidden" : usageLabelFor(usage, usageKnown, usageGate)}
+                </span>
+              ) : null}
               <IconButton
-                label="Remove option"
+                label={`Remove ${noun}`}
                 icon={<i className="ti ti-x" />}
                 disabled={disabled || !usageKnown}
                 onClick={() => handleDeleteClick(row)}
@@ -316,7 +403,7 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
                 <div className="options-editor__warning">
                   <i className="ti ti-alert-triangle" aria-hidden="true" /> {usage} {usage === 1 ? "attendee" : "attendees"}{" "}
                   currently {usage === 1 ? "has" : "have"} &ldquo;{row.originalText}&rdquo;.{" "}
-                  {blanked
+                  {edit === "blanked"
                     ? "Clearing this removes the option, so they will need to be reassigned."
                     : "Renaming creates a new value, so they will need to be reassigned."}
                 </div>
@@ -325,8 +412,13 @@ export function OptionsEditor({ rows, usageCounts, usageLoading = false, disable
           );
         })}
       </div>
-      <button type="button" className="options-editor__add" disabled={disabled} onClick={addRow}>
-        + Add option
+      <button
+        type="button"
+        className="options-editor__add"
+        disabled={disabled || (max !== undefined && rows.length >= max)}
+        onClick={addRow}
+      >
+        + Add {noun}
       </button>
     </div>
   );

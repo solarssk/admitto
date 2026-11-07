@@ -33,7 +33,7 @@ import {
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { timezoneField } from "./timezone.js";
 import { addressComponentsSchema, componentsToJson } from "./event-location-routes.js";
-import { countActiveAttendees } from "./event-capacity.js";
+import { countActiveAttendees, countSeatsInUse } from "./event-capacity.js";
 
 const slugField = z
   .string()
@@ -274,8 +274,14 @@ export async function handleGetAdminEvent(c: Context, db: PrismaClient): Promise
   // the Attendees page disable "Add attendee" before the server would reject it, rather than
   // relying only on the 409 event_full error. Confined to this single-event fetch, not the
   // picker list, to avoid an extra aggregate query per row there.
-  const activeAttendeeCount = await countActiveAttendees(db, event.id);
-  return c.json({ event: { ...withWeather!, active_attendee_count: activeAttendeeCount } });
+  // Seats are what "full" and "over the limit" compare against; heads stay as active_attendee_count.
+  const [activeAttendeeCount, seatsInUse] = await Promise.all([
+    countActiveAttendees(db, event.id),
+    countSeatsInUse(db, event.id),
+  ]);
+  return c.json({
+    event: { ...withWeather!, active_attendee_count: activeAttendeeCount, seats_in_use: seatsInUse },
+  });
 }
 
 /** POST /api/admin/events — create event (superadmin or org admin). */

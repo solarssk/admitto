@@ -12,6 +12,9 @@ import {
   resolveLogHttpRequests,
 } from "../src/request-log.js";
 
+/** The shape of a link in a confirmation mail: a registration id, a dot, a signature. Synthetic. */
+const CONFIRM_TOKEN = "cm0registration1abcdefghij.SIGNATURE-value_0123456789ABCDEFGHIJKLMNOPQ";
+
 function captureInfoLines(): string[] {
   const lines: string[] = [];
   vi.spyOn(console, "info").mockImplementation((line: string) => {
@@ -52,6 +55,22 @@ describe("redactRequestPath", () => {
     expect(redactRequestPath("/api/admin/events")).toBe("/api/admin/events");
     expect(redactRequestPath("/")).toBe("/");
   });
+
+  it("redacts the link of a registration's confirmation mail, whatever follows it, and keeps the slug", () => {
+    expect(redactRequestPath(`/r/northwind-summit/confirm/${CONFIRM_TOKEN}`)).toBe("/r/northwind-summit/confirm/[redacted]");
+    expect(redactRequestPath(`/r/northwind-summit/confirm/${CONFIRM_TOKEN}/`)).toBe("/r/northwind-summit/confirm/[redacted]");
+    expect(redactRequestPath("/r/northwind-summit/confirm/")).toBe("/r/northwind-summit/confirm/[redacted]");
+    expect(redactRequestPath(`/r//confirm/${CONFIRM_TOKEN}`)).toBe("/r//confirm/[redacted]");
+  });
+
+  it("leaves the other registration paths as they are", () => {
+    for (const path of ["/r/northwind-summit", "/r/northwind-summit/confirm", "/r/northwind-summit/sso/start", "/legal/northwind-summit/privacy"]) {
+      expect(redactRequestPath(path)).toBe(path);
+    }
+    // Not a confirmation link: the word is a slug here, and a path of a ticket keeps its own rule.
+    expect(redactRequestPath("/r/confirm/northwind-summit")).toBe("/r/confirm/northwind-summit");
+    expect(redactRequestPath("/t/r/x/confirm/token")).toBe("/t/[redacted]");
+  });
 });
 
 describe("requestPathRef", () => {
@@ -70,6 +89,17 @@ describe("requestPathRef", () => {
   it("is undefined for token-free paths", () => {
     expect(requestPathRef("/login")).toBeUndefined();
     expect(requestPathRef("/api/admin/events")).toBeUndefined();
+    expect(requestPathRef("/r/northwind-summit")).toBeUndefined();
+    expect(requestPathRef("/r/northwind-summit/confirm")).toBeUndefined();
+  });
+
+  it("is a stable ref for a confirmation link, the same for its page and its button, that holds none of the link", () => {
+    const path = `/r/northwind-summit/confirm/${CONFIRM_TOKEN}`;
+    const ref = requestPathRef(path);
+    expect(ref).toMatch(/^[0-9a-f]{8}$/);
+    expect(ref).toBe(requestPathRef(path));
+    expect(ref).not.toBe(requestPathRef("/r/northwind-summit/confirm/cm0other.OTHER-SIGNATURE"));
+    for (const part of CONFIRM_TOKEN.split(".")) expect(ref).not.toContain(part);
   });
 
   it("matches the same Mode A token across the ticket, wallet, and QR route shapes", () => {
@@ -122,6 +152,25 @@ describe("createRequestLogMiddleware", () => {
     const ticketEntry = JSON.parse(lines[1]!) as { path: string; ref: string };
     expect(ticketEntry.path).toBe("/t/[redacted]");
     expect(ticketEntry.ref).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("never logs the link of a confirmation mail, but includes a stable ref for it", async () => {
+    const lines = captureInfoLines();
+    const app = appWithLogging();
+    app.get("/r/:slug/confirm/:token", (c) => c.text("page"));
+    app.post("/r/:slug/confirm/:token", (c) => c.text("confirmed"));
+
+    await app.request(`/r/northwind-summit/confirm/${CONFIRM_TOKEN}?utm=x`);
+    await app.request(`/r/northwind-summit/confirm/${CONFIRM_TOKEN}`, { method: "POST" });
+
+    const log = lines.join("\n");
+    for (const part of CONFIRM_TOKEN.split(".")) expect(log).not.toContain(part);
+    const [page, button] = lines.map((line) => JSON.parse(line) as { method: string; path: string; ref: string });
+    expect(page).toMatchObject({ method: "GET", path: "/r/northwind-summit/confirm/[redacted]" });
+    expect(button).toMatchObject({ method: "POST", path: "/r/northwind-summit/confirm/[redacted]" });
+    // One link, one ref, whichever of the two requests it came with.
+    expect(page?.ref).toMatch(/^[0-9a-f]{8}$/);
+    expect(button?.ref).toBe(page?.ref);
   });
 
   it("skips successful health probes but logs failing ones", async () => {

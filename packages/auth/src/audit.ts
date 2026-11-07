@@ -347,6 +347,7 @@ export type RateLimitScope =
   | "admin_resend"
   | "admin_export"
   | "admin_attendee_patch"
+  | "admin_sensitive_reveal"
   | "admin_user_revoke_sessions"
   | "admin_wallet_action"
   | "admin_wallet_action_bulk"
@@ -364,7 +365,8 @@ export type RateLimitScope =
   | "admin_notification_settings_test"
   | "passkey_login_ip"
   | "admin_bulk_send_cancel"
-  | "account_notifications_poll";
+  | "account_notifications_poll"
+  | "registration";
 
 /** Emit `auth.login.success` as JSON to stdout (no password/token fields) and persist a durable
  * `SecurityAuditLog` row. Full email, not redacted - staff/operator sign-in is exactly the

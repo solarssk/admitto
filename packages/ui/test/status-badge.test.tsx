@@ -64,4 +64,23 @@ describe("STATUS_MAP", () => {
     // an operator stopping a send is not a delivery failure.
     expect(resolveStatusMeta("mail_cancelled").variant).not.toBe(resolveStatusMeta("cancelled").variant);
   });
+
+  it("gives each registration status its own registration_ key and label", () => {
+    expect(resolveStatusMeta("registration_awaiting_email")).toEqual({ variant: "neutral", label: "Awaiting email" });
+    expect(resolveStatusMeta("registration_pending")).toEqual({ variant: "warn", label: "Waiting for a decision" });
+    expect(resolveStatusMeta("registration_waitlist")).toEqual({ variant: "info", label: "Waiting list" });
+    expect(resolveStatusMeta("registration_accepted")).toEqual({ variant: "ok", label: "Accepted" });
+    expect(resolveStatusMeta("registration_rejected")).toEqual({ variant: "error", label: "Rejected" });
+  });
+
+  it("shows a rejected registration as Rejected, while the plain key stays the failed job's", () => {
+    render(<StatusBadge status="registration_rejected" />);
+
+    expect(screen.getByText("Rejected")).toBeTruthy();
+    expect(screen.queryByText("Failed")).toBeNull();
+    // The other domains that use these words keep their own keys and labels.
+    expect(resolveStatusMeta("rejected")).toEqual({ variant: "error", label: "Failed" });
+    expect(resolveStatusMeta("accepted").label).toBe("Sent");
+    expect(resolveStatusMeta("pending").label).toBe("Pending");
+  });
 });

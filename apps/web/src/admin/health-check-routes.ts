@@ -39,6 +39,8 @@ import {
   resolveEffectiveWeatherConfig,
 } from "../weather/weather-org-settings.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import { getEnabledAccessMethods } from "../registration/access-methods.js";
+import { describeTurnstileSettings } from "../registration/turnstile-settings.js";
 
 export type { HealthOverallStatus, HealthRowStatus };
 
@@ -514,15 +516,33 @@ function setupToInstanceUrlRow(check: SetupCheckResult, checkedAt: string): Heal
   };
 }
 
+/** The two queues a row of this shape reports: ticket mail (`EmailDelivery`) and guest registration mail. */
+type MailQueueIdentity = { id: string; label: string };
+const TICKET_MAIL_QUEUE: MailQueueIdentity = { id: "mail_delivery_queue", label: "Mail delivery queue" };
+const REGISTRATION_MAIL_QUEUE: MailQueueIdentity = { id: "registration_mail", label: "Registration mail queue" };
+
+/** What failed, for the summary of a queue row: the mails the worker will try again, and those it gave up on. */
+function failureSummary(failedRetryable: number, failedTerminal: number): string {
+  const parts: string[] = [];
+  if (failedRetryable > 0) parts.push(`${failedRetryable.toLocaleString("en")} retryable failures`);
+  if (failedTerminal > 0) parts.push(`${failedTerminal.toLocaleString("en")} failed, not retried`);
+  return parts.join(" · ");
+}
+
+/** `failedTerminal` is given by a queue whose failed rows have no other screen (the registration queue); the ticket
+ * queue has its delivery log, so it leaves it out and its row has no such count. */
 function mailQueueRow(
   queued: number,
   failedRetryable: number,
   checkedAt: string,
+  { id, label }: MailQueueIdentity = TICKET_MAIL_QUEUE,
+  failedTerminal?: number,
 ): HealthCheckRow {
-  const label = "Mail delivery queue";
-  if (queued < 0 || failedRetryable < 0) {
+  const terminal = failedTerminal ?? 0;
+  const terminalDetail: [string, string | undefined] = ["failed_terminal", failedTerminal?.toString()];
+  if (queued < 0 || failedRetryable < 0 || terminal < 0) {
     return {
-      id: "mail_delivery_queue",
+      id,
       label,
       status: "degraded",
       summary: "Could not read queue depth",
@@ -533,15 +553,15 @@ function mailQueueRow(
       ]),
     };
   }
-  // Any retryable failure needs attention, even while other mail is still queued.
-  if (failedRetryable > 0) {
-    const failures = `${failedRetryable.toLocaleString("en")} retryable failures`;
+  // Any failure needs attention, even while other mail is still queued.
+  if (failedRetryable > 0 || terminal > 0) {
+    const failures = failureSummary(failedRetryable, terminal);
     const summary =
       queued > 0
         ? `Needs attention · ${queued.toLocaleString("en")} queued · ${failures}`
         : `Queue empty · ${failures}`;
     return {
-      id: "mail_delivery_queue",
+      id,
       label,
       status: "degraded",
       summary,
@@ -549,6 +569,7 @@ function mailQueueRow(
         ["status", "degraded"],
         ["queued", String(queued)],
         ["failed_retryable", String(failedRetryable)],
+        terminalDetail,
         ["degraded_threshold", String(MAIL_QUEUE_DEGRADED_THRESHOLD)],
         ["last_checked", checkedAt],
       ]),
@@ -556,7 +577,7 @@ function mailQueueRow(
   }
   if (queued >= MAIL_QUEUE_DEGRADED_THRESHOLD) {
     return {
-      id: "mail_delivery_queue",
+      id,
       label,
       status: "degraded",
       summary: `Falling behind · ${queued.toLocaleString("en")} queued`,
@@ -564,6 +585,7 @@ function mailQueueRow(
         ["status", "degraded"],
         ["queued", String(queued)],
         ["failed_retryable", String(failedRetryable)],
+        terminalDetail,
         ["degraded_threshold", String(MAIL_QUEUE_DEGRADED_THRESHOLD)],
         ["last_checked", checkedAt],
       ]),
@@ -572,7 +594,7 @@ function mailQueueRow(
   const summary =
     queued === 0 ? "Queue empty" : `Running · ${queued.toLocaleString("en")} queued`;
   return {
-    id: "mail_delivery_queue",
+    id,
     label,
     status: "ok",
     summary,
@@ -580,6 +602,7 @@ function mailQueueRow(
       ["status", "ok"],
       ["queued", String(queued)],
       ["failed_retryable", String(failedRetryable)],
+      terminalDetail,
       ["degraded_threshold", String(MAIL_QUEUE_DEGRADED_THRESHOLD)],
       ["last_checked", checkedAt],
     ]),
@@ -1567,6 +1590,79 @@ function buildGroup(
   };
 }
 
+/**
+ * Cloudflare Turnstile keys for the public registration form (D-C2). Passive, like Wallet: it says
+ * what is saved, not whether Cloudflare accepts it. The warning is for the case that otherwise
+ * stays silent: an event has registration on by public link or password, no usable keys are saved,
+ * and so the form is closed. Archived events are not counted. Replaces a log line per request, which anonymous traffic could
+ * use to flush the system log (SEC-18).
+ */
+async function registrationCaptchaRow(db: PrismaClient, checkedAt: string): Promise<HealthCheckRow> {
+  const label = "Bot protection, Turnstile";
+  const row = (
+    status: HealthRowStatus,
+    summary: string,
+    entries: Array<[string, string | undefined | null]>,
+  ): HealthCheckRow => ({
+    id: "registration_captcha",
+    label,
+    status,
+    summary,
+    details: detailsFromEntries([["status", status], ...entries, ["last_checked", checkedAt]]),
+  });
+
+  const settings = await describeTurnstileSettings(db);
+  if (settings.state === "ready") return row("ok", "Configured", [["configured", "yes"]]);
+  if (settings.state === "unreadable") {
+    return row("degraded", "The saved secret key cannot be read", [
+      ["configured", "yes"],
+      ["reason", "secret_unreadable"],
+    ]);
+  }
+
+  // Only now does it matter whether anything is waiting for the keys: a form that a guest reaches by
+  // a public link or a password, for a method the administrator has not turned off for everyone (an
+  // event keeps its own list when a method is turned off, and a form behind a disabled method is closed
+  // anyway). SSO needs no challenge, so an event that only offers SSO is no reason to warn.
+  const challenged = (await getEnabledAccessMethods(db)).filter((method) => method === "link" || method === "password");
+  if (challenged.length === 0) return row("not_configured", "Not configured", [["configured", "no"]]);
+  const events = await db.eventRegistrationSettings.count({
+    where: { mode: { not: null }, access_methods: { hasSome: challenged }, event: { archived_at: null } },
+  });
+  if (events === 0) return row("not_configured", "Not configured", [["configured", "no"]]);
+  return row(
+    "degraded",
+    `Registration by link or password is on for ${events} event${events === 1 ? "" : "s"}, but the keys are not set`,
+    [
+      ["configured", "no"],
+      ["reason", "keys_missing"],
+      ["events_with_registration", String(events)],
+    ],
+  );
+}
+
+/** How long a registration mail that failed for good keeps its row degraded: a week, so an administrator who looks
+ * once in a while still sees it, and an old failure does not stay on the page for good. */
+const REGISTRATION_MAIL_FAILURE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+type RegistrationMailCounts = { queued: number; failedRetryable: number; failedTerminal: number };
+
+/**
+ * What the guest registration mail queue holds (`RegistrationMail`, v0.8), counted like the ticket mail queue: rows
+ * waiting, and failed rows the worker will try again. On top of that, the rows that failed for good in the last
+ * week (refused, an unusable template, or all attempts used): nothing else shows an administrator that a guest's
+ * email never went out. Counts only: no address, no text of an error.
+ */
+async function registrationMailCounts(db: PrismaClient, now: Date): Promise<RegistrationMailCounts> {
+  const since = new Date(now.getTime() - REGISTRATION_MAIL_FAILURE_WINDOW_MS);
+  const [queued, failedRetryable, failedTerminal] = await Promise.all([
+    db.registrationMail.count({ where: { status: "queued" } }),
+    db.registrationMail.count({ where: { status: "failed", retryable: true } }),
+    db.registrationMail.count({ where: { status: "failed", retryable: false, updated_at: { gte: since } } }),
+  ]);
+  return { queued, failedRetryable, failedTerminal };
+}
+
 /** Soft external check: per-event bounce-ingest last runs (does not affect /healthz). */
 async function bounceIngestRow(
   db: PrismaClient,
@@ -1688,6 +1784,18 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ]),
   };
 
+  const registrationCaptchaFallback: HealthCheckRow = {
+    id: "registration_captcha",
+    label: "Bot protection, Turnstile",
+    status: "degraded",
+    summary: "Could not evaluate bot protection",
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+
   const [
     setup,
     gauges,
@@ -1699,6 +1807,8 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     cfAccess,
     address,
     weather,
+    registrationCaptcha,
+    registrationMail,
     dbProbe,
     engine,
     fileStorage,
@@ -1723,6 +1833,8 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
           ["last_checked", checkedAt],
         ]),
       })),
+      registrationCaptchaRow(deps.db, checkedAt).catch(() => registrationCaptchaFallback),
+      registrationMailCounts(deps.db, now).catch(() => ({ queued: -1, failedRetryable: -1, failedTerminal: -1 })),
       checkDatabase(deps.db).catch(() => ({ status: "down" as const, latency_ms: 0 })),
       readPostgresEngine(deps.db),
       fileStorageRow(env, checkedAt, live),
@@ -1740,6 +1852,13 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
       : setupLookupFailedRow("data_encryption", "Data encryption", checkedAt),
     backgroundWorker,
     mailQueueRow(gauges.email_deliveries_queued, gauges.email_deliveries_failed_retryable, checkedAt),
+    mailQueueRow(
+      registrationMail.queued,
+      registrationMail.failedRetryable,
+      checkedAt,
+      REGISTRATION_MAIL_QUEUE,
+      registrationMail.failedTerminal,
+    ),
     setup
       ? setupToInstanceUrlRow(setup.base_url, checkedAt)
       : setupLookupFailedRow("instance_url", "Instance URL", checkedAt),
@@ -1755,6 +1874,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     weather,
     ...idpRows,
     cfAccess,
+    registrationCaptcha,
   ];
 
   const groups = [

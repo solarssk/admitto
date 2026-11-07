@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { customDataValue, parseCustomData } from "./custom-data.js";
+import { withoutSensitiveFields } from "./sensitive-custom-data.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
 import { keepLiveRows } from "./lock-check.js";
 import { loadEventTicketTypes, type TicketTypeInfo } from "./ticket-types.js";
@@ -94,12 +95,24 @@ function resolveTicketTypeLabel(raw: string | null, ticketTypes: TicketTypeInfo[
   return ticketTypes.find((t) => t.key === raw)?.label ?? raw;
 }
 
+/** A phone number in canonical form (an optional + and 3 to 15 digits) cannot carry a formula. */
+const CANONICAL_PHONE = /^\+?\d{3,15}$/;
+
+/** One custom field's cell, guarded against spreadsheet formulas. A `phone` answer in canonical form
+ * is left as it is stored: the guard would put an apostrophe before every international number,
+ * and a file exported with its columns could then not be imported again. */
+function sanitizeAttributeValue(field: EventItemContent, value: string | null): string {
+  return field.type === "phone" && value !== null && CANONICAL_PHONE.test(value) ? value : sanitizeCsvCell(value);
+}
+
 export function buildSanitizedExportRows(
   rows: ExportAttendeeSqlRow[],
-  attributeFields: EventItemContent[],
+  allAttributeFields: EventItemContent[],
   timeZone: string,
   ticketTypes: TicketTypeInfo[] = [],
 ): SanitizedExportRow[] {
+  // A sensitive field has no column in any export (D-E6); the columns are cut the same way in buildExportColumnLabels.
+  const attributeFields = withoutSensitiveFields(allAttributeFields);
   return rows.map((row) => {
     const { company, department } = resolveCompanyDepartment(row);
     return {
@@ -112,13 +125,14 @@ export function buildSanitizedExportRows(
       check_in_status: row.admitted_at ? "Checked in" : "Not checked in",
       admitted_at: row.admitted_at ? formatAdmittedAtLocal(row.admitted_at, timeZone) : "",
       attribute_values: attributeFields.map((field) =>
-        sanitizeCsvCell(customDataValue(row.custom_data, field.source_field)),
+        sanitizeAttributeValue(field, customDataValue(row.custom_data, field.source_field)),
       ),
     };
   });
 }
 
-export function buildExportColumnLabels(attributeFields: EventItemContent[]): string[] {
+export function buildExportColumnLabels(allAttributeFields: EventItemContent[]): string[] {
+  const attributeFields = withoutSensitiveFields(allAttributeFields);
   const labelCounts = new Map<string, number>();
   for (const field of attributeFields) {
     labelCounts.set(field.label, (labelCounts.get(field.label) ?? 0) + 1);

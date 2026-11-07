@@ -10,9 +10,12 @@ import {
   loadEventCustomDataFields,
   validateContentFieldReferences,
   UnknownContentFieldError,
+  SensitiveContentFieldError,
+  sensitiveSourceFields,
   findConflictingContentField,
   assertContentFieldsNotAssignedElsewhere,
   ContentFieldAlreadyAssignedError,
+  EVENT_ITEM_AUDIENCES,
   type EventItemConfig,
 } from "@admitto/tickets";
 import {
@@ -47,6 +50,7 @@ const eventItemConfigSchema = z
     content_fields: z.array(slugField.min(1).max(60)).max(20).optional(),
     requires_return: z.boolean().optional(),
     issue_on_checkin: z.boolean().optional(),
+    audience: z.enum(EVENT_ITEM_AUDIENCES).optional(),
   })
   .strict()
   .refine(
@@ -116,9 +120,10 @@ function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
     content_fields: o.content_fields,
     requires_return: o.requires_return,
     issue_on_checkin: o.issue_on_checkin,
+    audience: o.audience,
   });
   if (!parsed.success) return null;
-  // parsed.data always has all 3 keys, even when a value is `undefined` - Object.keys() would
+  // parsed.data always has all 4 keys, even when a value is `undefined` - Object.keys() would
   // never see it as empty, so filter those out before deciding whether anything is actually set.
   const defined = Object.fromEntries(
     Object.entries(parsed.data).filter(([, v]) => v !== undefined),
@@ -179,7 +184,7 @@ async function validateConfigContentFields(
 ): Promise<void> {
   const registryFields = await loadEventCustomDataFields(db, eventId);
   const allowed = new Set(registryFields.map((f) => f.source_field));
-  validateContentFieldReferences(allowed, contentFields);
+  validateContentFieldReferences(allowed, contentFields, sensitiveSourceFields(registryFields));
   const siblings = await loadSiblingEventItems(db, eventId, excludeItemId);
   assertContentFieldsNotAssignedElsewhere(siblings, contentFields);
 }
@@ -361,6 +366,9 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
     if (err instanceof UnknownContentFieldError) {
       return c.json({ error: "unknown_content_field", field: err.sourceField }, 400);
     }
+    if (err instanceof SensitiveContentFieldError) {
+      return c.json({ error: "sensitive_content_field", field: err.sourceField }, 400);
+    }
     if (err instanceof ContentFieldAlreadyAssignedError) {
       return c.json(
         { error: "content_field_in_use", field: err.sourceField, item_label: err.itemLabel },
@@ -389,7 +397,7 @@ type EventItemRow = {
 
 type PatchEventItemOutcome =
   | { ok: true; row: EventItemRow }
-  | { ok: false; reason: "unknown_content_field"; field: string }
+  | { ok: false; reason: "unknown_content_field" | "sensitive_content_field"; field: string }
   | { ok: false; reason: "content_field_in_use"; field: string; itemLabel: string }
   | { ok: false; reason: "in_use" };
 
@@ -456,7 +464,7 @@ function computePatchTransactionFlags(
 
 type PatchContentFieldsCheck =
   | { ok: true }
-  | { ok: false; reason: "unknown_content_field"; field: string }
+  | { ok: false; reason: "unknown_content_field" | "sensitive_content_field"; field: string }
   | { ok: false; reason: "content_field_in_use"; field: string; itemLabel: string };
 
 /** Rejects config.content_fields entries that don't exist in the event's EventCustomField
@@ -486,8 +494,12 @@ async function validatePatchContentFields(
   await acquireEventCustomFieldsLock(tx, eventId);
   const registryFields = await loadEventCustomDataFields(db, eventId);
   const allowed = new Set(registryFields.map((f) => f.source_field));
+  const sensitive = sensitiveSourceFields(registryFields);
   const unknownField = config.content_fields.find((f) => !allowed.has(f));
   if (unknownField) return { ok: false, reason: "unknown_content_field", field: unknownField };
+  // The operator's card shows no answer to a sensitive question (D-E6).
+  const sensitiveField = config.content_fields.find((f) => sensitive.has(f));
+  if (sensitiveField) return { ok: false, reason: "sensitive_content_field", field: sensitiveField };
 
   const siblings = await loadSiblingEventItems(db, eventId, itemId);
   const conflict = findConflictingContentField(siblings, config.content_fields);
@@ -568,15 +580,10 @@ async function applyEventItemPatch(
 ): Promise<PatchEventItemOutcome> {
   const fieldsCheck = await validatePatchContentFields(db, tx, eventId, itemId, config);
   if (!fieldsCheck.ok) {
-    if (fieldsCheck.reason === "unknown_content_field") {
-      return { ok: false, reason: "unknown_content_field", field: fieldsCheck.field };
+    if (fieldsCheck.reason === "content_field_in_use") {
+      return { ok: false, reason: "content_field_in_use", field: fieldsCheck.field, itemLabel: fieldsCheck.itemLabel };
     }
-    return {
-      ok: false,
-      reason: "content_field_in_use",
-      field: fieldsCheck.field,
-      itemLabel: fieldsCheck.itemLabel,
-    };
+    return { ok: false, reason: fieldsCheck.reason, field: fieldsCheck.field };
   }
 
   if (disabling) {
@@ -671,8 +678,8 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
   );
 
   if (!result.ok) {
-    if (result.reason === "unknown_content_field") {
-      return c.json({ error: "unknown_content_field", field: result.field }, 400);
+    if (result.reason === "unknown_content_field" || result.reason === "sensitive_content_field") {
+      return c.json({ error: result.reason, field: result.field }, 400);
     }
     if (result.reason === "content_field_in_use") {
       return c.json(

@@ -13,6 +13,7 @@ Your role decides which organisations, events, and actions are available. If a c
 | Prepare templates and send event messages | ✅ | – | ✅ |
 | Run check-in | ✅ | 🟡¹ | ✅ |
 | Change ticket types and requirements | ✅ | – | ✅ |
+| Show the answers to sensitive questions (each click is logged) | ✅ | – | ✅ |
 | Manage organisation-level settings | 🟡² | – | ✅ |
 | Assign Operator access to events | 🟡³ | – | ✅ |
 | Assign Administrator or Superadmin roles | – | – | ✅ |
@@ -25,6 +26,16 @@ Your role decides which organisations, events, and actions are available. If a c
 ## Administrator
 
 An Administrator prepares and runs events belonging to an assigned organisation. This includes event settings, attendees, communication, check-in, reports, and supported organisation administration. Event-level Mailing, Wallet, and Integrations tabs and event archive actions remain Superadmin-only. This Wiki sometimes calls this role **Organisation Admin** to make clear it is scoped to one organisation, not the whole instance - it is the same role the app shows as Administrator.
+
+### Sensitive answers
+
+A question can be marked sensitive, for example one about health or accessibility. Its answers are hidden everywhere in Admitto. Only an Administrator of the organisation or a Superadmin can show the answers of one guest at a time, and an Operator never can.
+
+Every time someone shows sensitive answers, Admitto writes an entry to the audit log: who did it, when, which guest or registration, and which questions. The entry never holds the answers themselves. It is written even when the guest gave no sensitive answer. Showing many guests in a short time is limited per person (20 a minute and 200 an hour), which slows a script down and leaves one audit entry for every guest it shows.
+
+The **Show** button is on the attendee's page (one for the guest and one on the companion's card) and in the request window (one for the guest and one for each companion). It asks you to confirm that the click is recorded, and the answers disappear again after **Hide**, after two minutes, or when you leave the page. An Operator is not offered the button. See [Sensitive questions](Custom-Attendee-Fields#sensitive-questions).
+
+An erased guest has no answers left to show. Showing is also allowed on an archived event.
 
 ## Operator
 

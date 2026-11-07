@@ -48,6 +48,7 @@ const EXPECTED_POLICIES: Record<
   "admin:resend": { windowMs: [60_000, 3_600_000], max: [5, 30], checks: 2 },
   "admin:resend-bulk": { windowMs: [600_000], max: [3], checks: 1 },
   "admin:attendee-patch": { windowMs: [60_000], max: [20], checks: 1 },
+  "admin:sensitive-reveal": { windowMs: [60_000, 3_600_000], max: [20, 200], checks: 2 },
   "admin:user-revoke-sessions": { windowMs: [60_000], max: [10], checks: 1 },
   "admin:wallet-action": { windowMs: [60_000], max: [10], checks: 1 },
   "admin:wallet-action-bulk": { windowMs: [600_000], max: [10], checks: 1 },
@@ -56,6 +57,11 @@ const EXPECTED_POLICIES: Record<
   "checkin:scan": { windowMs: [60_000], max: [120], checks: 1 },
   "checkin:history": { windowMs: [60_000], max: [180], checks: 1 },
   "checkin:stream": { windowMs: [60_000, 60_000], max: [120, 240], checks: 2 },
+  "registration:page": { windowMs: [60_000], max: [300], checks: 1 },
+  "registration:submit": { windowMs: [60_000], max: [120], checks: 1 },
+  "registration:confirm": { windowMs: [60_000], max: [120], checks: 1 },
+  "registration:sso": { windowMs: [60_000], max: [240], checks: 1 },
+  "registration:password": { windowMs: [900_000], max: [30], checks: 1 },
 };
 
 /** Inline helpers — not passable to rateLimit(); limits only. */
@@ -71,6 +77,10 @@ const EXPECTED_INLINE_LIMITS: Record<keyof typeof INLINE_RATE_LIMITS, { windowMs
     "account:password-check": { windowMs: 60_000, max: 10 },
     "mail:test-recipient": { windowMs: 3_600_000, max: 5 },
     "wallet:webhook-event": { windowMs: 60_000, max: 120 },
+    "registration:event": { windowMs: 60_000, max: 600 },
+    "registration:password-event": { windowMs: 60_000, max: 120 },
+    "registration:mail-recipient": { windowMs: 86_400_000, max: 3 },
+    "registration:mail-event": { windowMs: 86_400_000, max: 1000 },
   };
 
 describe("RATE_POLICIES registry", () => {
@@ -229,6 +239,32 @@ describe("RATE_POLICIES registry", () => {
     expect(RATE_POLICIES["admin:bulk-send-cancel"].checks[0]!.keyOf(ctx)).toBe(
       "admin:bulk-send-cancel:user:user-42:event:evt-1",
     );
+  });
+
+  it("scopes admin:sensitive-reveal by user alone, one bucket for both routes and one per window", () => {
+    const ctxFor = (userId: string, eventId: string) =>
+      ({ get: () => ({ userId }), req: { param: (name: string) => (name === "eventId" ? eventId : "x") } }) as never;
+    const [minute, hour] = RATE_POLICIES["admin:sensitive-reveal"].checks;
+    expect(minute.keyOf(ctxFor("user-42", "evt-1"))).toBe("admin:sensitive-reveal:user:user-42");
+    // Another event, same person: the same bucket, so a walk across events is counted as one.
+    expect(minute.keyOf(ctxFor("user-42", "evt-2"))).toBe("admin:sensitive-reveal:user:user-42");
+    expect(minute.keyOf(ctxFor("user-43", "evt-1"))).not.toBe(minute.keyOf(ctxFor("user-42", "evt-1")));
+    expect(hour.keyOf(ctxFor("user-42", "evt-1"))).toBe("admin:sensitive-reveal:hour:user:user-42");
+  });
+
+  it("answers the admin:sensitive-reveal 429 with its own code and the window of the check that refused, as Retry-After", async () => {
+    const [minute, hour] = RATE_POLICIES["admin:sensitive-reveal"].checks;
+    const headers: Record<string, string> = {};
+    const c = {
+      header: (name: string, value: string) => {
+        headers[name] = value;
+      },
+      json: (body: unknown, status: number) => new Response(JSON.stringify(body), { status }),
+    } as never;
+    const first = minute.onExceeded(c);
+    expect([first.status, await first.json(), headers["Retry-After"]]).toEqual([429, { error: "sensitive_reveal_limit" }, "60"]);
+    hour.onExceeded(c);
+    expect(headers["Retry-After"]).toBe("3600");
   });
 
   it("excludes only the polled unread-count route from the shared auth:account-ip bucket", () => {

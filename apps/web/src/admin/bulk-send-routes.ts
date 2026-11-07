@@ -9,7 +9,7 @@ import {
   type MailDeliveryDeps,
   type SendTicketEmailsResult,
 } from "@admitto/mail-delivery";
-import { resolveTemplateById, TemplateNotFoundError } from "@admitto/mail-templates";
+import { isSystemTemplateName, resolveTemplateById, TemplateNotFoundError } from "@admitto/mail-templates";
 import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
 import {
   assertTicketTypeInCatalog,
@@ -236,6 +236,15 @@ async function assertTemplateForEvent(
 ): Promise<Response | null> {
   try {
     await resolveTemplateById(templateId, eventId, db);
+    // A registration-* system mail answers one guest's registration; it is never a mass mailing.
+    // The templateId is a client value, so the picker hiding the row is not a guard.
+    const name = await getBulkSendTemplateName(db, templateId);
+    if (name !== undefined && isSystemTemplateName(name)) {
+      return new Response(JSON.stringify({ error: "system_template_not_sendable" }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return null;
   } catch (err) {
     if (err instanceof TemplateNotFoundError) {

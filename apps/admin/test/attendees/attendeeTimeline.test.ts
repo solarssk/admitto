@@ -90,11 +90,18 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     ["admitted", "Checked in"],
     ["check_in_undo", "Check-in undone"],
     ["check_in_undone", "Check-in undone"],
+    ["check_in_revoked", "Check-in revoked"],
     ["note_added", "Note added"],
     ["note_updated", "Note updated"],
     ["note_deleted", "Note deleted"],
+    ["item_issued", "Item issued"],
+    ["item_state_changed", "Item issued"],
     ["item_returned", "Item returned"],
+    ["item_revoked", "Item reset to pending"],
     ["attendee_edited", "Profile updated"],
+    ["attendee_companion_updated", "Companion updated"],
+    ["attendee_companion_removed", "Companion removed"],
+    ["sensitive_data_revealed", "Sensitive answers shown"],
     ["pass_revoked", "Pass revoked"],
     ["pass_restored", "Pass restored"],
     ["wallet_pass_voided", "Wallet pass voided"],
@@ -110,6 +117,11 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
   it("falls back to a humanized raw action_type for anything unrecognized, starting with a capital letter", () => {
     expect(getTimelineLabel(labelEntry("some_future_action"))).toBe("Some future action");
     expect(getTimelineLabel(labelEntry("checked_in"))).toBe("Checked in");
+  });
+
+  it("does not take an action type that names a member of Object.prototype for a label", () => {
+    expect(getTimelineLabel(labelEntry("constructor"))).toBe("Constructor");
+    expect(getTimelineLabel(labelEntry("toString"))).toBe("ToString");
   });
 
   it("shows the RSVP target status, defaulting to 'updated' when metadata has none", () => {
@@ -132,6 +144,9 @@ describe("getTimelineIcon — unrecognized action_type (Codecov review)", () => 
     ["note_deleted", "trash"],
     ["ticket_link_retrieved", "link"],
     ["wallet_pass_removed", "cloud-off"],
+    ["attendee_companion_updated", "users"],
+    ["attendee_companion_removed", "user-minus"],
+    ["sensitive_data_revealed", "eye"],
   ])("maps %s to %s", (actionType, expected) => {
     expect(getTimelineIcon(actionType)).toBe(expected);
   });
@@ -590,6 +605,8 @@ describe("getTimelineTone (PO review — colored icons to distinguish outcomes)"
 
   it("marks a negative outcome error", () => {
     expect(getTimelineTone(entry("check_in_revoked"))).toBe("error");
+    expect(getTimelineTone(entry("attendee_companion_removed"))).toBe("error");
+    expect(getTimelineTone(entry("attendee_companion_updated"))).toBe("neutral");
     expect(getTimelineTone(entry("pass_revoked"))).toBe("error");
     expect(getTimelineTone(entry("mail_bounced"))).toBe("error");
     expect(getTimelineTone(entry("wallet_pass_voided"))).toBe("error");

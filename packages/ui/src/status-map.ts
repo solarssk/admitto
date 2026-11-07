@@ -49,6 +49,16 @@ export const STATUS_MAP: Record<string, StatusMeta> = {
   NETWORK_ERROR: { variant: "neutral", label: "Network error" },
   admitted: { variant: "ok", label: "Checked in" },
   not_admitted: { variant: "neutral", label: "Not checked in" },
+  // A guest's registration request (Registration.status). Keys carry the registration_ prefix because the
+  // plain ones already mean other things: "rejected" is an AdminJob that failed (labelled "Failed"),
+  // "accepted" a mail that was handed over ("Sent") and "pending" a mail still queued. A caller passes
+  // `registration_${status}`; apps/admin/test/registration/registrationStatus.coverage.test.ts fails when
+  // a status has no key here.
+  registration_awaiting_email: { variant: "neutral", label: "Awaiting email" },
+  registration_pending: { variant: "warn", label: "Waiting for a decision" },
+  registration_waitlist: { variant: "info", label: "Waiting list" },
+  registration_accepted: { variant: "ok", label: "Accepted" },
+  registration_rejected: { variant: "error", label: "Rejected" },
 };
 
 export function resolveStatusMeta(status: string): StatusMeta {

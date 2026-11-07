@@ -135,8 +135,6 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 | 🌍 | **Sign-in locations** | Session and login logs show the country for each IP, and the city when the offline dataset resolves one. The lookup runs on your own server, with no external geo API. |
 | 🏠 | **Hosting** | You run it yourself. Roles: Superadmin, Admin, Operator. |
 
-**Coming later:** public self-service registration is not part of Admitto. Intake from MS Forms through `/api/ingest` is planned.
-
 ## Stack
 
 | | Layer | Technologies |

@@ -31,7 +31,7 @@ function resolveContentFieldKeys(config: unknown): string[] {
 /** Build operator hint detail from item config + attendee custom_data. `registryFieldsByKey` is
  * the event's EventCustomField rows keyed by source_field; a content_fields entry with no match
  * (stale reference, field deleted after the item last pointed at it) is silently skipped, not an
- * error - the item drawer's own picker is what keeps this in sync during normal use. */
+ * error, and so is a sensitive field (`sensitive`: the answer is not for the operator's card) - the item drawer's own picker is what keeps this in sync during normal use. */
 export function buildItemDetail(
   config: unknown,
   customData: unknown,
@@ -43,7 +43,8 @@ export function buildItemDetail(
   const parts: string[] = [];
   for (const key of keys) {
     const field = registryFieldsByKey.get(key);
-    if (!field) continue;
+    // A sensitive question is never shown on the operator's card (D-E6), whatever the item's config says.
+    if (!field || field.sensitive) continue;
     const { label, source_field, type, required } = field;
     const value = customDataValue(customData, source_field);
     const displayLabel = labelWithRequired(label, required);
@@ -53,5 +54,16 @@ export function buildItemDetail(
       parts.push(`${displayLabel}: -`);
     }
   }
+  return parts.length > 0 ? parts.join(DETAIL_SEPARATOR) : undefined;
+}
+
+/**
+ * An item for guests with a companion starts its hint with the companion's name, ahead of what its content fields say:
+ * the operator has to know whom they welcome. The name is for the check-in card the operator looks at, and not for a log,
+ * an error or an audit entry.
+ */
+export function prefixCompanionNames(detail: string | undefined, names: readonly string[]): string | undefined {
+  const parts = names.length > 0 ? [names.join(", ")] : [];
+  if (detail) parts.push(detail);
   return parts.length > 0 ? parts.join(DETAIL_SEPARATOR) : undefined;
 }

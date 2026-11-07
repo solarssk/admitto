@@ -52,6 +52,8 @@ set `fileParallelism: false`), so cross-file failures there are leftover-state p
 concurrency races - fix them with cleanup in the polluting file, not with `sequence.concurrent`
 (that option only affects tests within one file).
 
+**After a `findBy*` that waits for a form to load, `await act(async () => {})` before typing into a date or time picker.** The picker mounts when a mocked fetch answers, outside `act()`, and on a busy runner the test resumes before its effects have run: the first `fireEvent.change` then runs them, and the picker's own effect writes its old text over what was typed. The field stays empty and the test fails ten seconds later for no bug. A picker mounted by `render` or by a click is flushed by `act` already. Proof: `openWith` in `apps/admin/test/attendees/AddAttendeeModal.test.tsx`.
+
 **`eslint-disable-next-line` only covers the literal next line.** When the reason needs 2-3 lines
 of prose, put the plain `//` explanation lines first and the `eslint-disable-next-line` comment
 itself last, directly above the code it's suppressing for - reversing that order (or splitting

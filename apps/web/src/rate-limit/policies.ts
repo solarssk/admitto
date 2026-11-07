@@ -61,12 +61,15 @@ function authUserScopedPolicy(
   };
 }
 
-/** Shared shape for anonymous routes limited per client IP. */
+/** Shared shape for anonymous routes limited per client IP. `log` false is the variant without
+ * `logOnExceeded`, for routes anyone can hammer: every rejected request would otherwise write an
+ * audit entry and push real diagnostics out of the 1000-entry system-log buffer. */
 function ipScopedPolicy(
   keyPrefix: string,
   scope: RateLimitScope,
   max: number,
   windowMs = 60_000,
+  log: { keyHint?: string } | false = {},
 ): RatePolicy {
   return {
     checks: [
@@ -74,7 +77,7 @@ function ipScopedPolicy(
         keyOf: (c) => `${keyPrefix}:ip:${rateLimitIpKey(resolveClientIp(c))}`,
         windowMs,
         max,
-        logOnExceeded: { scope },
+        ...(log ? { logOnExceeded: { scope, ...log } } : {}),
       },
     ],
   };
@@ -97,6 +100,26 @@ export const INLINE_RATE_LIMITS = {
   /** Per-event ceiling on signature-verified PassCreator deliveries (retryEnabled bursts of one
    * event must not throttle another's). Checked by the webhook handler after verification. */
   "wallet:webhook-event": { windowMs: 60_000, max: 120 },
+  /** Per-event ceiling on public registrations. Checked by the handler only after the event is
+   * found (so the key is a real event id, never a caller-chosen slug) and after the bot
+   * challenge has passed, so a bot without a valid token cannot spend it. */
+  "registration:event": { windowMs: 60_000, max: 600 },
+  /** Tries at the shared password of one event, from every address together. Each try is a hash (argon2id: memory and
+   * CPU), so this is the brake on the work a stranger can make the server do for one event. Checked by the handler like
+   * `registration:event`: after the bot challenge, with the id of the event, and for an event whose way in is the
+   * password only. Silent here; the handler writes its own line (without any address). */
+  "registration:password-event": { windowMs: 60_000, max: 120 },
+  /** Mails to one address (HMAC of the lowercased address), instance-wide, across all events.
+   * Gates only the queueing of a registration mail; the response to the registrant is unchanged. */
+  "registration:mail-recipient": { windowMs: 24 * 3_600_000, max: 3 },
+  /** Registration mail rows (every template) one event may queue within the window, for the registrations created
+   * within it (the mail that staff queue by deciding on an older registration is not counted). `max` is the base: the
+   * cap is the larger of it and three per seat of the event (`eventMailCap` in `@admitto/tickets`), so a big
+   * event is not cut short. Unlike the limits above this one is counted in Postgres, under the registration
+   * queue (a restart does not reset it, and guests submitting at once cannot get past it), and the store is not
+   * involved: the entry is here so that `RATE_LIMIT_OVERRIDES` can retune it. Gates only the queueing of the
+   * mail; the registration is stored and the response is unchanged. */
+  "registration:mail-event": { windowMs: 24 * 3_600_000, max: 1000 },
 } as const satisfies Record<string, InlineRateLimit>;
 
 export type InlineRateLimitName = keyof typeof INLINE_RATE_LIMITS;
@@ -105,6 +128,12 @@ export type CheckinRateLimitKind = "scan" | "history" | "stream";
 
 function jsonTooManyRequests(c: Context): Response {
   return c.json({ error: "too many requests" }, 429);
+}
+
+/** The 429 of the "Show" budget: its own code (the admin app says why), and how long the window of the check that refused is. */
+function sensitiveRevealLimited(c: Context, checkIndex: 0 | 1): Response {
+  c.header("Retry-After", String(Math.ceil(RATE_POLICIES["admin:sensitive-reveal"].checks[checkIndex].windowMs / 1000)));
+  return c.json({ error: "sensitive_reveal_limit" }, 429);
 }
 
 function authUserId(c: Context): string | undefined {
@@ -697,6 +726,30 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  // The deliberate "Show" of the answers to sensitive questions (D-E6, 117b): both routes, one budget per user. Every click is
+  // already an audit entry, so this bounds how fast one account can read the sensitive answers of an event, not how many
+  // entries it makes. A person who shows an answer or two at a time, and goes back and forth between guests, stays well under
+  // 20 a minute; a script that walks an event does not. The hourly check is the one that stops a slow walk: 200 an hour is far
+  // more than a person reads in an hour, and a 1000-guest event then takes five hours of audit entries. The 429 says in
+  // Retry-After how long the window is at most, read from the check so a retune with RATE_LIMIT_OVERRIDES is followed.
+  "admin:sensitive-reveal": {
+    checks: [
+      {
+        keyOf: (c) => `admin:sensitive-reveal:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 20,
+        onExceeded: (c) => sensitiveRevealLimited(c, 0),
+        logOnExceeded: { scope: "admin_sensitive_reveal", keyHint: "user" },
+      },
+      {
+        keyOf: (c) => `admin:sensitive-reveal:hour:user:${c.get("auth").userId}`,
+        windowMs: 3_600_000,
+        max: 200,
+        onExceeded: (c) => sensitiveRevealLimited(c, 1),
+        logOnExceeded: { scope: "admin_sensitive_reveal", keyHint: "user_hour" },
+      },
+    ],
+  },
   // Per-target-user, not per-actor: bounds how fast one admin can loop this against a single
   // account, matching admin:attendee-patch's reasoning above - a real admin force-logging-out
   // several different accounts in a row never approaches this, unlike a scripted repeat against
@@ -840,6 +893,30 @@ export const RATE_POLICIES = {
     ],
   },
   "checkin:stream": checkinStreamPolicy(CHECKIN_STREAM_LIMITS),
+  /** Public registration form (`/r/*`) and the legal texts it links to (`/legal/*`, one bucket for
+   * both: one visitor, one budget for reading). Per IP, collapsed to the /64 for IPv6, and deliberately
+   * generous: the audience is staff of one company behind one NAT (see `public:tq`). The real
+   * brakes are the bot challenge and the per-address mail limit. No slug in any key: the slug is a
+   * caller-chosen path segment, so a per-slug bucket would let anyone starve an event and mint
+   * unbounded keys. The per-event ceiling is `registration:event` (inline, after the challenge).
+   * Page, submit and confirm are quiet (no `logOnExceeded`): see {@link ipScopedPolicy}. */
+  "registration:page": ipScopedPolicy("registration:page", "registration", 300, 60_000, false),
+  "registration:submit": ipScopedPolicy("registration:submit", "registration", 120, 60_000, false),
+  "registration:confirm": ipScopedPolicy("registration:confirm", "registration", 120, 60_000, false),
+  /** Tries at the shared password of an event, per client address (IPv6 as its /64). Every try that reaches the check is
+   * counted, the right ones too: the store can only count hits, and the people of one company sit behind one address,
+   * so 30 in 15 minutes is what lets a department register while it gives a guesser at most 30 tries from one address in
+   * that time. Used inline by `POST /r/:slug` (see `checkRegistrationPasswordRateLimit`), after the bot challenge, so a
+   * bot that has no token spends nothing of the budget of somebody else's office. Silent here: the handler writes its
+   * own line, because a line of the limiter would carry the address of the client. */
+  "registration:password": ipScopedPolicy("registration:password", "registration", 30, 15 * 60_000, false),
+  /** The company sign-in of a guest (D-C4): `GET /r/:slug/sso/start` and `GET /sso/callback`, one budget per client
+   * address (IPv6 as its /64) for both. A start writes a row of state and a callback calls the provider, so this is what keeps
+   * a stranger from filling the table or using the instance as a way to call the provider; the worker deletes the rows that
+   * ran out. One sign-in is a start and a callback, so 240 a minute is 120 sign-ins a minute from one address, far above a
+   * company behind one NAT and far below a flood. No slug in the key, for the reason given at `registration:page`. Silent
+   * here: a line of the limiter would carry the address of the client. */
+  "registration:sso": ipScopedPolicy("registration:sso", "registration", 240, 60_000, false),
 } as const satisfies Record<string, RatePolicy>;
 
 // Operator overrides (RATE_LIMIT_OVERRIDES) are applied once, here, before any middleware reads a
@@ -1015,9 +1092,9 @@ export async function checkAccountPasswordRateLimit(
  * app's existing {@link getEncryptionKey}, domain-separated by prefixing the input (not deriving
  * a new key) - the standard, safe way to reuse one HMAC key for more than one purpose without a
  * key-derivation step this codebase doesn't otherwise have. */
-function hashRecipientForRateLimit(recipientEmail: string): string {
+function hashRecipientForRateLimit(recipientEmail: string, purpose = "mail-test-recipient"): string {
   return createHmac("sha256", getEncryptionKey())
-    .update(`mail-test-recipient:${recipientEmail.toLowerCase()}`)
+    .update(`${purpose}:${recipientEmail.toLowerCase()}`)
     .digest("hex");
 }
 
@@ -1045,6 +1122,59 @@ export async function checkMailTestRecipientRateLimit(
     return false;
   }
   return true;
+}
+
+/** Per-event ceiling on public registrations (inline, not middleware). Call it only after the bot
+ * challenge has passed and the event is found: the key is `event.id`, never the slug from the URL.
+ * False when the event's budget is spent. Silent: every use would otherwise write an audit entry. */
+export async function checkRegistrationEventRateLimit(
+  store: RateLimitStore,
+  eventId: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["registration:event"];
+  return (await store.hit(`registration:event:${eventId}`, windowMs, max)).allowed;
+}
+
+/** Budget of confirmation links an event sends again within the window (inline, not middleware). A resend puts the row of
+ * its mail back in the queue, so the count of rows behind `registration:mail-event` does not see it; this is the event's
+ * brake on them, with the cap that count has (`cap`, `eventMailCap` in `@admitto/tickets`) and the same window. Counted in
+ * the rate-limit store, so a restart of a replica resets its share. False means "do not queue the mail"; the caller still
+ * answers the registrant exactly as before. Silent, like {@link checkRegistrationEventRateLimit}. */
+export async function checkRegistrationEventResendRateLimit(
+  store: RateLimitStore,
+  eventId: string,
+  cap: number,
+): Promise<boolean> {
+  const { windowMs } = INLINE_RATE_LIMITS["registration:mail-event"];
+  return (await store.hit(`registration:mail-event-resend:${eventId}`, windowMs, cap)).allowed;
+}
+
+/** Tries at the password of an event from one client address (inline, not middleware): see the policy
+ * `registration:password`. Call it only after the bot challenge has passed. False when the budget of that address is
+ * spent. Silent: the caller writes the line for the operator. */
+export async function checkRegistrationPasswordRateLimit(store: RateLimitStore, c: Context): Promise<boolean> {
+  const check = RATE_POLICIES["registration:password"].checks[0]!;
+  return (await store.hit(check.keyOf(c), check.windowMs, check.max)).allowed;
+}
+
+/** Tries at the password of one event from every address (inline, not middleware). Keyed by the id of the event, never by
+ * the slug of the address, and call it only after the bot challenge has passed and after the budget of the client
+ * address, so one client who is out of tries cannot spend the budget the others share. False when it is spent. */
+export async function checkRegistrationPasswordEventRateLimit(store: RateLimitStore, eventId: string): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["registration:password-event"];
+  return (await store.hit(`registration:password-event:${eventId}`, windowMs, max)).allowed;
+}
+
+/** Instance-wide budget of registration mails to one address (inline, not middleware). The
+ * address enters the store only as a keyed hash. False means "do not queue the mail"; the caller
+ * still answers the registrant exactly as before. Silent, like {@link checkRegistrationEventRateLimit}. */
+export async function checkRegistrationMailRecipientRateLimit(
+  store: RateLimitStore,
+  recipientEmail: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["registration:mail-recipient"];
+  const tag = hashRecipientForRateLimit(recipientEmail.trim(), "registration-mail-recipient");
+  return (await store.hit(`registration:mail-recipient:${tag}`, windowMs, max)).allowed;
 }
 
 /** {@link checkMailTestRecipientRateLimit} plus the "resolve IP, and on failure return the 429"

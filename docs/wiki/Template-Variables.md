@@ -2,7 +2,7 @@
 
 **Audience:** Event Managers and Technical Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.4
 
-Use the variable chips shown in **Communication → Templates**. The editor is the source of truth for the variables available to the selected template. The chips are grouped the same way in the editor: Attendee, Event, Ticket & QR, Wallet and Branding. A sixth group, Images, comes after them when the event has extra named images.
+Use the variable chips shown in **Communication → Templates**. The editor is the source of truth for the variables available to the selected template. The chips are grouped the same way in the editor: Attendee, Event, Ticket & QR, Wallet and Branding. A sixth group, Images, comes after them when the event has extra named images. The editor of a registration email also has the groups Confirmation (the confirmation email only) and Contact, and has no Ticket & QR or Wallet group.
 
 ## Attendee
 
@@ -44,6 +44,20 @@ These show details from the current event.
 
 - Each chip is offered, and a template can be saved with it, only while that specific platform is turned on in the event's Wallet settings. If you turn a platform off later, a template that still has its chip cannot be saved again until you remove the chip or turn the platform back on.
 - Preview and Send test always show a placeholder link, by design, no matter how Wallet is configured.
+
+## Registration emails
+
+Emails sent to a guest who registered through the event form (confirm your email, received, waiting list, declined) can use the Attendee and Event variables above, and these:
+
+| Variable | Shows |
+|----------|-------|
+| `confirm_url` | The link the guest opens to confirm their email address. It opens a page with a button, and the guest confirms by selecting it. It has a value only in the confirm-your-email message, and that message must contain it: saving it without `{{confirm_url}}` in the body fails with "Missing required placeholder: confirm_url" |
+| `contact_name`, `contact_email` | The person the guest can write to. It is the first event contact that has an email, or else the organisation's support contact. Both are empty when neither exists |
+| `contact_line` | A full sentence with that contact, for example "Questions? Contact Ann at ann@example.com.". It is empty when there is no contact |
+
+- A guest's names are left out of these emails (`first_name`, `last_name` and `full_name` are empty) until the guest has confirmed the address or staff have decided about the registration, because anyone can type any name for any address. A greeting like "Hi {{first_name}}," then reads "Hi ,". Word an edited greeting so that it reads well without a name, as the built-in emails do ("Hello,").
+- A registration email is sent before the guest has a ticket, so it cannot use `ticket_url`, `qr_image_url`, the Wallet variables, `download_page_url` or `ticket_type`. Saving such a template fails with an "Unknown placeholder" message.
+- The ticket email and your own templates cannot use `confirm_url`, `contact_name`, `contact_email` or `contact_line`. Saving such a template fails with an "Unknown placeholder" message.
 
 ## Branding
 
