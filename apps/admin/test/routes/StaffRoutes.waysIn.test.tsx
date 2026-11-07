@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { StaffRoutes } from "../../src/App.js";
 import type { RoleAssignment } from "../../src/api/types.js";
-import { accessMethodsDto } from "../settings/accessMethodsFixtures.js";
+import { accessMethodsDto, ssoProviderDto } from "../settings/accessMethodsFixtures.js";
 import { makeOrgAdminAssignment, makeSuperadminAssignment } from "../test-utils.js";
 
 let assignments: RoleAssignment[] = [];
@@ -41,11 +41,18 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchExternalServices: vi.fn(),
     fetchRegistrationTurnstile: vi.fn(),
     fetchRegistrationAccessMethods: vi.fn(),
+    fetchRegistrationSsoProvider: vi.fn(),
     saveRegistrationAccessMethods: vi.fn(),
   };
 });
 
-import { fetchExternalServices, fetchRegistrationAccessMethods, fetchRegistrationTurnstile, saveRegistrationAccessMethods } from "../../src/api/client.js";
+import {
+  fetchExternalServices,
+  fetchRegistrationAccessMethods,
+  fetchRegistrationSsoProvider,
+  fetchRegistrationTurnstile,
+  saveRegistrationAccessMethods,
+} from "../../src/api/client.js";
 
 function renderAt(path: string) {
   return render(
@@ -81,6 +88,7 @@ beforeEach(() => {
   });
   vi.mocked(fetchRegistrationTurnstile).mockResolvedValue({ site_key: null, secret_set: false, status: "incomplete" });
   vi.mocked(fetchRegistrationAccessMethods).mockResolvedValue(accessMethodsDto());
+  vi.mocked(fetchRegistrationSsoProvider).mockResolvedValue(ssoProviderDto());
 });
 
 afterEach(() => {
@@ -96,7 +104,9 @@ describe("the Ways in card, which sits on the superadmin-only settings route", (
 
     expect(await screen.findByRole("switch", { name: "Link" })).toBeTruthy();
     expect(screen.getByRole("switch", { name: "Password" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Company sign-in" })).toBeTruthy();
     expect(fetchRegistrationAccessMethods).toHaveBeenCalledTimes(1);
+    expect(fetchRegistrationSsoProvider).toHaveBeenCalledTimes(1);
   });
 
   it("sends an administrator of an organisation back to the events, without reading or showing the ways in", async () => {
@@ -107,6 +117,7 @@ describe("the Ways in card, which sits on the superadmin-only settings route", (
     expect(screen.queryByText("Ways in")).toBeNull();
     expect(screen.queryByRole("switch", { name: "Link" })).toBeNull();
     expect(fetchRegistrationAccessMethods).not.toHaveBeenCalled();
+    expect(fetchRegistrationSsoProvider).not.toHaveBeenCalled();
     expect(saveRegistrationAccessMethods).not.toHaveBeenCalled();
   });
 });

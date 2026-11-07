@@ -7,18 +7,21 @@ import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
-import type { AccessMethod } from "./accessSettings.js";
+import type { AccessDraft, AccessMethod, ClaimErrors } from "./accessSettings.js";
+import { AccessSsoClaim } from "./AccessSsoClaim.js";
 import { EventPasswordDialog } from "./EventPasswordDialog.js";
 import "./registration-access.css";
 
 const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
   { value: "link", label: "Link" },
   { value: "password", label: "Password" },
+  { value: "sso", label: "Company sign-in" },
 ];
 
 const METHOD_HINTS: Readonly<Record<AccessMethod, string>> = {
   link: "Anyone who has the link can ask to join. A bot check protects the form.",
   password: "Guests must type the event password to open the form. A bot check protects it too.",
+  sso: "Guests sign in with the company's identity provider to open the form. The email address comes from that sign-in and cannot be changed on the form.",
 };
 
 /** The shared password of the event: whether one is set, and the buttons to set, change or remove it. It never shows the password. */
@@ -63,7 +66,8 @@ function EventPasswordRow({
 }
 
 /**
- * How guests open the form: with the link, or with a password that the organiser sets. One way in at a time. The password has
+ * How guests open the form: with the link, with a password that the organiser sets, or by signing in with the company's identity
+ * provider (which can be limited to the people of one company). One way in at a time. The password has
  * its own requests (it is not one of the settings that the Save of the page sends): it is set, changed and removed from here, and
  * the page learns of it through `onPasswordChanged`.
  */
@@ -72,9 +76,12 @@ export function AccessWayInCard({
   event,
   method,
   savedMethod,
+  claim,
+  claimErrors,
   passwordSet,
   disabled,
   onMethodChange,
+  onClaimChange,
   onPasswordChanged,
   onArchived,
 }: Readonly<{
@@ -83,9 +90,13 @@ export function AccessWayInCard({
   /** The way in the form holds now, and the one that is saved. */
   method: AccessMethod | null;
   savedMethod: AccessMethod | null;
+  /** The restriction of the company sign-in as typed, and what is wrong with it. */
+  claim: Pick<AccessDraft, "sso_claim_name" | "sso_claim_values">;
+  claimErrors: ClaimErrors;
   passwordSet: boolean;
   disabled: boolean;
   onMethodChange: (method: AccessMethod) => void;
+  onClaimChange: (change: Partial<Pick<AccessDraft, "sso_claim_name" | "sso_claim_values">>) => void;
   onPasswordChanged: (isSet: boolean) => void;
   /** A change of the password was refused because the event is archived: the page reads the event and the settings again. */
   onArchived: () => void;
@@ -149,6 +160,15 @@ export function AccessWayInCard({
             <EventPasswordRow event={event} passwordSet={passwordSet} disabled={disabled} onSet={() => setSetOpen(true)} onRemove={() => setRemoveOpen(true)} />
             <p className="settings-card-intro">Choosing another way in later removes the password.</p>
           </>
+        )}
+        {method === "sso" && (
+          <AccessSsoClaim
+            name={claim.sso_claim_name}
+            values={claim.sso_claim_values}
+            errors={claimErrors}
+            disabled={disabled}
+            onChange={onClaimChange}
+          />
         )}
         {savedMethod === "password" && method !== "password" && passwordSet && (
           <Notice variant="warning">Saving removes the event password. A new one has to be set if you choose the password again.</Notice>

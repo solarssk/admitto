@@ -11,7 +11,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 ## Before you start
 
 - You must be the Administrator of the event's organisation, or a Superadmin. An Operator cannot open this page.
-- Some things are set up for the whole instance, by a Superadmin: bot protection, which ways in are allowed, email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
+- Some things are set up for the whole instance, by a Superadmin: bot protection, which ways in are allowed, the identity provider for the company sign-in, email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
 - You write the legal texts and the questions yourself. See [Legal Texts and Consents](Legal-Texts-and-Consents) and [Registration Form Fields](Registration-Form-Fields).
 - An archived event keeps its settings. You can read them and copy the link, but you cannot change anything.
 
@@ -26,9 +26,17 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 **Choose how guests get in**
 
-1. Under **Way in**, choose **Link** or **Password**. An event has one way in at a time.
+1. Under **Way in**, choose **Link**, **Password** or **Company sign-in**. An event has one way in at a time.
 2. For **Password**, select **Set password**, type a password of 8 to 128 characters and select **Save password**. This is saved at once, apart from the **Save** button of the page.
-3. Select **Save** at the bottom of the page.
+3. For **Company sign-in**, optionally limit the form to one company. See **Limit the company sign-in to one company** below.
+4. Select **Save** at the bottom of the page.
+
+**Limit the company sign-in to one company**
+
+1. Under **Way in**, choose **Company sign-in**.
+2. In **Claim name**, type the name of the claim that the identity provider puts in the sign-in. With Microsoft Entra ID it is usually `tid`.
+3. In **Allowed values**, type one value on each line. With `tid`, the value is the tenant ID of the company, a GUID.
+4. Select **Save**. Leave both fields empty for no limit.
 
 **Choose what the form asks**
 
@@ -66,17 +74,27 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 When the event is full, a new request goes on the waiting list. You accept people from the list by hand, in either mode. Without the **Waiting list** switch, a full event says that no places are left and saves nothing.
 
-**Link or password**
+**Link, password or company sign-in**
 
 | Way in | Who can open the form |
 |---|---|
 | **Link** | Anyone who has the link |
 | **Password** | Anyone who has the link and types the event password |
+| **Company sign-in** | Anyone who has the link and signs in with the identity provider of your organisation |
 
-- Both ways are protected by a bot check.
+- The link and the password are protected by a bot check. The company sign-in needs none, because the form opens only after the sign-in.
 - You cannot read the password again after you save it. Keep a copy where you share it with guests.
 - A new password does not change the requests that guests already sent.
 - Choosing another way in and saving removes the password.
+
+**Company sign-in**
+
+- The guest signs in with the identity provider that a Superadmin chose. The form shows the email address from that sign-in, and the guest cannot change it. A sign-in without an email address cannot register.
+- A guest who signs in does not get an Admitto account and cannot open the staff screens.
+- The limit compares the value in the sign-in with your list. It must match exactly, with capital letters as they are, and a match with any one value is enough. A list holds up to 20 values.
+- Use a claim that the identity provider vouches for, such as the tenant. Never use the end of an email address: it says where mail goes, not who the person is.
+- A change of the limit counts at once, also for guests who have already signed in. A guest who does not match sees a message and cannot register.
+- Moving the event to another way in removes the limit.
 
 **Styled boxes**
 
@@ -99,9 +117,10 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 
 | Row | If it is not done |
 |---|---|
-| **Way in** | Choose **Link** or **Password** on this tab |
+| **Way in** | Choose **Link**, **Password** or **Company sign-in** on this tab |
 | **Way in allowed** | Ask a Superadmin to turn that way in on: Organisation settings > External services > Ways in |
-| **Bot protection** | Ask a Superadmin to set up bot protection |
+| **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company sign-in does not have this row |
+| **Company sign-in** | Ask a Superadmin to choose the identity provider: Organisation settings > External services > Ways in. Only a form with the company sign-in has this row |
 | **Event password** | Set the password on this tab |
 | **Legal texts** | Publish the privacy notice, the terms and the consents you chose on the **Legal** tab |
 | **Form questions** | A required question cannot be shown on the form. Open the **Fields** tab |
@@ -122,17 +141,19 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 - Guests confirm their address with a link in an email. The link works for 24 hours.
 - A request that is not confirmed in that time is deleted.
 - The guest's confirmation email replaces the "received" email.
+- With the company sign-in this switch has no effect: the identity provider has already verified the address, so no confirmation link is sent. The switch is greyed out and keeps its setting for the other ways in.
 
 ## What changes after this action
 
 | Action | Result |
 |---|---|
-| **Save** | Only the settings you changed are saved. Each save is recorded in the audit log as "Guest registration settings changed", with the names of what changed and never a password |
+| **Save** | Only the settings you changed are saved. Each save is recorded in the audit log as "Guest registration settings changed", with the names and the new values of what changed, and never a password |
 | Turn registration on | The form opens at once. It is refused while a row of the checklist is not done |
 | Change the way in or the consents of an event that is on | Refused while a row is not done, like turning on |
 | Move between **Automatic** and **With approval** | The new mode applies to new requests |
 | Switch **Styled form boxes** on or off | The next guest who opens the form gets the boxes you chose. A form that is already open keeps the boxes it has |
 | Turn registration off | The form answers "not found" at once |
+| Save a limit to one company | The form accepts only guests whose sign-in matches. The change is recorded in the audit log as "Guest registration settings changed", with the claim and its values. They are settings, not guests' data |
 | Set, change or remove the password | The password is saved or removed at once. Removing it closes the form until you set a new one |
 
 When you turn registration off:
@@ -150,6 +171,9 @@ When you turn registration off:
 | An extra consent is marked "(not published)" | Publish its text on the **Legal** tab, or take the consent off the list |
 | "One of the extra consents you chose is not published" | Someone took a text back while you were editing. Publish it again or take it off the list |
 | A phone question shows the browser's box although the styled boxes are on | The question asks for digits only, or sets a shortest or longest length. A country code would break that rule. Remove the rule if the question should take a country |
+| A guest sees "This event is not open to your company account." | The sign-in does not hold one of your allowed values. Check the claim name and the values on this tab |
+| A guest sees "Your company account did not give us a verified email address" | The identity provider sent no email address, or says the address is not verified. A Superadmin maps the email claim of the provider |
+| The restriction says "The restriction to one company works with the company sign-in only" | Choose **Company sign-in** as the way in, or clear both fields |
 | There is no link under **Link for guests** | The address of the instance is not set. Ask a Superadmin |
 | Registration is on, but the page warns that something is missing | A row of the checklist stopped being done, for example the bot protection keys. The form may be closed to guests until it is fixed |
 | **Save** and the controls are off | The event is archived, or a save is still running |

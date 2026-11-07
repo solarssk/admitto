@@ -5,7 +5,7 @@ import { ExternalServicesPanel } from "../../src/settings/ExternalServicesPanel.
 import { advanceTimers, deferred, hangUntilAborted, renderWithToastAndRouter, isOff } from "../test-utils.js";
 import { describePanelLoading } from "./panel-loading.js";
 import type { ExternalServicesResponse, RegistrationTurnstileDto } from "../../src/api/types.js";
-import { accessMethodsDto } from "./accessMethodsFixtures.js";
+import { accessMethodsDto, ssoProviderDto } from "./accessMethodsFixtures.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -13,8 +13,10 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...actual,
     fetchExternalServices: vi.fn(),
     fetchRegistrationAccessMethods: vi.fn(),
+    fetchRegistrationSsoProvider: vi.fn(),
     fetchRegistrationTurnstile: vi.fn(),
     saveRegistrationAccessMethods: vi.fn(),
+    saveRegistrationSsoProvider: vi.fn(),
     saveRegistrationTurnstile: vi.fn(),
     saveWeatherSettings: vi.fn(),
     saveMapsSettings: vi.fn(),
@@ -27,9 +29,11 @@ import {
   ApiError,
   fetchExternalServices,
   fetchRegistrationAccessMethods,
+  fetchRegistrationSsoProvider,
   fetchRegistrationTurnstile,
   saveMapsSettings,
   saveRegistrationAccessMethods,
+  saveRegistrationSsoProvider,
   saveRegistrationTurnstile,
   saveWeatherSettings,
   testMapsConnection,
@@ -41,6 +45,8 @@ const mockFetchTurnstile = vi.mocked(fetchRegistrationTurnstile);
 const mockSaveTurnstile = vi.mocked(saveRegistrationTurnstile);
 const mockFetchAccess = vi.mocked(fetchRegistrationAccessMethods);
 const mockSaveAccess = vi.mocked(saveRegistrationAccessMethods);
+const mockFetchSso = vi.mocked(fetchRegistrationSsoProvider);
+const mockSaveSso = vi.mocked(saveRegistrationSsoProvider);
 const mockSaveWeather = vi.mocked(saveWeatherSettings);
 const mockSaveMaps = vi.mocked(saveMapsSettings);
 const mockTestWeather = vi.mocked(testWeatherConnection);
@@ -94,6 +100,10 @@ beforeEach(() => {
   mockFetchTurnstile.mockResolvedValue(sampleTurnstile());
   mockFetchAccess.mockResolvedValue(accessMethodsDto());
   mockSaveAccess.mockImplementation((body) => Promise.resolve(accessMethodsDto(body.methods)));
+  mockFetchSso.mockResolvedValue(ssoProviderDto());
+  mockSaveSso.mockImplementation((body) =>
+    Promise.resolve(ssoProviderDto({ provider_id: body.provider_id, state: body.provider_id === null ? "not_selected" : "ready" })),
+  );
   mockSaveTurnstile.mockImplementation(async (body) => ({
     site_key: body.site_key === undefined ? null : body.site_key,
     secret_set: body.secret_key !== null && body.secret_key !== undefined,
@@ -1081,27 +1091,29 @@ describe("ExternalServicesPanel, guest registration card", () => {
 });
 
 describe("ExternalServicesPanel, ways in card", () => {
-  type WayName = "Link" | "Password";
+  type WayName = "Link" | "Password" | "Company sign-in";
   const card = () => screen.getByText("Ways in").closest(".at-card") as HTMLElement;
   const wayIn = (name: WayName) => within(card()).getByRole("switch", { name }) as HTMLInputElement;
   const save = () => screen.getByRole("button", { name: "Save" });
   const keysWarning = () => within(card()).queryByText(/stay closed until the Turnstile keys above are ready/);
   const describedBy = (input: HTMLElement) => document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent ?? "";
 
-  it("shows a switch for the link and one for the password, both off until a superadmin turns one on", async () => {
+  it("shows a switch for the link, one for the password and one for the company sign-in, all off until a superadmin turns one on", async () => {
     await renderLoaded();
     expect(wayIn("Link").checked).toBe(false);
     expect(wayIn("Password").checked).toBe(false);
-    expect(within(card()).getAllByText("Off")).toHaveLength(2);
-    expect(within(card()).queryByRole("switch", { name: /sso|sign-in/i })).toBeNull();
+    expect(wayIn("Company sign-in").checked).toBe(false);
+    expect(within(card()).getAllByText("Off")).toHaveLength(3);
     expect(isOff(save())).toBe(true);
     expect(mockFetchAccess).toHaveBeenCalledTimes(1);
+    expect(mockFetchSso).toHaveBeenCalledTimes(1);
   });
 
   it("says in the description of each switch what the way is, and in the card what turning one off does", async () => {
     await renderLoaded();
     expect(describedBy(wayIn("Link"))).toMatch(/Anyone who has the link of an event can open its form, after a bot check\./);
     expect(describedBy(wayIn("Password"))).toMatch(/needs the password of the event, as well as its link/);
+    expect(describedBy(wayIn("Company sign-in"))).toMatch(/signs in with the identity provider chosen below to open the form\. The sign-in replaces the bot check/);
     expect(card().textContent).toMatch(/An organiser can choose only a way that is on\./);
     expect(card().textContent).toMatch(/Turning one off closes the registration form of every event that uses it, at once: guests see a page that is not found\./);
     expect(card().textContent).toMatch(/Nothing is deleted, and turning it on again opens those forms again\./);
@@ -1113,7 +1125,7 @@ describe("ExternalServicesPanel, ways in card", () => {
     expect(wayIn("Link").checked).toBe(false);
     expect(wayIn("Password").checked).toBe(true);
     expect(within(card()).getByText("On")).toBeTruthy();
-    expect(within(card()).getByText("Off")).toBeTruthy();
+    expect(within(card()).getAllByText("Off")).toHaveLength(2);
     expect(isOff(save())).toBe(true);
   });
 
@@ -1183,7 +1195,7 @@ describe("ExternalServicesPanel, ways in card", () => {
     expect(mockSaveAccess).not.toHaveBeenCalled();
   });
 
-  it("keeps a way that the card has no switch for, and that is on, when it saves the others", async () => {
+  it("keeps the company sign-in in the list when it saves another way, and sends the list in the order of the server", async () => {
     mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
     await renderLoaded();
     fireEvent.click(wayIn("Link"));
@@ -1193,6 +1205,7 @@ describe("ExternalServicesPanel, ways in card", () => {
     fireEvent.click(wayIn("Link"));
     fireEvent.click(save());
     await waitFor(() => expect(mockSaveAccess).toHaveBeenLastCalledWith({ methods: ["sso"] }));
+    expect(mockSaveSso).not.toHaveBeenCalled();
   });
 
   it("discards a switch that was turned when Reset is chosen", async () => {
@@ -1221,6 +1234,15 @@ describe("ExternalServicesPanel, ways in card", () => {
     fireEvent.click(wayIn("Link"));
     fireEvent.click(wayIn("Password"));
     expect(keysWarning()).toBeNull();
+  });
+
+  it("does not warn about the Turnstile keys for the company sign-in, which needs no bot check", async () => {
+    await renderLoaded();
+    fireEvent.click(wayIn("Company sign-in"));
+    expect(keysWarning()).toBeNull();
+    fireEvent.click(wayIn("Link"));
+    expect(keysWarning()).toBeTruthy();
+    expect(keysWarning()?.textContent).toMatch(/^Forms behind a link or a password stay closed/);
   });
 
   it("warns for keys that cannot be read, which are not ready either", async () => {
@@ -1328,5 +1350,223 @@ describe("ExternalServicesPanel, ways in card", () => {
       expect(document.getElementById("external-weather-provider")).toBeNull();
       expect(document.getElementById("external-access-link")).toBeNull();
     });
+  });
+});
+
+/** A provider that is on, other than the chosen one of a test whose choice is off. */
+const SSO_OTHER = { id: "idp-okta", display_name: "Okta" };
+
+describe("ExternalServicesPanel, company sign-in on the ways in card", () => {
+  const card = () => screen.getByText("Ways in").closest(".at-card") as HTMLElement;
+  const toggle = () => within(card()).getByRole("switch", { name: "Company sign-in" }) as HTMLInputElement;
+  const save = () => screen.getByRole("button", { name: "Save" });
+  const picker = () => el<HTMLButtonElement>("external-access-sso-provider");
+  const choose = (name: string) => {
+    fireEvent.click(picker());
+    fireEvent.click(screen.getByRole("button", { name }));
+  };
+  const noteText = () => document.getElementById("external-access-sso-note")?.textContent ?? "";
+
+  it("shows nothing of the provider while the company sign-in is off, and the picker, the sentence and the address once it is on", async () => {
+    await renderLoaded();
+    expect(document.getElementById("external-access-sso-provider")).toBeNull();
+    expect(within(card()).queryByText("Return address")).toBeNull();
+
+    fireEvent.click(toggle());
+
+    expect(picker().getAttribute("aria-label")).toBe("Identity provider, none selected");
+    expect(noteText()).toMatch(/^No identity provider is chosen yet\./);
+    expect((el<HTMLInputElement>("external-access-sso-redirect")).value).toBe("https://tickets.example.com/sso/callback");
+    expect(within(card()).getByText("Return address")).toBeTruthy();
+  });
+
+  it("offers the providers that are turned on by the name staff gave them, and shows the chosen one", async () => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    mockFetchSso.mockResolvedValue(ssoProviderDto({ provider_id: "idp-okta", state: "ready" }));
+    await renderLoaded();
+
+    expect(picker().getAttribute("aria-label")).toBe("Identity provider, Okta");
+    expect(noteText()).toBe("Guests sign in with Okta.");
+    fireEvent.click(picker());
+    expect(screen.getByRole("button", { name: "Company Entra ID" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Okta" })).toBeTruthy();
+  });
+
+  it.each([
+    ["not_selected", null, /No identity provider is chosen yet\. Forms of events that use the company sign-in stay closed, and nothing is deleted\./],
+    ["missing", "gone", /The identity provider that was chosen no longer exists\. Forms of events .* stay closed, and nothing is deleted\./],
+    ["disabled", "idp-entra", /The identity provider that was chosen is turned off\. Forms of events .* stay closed, and nothing is deleted\./],
+  ] as const)("says that forms stay closed when the choice is %s, as a warning", async (state, providerId, text) => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    mockFetchSso.mockResolvedValue(ssoProviderDto({ provider_id: providerId, state, ...(state === "disabled" ? { providers: [SSO_OTHER] } : {}) }));
+    await renderLoaded();
+
+    expect(noteText()).toMatch(text);
+    expect(document.getElementById("external-access-sso-note")?.closest(".at-notice--warning")).toBeTruthy();
+    // The saved id is not among the providers that are on, so the picker says that none is chosen, and nothing is saved by looking.
+    expect(picker().getAttribute("aria-label")).toBe("Identity provider, none selected");
+    expect(isOff(save())).toBe(true);
+  });
+
+  it("says where to add a provider when none is turned on, and turns the picker off", async () => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    mockFetchSso.mockResolvedValue(ssoProviderDto({ providers: [] }));
+    await renderLoaded();
+
+    expect(picker().disabled).toBe(true);
+    const link = within(card()).getByRole("link", { name: "Add or turn on one under Identity." });
+    expect(link.getAttribute("href")).toBe("/admin/settings/identity/providers");
+  });
+
+  it("gives the one return address with a button that copies it, and says to enter it once, with the gateway exception", async () => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    await renderLoaded();
+
+    expect(card().textContent).toMatch(/Enter this address once at the identity provider/);
+    expect(card().textContent).toMatch(/same for every event that uses the company sign-in/);
+    expect(card().textContent).toMatch(/let \/sso\/callback through without a sign-in, together with \/r\/\*/);
+    fireEvent.click(within(card()).getByRole("button", { name: "Copy the return address" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://tickets.example.com/sso/callback"));
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Return address copied."));
+  });
+
+  it("says so when the address cannot be copied", async () => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: () => Promise.reject(new Error("denied")) } });
+    await renderLoaded();
+
+    fireEvent.click(within(card()).getByRole("button", { name: "Copy the return address" }));
+
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Could not copy the return address."));
+  });
+
+  it("says that the address of the instance must be set first when the server has none to give, and points to General", async () => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    mockFetchSso.mockResolvedValue(ssoProviderDto({ redirect_uri: null }));
+    await renderLoaded();
+
+    expect(document.getElementById("external-access-sso-redirect")).toBeNull();
+    expect(card().textContent).toMatch(/There is no return address yet, because the address of this instance is not set\./);
+    expect(within(card()).getByRole("link", { name: "Set the Instance URL under General." }).getAttribute("href")).toBe("/admin/settings?tab=general");
+  });
+
+  it("takes the address from the server and never from the address the staff member opened the page at", async () => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    mockFetchSso.mockResolvedValue(ssoProviderDto({ redirect_uri: "https://guests.example.org/sso/callback" }));
+    await renderLoaded();
+
+    expect(el<HTMLInputElement>("external-access-sso-redirect").value).toBe("https://guests.example.org/sso/callback");
+    expect(el<HTMLInputElement>("external-access-sso-redirect").value).not.toContain(window.location.origin);
+  });
+
+  it("saves a provider that was chosen with its own request, and not the list of ways when no switch moved", async () => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    await renderLoaded();
+
+    choose("Okta");
+    expect(noteText()).toBe("The change of provider takes effect when you save.");
+    expect(isOff(save())).toBe(false);
+    fireEvent.click(save());
+
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("External services saved."));
+    expect(mockSaveSso).toHaveBeenCalledWith({ provider_id: "idp-okta" });
+    expect(mockSaveAccess).not.toHaveBeenCalled();
+    await waitFor(() => expect(noteText()).toBe("Guests sign in with Okta."));
+    expect(isOff(save())).toBe(true);
+  });
+
+  it("saves the switch and the provider together, as two requests, with the one Save", async () => {
+    await renderLoaded();
+
+    fireEvent.click(toggle());
+    choose("Company Entra ID");
+    fireEvent.click(save());
+
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("External services saved."));
+    expect(mockSaveAccess).toHaveBeenCalledWith({ methods: ["sso"] });
+    expect(mockSaveSso).toHaveBeenCalledWith({ provider_id: "idp-entra" });
+    await waitFor(() => expect(isOff(save())).toBe(true));
+    expect(toggle().checked).toBe(true);
+    expect(picker().getAttribute("aria-label")).toBe("Identity provider, Company Entra ID");
+  });
+
+  it("keeps what worked and says what failed when the provider is refused, with a Save left for the provider", async () => {
+    mockSaveSso.mockRejectedValueOnce(new ApiError(422, "provider_not_available"));
+    await renderLoaded();
+
+    fireEvent.click(toggle());
+    choose("Okta");
+    fireEvent.click(save());
+
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("That identity provider is not available for guests."));
+    expect(screen.queryByText("External services saved.")).toBeNull();
+    // The switch was saved; the provider is still the person's choice and still unsaved.
+    expect(toggle().checked).toBe(true);
+    expect(picker().getAttribute("aria-label")).toBe("Identity provider, Okta");
+    expect(isOff(save())).toBe(false);
+    fireEvent.click(save());
+    await waitFor(() => expect(mockSaveSso).toHaveBeenCalledTimes(2));
+    expect(mockSaveAccess).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(isOff(save())).toBe(true));
+  });
+
+  it("keeps the provider as the choice but saves the switch when only the list fails", async () => {
+    mockSaveAccess.mockRejectedValueOnce(new ApiError(500, "internal"));
+    await renderLoaded();
+
+    fireEvent.click(toggle());
+    choose("Okta");
+    fireEvent.click(save());
+
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Failed to save the registration ways in."));
+    expect(mockSaveSso).toHaveBeenCalledWith({ provider_id: "idp-okta" });
+    expect(toggle().checked).toBe(true);
+    expect(isOff(save())).toBe(false);
+    fireEvent.click(save());
+    await waitFor(() => expect(mockSaveAccess).toHaveBeenCalledTimes(2));
+    expect(mockSaveSso).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns the picker off while the save is on its way", async () => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    const answer = deferred<ReturnType<typeof ssoProviderDto>>();
+    mockSaveSso.mockReturnValueOnce(answer.promise);
+    await renderLoaded();
+
+    choose("Okta");
+    fireEvent.click(save());
+
+    await waitFor(() => expect(mockSaveSso).toHaveBeenCalledTimes(1));
+    expect(picker().disabled).toBe(true);
+    await act(async () => answer.resolve(ssoProviderDto({ provider_id: "idp-okta", state: "ready" })));
+    await waitFor(() => expect(picker().disabled).toBe(false));
+  });
+
+  it("puts the provider back to the saved one when Reset is chosen", async () => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    mockFetchSso.mockResolvedValue(ssoProviderDto({ provider_id: "idp-entra", state: "ready" }));
+    await renderLoaded();
+
+    choose("Okta");
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(picker().getAttribute("aria-label")).toBe("Identity provider, Company Entra ID");
+    expect(isOff(save())).toBe(true);
+  });
+
+  it("shows the load error and a Retry when only the provider cannot be read", async () => {
+    mockFetchSso.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToastAndRouter(<ExternalServicesPanel />);
+
+    const retry = await screen.findByRole("button", { name: "Retry" });
+
+    expect(screen.getByText("Could not load external services")).toBeTruthy();
+    expect(screen.queryByText("secret_internal")).toBeNull();
+    fireEvent.click(retry);
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    expect(mockFetchSso).toHaveBeenCalledTimes(2);
   });
 });

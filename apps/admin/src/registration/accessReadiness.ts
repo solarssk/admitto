@@ -15,6 +15,8 @@ export interface ReadinessCopy {
 }
 
 const ASK_A_SUPERADMIN = { text: "Ask a superadmin to set it up." } as const;
+/** The identity provider of the company sign-in is chosen by a superadmin, on the same card as the switch. */
+const ASK_FOR_THE_PROVIDER = { text: "Ask a superadmin to choose the identity provider in Organisation settings, External services, Ways in." } as const;
 /** The ways in of the whole instance are turned on by a superadmin, on a card of their own. */
 const ASK_FOR_THE_WAY_IN = { text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." } as const;
 
@@ -27,7 +29,7 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
   access_method: {
     title: "Way in",
     met: "A way in is chosen.",
-    missing: "Choose how guests get in: with a link or with a password.",
+    missing: "Choose how guests get in: with a link, with a password or with the company sign-in.",
   },
   access_method_enabled: {
     title: "Way in allowed",
@@ -45,7 +47,7 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     title: "Company sign-in",
     met: "The company sign-in is set up.",
     missing: "The company sign-in is not set up, so the form stays closed.",
-    remedy: ASK_A_SUPERADMIN,
+    remedy: ASK_FOR_THE_PROVIDER,
   },
   password: {
     title: "Event password",

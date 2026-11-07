@@ -1,12 +1,18 @@
 import { Card, HintLabel, Notice, Switch } from "@admitto/ui";
-import type { RegistrationTurnstileStatus } from "../api/types.js";
-import { SWITCHED_ACCESS_METHODS, type AccessMethodsDraft, type SwitchedAccessMethod } from "./registrationAccessMethods.js";
+import type { RegistrationSsoProviderDto, RegistrationTurnstileStatus } from "../api/types.js";
+import { RegistrationSsoProviderBlock } from "./RegistrationSsoProviderBlock.js";
+import {
+  SWITCHED_ACCESS_METHODS,
+  TURNSTILE_ACCESS_METHODS,
+  type AccessMethodsDraft,
+  type SwitchedAccessMethod,
+} from "./registrationAccessMethods.js";
 
 const CARD_HINT = "The ways a guest can reach a registration form. An organiser chooses one of the ways that are on for each event.";
 const CARD_INTRO =
   "An organiser can choose only a way that is on. Turning one off closes the registration form of every event that uses it, at once: guests see a page that is not found. Nothing is deleted, and turning it on again opens those forms again.";
 const KEYS_NOTICE =
-  "Forms behind a way that is on stay closed until the Turnstile keys above are ready: both keys saved, and the secret key readable.";
+  "Forms behind a link or a password stay closed until the Turnstile keys above are ready: both keys saved, and the secret key readable.";
 
 const METHODS: Readonly<Record<SwitchedAccessMethod, { name: string; text: string }>> = {
   link: {
@@ -17,24 +23,31 @@ const METHODS: Readonly<Record<SwitchedAccessMethod, { name: string; text: strin
     name: "Password",
     text: "A guest needs the password of the event, as well as its link, to open the form, after a bot check.",
   },
+  sso: {
+    name: "Company sign-in",
+    text: "A guest signs in with the identity provider chosen below to open the form. The sign-in replaces the bot check, and the guest's email comes from the provider.",
+  },
 };
 
 /** Organisation Settings → External services: which ways in to the guest registration form are on for the whole instance.
  * The draft lives in the panel, so the one Save of the page saves it with Weather, Maps and the Turnstile keys.
- * `keys` is the saved state of the Turnstile keys: a way in is open to guests only while they are ready. */
+ * `keys` is the saved state of the Turnstile keys: a link or a password is open to guests only while they are ready. `sso` is the
+ * saved state of the identity provider choice, which only the company sign-in needs. */
 export function RegistrationAccessMethodsCard({
   draft,
   keys,
+  sso,
   disabled,
   onChange,
 }: Readonly<{
   draft: AccessMethodsDraft;
   keys: RegistrationTurnstileStatus;
+  sso: RegistrationSsoProviderDto;
   /** The Save of the page is on its way: the switches are off, so that its answer cannot replace an edit made meanwhile. */
   disabled: boolean;
   onChange: (next: AccessMethodsDraft) => void;
 }>) {
-  const anyOn = SWITCHED_ACCESS_METHODS.some((method) => draft[method]);
+  const needsKeys = TURNSTILE_ACCESS_METHODS.some((method) => draft[method]);
   return (
     <Card title={<HintLabel hint={CARD_HINT}>Ways in</HintLabel>}>
       <div className="settings-card-stack">
@@ -60,7 +73,15 @@ export function RegistrationAccessMethodsCard({
             </div>
           ))}
         </div>
-        {anyOn && keys !== "ready" && <Notice variant="warning">{KEYS_NOTICE}</Notice>}
+        {draft.sso && (
+          <RegistrationSsoProviderBlock
+            sso={sso}
+            providerId={draft.ssoProviderId}
+            disabled={disabled}
+            onChange={(ssoProviderId) => onChange({ ...draft, ssoProviderId })}
+          />
+        )}
+        {needsKeys && keys !== "ready" && <Notice variant="warning">{KEYS_NOTICE}</Notice>}
       </div>
     </Card>
   );

@@ -9,6 +9,15 @@ export { toDatabaseJson, toDatabaseText } from "./databaseText.js";
 export { CONTACT_EMAIL_MAX_LENGTH } from "./contactEmail.js";
 export { isDateAnswer, isDateTimeAnswer } from "./calendarDay.js";
 export {
+  SSO_CLAIM_NAME_MAX,
+  SSO_CLAIM_VALUE_MAX,
+  SSO_CLAIM_VALUES_MAX,
+  ssoClaimNameProblem,
+  ssoClaimValueProblem,
+  type SsoClaimNameProblem,
+  type SsoClaimValueProblem,
+} from "./ssoClaim.js";
+export {
   REGISTRATION_PASSWORD_MAX,
   REGISTRATION_PASSWORD_MIN,
   registrationPasswordLength,

@@ -484,7 +484,7 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
 
   const read = (cookie = superCookie) => app.request("/api/admin/registration/sso-provider", { headers: { Cookie: cookie } });
 
-  type Offered = { provider_id: string | null; state: string; providers: { id: string; display_name: string }[] };
+  type Offered = { provider_id: string | null; state: string; providers: { id: string; display_name: string }[]; redirect_uri: string | null };
   const byId = (a: { id: string }, b: { id: string }): number => a.id.localeCompare(b.id);
   /** The providers the route can offer: the enabled ones of this worker's schema, in which another test file may have left rows. */
   const enabledProviders = async () =>
@@ -527,6 +527,37 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
     expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBe(JSON.stringify(providerId));
     const entry = (await auditRows()).filter((row) => row.action_type === "registration_sso_provider_updated").at(-1);
     expect(entry?.metadata).toEqual({ provider_id: providerId, previous_provider_id: null });
+  });
+
+  it("gives the one address the provider lists for the guests' sign-in, from the address of the instance, on the read and on the write", async () => {
+    const read1 = (await (await read()).json()) as Offered;
+    const written = (await (await put("/api/admin/registration/sso-provider", { provider_id: providerId })).json()) as Offered;
+
+    // The instance of this test has the address https://tickets.example.com; the sign-in builds its redirect on the same one.
+    expect(read1.redirect_uri).toBe("https://tickets.example.com/sso/callback");
+    expect(written.redirect_uri).toBe(read1.redirect_uri);
+  });
+
+  it("builds the address from the saved Instance URL when the server has no BASE_URL and none is injected, on the read and on the write", async () => {
+    const savedEnv = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    const saved = JSON.stringify("https://saved.example.com");
+    await prisma.systemSettings.upsert({ where: { key: "instance_url" }, create: { key: "instance_url", value_json: saved }, update: { value_json: saved } });
+    try {
+      const fromSaved = createApp({ prisma, rateLimitStore: new InMemoryRateLimitStore(), skipCheckinBootValidation: true, adminDistRoot });
+      const readOnce = await fromSaved.request("/api/admin/registration/sso-provider", { headers: { Cookie: superCookie } });
+      const written = await fromSaved.request("/api/admin/registration/sso-provider", {
+        method: "PUT",
+        headers: { ...jsonHeaders, Cookie: superCookie },
+        body: JSON.stringify({ provider_id: providerId }),
+      });
+
+      expect(((await readOnce.json()) as Offered).redirect_uri).toBe("https://saved.example.com/sso/callback");
+      expect(((await written.json()) as Offered).redirect_uri).toBe("https://saved.example.com/sso/callback");
+    } finally {
+      if (savedEnv !== undefined) process.env.BASE_URL = savedEnv;
+      await prisma.systemSettings.deleteMany({ where: { key: "instance_url" } });
+    }
   });
 
   it("never sends a field of the provider but its id and its name", async () => {

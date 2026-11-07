@@ -20,6 +20,7 @@ import {
   setEnabledAccessMethods,
   type AccessMethodAvailability,
 } from "../registration/access-methods.js";
+import { buildGuestSsoRedirectUri } from "../registration/sso-routes.js";
 import {
   getSsoProviderId,
   listSelectableSsoProviders,
@@ -59,19 +60,32 @@ function serializeSsoProvider(
   providerId: string | null,
   state: GuestSsoProviderState,
   providers: { id: string; display_name: string }[],
+  redirectUri: string | null,
 ) {
-  return { provider_id: providerId, state, providers };
+  return { provider_id: providerId, state, providers, redirect_uri: redirectUri };
+}
+
+/** The address of the instance that the guests' sign-in is built on (the same `baseUrl` as `handleSsoStart`), or null while none is set. */
+export type SsoBaseUrl = () => Promise<string>;
+
+/** The one address the provider's administrator lists for the guests' sign-in, built where the flow builds it; null while the instance has no address. */
+export async function readRedirectUri(baseUrl: SsoBaseUrl): Promise<string | null> {
+  try {
+    return buildGuestSsoRedirectUri(await baseUrl());
+  } catch {
+    return null;
+  }
 }
 
 /** The choice, how it stands, and what can be chosen. Never a field of a provider but its id and the name staff gave it. */
-async function readSsoProvider(db: PrismaClient | Prisma.TransactionClient) {
+async function readSsoProvider(db: PrismaClient | Prisma.TransactionClient, redirectUri: string | null) {
   // The stored id is read once and the state is derived from it, so a change of provider between reads cannot make the two disagree.
   const providerId = await getSsoProviderId(db);
   const [provider, providers] = await Promise.all([
     providerId === null ? null : findOidcProviderById(db, providerId),
     listSelectableSsoProviders(db),
   ]);
-  return serializeSsoProvider(providerId, ssoProviderState(providerId, provider), providers);
+  return serializeSsoProvider(providerId, ssoProviderState(providerId, provider), providers, redirectUri);
 }
 
 function serializeAvailability(list: AccessMethodAvailability[]) {
@@ -221,12 +235,14 @@ export async function handlePutRegistrationAccessMethods(c: Context, db: PrismaC
 /**
  * GET /api/admin/registration/sso-provider - the identity provider guests sign in with (D-C4): its id (`provider_id`, null
  * for none), where the choice stands (`state`: `ready`, `not_selected`, `missing` for a provider that was deleted, `disabled`)
- * and the providers that can be chosen (`providers`: the enabled OIDC providers, by id and display name).
+ * the providers that can be chosen (`providers`: the enabled OIDC providers, by id and display name) and the address the
+ * provider must list as a redirect (`redirect_uri`, built from the address of the instance as the sign-in builds it; null while
+ * the instance has none).
  */
-export async function handleGetRegistrationSsoProvider(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleGetRegistrationSsoProvider(c: Context, db: PrismaClient, baseUrl: SsoBaseUrl): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
-  return c.json(await readSsoProvider(db));
+  return c.json(await readSsoProvider(db, await readRedirectUri(baseUrl)));
 }
 
 /**
@@ -235,7 +251,7 @@ export async function handleGetRegistrationSsoProvider(c: Context, db: PrismaCli
  * choice is audited with the ids before and after; a provider that is later disabled or deleted closes the form of the
  * events that use the sign-in and deletes nothing.
  */
-export async function handlePutRegistrationSsoProvider(c: Context, db: PrismaClient): Promise<Response> {
+export async function handlePutRegistrationSsoProvider(c: Context, db: PrismaClient, baseUrl: SsoBaseUrl): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
   const actor = requireAuditActor(c);
@@ -246,6 +262,8 @@ export async function handlePutRegistrationSsoProvider(c: Context, db: PrismaCli
   const next = parsed.data.provider_id;
 
   const organizationId = await resolveInstanceOrganizationId(db, process.env);
+  // Outside the transaction: the address of the instance is read with its own queries.
+  const redirectUri = await readRedirectUri(baseUrl);
   const answer = await db.$transaction(async (tx) => {
     if (next !== null && !(await listSelectableSsoProviders(tx)).some((provider) => provider.id === next)) return null;
     const previous = await getSsoProviderId(tx);
@@ -260,7 +278,7 @@ export async function handlePutRegistrationSsoProvider(c: Context, db: PrismaCli
       // Ids only: the choice, not a field of the provider.
       metadata: { provider_id: next, previous_provider_id: previous },
     });
-    return readSsoProvider(tx);
+    return readSsoProvider(tx, redirectUri);
   });
   if (answer === null) return c.json({ error: "provider_not_available" }, 422);
   return c.json(answer);

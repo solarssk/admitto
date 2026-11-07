@@ -1,9 +1,18 @@
 import type { RegistrationMode } from "@admitto/db/status";
+import {
+  SSO_CLAIM_NAME_MAX,
+  SSO_CLAIM_VALUE_MAX,
+  SSO_CLAIM_VALUES_MAX,
+  ssoClaimNameProblem,
+  ssoClaimValueProblem,
+  type SsoClaimNameProblem,
+  type SsoClaimValueProblem,
+} from "@admitto/shared";
 import type { LegalDocumentDto, RegistrationReadinessCheckDto, RegistrationSettingsDto, SaveRegistrationSettingsBody } from "../api/types.js";
 import type { SearchableSelectOption } from "../components/SearchableSelect.js";
 
-/** The ways in this screen offers. The company sign-in is not one of them yet. */
-export type AccessMethod = "link" | "password";
+/** The ways in this screen offers. */
+export type AccessMethod = "link" | "password" | "sso";
 
 /**
  * What the Access tab edits: the settings as a form holds them. The way in is one choice or none, and the person a guest may
@@ -19,12 +28,16 @@ export interface AccessDraft {
   companion: boolean;
   consent_keys: string[];
   styled_form_controls: boolean;
+  /** The company sign-in only: the claim a guest's token must hold, as typed. Empty for no restriction. */
+  sso_claim_name: string;
+  /** The values of that claim that may register, as typed: one on each line. Empty for no restriction. */
+  sso_claim_values: string;
 }
 
 /** The way in an event has chosen, when it is exactly one that this screen offers. Any other state is no choice, as it is to the server. */
 export function chosenMethod(methods: readonly string[]): AccessMethod | null {
   const only = methods.length === 1 ? methods[0] : undefined;
-  return only === "link" || only === "password" ? only : null;
+  return only === "link" || only === "password" || only === "sso" ? only : null;
 }
 
 /** The form for settings as the server holds them. */
@@ -39,13 +52,84 @@ export function draftFromSettings(settings: RegistrationSettingsDto): AccessDraf
     companion: settings.max_companions > 0,
     consent_keys: [...settings.consent_keys],
     styled_form_controls: settings.styled_form_controls,
+    sso_claim_name: settings.sso_claim_name ?? "",
+    sso_claim_values: settings.sso_claim_values.join("\n"),
   };
+}
+
+/** The restriction a form holds, read from what was typed: the name without its spaces, the values one to a line, none empty, none twice. */
+export function parseClaim(draft: Pick<AccessDraft, "sso_claim_name" | "sso_claim_values">): { name: string; values: string[] } {
+  const values = draft.sso_claim_values.split("\n").map((line) => line.trim());
+  return { name: draft.sso_claim_name.trim(), values: [...new Set(values.filter((value) => value !== ""))] };
+}
+
+export interface ClaimErrors {
+  name?: string;
+  values?: string;
+}
+
+/** What the person reads for each thing the shared rules (`@admitto/shared`, ssoClaim.ts) can find wrong. */
+const NAME_PROBLEMS: Record<SsoClaimNameProblem, string> = {
+  too_long: `The name can have at most ${SSO_CLAIM_NAME_MAX} characters.`,
+  bad_characters: "The name has letters, digits and signs only, with no spaces.",
+};
+const VALUE_PROBLEMS: Record<SsoClaimValueProblem, string> = {
+  too_long: `A value can have at most ${SSO_CLAIM_VALUE_MAX} characters.`,
+  control_character: "A value cannot hold a control character.",
+};
+
+function nameError(name: string, hasValues: boolean): string | undefined {
+  if (name === "") return hasValues ? "Enter the name of the claim these values belong to." : undefined;
+  const problem = ssoClaimNameProblem(name);
+  return problem === null ? undefined : NAME_PROBLEMS[problem];
+}
+
+function valuesError(values: readonly string[], hasName: boolean): string | undefined {
+  if (values.length === 0) return hasName ? "Enter at least one value, or clear the name." : undefined;
+  if (values.length > SSO_CLAIM_VALUES_MAX) return `List at most ${SSO_CLAIM_VALUES_MAX} values.`;
+  const problems = values.map((value) => ssoClaimValueProblem(value));
+  const found = problems.includes("too_long") ? "too_long" : problems.find((problem) => problem !== null);
+  return found === undefined || found === null ? undefined : VALUE_PROBLEMS[found];
+}
+
+/**
+ * What is wrong with the restriction of the company sign-in, as the server would refuse it: the name and the values go together
+ * (both or neither), within the limits. Only the company sign-in has a restriction, so any other way in has none to check.
+ */
+export function claimErrors(draft: AccessDraft): ClaimErrors {
+  if (draft.method !== "sso") return {};
+  const { name, values } = parseClaim(draft);
+  const errors: ClaimErrors = {};
+  const forName = nameError(name, values.length > 0);
+  const forValues = valuesError(values, name !== "");
+  if (forName) errors.name = forName;
+  if (forValues) errors.values = forValues;
+  return errors;
+}
+
+/** Whether a restriction differs from the one the form was made from: the values are the same when they are the same set. */
+function claimChanged(draft: AccessDraft, base: AccessDraft): boolean {
+  const now = parseClaim(draft);
+  const before = parseClaim(base);
+  return now.name !== before.name || !sameKeys(now.values, before.values);
 }
 
 /** Whether two lists name the same consents. Their order means nothing: the form lists the consents in the order of the texts. */
 function sameKeys(a: readonly string[], b: readonly string[]): boolean {
   const members = new Set(a);
   return members.size === new Set(b).size && b.every((key) => members.has(key));
+}
+
+/**
+ * The restriction of the company sign-in, when it changed: the name and the values together, `null` and an empty list to take it away.
+ * A way in other than the company sign-in has no restriction: the server clears it when the way in changes, so none is sent then.
+ * Turning registration off must always be possible, so a restriction that is not complete is left out of that save.
+ */
+function claimPatch(draft: AccessDraft, base: AccessDraft): Pick<SaveRegistrationSettingsBody, "sso_claim_name" | "sso_claim_values"> {
+  if (draft.method !== "sso" || !claimChanged(draft, base)) return {};
+  if (draft.mode === null && base.mode !== null && Object.keys(claimErrors(draft)).length > 0) return {};
+  const { name, values } = parseClaim(draft);
+  return { sso_claim_name: name === "" ? null : name, sso_claim_values: values };
 }
 
 /**
@@ -63,7 +147,7 @@ export function settingsPatch(draft: AccessDraft, base: AccessDraft): SaveRegist
   if (draft.companion !== base.companion) patch.max_companions = draft.companion ? 1 : 0;
   if (!sameKeys(draft.consent_keys, base.consent_keys)) patch.consent_keys = draft.consent_keys;
   if (draft.styled_form_controls !== base.styled_form_controls) patch.styled_form_controls = draft.styled_form_controls;
-  return patch;
+  return { ...patch, ...claimPatch(draft, base) };
 }
 
 /** The keys of the checks that are not met. */

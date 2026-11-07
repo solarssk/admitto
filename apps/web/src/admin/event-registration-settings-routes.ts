@@ -16,18 +16,15 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { REGISTRATION_MODE, type PrismaClient } from "@admitto/db";
+import { SSO_CLAIM_VALUES_MAX, ssoClaimNameProblem, ssoClaimValueProblem } from "@admitto/shared";
 import { MAX_COMPANION_SLOTS } from "@admitto/tickets";
 import { LEGAL_CONSENT_KEY_PATTERN, MAX_CONSENT_DOCUMENTS_PER_EVENT } from "../legal/legal-documents.js";
 import { SELECTABLE_ACCESS_METHODS } from "../registration/access-methods.js";
-import { SSO_CLAIM_NAME_MAX, SSO_CLAIM_VALUE_MAX, SSO_CLAIM_VALUES_MAX } from "../registration/sso-claim.js";
 import { assertEventManageAccess, requireAuditActor, requireEventId } from "./admin-helpers.js";
 import { getEventRegistrationSettings, updateEventRegistrationSettings } from "./event-registration-settings.js";
 
 /** The body is a handful of switches and at most ten short keys. */
 export const MAX_REGISTRATION_SETTINGS_BODY_BYTES = 4_096;
-
-/** The name of a claim: printable ASCII with no space, as a claim name or a URI is. */
-const CLAIM_NAME = /^[\x21-\x7e]+$/;
 
 /**
  * What a `PUT` may carry; every key is optional and an unknown one is a 400, so a key that is not a setting (a password,
@@ -53,15 +50,14 @@ const putBodySchema = z
     ask_department: z.boolean().optional(),
     styled_form_controls: z.boolean().optional(),
     consent_keys: z.array(z.string().regex(LEGAL_CONSENT_KEY_PATTERN)).max(MAX_CONSENT_DOCUMENTS_PER_EVENT).optional(),
-    sso_claim_name: z.string().trim().min(1).max(SSO_CLAIM_NAME_MAX).regex(CLAIM_NAME).nullable().optional(),
+    sso_claim_name: z.string().trim().min(1).refine((name) => ssoClaimNameProblem(name) === null).nullable().optional(),
     sso_claim_values: z
       .array(
         z
           .string()
           .trim()
           .min(1)
-          .max(SSO_CLAIM_VALUE_MAX)
-          .refine((value) => !/\p{Cc}/u.test(value)),
+          .refine((value) => ssoClaimValueProblem(value) === null),
       )
       .max(SSO_CLAIM_VALUES_MAX)
       .optional(),

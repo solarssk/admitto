@@ -4,15 +4,9 @@
  * address: an address says where mail goes, a claim of a signed token says who the provider vouches for.
  *
  * One rule, in one place. The callback judges it before it hands out a sign-in, and the submit route judges it again from
- * what the sign-in cookie holds, so a restriction an organiser tightens does not wait for a sign-in to run out.
+ * what the sign-in cookie holds, so a restriction an organiser tightens does not wait for a sign-in to run out. What an organiser
+ * may enter (the limits, the characters) is in `@admitto/shared` (ssoClaim.ts), for the form as well.
  */
-
-/** The longest name of a claim: URIs are used as claim names, and nothing longer is. */
-export const SSO_CLAIM_NAME_MAX = 100;
-/** The longest value of a claim that is accepted (a GUID is 36, a company name is shorter than this). */
-export const SSO_CLAIM_VALUE_MAX = 128;
-/** The most values one event lists. A company with several tenants, not a directory. */
-export const SSO_CLAIM_VALUES_MAX = 20;
 
 export interface ClaimRestriction {
   /** The name of the claim, as the provider's token spells it. */

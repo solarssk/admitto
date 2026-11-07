@@ -4,7 +4,7 @@ import { ApiError, fetchLegalDocuments, fetchRegistrationSettings, saveRegistrat
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { LegalDocumentDto, RegistrationSettingsDto, SaveRegistrationSettingsBody } from "../api/types.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
-import { draftFromSettings, settingsPatch, type AccessDraft } from "./accessSettings.js";
+import { claimErrors, draftFromSettings, settingsPatch, type AccessDraft } from "./accessSettings.js";
 
 /** Why a save did not happen, shown at the form: the checks that are not met (from the keys of the server's answer), or a sentence. */
 export type AccessProblem = { kind: "not_ready"; blockers: readonly string[] } | { kind: "message"; text: string };
@@ -123,6 +123,12 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     // The Save button is off while nothing has changed and busy while a save runs, so a click never gets here then.
     /* v8 ignore if */
     if (saving || !dirty) return;
+    // The fields of the restriction say what is wrong with them; this says why nothing was saved. A save that turns registration off
+    // does not wait for it: that save leaves the restriction out (settingsPatch), and the form shows the saved one afterwards.
+    if (patch.mode !== null && Object.keys(claimErrors(draft)).length > 0) {
+      setProblem({ kind: "message", text: "Fix the restriction of the company sign-in before you save." });
+      return;
+    }
     // Turning registration off closes the form for every guest at once: say what it does first.
     if (patch.mode === null) setConfirmOffOpen(true);
     else void submit();

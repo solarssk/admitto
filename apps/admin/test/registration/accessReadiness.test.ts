@@ -31,9 +31,11 @@ describe("the words of the checks", () => {
   it("send what a superadmin sets up to the superadmin, and what the organiser can put right to where they do it", () => {
     const remedy = (key: keyof typeof READINESS_COPY) => READINESS_COPY[key].remedy;
 
-    for (const key of ["bot_protection", "identity_provider", "mail_provider", "instance_url"] as const) {
+    for (const key of ["bot_protection", "mail_provider", "instance_url"] as const) {
       expect(remedy(key), key).toEqual({ text: "Ask a superadmin to set it up." });
     }
+    // The company sign-in is set up on the card of the ways in, and the organiser is told which.
+    expect(remedy("identity_provider")).toEqual({ text: "Ask a superadmin to choose the identity provider in Organisation settings, External services, Ways in." });
     // A way in is turned on at one place, and the organiser is told which.
     expect(remedy("access_method_enabled")).toEqual({ text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." });
     expect(remedy("legal_documents")?.link).toBe("legal");
@@ -52,6 +54,15 @@ describe("the words of the checks", () => {
 
     expect(words).not.toMatch(/[\u2013\u2014]/);
     expect(words).not.toMatch(/turnstile|cloudflare|smtp|_/i);
+  });
+
+  it("say the three ways in, and that the company sign-in is not set up and keeps the form closed", () => {
+    expect(READINESS_COPY.access_method.missing).toBe("Choose how guests get in: with a link, with a password or with the company sign-in.");
+    expect(READINESS_COPY.identity_provider).toMatchObject({
+      title: "Company sign-in",
+      met: "The company sign-in is set up.",
+      missing: "The company sign-in is not set up, so the form stays closed.",
+    });
   });
 
   it("read a check that the screen does not know yet, so a newer server never leaves a blank row", () => {
