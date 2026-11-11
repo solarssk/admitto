@@ -111,6 +111,7 @@ Turn on **Sensitive** in the field editor for a question whose answers should no
 - Only an Administrator of the organisation or a Superadmin can see the answers, by selecting **Show** on the attendee's page or in the request window. Every click is recorded in the audit log: who, when and which questions, never the answers. See [Roles and Permissions](Roles-and-Permissions#sensitive-answers).
 - Deleting the question deletes its answers.
 - When you turn **Sensitive** on for a question that already has answers, exports that are ready and include it are cancelled when you save. A question that an item still shows on the Requirements page cannot be made sensitive: the editor says so, and you uncheck the field on the item first.
+- A question that the wallet field mapping names cannot be made sensitive either, because passes already issued keep its answer: the editor says so, and you remove the question from the mapping in Event Settings → Wallet first.
 - When you turn **Sensitive** off, the answers already given are visible again in lists and exports. The editor warns you before you save.
 - In the forms where staff add or correct answers, the box of a sensitive question is always empty and says **Hidden after saving**. Type a new value to replace the answer; leave the box empty to keep the current one. An empty box never clears an answer, and a required question does not stop you from saving an edit.
 
@@ -177,6 +178,7 @@ A Yes / No or Single choice question can have other questions that wait for one 
 **Wallet passes**
 
 - Single choice and Yes/No fields can also be mapped onto a wallet pass field in Event Settings → Wallet (Field mapping). The other types are not offered there.
+- A field mapped this way cannot be made sensitive until you remove it from the mapping.
 - A field mapped this way and later deleted, or changed to free text, simply stops being sent to the pass.
 - See [Wallet Passes PassCreator Setup](Wallet-Passes-PassCreator-Setup).
 

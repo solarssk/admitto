@@ -75,6 +75,8 @@ export const CODE_MESSAGES: Record<string, string> = {
     "Other fields are shown only for an answer to this one. Change or remove their condition first.",
   field_in_use:
     "An item on the Requirements page still uses this field. Open the item and uncheck the field under Attendee data field first.",
+  field_in_wallet_mapping:
+    "This field is mapped onto the wallet pass. Remove it from the field mapping in Event Settings, Wallet, first.",
   field_limit_reached: "This event has reached its custom field limit.",
   file_required: "Choose a file to upload.",
   file_too_large: "File exceeds the 2 MB limit.",

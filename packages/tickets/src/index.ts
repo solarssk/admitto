@@ -116,6 +116,7 @@ export { parseCustomData, customDataValue } from "./custom-data.js";
 export {
   resolveWalletCustomFieldPlaceholders,
   sensitiveWalletMappingFields,
+  walletMappingNamesField,
   WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX,
 } from "./wallet-custom-fields.js";
 export { buildItemDetail } from "./event-item-contents.js";

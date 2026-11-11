@@ -50,6 +50,11 @@ export interface EventCustomFieldModalProps {
 const HIDDEN_ANSWERS_MESSAGE =
   "Answers to this question are hidden, so Admitto cannot tell whether anyone chose this option. Removing or renaming it can leave answers that no longer match any option. Continue?";
 
+/** The two 409s that refuse turning a question sensitive: an item shows it, or the wallet field mapping names it. Both are told under the switch. */
+function isSensitiveRefusal(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 409 && (hasApiErrorCode(err, "field_in_use") || hasApiErrorCode(err, "field_in_wallet_mapping"));
+}
+
 /** A hidden count (a sensitive question): any option that exists may have answers on it, and one added in this edit (no original text) has none. */
 function mayHaveHiddenAnswers(row: OptionRow): boolean {
   return row.originalText !== "";
@@ -231,7 +236,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
       onSaved();
     } catch (err) {
       const message = operatorApiErrorMessage(err, "Failed to save field.");
-      if (form.sensitive && err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "field_in_use")) setSensitiveRefusal(message);
+      if (form.sensitive && isSensitiveRefusal(err)) setSensitiveRefusal(message);
       else addToast(message, "error");
     } finally {
       setSaving(false);

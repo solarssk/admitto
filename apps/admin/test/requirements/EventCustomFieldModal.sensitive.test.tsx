@@ -137,6 +137,34 @@ describe("the Sensitive switch of the field editor", { timeout: 30_000 }, () => 
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("says in the editor that the wallet field mapping names the question (409 field_in_wallet_mapping), not in a toast, and the switch stays on", async () => {
+    api.update.mockRejectedValue(new ApiError(409, "field_in_wallet_mapping", "field_in_wallet_mapping"));
+    const { onSaved } = await openEditor(ordinary);
+    fireEvent.click(toggle());
+
+    save();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(CODE_MESSAGES.field_in_wallet_mapping);
+    expect(alert.textContent).toContain("Event Settings, Wallet");
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(toggle().checked).toBe(true);
+    fireEvent.click(toggle());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("tells a 409 with another code in a toast, not in the editor", async () => {
+    api.update.mockRejectedValue(new ApiError(409, "field_controls_others", "field_controls_others"));
+    await openEditor(ordinary);
+    fireEvent.click(toggle());
+
+    save();
+
+    expect((await screen.findByTestId("at-toast")).textContent).toContain(CODE_MESSAGES.field_controls_others);
+    expect(within(screen.getByRole("dialog")).queryByRole("alert")).toBeNull();
+  });
+
   it("tells any other failure in a toast, not in the editor", async () => {
     api.update.mockRejectedValue(new ApiError(500, "boom"));
     await openEditor(ordinary);

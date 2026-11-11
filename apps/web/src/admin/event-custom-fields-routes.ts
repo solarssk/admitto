@@ -25,6 +25,8 @@ import {
   lockOpenAttendeeJobs,
   stopOpenAttendeeJobs,
   STOPPED_BY_FIELD_DELETION,
+  walletMappingNamesField,
+  parseWalletFieldMapping,
   readStoredFieldRules,
   removeFieldAnswers,
   writeBulkActionLog,
@@ -54,6 +56,7 @@ class FieldLimitReachedError extends Error {}
 /** Thrown when a delete's in-use recheck (inside the lock) finds an item reference that appeared
  * after the initial check. Caught below and mapped to the same 409 response. */
 class FieldInUseError extends Error {}
+class FieldInWalletMappingError extends Error {}
 
 /** Thrown when a save would leave a field Required while the registration form does not ask it,
  * in an event that takes registrations. Mapped to 422 `required_field_not_on_form`. */
@@ -670,6 +673,7 @@ function patchFieldFailure(c: Context, err: unknown): Response {
   if (err instanceof ShowWhenError) return showWhenProblemResponse(c, err.problem);
   if (err instanceof FieldGoneError) return c.json({ error: "forbidden" }, 403);
   if (err instanceof FieldInUseError) return c.json({ error: "field_in_use" }, 409);
+  if (err instanceof FieldInWalletMappingError) return c.json({ error: "field_in_wallet_mapping" }, 409);
   throw err;
 }
 
@@ -682,6 +686,12 @@ async function itemsShowField(tx: Prisma.TransactionClient, eventId: string, sou
     const fields = (config as { content_fields?: unknown }).content_fields;
     return Array.isArray(fields) && fields.includes(sourceField);
   });
+}
+
+/** Whether the event's wallet field mapping names the question. Read under the custom fields lock, from the event row as it is now. */
+async function walletMappingShowsField(tx: Prisma.TransactionClient, eventId: string, sourceField: string): Promise<boolean> {
+  const event = await tx.event.findUnique({ where: { id: eventId }, select: { wallet_field_mapping: true } });
+  return walletMappingNamesField(parseWalletFieldMapping(event?.wallet_field_mapping), sourceField);
 }
 
 /** PATCH /api/admin/events/:eventId/custom-fields/:fieldId */
@@ -737,6 +747,10 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
       // item already shows is refused as well: the organiser takes it off the item first, as before deleting it.
       if (parsed.data.sensitive === true && !current.sensitive && (await itemsShowField(tx, eventId, current.source_field))) {
         throw new FieldInUseError();
+      }
+      // The pass is built without the answer to a sensitive question, but a pass already issued keeps it: the organiser takes the question off the wallet mapping first.
+      if (parsed.data.sensitive === true && !current.sensitive && (await walletMappingShowsField(tx, eventId, current.source_field))) {
+        throw new FieldInWalletMappingError();
       }
       if (patchTouchesConditions(parsed.data)) {
         await assertConditionsHold(tx, eventId, patchedConditionField(current, parsed.data));
