@@ -53,6 +53,7 @@
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
+import { customGuestOrigin, type GuestDomain } from "@admitto/shared";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { placeRegistration, type PlaceRegistrationResult, type PublicWriteOptions, type RegistrantSubmission } from "@admitto/tickets";
 import {
@@ -208,8 +209,14 @@ async function refuseChallenge(
   deps: RegistrationSubmitDeps,
   slug: string,
   token: unknown,
+  guestDomain: GuestDomain,
 ): Promise<Response | null> {
-  const expectedHosts = await resolveChallengeHosts(deps.db, { injectedBaseUrl: deps.injectedBaseUrl });
+  // A challenge solved on the event's own address (once verified, D-C6) is accepted as one solved on the instance's: Cloudflare
+  // reports the host the widget was on, and that is where the form is. The address is read from the event, never from the request.
+  const expectedHosts = await resolveChallengeHosts(deps.db, {
+    injectedBaseUrl: deps.injectedBaseUrl,
+    eventHost: customGuestOrigin(guestDomain),
+  });
   const result = await verifyBotChallenge(deps.db, { token, expectedHosts, slug }, deps.challenge);
   if (result.ok) return null;
   if (botChallengeFailureStatus(result.reason) === 503) return tryAgain(c);
@@ -340,7 +347,7 @@ async function admitByChallenge(
   pace: AnswerPace,
 ): Promise<Admitted | Response> {
   const slug = target.form.event.slug;
-  const refusal = await refuseChallenge(c, deps, slug, envelope.challenge);
+  const refusal = await refuseChallenge(c, deps, slug, envelope.challenge, target.guestDomain);
   if (refusal) return refusal;
   const startedAt = pace.now();
   if (!(await checkRegistrationEventRateLimit(deps.store, target.eventId))) return tooManyRequests(c);

@@ -22,12 +22,14 @@ import {
   type MailMessage,
 } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
+import { resolveGuestOrigin } from "@admitto/shared";
 import { formatDate, formatEventHoursRangeText } from "@admitto/shared/region-date-format";
 import { issueTicket, loadEventTicketTypes, parseTicketAddressComponents } from "@admitto/tickets";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { claimInitialDelivery, createResendDelivery, type ClaimInitialInput } from "./claim.js";
 import { snapshotUnusableUpdate, tryMaterializeStoredMessage } from "./snapshot-unusable.js";
 import {
+  GUEST_DOMAIN_SELECT,
   buildAttendeeMailLinks,
   type AttendeeLinkInput,
   type AttendeeMailLinks,
@@ -271,10 +273,13 @@ async function processAttendeeForSend({
     attendee.first_name !== null || attendee.last_name !== null
       ? { first_name: attendee.first_name ?? "", last_name: attendee.last_name ?? "" }
       : splitDisplayName(attendee.name);
+  // The map image and the branding images are fetched by the guest's mail client from the address the guest is sent to
+  // (the event's own, once verified; `/m`, `/uploads` and `/assets` are served there), so the panel's address does not reach the mail.
+  const guestOrigin = resolveGuestOrigin(event, baseUrl);
   const locationVars = buildEventLocationTemplateVars(
     event.id,
     event.location_details,
-    baseUrl,
+    guestOrigin,
     env,
   );
   const country =
@@ -309,7 +314,7 @@ async function processAttendeeForSend({
       download_page_url: "",
       ...customAssets.vars,
     },
-    { baseUrl, customAssetPlaceholders: customAssets.names },
+    { baseUrl: guestOrigin, customAssetPlaceholders: customAssets.names },
   );
 
   const claimInput: ClaimInitialInput = {
@@ -550,7 +555,7 @@ export async function sendTicketEmails(
 
   const event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
-    include: { organization: true, location_details: true },
+    include: { organization: true, location_details: true, registration_settings: { select: GUEST_DOMAIN_SELECT } },
   });
 
   const mailConfig = await resolveMailConfig(eventId, prisma, env);

@@ -22,6 +22,7 @@ import {
   type RegistrationAccessMethod,
   type RegistrationMode,
 } from "@admitto/db";
+import { resolveGuestOrigin, type GuestDomain } from "@admitto/shared";
 import { loadRegistrantFormFields, writeAdminAuditLog, type RegistrantFormField, type StaffActor } from "@admitto/tickets";
 import { lockAndLoadLegalGateRows, loadLegalGateRows, publishedConsentKeys } from "../legal/registration-gate.js";
 import type { SelectableAccessMethod } from "../registration/access-methods.js";
@@ -80,7 +81,8 @@ export function defaultSettings(): SettingsValues {
 export type RegistrationSettingsDto = SettingsValues & {
   /** Whether a password is stored for the event. Only that: never the hash, never its length. */
   password_set: boolean;
-  /** The address guests use: the instance's address and `/r/<slug>`. Null while the instance has no address. */
+  /** The address guests use: `/r/<slug>` on the event's own address once it is verified (D-C6), else on the instance's. Null while the
+   * instance has no address. */
   guest_url: string | null;
   readiness: RegistrationReadinessCheck[];
   /** The questions the form asks, in the order it asks them. */
@@ -137,6 +139,9 @@ const SETTINGS_SELECT = {
   styled_form_controls: true,
   sso_claim_name: true,
   sso_claim_values: true,
+  // Not settings of this form (a superadmin sets the address, ./event-custom-domain-routes.ts), but what the address of the form is.
+  custom_domain: true,
+  custom_domain_verified_at: true,
 } as const satisfies Prisma.EventRegistrationSettingsSelect;
 
 type StoredRow = Prisma.EventRegistrationSettingsGetPayload<{ select: typeof SETTINGS_SELECT }>;
@@ -159,13 +164,17 @@ function valuesOf(row: StoredRow): SettingsValues {
   };
 }
 
-type StoredSettings = { values: SettingsValues; passwordSet: boolean };
+type StoredSettings = { values: SettingsValues; passwordSet: boolean; domain: GuestDomain };
 
 async function readStoredSettings(db: Client, eventId: string): Promise<StoredSettings> {
   const row = await db.eventRegistrationSettings.findUnique({ where: { event_id: eventId }, select: SETTINGS_SELECT });
   // A count, not a read: the hash is never loaded.
   const withPassword = await db.eventRegistrationSettings.count({ where: { event_id: eventId, password_hash: { not: null } } });
-  return { values: row ? valuesOf(row) : defaultSettings(), passwordSet: withPassword > 0 };
+  return {
+    values: row ? valuesOf(row) : defaultSettings(),
+    passwordSet: withPassword > 0,
+    domain: { custom_domain: row?.custom_domain ?? null, custom_domain_verified_at: row?.custom_domain_verified_at ?? null },
+  };
 }
 
 /**
@@ -272,16 +281,20 @@ async function writeSettingsAudit(
 function toDto(args: {
   values: SettingsValues;
   passwordSet: boolean;
+  domain: GuestDomain;
   slug: string;
   environment: ReadinessEnvironment;
   checks: RegistrationReadinessCheck[];
   fields: readonly RegistrantFormField[];
 }): RegistrationSettingsDto {
-  const { values, passwordSet, slug, environment, checks, fields } = args;
+  const { values, passwordSet, domain, slug, environment, checks, fields } = args;
   return {
     ...values,
     password_set: passwordSet,
-    guest_url: environment.instanceBaseUrl === null ? null : `${environment.instanceBaseUrl}/r/${slug}`,
+    guest_url:
+      environment.instanceBaseUrl === null
+        ? null
+        : `${resolveGuestOrigin({ registration_settings: domain }, environment.instanceBaseUrl)}/r/${slug}`,
     readiness: checks,
     public_fields: publicFieldsOf(fields),
   };
@@ -307,7 +320,7 @@ export async function getEventRegistrationSettings(
     environment,
     event: { archived: event.archived_at !== null, ended: isOver(event, now), legalRows, fields },
   });
-  return toDto({ values: stored.values, passwordSet: stored.passwordSet, slug: event.slug, environment, checks, fields });
+  return toDto({ values: stored.values, passwordSet: stored.passwordSet, domain: stored.domain, slug: event.slug, environment, checks, fields });
 }
 
 type SaveRequest = {
@@ -359,7 +372,7 @@ async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest):
   }
   return {
     kind: "saved",
-    settings: toDto({ values: after, passwordSet: stored.passwordSet && !passwordCleared, slug: event.slug, environment, checks, fields }),
+    settings: toDto({ values: after, passwordSet: stored.passwordSet && !passwordCleared, domain: stored.domain, slug: event.slug, environment, checks, fields }),
   };
 }
 

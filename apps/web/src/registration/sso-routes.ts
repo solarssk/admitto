@@ -6,10 +6,10 @@
  * those tables before and after a whole flow. What it leaves is two cookies (./sso-session.ts) and a row of state that the
  * worker deletes.
  *
- * The start is the page of an event (`/r/<slug>/sso/start`), the callback is ONE address for the instance (`/sso/callback`,
- * {@link buildGuestSsoRedirectUri}), so the provider's administrator lists one address once and every event with the company
- * sign-in works without a new entry. The callback therefore does not know the event: it reads it from the row of the state,
- * once the state is spent.
+ * The start is the page of an event (`/r/<slug>/sso/start`), the callback is ONE path for every event (`/sso/callback`,
+ * {@link buildGuestSsoRedirectUri}), on the instance's address and on the own address of each event that has one (D-C6), so the
+ * provider's administrator lists one address per host once and every event with the company sign-in works without a new entry. The
+ * callback therefore does not know the event: it reads it from the row of the state, once the state is spent.
  *
  * Anonymous, and the callback is where a stranger could make a guest sign in as somebody else, so its order is:
  *
@@ -43,7 +43,9 @@ import {
   generateOauthSecret,
 } from "@admitto/auth";
 import type { PrismaClient } from "@admitto/db";
+import { customGuestOrigin, type GuestDomain } from "@admitto/shared";
 import { emitSystemLog } from "@admitto/shared/system-log";
+import { resolveRequestOrigin } from "../auth/same-origin-post.js";
 import { respondRegistrationNotFound } from "../registration-page-security.js";
 import { resolveRegistration, type GuestAccess, type ResolvedRegistration } from "./form-model.js";
 import { identityFromToken, noticeFor, type SsoNotice, type SsoRefusal } from "./sso-identity.js";
@@ -59,14 +61,26 @@ import { createGuestSsoState, spendGuestSsoState, type SpentGuestSsoState } from
 import { EVENT_SLUG, newGuestSsoStateValue, parseGuestSsoStateValue, type GuestSsoStateValue } from "./sso-state-value.js";
 
 /**
- * The one place that builds the address the provider sends the guest back to: ONE for the whole instance, the same for every
- * event, so it is entered at the provider once. It is the address of the instance, as the redirect of staff is. The cookies
- * of the flow are host-only, so the guest must start and finish on the same host: when events have an address of their own
- * (PR 119) this is the function that takes that address as its base, and the provider must have one such address per host
- * in its list of allowed redirects.
+ * The one place that builds the address the provider sends the guest back to: ONE per host a guest can sign in on, the same for
+ * every event on that host, so it is entered at the provider once. The host is the instance's, or, for the guests of an event
+ * that has a verified address of its own (D-C6), that address (`signInOrigin`): one per address, which the provider's list of
+ * allowed redirects must hold besides the instance's (the panel lists them: `redirect_uris`). The cookies of the flow are
+ * host-only, so the guest must start and finish on the same host.
  */
-export function buildGuestSsoRedirectUri(baseUrl: string): string {
-  return `${baseUrl.replace(/\/$/, "")}${GUEST_SSO_CALLBACK_PATH}`;
+export function buildGuestSsoRedirectUri(origin: string): string {
+  return `${origin.replace(/\/$/, "")}${GUEST_SSO_CALLBACK_PATH}`;
+}
+
+/**
+ * The origin the sign-in of this request is built on: the event's own address when the guest is ON it (the request came to that
+ * host, as the proxy reports it) and the event has it verified, else the instance's. It is never a value of the request: it is one of
+ * two the database and the configuration give, and the request only chooses between them. Start and callback both ask, and a guest's
+ * cookies are host-only, so both see the same host: a guest who came by an old link on the instance's address signs in there (the
+ * old links go on working, D-C6), and one who came by the event's own address signs in there.
+ */
+function signInOrigin(c: Context, domain: GuestDomain, instanceBaseUrl: string): string {
+  const own = customGuestOrigin(domain);
+  return own !== null && resolveRequestOrigin(c) === own ? own : instanceBaseUrl.replace(/\/$/, "");
 }
 
 /** What a `code` and a `state` can be: the longest the parameters of a callback are read at. */
@@ -182,7 +196,7 @@ export async function handleSsoStart(c: Context, deps: RegistrationSsoDeps): Pro
     setGuestSsoFlowCookie(c, flow);
     return c.redirect(
       buildOidcAuthorizeUrl(provider, {
-        redirectUri: buildGuestSsoRedirectUri(baseUrl),
+        redirectUri: buildGuestSsoRedirectUri(signInOrigin(c, target.guestDomain, baseUrl)),
         state: flow.value,
         nonce,
         codeChallenge: codeChallengeS256(codeVerifier),
@@ -277,7 +291,7 @@ async function signInForEvent(
       provider,
       code,
       spent.codeVerifier,
-      buildGuestSsoRedirectUri(baseUrl),
+      buildGuestSsoRedirectUri(signInOrigin(c, target.guestDomain, baseUrl)),
       spent.nonce,
     ));
   } catch {

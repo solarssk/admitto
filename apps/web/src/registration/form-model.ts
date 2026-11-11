@@ -19,6 +19,7 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { resolveEventContactVars } from "@admitto/mail-templates";
+import type { GuestDomain } from "@admitto/shared";
 import {
   eventCustomFieldRulesMaxLength,
   eventEndsAtUtc,
@@ -163,7 +164,16 @@ export type GuestAccess =
 export type ResolvedRegistration =
   | { kind: "not_found" }
   | { kind: "closed"; page: ClosedFormModel }
-  | { kind: "open"; form: RegistrationFormModel; eventId: string; fields: readonly RegistrantFormField[]; access: GuestAccess };
+  | {
+      kind: "open";
+      form: RegistrationFormModel;
+      eventId: string;
+      fields: readonly RegistrantFormField[];
+      access: GuestAccess;
+      /** The event's own address for guests, with whether it is verified (D-C6): what the sign-in's return address and the
+       * challenge's host are chosen from (`resolveGuestOrigin`, `customGuestOrigin`). */
+      guestDomain: GuestDomain;
+    };
 
 const NOT_FOUND: ResolvedRegistration = { kind: "not_found" };
 
@@ -193,6 +203,8 @@ const EVENT_SELECT = {
       styled_form_controls: true,
       sso_claim_name: true,
       sso_claim_values: true,
+      custom_domain: true,
+      custom_domain_verified_at: true,
     },
   },
 } as const;
@@ -361,6 +373,7 @@ async function loadOpenForm(
     eventId: row.id,
     fields,
     access,
+    guestDomain: { custom_domain: settings.custom_domain, custom_domain_verified_at: settings.custom_domain_verified_at },
     form: {
       event,
       mode,

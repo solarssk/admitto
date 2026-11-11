@@ -122,7 +122,7 @@ export function eventSeeder(prisma: PrismaClient, orgId: string) {
 
 /**
  * Cloudflare's siteverify as the route sees it. A token is `<kind>:<slug>:<n>`: `ok` passes once, as a real token does
- * (a second use is `timeout-or-duplicate`), `host` was solved on another host, `bound` was made for another event,
+ * (a second use is `timeout-or-duplicate`), `host` was solved on another host, `on=<host>` on the host named, `bound` was made for another event,
  * `refused` is a token Cloudflare turns down, `down` is a network failure, `broken` is an answer that is no JSON.
  * `whileChecking` runs while an `ok` token is being checked, before the answer: what an administrator can do during
  * the call over the network.
@@ -142,6 +142,8 @@ export function cloudflare(whileChecking: () => Promise<void> = async () => {}) 
     used.add(token);
     if (kind === "host") return answer({ success: true, hostname: "evil.example", cdata: `reg-${slug}` });
     if (kind === "bound") return answer({ success: true, hostname: HOST, cdata: "reg-another-event" });
+    // `on=<host>`: solved on that host (the event's own address, D-C6).
+    if (kind?.startsWith("on=")) return answer({ success: true, hostname: kind.slice(3), cdata: `reg-${slug}` });
     await whileChecking();
     return answer({ success: true, hostname: HOST, cdata: `reg-${slug}` });
   });

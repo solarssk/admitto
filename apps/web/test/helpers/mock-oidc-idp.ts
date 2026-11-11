@@ -20,6 +20,9 @@ export interface MockOidcIdp {
   setNextToken(token: MockIdTokenOverrides): void;
   /** How many times the token endpoint was called: a callback that is refused before it asks the provider leaves this alone. */
   tokenRequests(): number;
+  /** The `redirect_uri` of each call of the token endpoint, in order: a real provider refuses a code whose redirect differs from the
+   * one of the authorize request, and a test of a flow on several hosts compares the two. */
+  tokenRedirectUris(): string[];
   /** A real provider spends a code on its first use. With `true` this one does not, so that a test of the guest sign-in can
    * show that it is the state, and not the provider, that stops a second callback. */
   reuseCodes(on: boolean): void;
@@ -47,6 +50,7 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
   let nextGroups: string[] = [];
   let nextToken: MockIdTokenOverrides = {};
   let tokenRequests = 0;
+  const tokenRedirectUris: string[] = [];
   let reuseCodes = false;
 
   const server = createServer(async (req, res) => {
@@ -81,6 +85,7 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
       }
       if (!reuseCodes) codeState.delete(code);
       tokenRequests += 1;
+      tokenRedirectUris.push(body.get("redirect_uri") ?? "");
       const idToken = await new jose.SignJWT({
         nonce: state.token.nonce ?? state.nonce,
         email: "oidc-flow@example.com",
@@ -141,6 +146,7 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
       nextToken = token;
     },
     tokenRequests: () => tokenRequests,
+    tokenRedirectUris: () => [...tokenRedirectUris],
     reuseCodes: (on: boolean) => {
       reuseCodes = on;
     },
