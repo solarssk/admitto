@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
@@ -2083,6 +2083,18 @@ describe("whose answer a question asks for", () => {
 
       expect((await patchField(EVENT_CF_ORDER, field.id, { sensitive: true, label: "Badge name" })).status).toBe(200);
       expect((await patchField(EVENT_CF_ORDER, field.id, { sensitive: false })).status).toBe(200);
+      expect(await isSensitive(field.id)).toBe(false);
+    });
+
+    it("lets a failure that is not a known refusal through as a 500, and changes nothing", async () => {
+      const field = await makeField(EVENT_CF_ORDER, { source_field: "badge_name" });
+      // $transaction itself, so the rejection reaches the handler's own catch, which maps the refusals it knows and rethrows the rest.
+      const transactionSpy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("unexpected"));
+      try {
+        expect(await refusal(await patchField(EVENT_CF_ORDER, field.id, { sensitive: true }))).toEqual([500, "internal_error"]);
+      } finally {
+        transactionSpy.mockRestore();
+      }
       expect(await isSensitive(field.id)).toBe(false);
     });
   });
