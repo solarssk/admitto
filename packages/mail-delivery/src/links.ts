@@ -105,7 +105,7 @@ export function buildAttendeeMailLinks(
   };
 }
 
-/** Resolve mail links at send/retry — decrypts token_enc only in the point of use. `baseUrl` is the instance's address; the host of
+/** Resolve mail links at send/retry - decrypts token_enc only in the point of use. `baseUrl` is the instance's address; the host of
  * the guest-facing links is chosen from the event (see `buildAttendeeMailLinks`), so no caller has to. */
 export async function resolveAttendeeMailLinks(
   attendeeId: string,

@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { PrismaClient } from "@admitto/db";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma, type PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { MAX_CUSTOM_DOMAIN_BODY_BYTES, judgeCustomDomain } from "../../src/admin/event-custom-domain-routes.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
@@ -389,6 +389,26 @@ describe("what a change takes back", () => {
       custom_domain_verified_at: null,
       custom_domain_checked_at: null,
     });
+  });
+});
+
+describe("a failure the route does not expect", () => {
+  it("answers 404 when the event is deleted while the change is made, and 500 for any other failure, with nothing stored", async () => {
+    const gone = new Prisma.PrismaClientKnownRequestError("foreign key", { code: "P2003", clientVersion: "test" });
+    const spy = vi.spyOn(prisma, "$transaction");
+    try {
+      spy.mockRejectedValueOnce(gone);
+      const deleted = await put(OWN, { application: freshApp() });
+      expect(deleted.status).toBe(404);
+      expect(await deleted.json()).toEqual({ error: "not_found" });
+
+      spy.mockRejectedValueOnce(new Error("unexpected"));
+      const broken = await put(OWN, { application: freshApp() });
+      expect(broken.status).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await rowOf()).toBeNull();
   });
 });
 
