@@ -19,11 +19,11 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { resolveEventContactVars } from "@admitto/mail-templates";
-import type { GuestDomain } from "@admitto/shared";
 import {
   eventCustomFieldRulesMaxLength,
   eventEndsAtUtc,
   type EventCustomFieldRules,
+  type GuestDomain,
   type GuestFormIcon,
   type ShowWhen,
 } from "@admitto/shared";

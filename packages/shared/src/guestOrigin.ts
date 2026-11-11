@@ -25,7 +25,7 @@ export interface GuestOriginEvent {
  * is not used: the guests are sent to the instance rather than to a host nobody checked.
  */
 export function customGuestOrigin(settings: GuestDomain | null): string | null {
-  if (settings === null || settings.custom_domain === null || settings.custom_domain_verified_at === null) return null;
+  if (!settings?.custom_domain || settings.custom_domain_verified_at === null) return null;
   const parsed = parseCustomDomain(settings.custom_domain);
   return parsed.ok && parsed.domain === settings.custom_domain ? `https://${parsed.domain}` : null;
 }

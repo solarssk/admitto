@@ -48,7 +48,7 @@ const RAW_CHARACTERS = /^[\p{L}\p{N}\p{M}.-]+$/u;
 const LABEL_CHARACTERS = /^[a-z0-9-]+$/;
 const LABEL_MAX = 63;
 const STARTS_WITH_LETTER = /^[a-z]/;
-const ALL_DIGITS = /^[0-9]+$/;
+const ALL_DIGITS = /^\d+$/;
 /** Top-level labels that are never a public name. */
 const RESERVED_TOP_LABELS: ReadonlySet<string> = new Set(["localhost", "local", "internal"]);
 
