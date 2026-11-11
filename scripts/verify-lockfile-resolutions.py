@@ -9,6 +9,8 @@ otherwise, and npm ci passed silently. Run after `npm ci` to catch that class of
 
 Root package.json `overrides` intentionally pin some transitive deps below what their
 parents request; those show up as permanent, expected "invalid" entries and are excluded.
+An override key may carry the range of requests it applies to (`minimatch@>=7.0.0 <11.0.1`);
+only the package name matters here.
 """
 from __future__ import annotations
 
@@ -33,8 +35,23 @@ KNOWN_TRANSITIVE_MISMATCHES = {
 }
 
 
+def override_pins(overrides: dict) -> dict[str, list[str]]:
+    """Group the string-valued root overrides by package name.
+
+    A key is a bare name (`uuid`) or a name plus the range of requests it applies to
+    (`minimatch@>=7.0.0 <11.0.1`, `@scope/pkg@^1`); the `@` that starts a scoped name is not a
+    separator. Object values pin a child of one parent and are not matched by name here.
+    """
+    pins: dict[str, list[str]] = {}
+    for key, value in overrides.items():
+        if isinstance(value, str):
+            name = key[: key.find("@", 1)] if "@" in key[1:] else key
+            pins.setdefault(name, []).append(value)
+    return pins
+
+
 def main() -> int:
-    overrides = json.loads((ROOT / "package.json").read_text()).get("overrides", {})
+    pins = override_pins(json.loads((ROOT / "package.json").read_text()).get("overrides", {}))
 
     npm = shutil.which("npm")
     node_bin = shutil.which("node")
@@ -52,21 +69,23 @@ def main() -> int:
 
     problems: set[tuple[str, str]] = set()
 
-    def is_explained_by_override(name: str, child: dict) -> bool:
-        # An override pin only explains an "invalid" entry when the resolved version actually
-        # satisfies it - i.e. the override is doing its job overriding some other consumer's
-        # older want. A resolved version that doesn't even satisfy its own override is still a
-        # bug (the override not being honored), not the expected override skew.
-        spec = overrides.get(name)
-        version = child.get("version")
-        if not isinstance(spec, str) or not version:
-            return False
+    def satisfies(version: str, spec: str) -> bool:
         check = subprocess.run(
             [node_bin, "-e", "process.exit(require('semver').satisfies(process.argv[1], process.argv[2]) ? 0 : 1)",
              version, spec],
             cwd=ROOT,
         )
         return check.returncode == 0
+
+    def is_explained_by_override(name: str, child: dict) -> bool:
+        # An override pin only explains an "invalid" entry when the resolved version actually
+        # satisfies it - i.e. the override is doing its job overriding some other consumer's
+        # older want. A resolved version that doesn't even satisfy its own override is still a
+        # bug (the override not being honored), not the expected override skew.
+        version = child.get("version")
+        if not version:
+            return False
+        return any(satisfies(version, spec) for spec in pins.get(name, []))
 
     def walk(node: dict) -> None:
         for name, child in node.get("dependencies", {}).items():
