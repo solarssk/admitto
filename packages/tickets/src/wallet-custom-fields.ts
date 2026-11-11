@@ -31,10 +31,23 @@ export function sensitiveWalletMappingFields(
   sensitiveFields: readonly SensitivityField[],
 ): string[] {
   const sensitive = sensitiveSourceFields(sensitiveFields);
-  const named = Object.values(mapping)
+  return [...new Set(walletMappingCustomFields(mapping).filter((sourceField) => sensitive.has(sourceField)))];
+}
+
+/** The `source_field`s that a wallet field mapping names (`"custom:<source_field>"` values). */
+function walletMappingCustomFields(mapping: Record<string, string>): string[] {
+  return Object.values(mapping)
     .filter((value) => value.startsWith(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX))
     .map((value) => value.slice(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX.length));
-  return [...new Set(named.filter((sourceField) => sensitive.has(sourceField)))];
+}
+
+/**
+ * Whether a wallet field mapping names the question `sourceField` (any property of the pass). A question that is named cannot
+ * become sensitive: its answer may already be on issued passes, and the pass on the guest's phone keeps it until it is updated
+ * (D-E6). The organiser takes the question off the mapping first, as for an item.
+ */
+export function walletMappingNamesField(mapping: Record<string, string> | null, sourceField: string): boolean {
+  return mapping !== null && walletMappingCustomFields(mapping).includes(sourceField);
 }
 
 /**

@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { PrismaClient, type Prisma } from "@admitto/db";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
 import { buildTestApp } from "../helpers/build-test-app.js";
@@ -2046,6 +2046,45 @@ describe("whose answer a question asks for", () => {
     expect((await patchField(EVENT_CF_ORDER, field.id, { sensitive: true })).status).toBe(200);
     expect((await prisma.eventCustomField.findUniqueOrThrow({ where: { id: field.id } })).sensitive).toBe(true);
     await prisma.eventItem.delete({ where: { event_id_key: { event_id: EVENT_CF_ORDER, key: "badge_item" } } });
+  });
+
+  describe("a question that the wallet field mapping names (D-E6)", () => {
+    const setMapping = (mapping: Record<string, string> | null) =>
+      prisma.event.update({ where: { id: EVENT_CF_ORDER }, data: { wallet_field_mapping: mapping ?? Prisma.JsonNull } });
+    const isSensitive = async (id: string) => (await prisma.eventCustomField.findUniqueOrThrow({ where: { id } })).sensitive;
+    afterEach(() => setMapping(null));
+
+    it("refuses sensitive with 409 field_in_wallet_mapping, leaves the question as it was, and lets it once the mapping drops it", async () => {
+      const field = await makeField(EVENT_CF_ORDER, { source_field: "badge_name" });
+      // The mapping names two questions, and the property is not called after the question: the name of the question decides.
+      await setMapping({ shirt: "custom:other_field", pass_badge: "custom:badge_name" });
+
+      expect(await refusal(await patchField(EVENT_CF_ORDER, field.id, { sensitive: true }))).toEqual([409, "field_in_wallet_mapping"]);
+      expect(await isSensitive(field.id)).toBe(false);
+      // Another change of the same question is not held up by the mapping.
+      expect((await patchField(EVENT_CF_ORDER, field.id, { label: "Badge name" })).status).toBe(200);
+
+      await setMapping({ shirt: "custom:other_field" });
+      expect((await patchField(EVENT_CF_ORDER, field.id, { sensitive: true })).status).toBe(200);
+      expect(await isSensitive(field.id)).toBe(true);
+    });
+
+    it("does not refuse a question the mapping does not name, a lookalike property, or an event without a mapping", async () => {
+      const lookalike = await makeField(EVENT_CF_ORDER, { source_field: "badge_name" });
+      const other = await makeField(EVENT_CF_ORDER, { source_field: "diet" });
+      await setMapping({ badge_name: "first_name", diet_card: "custom:diet_card" });
+      expect((await patchField(EVENT_CF_ORDER, lookalike.id, { sensitive: true })).status).toBe(200);
+      expect((await patchField(EVENT_CF_ORDER, other.id, { sensitive: true })).status).toBe(200);
+    });
+
+    it("does not look at the mapping for a question that is sensitive already, or when it is turned off", async () => {
+      const field = await makeField(EVENT_CF_ORDER, { source_field: "badge_name", sensitive: true });
+      await setMapping({ pass_badge: "custom:badge_name" });
+
+      expect((await patchField(EVENT_CF_ORDER, field.id, { sensitive: true, label: "Badge name" })).status).toBe(200);
+      expect((await patchField(EVENT_CF_ORDER, field.id, { sensitive: false })).status).toBe(200);
+      expect(await isSensitive(field.id)).toBe(false);
+    });
   });
 
   it("does not look at the items when the recipient stays the same, or when a question moves back to the guest", async () => {
