@@ -45,8 +45,6 @@ export type CustomDomainParse = { ok: true; domain: string } | { ok: false; prob
 
 /** Letters, digits and marks of any script (an internationalised name), dots and hyphens: nothing that is syntax in an address. */
 const RAW_CHARACTERS = /^[\p{L}\p{N}\p{M}.-]+$/u;
-/** The digits and dots of an IPv4 address in any of its short forms. */
-const IPV4_LIKE = /^[0-9.]+$/;
 const LABEL_CHARACTERS = /^[a-z0-9-]+$/;
 const LABEL_MAX = 63;
 const STARTS_WITH_LETTER = /^[a-z]/;
@@ -87,7 +85,6 @@ export function parseCustomDomain(raw: string): CustomDomainParse {
   if (raw.length > CUSTOM_DOMAIN_MAX) return { ok: false, problem: "too_long" };
   if (!RAW_CHARACTERS.test(raw)) return { ok: false, problem: "bad_characters" };
   if (raw.endsWith(".")) return { ok: false, problem: "trailing_dot" };
-  if (IPV4_LIKE.test(raw)) return { ok: false, problem: "ip_address" };
   const host = asciiHost(raw);
   if (host === null) return { ok: false, problem: "bad_label" };
   const problem = labelsProblem(host);

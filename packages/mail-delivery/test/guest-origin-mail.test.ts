@@ -50,6 +50,20 @@ beforeAll(async () => {
     '<p><a href="{{ticket_url}}">Ticket</a> <a href="{{apple_wallet_url}}">Apple</a> <a href="{{google_wallet_url}}">Google</a></p>',
     '<p><img src="{{qr_image_url}}" alt="QR" /><img src="{{logo_url}}" alt="Logo" /></p>',
   ].join("");
+  // The confirmation mail of the first event holds the logo too, so the host of the images of that mail is looked at.
+  const confirmBody = '<p><a href="{{confirm_url}}">Confirm</a></p><p><img src="{{logo_url}}" alt="Logo" /></p>';
+  await prisma.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_A.id,
+      name: "registration-confirm",
+      label: "Confirm",
+      subject_template: "Confirm your address",
+      body_template: confirmBody,
+      compiled_html_template: confirmBody,
+      template_format: "html",
+    },
+  });
   for (const event of [EVENT_A, EVENT_B, EVENT_PLAIN]) {
     const template = await prisma.mailTemplate.create({
       data: {
@@ -110,6 +124,7 @@ describe("the confirmation mail of a registration", () => {
     const before = collectMail();
     await drainRegistrationMails(prisma, TEST_ENV, before.deps, { baseUrl: BASE_URL });
     expect(before.messages[0]!.html).toContain(buildConfirmUrl(BASE_URL, EVENT_A.slug, registration.id));
+    expect(before.messages[0]!.html).toContain(`${BASE_URL}/uploads/org-origin/brand.png`);
     expect(productHosts(before.messages[0]!.html)).toEqual(["tickets.example.com"]);
 
     await verify(EVENT_A.id);
@@ -118,6 +133,7 @@ describe("the confirmation mail of a registration", () => {
     await drainRegistrationMails(prisma, TEST_ENV, after.deps, { baseUrl: BASE_URL });
     expect(after.messages[0]!.html).toContain(buildConfirmUrl(`https://${OWN_A}`, EVENT_A.slug, again.id));
     // Nothing of the panel's address is left in it: not the link, not the logo.
+    expect(after.messages[0]!.html).toContain(`https://${OWN_A}/uploads/org-origin/brand.png`);
     expect(productHosts(after.messages[0]!.html)).toEqual([OWN_A]);
   });
 
