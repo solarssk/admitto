@@ -53,7 +53,7 @@ A Superadmin does this. By default guests get links on the address of the instan
 
 1. Open the **Access** tab. Under **Address for guests**, type the address in **Own address**. Type the host name only: no `https://`, port or path.
 2. Select **Save address**. The card says the address is not checked yet. Guests still get links on the main address.
-3. Ask your IT department to set it up. The card lists the steps: a CNAME record that points the address to the instance, HTTPS with a valid certificate, the `Host` header passed on to Admitto, and no sign-in gateway in front of the pages guests open. Admitto does not issue certificates.
+3. Ask your IT department to set it up. The card lists the steps: a CNAME record that points the address to the instance, HTTPS with a valid certificate, the `Host` header passed on to Admitto, and no sign-in gateway in front of the pages guests open. If the form uses the bot check (Turnstile), the address also has to be added to the hostnames of its widget, or guests on the address fail the check. Admitto does not issue certificates.
 4. When IT says it is ready, select **Check now**. The card says what the check found.
 5. When the card says **Working**, guests get links on the address.
 
@@ -163,7 +163,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 | Working | The address answers as this event on this instance | Nothing |
 | Not working yet | The check has not passed yet. Guests keep the main address | Fix what the card names |
 | Stopped working | The address worked once, and its last check failed. Guests are still sent links on it | Fix what the card names. Then select **Check now** |
-| Cannot be checked from this server | The name resolves to a private network address, as a name of an internal DNS does. This is no fault of the address, but Admitto cannot confirm it, so guests keep the main address | Nothing, or use a public name |
+| Cannot be checked from this server | The name resolves to a private network address, as a name of an internal DNS does. This is no fault of the address, but Admitto cannot confirm it. An address that never passed a check keeps the main address for guests; one that passed earlier stays in use | Nothing, or use a public name |
 
 When a check fails, the card names the reason:
 

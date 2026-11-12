@@ -72,7 +72,7 @@ export function checkAdvice(result: CustomDomainCheckResult, instanceHost: strin
     case "unreachable":
       return "The address did not answer in time. Ask IT to check that it accepts HTTPS connections from the internet and that no firewall blocks them.";
     case "not_verifiable_from_server":
-      return "The name resolves to a private network address, as the name of an internal DNS does. This server cannot reach it, so it cannot check the address, and guests keep getting links on the main address. This is no fault of the address.";
+      return "The name resolves to a private network address, as the name of an internal DNS does. This server cannot reach it, so it cannot check the address. This is no fault of the address.";
   }
 }
 
@@ -106,7 +106,8 @@ export function addressStatusLine(address: RegistrationOwnAddressDto, instanceHo
       : { tone: "warn", title: "Not working yet", detail: `${checkAdvice(address.check_result ?? "unreachable", instanceHost)} Guests keep getting links on the main address.` };
   }
   if (address.check_result === "not_verifiable_from_server") {
-    return { tone: "neutral", title: "Cannot be checked from this server", detail: checkAdvice("not_verifiable_from_server", instanceHost) };
+    const links = address.verified ? "Guests are still sent links on this address." : "Guests keep getting links on the main address.";
+    return { tone: "neutral", title: "Cannot be checked from this server", detail: `${checkAdvice("not_verifiable_from_server", instanceHost)} ${links}` };
   }
   return { tone: "neutral", title: "Not checked yet", detail: UNCHECKED_DETAIL };
 }

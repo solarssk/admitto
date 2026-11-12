@@ -1449,7 +1449,7 @@ describe("ExternalServicesPanel, company sign-in on the ways in card", () => {
     await renderLoaded();
 
     expect(document.getElementById("external-access-sso-redirect")).toBeNull();
-    expect(card().textContent).toMatch(/There is no return address yet, because the address of this instance is not set\./);
+    expect(card().textContent).toMatch(/There is no return address for this instance yet, because its address is not set\./);
     expect(within(card()).getByRole("link", { name: "Set the Instance URL under General." }).getAttribute("href")).toBe("/admin/settings?tab=general");
   });
 
@@ -1496,7 +1496,7 @@ describe("ExternalServicesPanel, company sign-in on the ways in card", () => {
     );
     await renderLoaded();
 
-    expect(card().textContent).toMatch(/There is no return address yet/);
+    expect(card().textContent).toMatch(/There is no return address for this instance yet/);
     expect(el<HTMLInputElement>("external-access-sso-redirect-1").value).toBe("https://a.acme.example/sso/callback");
   });
 

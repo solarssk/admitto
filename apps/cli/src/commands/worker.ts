@@ -76,7 +76,7 @@ import {
 export function logLevel(message: string): SystemLogLevel {
   if (message.startsWith("FAILED ")) return "error";
   if (/failed:|unavailable/i.test(message)) return "warn";
-  const counter = /\b(?:failed|errors)=(\d+)/.exec(message);
+  const counter = /\b(?:failed|failing|errors)=(\d+)/.exec(message);
   if (counter && Number(counter[1]) > 0) return "warn";
   return "info";
 }

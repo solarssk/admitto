@@ -167,7 +167,6 @@ export function AccessAddressCard({
         {canEdit ? (
           <>
             <AddressControls
-              key={address?.domain ?? ""}
               eventId={eventId}
               event={event}
               address={address}

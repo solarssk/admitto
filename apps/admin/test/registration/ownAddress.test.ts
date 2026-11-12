@@ -112,6 +112,11 @@ describe("addressStatusLine: how the card words the state", () => {
     expect(addressStatusLine(address({ status: "failing", verified: true, check_result: null }), HOST).detail).toContain("did not answer in time");
   });
 
+  it("says whether guests keep the main address or stay on the address, for a name that cannot be checked from the server", () => {
+    expect(addressStatusLine(address({ check_result: "not_verifiable_from_server", verified: false }), HOST).detail).toContain("Guests keep getting links on the main address.");
+    expect(addressStatusLine(address({ check_result: "not_verifiable_from_server", verified: true }), HOST).detail).toContain("Guests are still sent links on this address.");
+  });
+
   it("is neutral for a name that cannot be checked from the server, and for one not checked yet", () => {
     expect(addressStatusLine(address({ check_result: "not_verifiable_from_server" }), HOST)).toMatchObject({ tone: "neutral", title: "Cannot be checked from this server" });
     expect(addressStatusLine(address(), HOST)).toMatchObject({ tone: "neutral", title: "Not checked yet" });

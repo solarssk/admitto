@@ -287,5 +287,7 @@ export async function refreshEventDomains(
       result.errors += 1;
     }
   }
+  // A batch that recorded nothing leaves the same rows first in the next run: do not ask for an immediate tick.
+  result.more = result.more && result.checked > 0;
   return result;
 }

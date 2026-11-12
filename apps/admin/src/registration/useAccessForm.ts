@@ -64,10 +64,10 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     // comes last, must not put back what the newer change took away, and neither may a slow read of the texts hold an old answer back.
     const mine = ++newestRead.current;
     try {
-      const [latest, texts] = await Promise.all([fetchRegistrationSettings(eventId), fetchLegalDocuments(eventId)]);
+      const [latest, texts] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchLegalDocuments(eventId)]);
       if (mine !== newestRead.current) return;
-      setServer(latest);
-      setLegalItems(texts.items);
+      if (latest.status === "fulfilled") setServer(latest.value);
+      if (texts.status === "fulfilled") setLegalItems(texts.value.items);
     } catch {
       // What the screen shows stays as it is, and so does the error that sent us here.
     }

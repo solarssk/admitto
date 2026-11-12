@@ -329,6 +329,20 @@ describe("refreshEventDomains: the daily refresh", () => {
     });
   });
 
+  it("does not ask for an immediate next run when a batch recorded nothing", async () => {
+    await prisma.eventRegistrationSettings.update({ where: { event_id: EVENT_ID }, data: { custom_domain: null } });
+    const total = DOMAIN_CHECK_SWEEP_BATCH + 1;
+    for (let index = 0; index < total; index += 1) {
+      await createEvent(`evt-stuck-${index}`, { custom_domain: `stuck-${index}.acme.example` });
+    }
+    const failing = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("write failed"));
+    try {
+      expect(await refresh()).toMatchObject({ checked: 0, errors: DOMAIN_CHECK_SWEEP_BATCH, more: false });
+    } finally {
+      failing.mockRestore();
+    }
+  });
+
   it("looks at the oldest first, a few at a time, and says when more are due", async () => {
     await prisma.eventRegistrationSettings.update({ where: { event_id: EVENT_ID }, data: { custom_domain: null } });
     const total = DOMAIN_CHECK_SWEEP_BATCH + 2;

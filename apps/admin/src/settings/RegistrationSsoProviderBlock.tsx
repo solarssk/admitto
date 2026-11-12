@@ -9,7 +9,7 @@ import "./registration-ways-in.css";
 const REDIRECT_HINT =
   "Enter this address once at the identity provider, as an allowed redirect (callback) address. It is the same for every event that uses the company sign-in on the address of this instance.";
 const EVENT_ADDRESS_HINT =
-  "Also enter this address at the identity provider. It belongs to the events that use the company sign-in on their own address, and it is the same for all of them.";
+  "Also enter this address at the identity provider. It belongs to the event that uses the company sign-in on its own address. Every event address needs its own entry at the identity provider.";
 const UNVERIFIED_NOTE = " This address has not passed its check yet. Enter it now so that the sign-in works as soon as it does.";
 const GATEWAY_NOTE = "If a gateway such as Cloudflare Access stands in front of Admitto, it must let /sso/callback through without a sign-in, together with /r/*.";
 
@@ -58,7 +58,7 @@ function RedirectAddresses({ uris }: Readonly<{ uris: RegistrationRedirectUriDto
         <RedirectAddress id="external-access-sso-redirect" label="Return address" uri={instance.uri} hint={REDIRECT_HINT} />
       ) : (
         <p className="settings-card-intro">
-          There is no return address yet, because the address of this instance is not set.{" "}
+          There is no return address for this instance yet, because its address is not set.{" "}
           <Link to="/admin/settings?tab=general">Set the Instance URL under General.</Link>
         </p>
       )}

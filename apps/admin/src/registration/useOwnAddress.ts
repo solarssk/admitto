@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useToast } from "@admitto/ui";
 import { ApiError, checkCustomDomain, saveCustomDomain } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -30,6 +30,13 @@ export function useOwnAddress({ eventId, saved, instanceHost, onChanged, onArchi
   const [removing, setRemoving] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The typed text follows the saved address when a request changes it, so the controls stay mounted and keep the focus.
+  const savedDomain = saved?.domain ?? "";
+  useEffect(() => {
+    setTyped(savedDomain);
+    setTouched(false);
+  }, [savedDomain]);
 
   const judged = judgeAddressInput(typed, instanceHost);
   // Nothing typed is no mistake until the person tries to save; a name is judged as soon as there is one and the field was left.
