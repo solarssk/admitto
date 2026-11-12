@@ -6,4 +6,5 @@ export const registrationMailMock = {
   drainRegistrationMails: vi.fn(async () => ({ claimed: 0, sent: 0, failed: 0, cancelled: 0, skipped: 0, eventIds: [] as string[] })),
   sweepExpiredRegistrations: vi.fn(async () => ({ deleted: 0, eventIds: [] as string[], more: false })),
   sweepRegistrationSsoStates: vi.fn(async () => ({ deleted: 0, more: false })),
+  refreshEventDomains: vi.fn(async () => ({ checked: 0, verified: 0, failing: 0, errors: 0, more: false })),
 };

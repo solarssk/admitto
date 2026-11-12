@@ -325,7 +325,7 @@ describe("what a change takes back", () => {
     expect((await put(domain)).status).toBe(200);
     await prisma.eventRegistrationSettings.update({
       where: { event_id: EVENT_A },
-      data: { custom_domain_status: "ok", custom_domain_verified_at: VERIFIED_AT, custom_domain_checked_at: VERIFIED_AT },
+      data: { custom_domain_status: "ok", custom_domain_check_result: "ok", custom_domain_verified_at: VERIFIED_AT, custom_domain_checked_at: VERIFIED_AT },
     });
   }
 
@@ -335,8 +335,8 @@ describe("what a change takes back", () => {
     const res = await put("gala.other.example");
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ custom_domain: "gala.other.example", custom_domain_status: "unchecked", custom_domain_verified_at: null, custom_domain_checked_at: null });
-    expect(await rowOf()).toMatchObject({ custom_domain: "gala.other.example", custom_domain_status: "unchecked", custom_domain_verified_at: null, custom_domain_checked_at: null });
+    expect(await res.json()).toMatchObject({ custom_domain: "gala.other.example", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
+    expect(await rowOf()).toMatchObject({ custom_domain: "gala.other.example", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
   });
 
   it("takes back all of it when the address is removed with null", async () => {
@@ -345,8 +345,8 @@ describe("what a change takes back", () => {
     const res = await put(null);
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ custom_domain: null, custom_domain_status: "unchecked", custom_domain_verified_at: null, custom_domain_checked_at: null });
-    expect(await rowOf()).toMatchObject({ custom_domain: null, custom_domain_status: "unchecked", custom_domain_verified_at: null, custom_domain_checked_at: null });
+    expect(await res.json()).toEqual({ custom_domain: null, custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
+    expect(await rowOf()).toMatchObject({ custom_domain: null, custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
   });
 
   it("changes nothing, and records nothing, when the same address is saved again (in any case)", async () => {
@@ -366,7 +366,7 @@ describe("what a change takes back", () => {
   it("makes no row for an event that has none when null is saved", async () => {
     const res = await put(null);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ custom_domain: null, custom_domain_status: "unchecked", custom_domain_verified_at: null, custom_domain_checked_at: null });
+    expect(await res.json()).toEqual({ custom_domain: null, custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
     expect(await rowOf()).toBeNull();
     expect(await auditOf()).toEqual([]);
   });
@@ -390,12 +390,14 @@ describe("what a change takes back", () => {
     expect(await res.json()).toEqual({
       custom_domain: OWN,
       custom_domain_status: "ok",
+      custom_domain_check_result: "ok",
       custom_domain_verified_at: VERIFIED_AT.toISOString(),
       custom_domain_checked_at: VERIFIED_AT.toISOString(),
     });
     expect(await (await get({ eventId: EVENT_B })).json()).toEqual({
       custom_domain: null,
       custom_domain_status: "unchecked",
+      custom_domain_check_result: null,
       custom_domain_verified_at: null,
       custom_domain_checked_at: null,
     });

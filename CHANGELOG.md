@@ -58,6 +58,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Refuse turning an attendee field sensitive while the wallet field mapping still names it, so issued passes cannot keep its answer ([#1867](https://github.com/solarssk/admitto/pull/1867))
 - Let a superadmin store an own guest address for an event (not live yet: verification and routing follow) ([#1868](https://github.com/solarssk/admitto/pull/1868))
 - Serve only the guest pages of an event on its verified own address and hide the panel there; add the address proof at `/.well-known/admitto-domain-check` ([#1871](https://github.com/solarssk/admitto/pull/1871))
+- Check an event's own guest address on demand and every day, warn when it stops working, and list its company sign-in return address ([#1872](https://github.com/solarssk/admitto/pull/1872))
 
 ### Changed
 

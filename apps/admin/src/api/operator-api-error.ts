@@ -59,9 +59,11 @@ export const CODE_MESSAGES: Record<string, string> = {
   content_field_in_use: "This field is already shown on another item. Uncheck it there first.",
   custom_domain_invalid:
     "This is not an address guests can use. Enter a bare host name such as events.example.com: no https://, port or path, no IP address, and not the address of this instance.",
+  custom_domain_not_set: "This event has no own address to check. Enter one first.",
   custom_domain_taken: "Another event already uses this address. One address belongs to one event.",
   delivery_not_created: "Could not create the delivery.",
   delivery_not_found: "Delivery not found.",
+  domain_check_rate_limited: "Too many checks right now. Wait a minute and try again.",
   duplicate_issuer: "An identity provider with this issuer already exists.",
   discovery_failed:
     "Could not fetch OIDC discovery from the issuer URL. Check the URL is reachable and exposes .well-known/openid-configuration.",

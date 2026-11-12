@@ -492,6 +492,8 @@ function healthDb(overrides: Record<string, unknown> = {}): PrismaClient {
     },
     eventRegistrationSettings: {
       count: vi.fn().mockResolvedValue(0),
+      // The events' own addresses: none, so their row is "not configured" and leaves the overall verdict alone.
+      findMany: vi.fn().mockResolvedValue([]),
     },
     // Guest registration mail: an empty queue, so its row is "Queue empty" and leaves the overall verdict alone.
     registrationMail: {
@@ -1458,6 +1460,119 @@ describe("collectAdminHealth", () => {
     });
   });
 
+  describe("event_addresses row", () => {
+    type AddressRow = { custom_domain: string; custom_domain_status: string; custom_domain_verified_at: Date | null };
+    const WORKED = new Date("2026-11-10T10:00:00Z");
+    const address = (domain: string, status: string, verified: boolean): AddressRow => ({
+      custom_domain: domain,
+      custom_domain_status: status,
+      custom_domain_verified_at: verified ? WORKED : null,
+    });
+
+    async function addressesRow(rows: AddressRow[] | Error) {
+      collectSetupChecks.mockResolvedValue(okSetup);
+      collectGauges.mockResolvedValue({
+        email_deliveries_queued: 0,
+        email_deliveries_failed_retryable: 0,
+        bounce_ingest_enabled: 0,
+        bounce_ingest_problem: 0,
+      });
+      stubHappyPathMailAndIdp();
+      const findMany = rows instanceof Error ? vi.fn().mockRejectedValue(rows) : vi.fn().mockResolvedValue(rows);
+      const report = await collectAdminHealth({
+        db: healthDb({ eventRegistrationSettings: { count: vi.fn().mockResolvedValue(0), findMany } }),
+        rateLimitStore: {} as never,
+        env: envWithUpload(),
+      });
+      return { row: report.groups[1]!.checks.find((c) => c.id === "event_addresses")!, report, findMany };
+    }
+
+    it("is not configured, and leaves the verdict alone, while no event has an address of its own", async () => {
+      const { row, report } = await addressesRow([]);
+      expect(row).toMatchObject({ label: "Event addresses", status: "not_configured", summary: "No event has an address of its own" });
+      expect(report.overall).toBe("ok");
+    });
+
+    it("looks only at addresses of events that are not archived, in the order of the names", async () => {
+      const { findMany } = await addressesRow([]);
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { custom_domain: { not: null }, event: { archived_at: null } },
+          orderBy: { custom_domain: "asc" },
+        }),
+      );
+    });
+
+    it("is ok when every address works, and counts them", async () => {
+      const { row, report } = await addressesRow([address("a.acme.example", "ok", true), address("b.acme.example", "ok", true)]);
+      expect(row).toMatchObject({ status: "ok", summary: "2 event addresses, none has stopped working" });
+      expect(row.details).toEqual(
+        expect.arrayContaining([
+          { key: "event_addresses", value: "2" },
+          { key: "addresses_working", value: "2" },
+          { key: "addresses_not_working_yet", value: "0" },
+          { key: "addresses_stopped", value: "0" },
+        ]),
+      );
+      expect(report.overall).toBe("ok");
+    });
+
+    it("says one address in the singular", async () => {
+      const { row } = await addressesRow([address("a.acme.example", "ok", true)]);
+      expect(row.summary).toBe("1 event address, none has stopped working");
+    });
+
+    it("does not warn about an address that has never worked: it is being set up", async () => {
+      const { row, report } = await addressesRow([
+        address("new.acme.example", "failing", false),
+        address("fresh.acme.example", "unchecked", false),
+        address("a.acme.example", "ok", true),
+      ]);
+      expect(row.status).toBe("ok");
+      expect(row.details).toEqual(
+        expect.arrayContaining([
+          { key: "addresses_working", value: "1" },
+          { key: "addresses_not_working_yet", value: "2" },
+          { key: "addresses_stopped", value: "0" },
+        ]),
+      );
+      expect(row.details.map((detail) => detail.key)).not.toContain("stopped_addresses");
+      expect(report.overall).toBe("ok");
+    });
+
+    it("warns when an address that worked has stopped, and names it", async () => {
+      const { row, report } = await addressesRow([address("a.acme.example", "ok", true), address("b.acme.example", "failing", true)]);
+      expect(row).toMatchObject({ status: "degraded", summary: "1 event address has stopped working" });
+      expect(row.details).toEqual(
+        expect.arrayContaining([
+          { key: "reason", value: "address_stopped" },
+          { key: "addresses_stopped", value: "1" },
+          { key: "stopped_addresses", value: "b.acme.example" },
+        ]),
+      );
+      expect(report.overall).toBe("degraded");
+    });
+
+    it("names at most five stopped addresses and counts the rest", async () => {
+      const stopped = Array.from({ length: 7 }, (_, index) => address(`s${index}.acme.example`, "failing", true));
+      const { row } = await addressesRow(stopped);
+      expect(row.summary).toBe("7 event addresses have stopped working");
+      expect(row.details).toEqual(
+        expect.arrayContaining([
+          { key: "stopped_addresses", value: "s0.acme.example, s1.acme.example, s2.acme.example, s3.acme.example, s4.acme.example, and 2 more" },
+          { key: "addresses_stopped", value: "7" },
+        ]),
+      );
+    });
+
+    it("says it could not tell, and does not fail the report, when the read fails", async () => {
+      const { row, report } = await addressesRow(new Error("db down"));
+      expect(row).toMatchObject({ status: "degraded", summary: "Could not evaluate event addresses" });
+      expect(row.details).toEqual(expect.arrayContaining([{ key: "reason", value: "lookup_failed" }]));
+      expect(report.groups.map((group) => group.id)).toEqual(["core", "external"]);
+    });
+  });
+
   describe("registration_captcha row", () => {
     const READY_KEYS = JSON.stringify({
       siteKey: "0x4AAAAAAAsite",
@@ -1473,8 +1588,10 @@ describe("collectAdminHealth", () => {
         bounce_ingest_problem: 0,
       });
       stubHappyPathMailAndIdp();
+      // A test that replaces the settings table's counts keeps the empty list of the events' own addresses.
+      const settings = { findMany: vi.fn().mockResolvedValue([]), ...(overrides["eventRegistrationSettings"] as object | undefined) };
       const report = await collectAdminHealth({
-        db: healthDb(overrides),
+        db: healthDb({ ...overrides, eventRegistrationSettings: settings }),
         rateLimitStore: {} as never,
         env: envWithUpload(),
       });

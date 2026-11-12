@@ -1641,6 +1641,51 @@ async function registrationCaptchaRow(db: PrismaClient, checkedAt: string): Prom
   );
 }
 
+/** Addresses named in the detail of the row: the rest are counted, and the Access tab of each event shows its own. */
+const EVENT_ADDRESSES_LISTED = 5;
+
+/**
+ * The events' own addresses for guests (D-C6, PR 120): how many events have one, and whether any that WORKED has stopped. An address
+ * that was found working once (`custom_domain_verified_at`) and whose last check failed is where guests' links point and where
+ * nothing answers, so the row is degraded and names it. An address that never worked is a superadmin and the organisation's IT still
+ * setting it up, which is no outage: it is counted, not warned about. Archived events are left out (nothing is sent for them).
+ * Counts and host names only: a host name is not personal data.
+ */
+async function eventAddressesRow(db: PrismaClient, checkedAt: string): Promise<HealthCheckRow> {
+  const label = "Event addresses";
+  const rows = await db.eventRegistrationSettings.findMany({
+    where: { custom_domain: { not: null }, event: { archived_at: null } },
+    select: { custom_domain: true, custom_domain_status: true, custom_domain_verified_at: true },
+    orderBy: { custom_domain: "asc" },
+  });
+  const stopped = rows.filter((row) => row.custom_domain_status === "failing" && row.custom_domain_verified_at !== null);
+  const working = rows.filter((row) => row.custom_domain_status === "ok").length;
+  const row = (status: HealthRowStatus, summary: string, entries: Array<[string, string | undefined | null]>): HealthCheckRow => ({
+    id: "event_addresses",
+    label,
+    status,
+    summary,
+    details: detailsFromEntries([["status", status], ...entries, ["last_checked", checkedAt]]),
+  });
+  if (rows.length === 0) return row("not_configured", "No event has an address of its own", [["event_addresses", "0"]]);
+  const counts: Array<[string, string]> = [
+    ["event_addresses", String(rows.length)],
+    ["addresses_working", String(working)],
+    ["addresses_not_working_yet", String(rows.length - working - stopped.length)],
+    ["addresses_stopped", String(stopped.length)],
+  ];
+  if (stopped.length === 0) {
+    return row("ok", `${rows.length} event address${rows.length === 1 ? "" : "es"}, none has stopped working`, counts);
+  }
+  const named = stopped.slice(0, EVENT_ADDRESSES_LISTED).map((stoppedRow) => stoppedRow.custom_domain);
+  const more = stopped.length - named.length;
+  return row("degraded", `${stopped.length} event address${stopped.length === 1 ? " has" : "es have"} stopped working`, [
+    ...counts,
+    ["reason", "address_stopped"],
+    ["stopped_addresses", more > 0 ? `${named.join(", ")}, and ${more} more` : named.join(", ")],
+  ]);
+}
+
 /** How long a registration mail that failed for good keeps its row degraded: a week, so an administrator who looks
  * once in a while still sees it, and an old failure does not stay on the page for good. */
 const REGISTRATION_MAIL_FAILURE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -1784,6 +1829,18 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ]),
   };
 
+  const eventAddressesFallback: HealthCheckRow = {
+    id: "event_addresses",
+    label: "Event addresses",
+    status: "degraded",
+    summary: "Could not evaluate event addresses",
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+
   const registrationCaptchaFallback: HealthCheckRow = {
     id: "registration_captcha",
     label: "Bot protection, Turnstile",
@@ -1808,6 +1865,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     address,
     weather,
     registrationCaptcha,
+    eventAddresses,
     registrationMail,
     dbProbe,
     engine,
@@ -1834,6 +1892,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
         ]),
       })),
       registrationCaptchaRow(deps.db, checkedAt).catch(() => registrationCaptchaFallback),
+      eventAddressesRow(deps.db, checkedAt).catch(() => eventAddressesFallback),
       registrationMailCounts(deps.db, now).catch(() => ({ queued: -1, failedRetryable: -1, failedTerminal: -1 })),
       checkDatabase(deps.db).catch(() => ({ status: "down" as const, latency_ms: 0 })),
       readPostgresEngine(deps.db),
@@ -1875,6 +1934,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ...idpRows,
     cfAccess,
     registrationCaptcha,
+    eventAddresses,
   ];
 
   const groups = [

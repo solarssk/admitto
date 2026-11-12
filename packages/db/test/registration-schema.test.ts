@@ -127,6 +127,7 @@ describe("EventRegistrationSettings", () => {
       custom_domain_status: "unchecked",
       custom_domain_verified_at: null,
       custom_domain_checked_at: null,
+      custom_domain_check_result: null,
     });
   });
 
@@ -193,7 +194,7 @@ describe("EventRegistrationSettings: the event's own address (D-C6)", () => {
 
   afterAll(async () => {
     await prisma.eventRegistrationSettings.updateMany({
-      data: { custom_domain: null, custom_domain_verified_at: null, custom_domain_status: "unchecked" },
+      data: { custom_domain: null, custom_domain_verified_at: null, custom_domain_status: "unchecked", custom_domain_check_result: null },
     });
   });
 
@@ -227,6 +228,21 @@ describe("EventRegistrationSettings: the event's own address (D-C6)", () => {
       "EventRegistrationSettings_custom_domain_status_check",
     );
     await prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_status" = 'unchecked' WHERE "event_id" = ${EVENT_ID}`;
+  });
+
+  it("knows six results of a check and no other, and keeps a result only with its address", async () => {
+    await setDomain(EVENT_ID, "summit.acme.example");
+    for (const result of ["ok", "dns_failed", "tls_failed", "wrong_target", "unreachable", "not_verifiable_from_server"]) {
+      await prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_check_result" = ${result} WHERE "event_id" = ${EVENT_ID}`;
+    }
+    await expectViolation(
+      () => prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_check_result" = 'fine' WHERE "event_id" = ${EVENT_ID}`,
+      "23514",
+      "EventRegistrationSettings_custom_domain_result_check",
+    );
+    await expectViolation(() => setDomain(EVENT_ID, null), "23514", "EventRegistrationSettings_custom_domain_result_domain_check");
+    await prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_check_result" = NULL WHERE "event_id" = ${EVENT_ID}`;
+    await setDomain(EVENT_ID, null);
   });
 
   it("cannot keep the proof of an address that is gone", async () => {

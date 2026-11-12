@@ -1,31 +1,25 @@
 import { Link } from "react-router";
 import { Input, Notice, useToast } from "@admitto/ui";
-import type { RegistrationSsoProviderDto } from "../api/types.js";
+import type { RegistrationRedirectUriDto, RegistrationSsoProviderDto } from "../api/types.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "../identity/routes.js";
 import { ssoProviderNote, ssoProviderOptions } from "./registrationAccessMethods.js";
 import "./registration-ways-in.css";
 
 const REDIRECT_HINT =
-  "Enter this address once at the identity provider, as an allowed redirect (callback) address. It is the same for every event that uses the company sign-in.";
+  "Enter this address once at the identity provider, as an allowed redirect (callback) address. It is the same for every event that uses the company sign-in on the address of this instance.";
+const EVENT_ADDRESS_HINT =
+  "Also enter this address at the identity provider. It belongs to the event that uses the company sign-in on its own address. Every event address needs its own entry at the identity provider.";
+const UNVERIFIED_NOTE = " This address has not passed its check yet. Enter it now so that the sign-in works as soon as it does.";
 const GATEWAY_NOTE = "If a gateway such as Cloudflare Access stands in front of Admitto, it must let /sso/callback through without a sign-in, together with /r/*.";
 
-/** The address to list at the provider, with a button that copies it; while the instance has no address there is none to give. */
-function RedirectAddress({ uri }: Readonly<{ uri: string | null }>) {
+/** One address to list at the provider, with a button that copies it. */
+function RedirectAddress({ id, label, uri, hint }: Readonly<{ id: string; label: string; uri: string; hint: string }>) {
   const { addToast } = useToast();
-  if (uri === null) {
-    return (
-      <p className="settings-card-intro">
-        There is no return address yet, because the address of this instance is not set.{" "}
-        <Link to="/admin/settings?tab=general">Set the Instance URL under General.</Link>
-      </p>
-    );
-  }
-  const address = uri;
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(address);
+      await navigator.clipboard.writeText(uri);
       addToast("Return address copied.", "success");
     } catch {
       addToast("Could not copy the return address.", "error");
@@ -33,25 +27,58 @@ function RedirectAddress({ uri }: Readonly<{ uri: string | null }>) {
   }
 
   return (
+    <Input
+      id={id}
+      label={label}
+      value={uri}
+      readOnly
+      icon={<i className="ti ti-copy" />}
+      iconLabel={`Copy the ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
+      onIconClick={() => void copy()}
+      hint={hint}
+    />
+  );
+}
+
+/** The host of a return address, for the label of the field. */
+function hostOf(uri: string): string {
+  return new URL(uri).host;
+}
+
+/**
+ * Every address to list at the provider: the instance's, and one for each own address of an event that uses the company sign-in
+ * (D-C6), verified or not. While the instance has no address there is none to give for it.
+ */
+function RedirectAddresses({ uris }: Readonly<{ uris: RegistrationRedirectUriDto[] }>) {
+  const instance = uris.find((entry) => entry.host === "instance");
+  const ofEvents = uris.filter((entry) => entry.host === "event_domain");
+  return (
     <>
-      <Input
-        id="external-access-sso-redirect"
-        label="Return address"
-        value={address}
-        readOnly
-        icon={<i className="ti ti-copy" />}
-        iconLabel="Copy the return address"
-        onIconClick={() => void copy()}
-        hint={REDIRECT_HINT}
-      />
+      {instance ? (
+        <RedirectAddress id="external-access-sso-redirect" label="Return address" uri={instance.uri} hint={REDIRECT_HINT} />
+      ) : (
+        <p className="settings-card-intro">
+          There is no return address for this instance yet, because its address is not set.{" "}
+          <Link to="/admin/settings?tab=general">Set the Instance URL under General.</Link>
+        </p>
+      )}
+      {ofEvents.map((entry, index) => (
+        <RedirectAddress
+          key={entry.uri}
+          id={`external-access-sso-redirect-${index + 1}`}
+          label={`Return address for ${hostOf(entry.uri)}`}
+          uri={entry.uri}
+          hint={entry.verified ? EVENT_ADDRESS_HINT : `${EVENT_ADDRESS_HINT}${UNVERIFIED_NOTE}`}
+        />
+      ))}
       <p className="settings-card-intro">{GATEWAY_NOTE}</p>
     </>
   );
 }
 
 /**
- * Under the switch of the company sign-in: the identity provider guests sign in with, where that choice stands, and the one return
- * address to list at the provider. `sso` is the saved state of the server; `providerId` is the choice in the form.
+ * Under the switch of the company sign-in: the identity provider guests sign in with, where that choice stands, and the return
+ * addresses to list at the provider. `sso` is the saved state of the server; `providerId` is the choice in the form.
  */
 export function RegistrationSsoProviderBlock({
   sso,
@@ -94,7 +121,7 @@ export function RegistrationSsoProviderBlock({
           {note.text}
         </p>
       )}
-      <RedirectAddress uri={sso.redirect_uri} />
+      <RedirectAddresses uris={sso.redirect_uris} />
     </div>
   );
 }

@@ -18,9 +18,13 @@ export {
   type SsoClaimValueProblem,
 } from "./ssoClaim.js";
 export {
+  CUSTOM_DOMAIN_CHECK_RESULTS,
   CUSTOM_DOMAIN_MAX,
   CUSTOM_DOMAIN_STATUSES,
+  DOMAIN_CHECK_PATH,
   parseCustomDomain,
+  statusOfCheckResult,
+  type CustomDomainCheckResult,
   type CustomDomainParse,
   type CustomDomainProblem,
   type CustomDomainStatus,

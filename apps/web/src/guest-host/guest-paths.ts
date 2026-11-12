@@ -22,11 +22,13 @@
  * ticket page are links relative to the page, so they work on the guest's address; the wallet provider's notifications and the wallet
  * links in a mail stay on the main address (`/api/wallet/webhook/...` is hidden here).
  */
+import { DOMAIN_CHECK_PATH } from "@admitto/shared";
 import { GUEST_SSO_CALLBACK_PATH } from "../registration/sso-session.js";
 
 export type GuestPathVerdict = "allow" | "root" | "deny";
 
-export const DOMAIN_CHECK_PATH = "/.well-known/admitto-domain-check";
+// The path is written once, in @admitto/shared, because the check of the address (packages/mail-delivery) asks for it too.
+export { DOMAIN_CHECK_PATH };
 
 /** Whole paths (the icons are the ones the pages link to: `renderAdmittoFaviconLink`). */
 const ALLOWED_PATHS: ReadonlySet<string> = new Set([

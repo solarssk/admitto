@@ -1449,7 +1449,7 @@ describe("ExternalServicesPanel, company sign-in on the ways in card", () => {
     await renderLoaded();
 
     expect(document.getElementById("external-access-sso-redirect")).toBeNull();
-    expect(card().textContent).toMatch(/There is no return address yet, because the address of this instance is not set\./);
+    expect(card().textContent).toMatch(/There is no return address for this instance yet, because its address is not set\./);
     expect(within(card()).getByRole("link", { name: "Set the Instance URL under General." }).getAttribute("href")).toBe("/admin/settings?tab=general");
   });
 
@@ -1460,6 +1460,44 @@ describe("ExternalServicesPanel, company sign-in on the ways in card", () => {
 
     expect(el<HTMLInputElement>("external-access-sso-redirect").value).toBe("https://guests.example.org/sso/callback");
     expect(el<HTMLInputElement>("external-access-sso-redirect").value).not.toContain(window.location.origin);
+  });
+
+  it("lists the return address of each own address of an event after the instance's, and says which has not passed its check", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    mockFetchSso.mockResolvedValue(
+      ssoProviderDto({
+        redirect_uris: [
+          { uri: "https://tickets.example.com/sso/callback", host: "instance", verified: true },
+          { uri: "https://a.acme.example/sso/callback", host: "event_domain", verified: true },
+          { uri: "https://b.acme.example/sso/callback", host: "event_domain", verified: false },
+        ],
+      }),
+    );
+    await renderLoaded();
+
+    expect(el<HTMLInputElement>("external-access-sso-redirect").value).toBe("https://tickets.example.com/sso/callback");
+    expect(el<HTMLInputElement>("external-access-sso-redirect-1").value).toBe("https://a.acme.example/sso/callback");
+    expect(el<HTMLInputElement>("external-access-sso-redirect-2").value).toBe("https://b.acme.example/sso/callback");
+    expect(within(card()).getByText("Return address for a.acme.example")).toBeTruthy();
+    // Only the one that has not passed its check says so.
+    expect(card().textContent?.match(/has not passed its check yet/g)).toHaveLength(1);
+    expect(card().textContent).toMatch(/Also enter this address at the identity provider\./);
+
+    fireEvent.click(within(card()).getByRole("button", { name: "Copy the return address for b.acme.example" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://b.acme.example/sso/callback"));
+  });
+
+  it("lists the own addresses of events even while the instance has none, and still says the instance's is missing", async () => {
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
+    mockFetchSso.mockResolvedValue(
+      ssoProviderDto({ redirect_uri: null, redirect_uris: [{ uri: "https://a.acme.example/sso/callback", host: "event_domain", verified: true }] }),
+    );
+    await renderLoaded();
+
+    expect(card().textContent).toMatch(/There is no return address for this instance yet/);
+    expect(el<HTMLInputElement>("external-access-sso-redirect-1").value).toBe("https://a.acme.example/sso/callback");
   });
 
   it("saves a provider that was chosen with its own request, and not the list of ways when no switch moved", async () => {

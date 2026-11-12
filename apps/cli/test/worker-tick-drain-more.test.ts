@@ -220,7 +220,7 @@ describe("runWorkerTick — signalling a backlog beyond one tick's capacity", ()
 });
 
 describe("runWorkerTick - the registration mail job", () => {
-  const { drainRegistrationMails, sweepExpiredRegistrations, sweepRegistrationSsoStates } = registrationMailMock;
+  const { drainRegistrationMails, sweepExpiredRegistrations, sweepRegistrationSsoStates, refreshEventDomains } = registrationMailMock;
   const idleDrain = { claimed: 0, sent: 0, failed: 0, cancelled: 0, skipped: 0, eventIds: [] as string[] };
   const idleSweep = { deleted: 0, eventIds: [] as string[], more: false };
   let logLines: string[];
@@ -238,6 +238,8 @@ describe("runWorkerTick - the registration mail job", () => {
     sweepExpiredRegistrations.mockResolvedValue(idleSweep);
     sweepRegistrationSsoStates.mockReset();
     sweepRegistrationSsoStates.mockResolvedValue({ deleted: 0, more: false });
+    refreshEventDomains.mockReset();
+    refreshEventDomains.mockResolvedValue({ checked: 0, verified: 0, failing: 0, errors: 0, more: false });
     vi.mocked(publishActivityChanged).mockClear();
     vi.mocked(resolveInstanceBaseUrl).mockReset();
     vi.mocked(resolveInstanceBaseUrl).mockResolvedValue("https://example.test");
@@ -475,6 +477,119 @@ describe("runWorkerTick - the registration mail job", () => {
       expect.stringMatching(/ok claimed=1 sent=1/),
     ]);
     expect(logLevel("FAILED sso_state_sweep error_class=ConnectionError")).toBe("error");
+  });
+
+  it("checks the events' own addresses once a tick with the host of the instance, and logs nothing when none was due", async () => {
+    await tick();
+
+    expect(refreshEventDomains).toHaveBeenCalledOnce();
+    expect(refreshEventDomains).toHaveBeenCalledWith(expect.anything(), { instanceHostname: "example.test" });
+    expect(registrationLines()).toEqual([expect.stringMatching(/idle$/)]);
+  });
+
+  it("checks the addresses after the mail went out, so a host that does not answer holds nothing up", async () => {
+    const order: string[] = [];
+    drainRegistrationMails.mockImplementation(async () => {
+      order.push("mail");
+      return idleDrain;
+    });
+    refreshEventDomains.mockImplementation(async () => {
+      order.push("addresses");
+      return { checked: 0, verified: 0, failing: 0, errors: 0, more: false };
+    });
+
+    await tick();
+
+    expect(order).toEqual(["mail", "addresses"]);
+  });
+
+  it("logs the counts of the addresses it checked, and no address", async () => {
+    refreshEventDomains.mockResolvedValue({ checked: 3, verified: 1, failing: 1, errors: 0, more: false });
+
+    await tick();
+
+    expect(registrationLines()).toEqual([expect.stringMatching(/event_domains checked=3 verified=1 failing=1 errors=0$/), expect.stringMatching(/idle$/)]);
+  });
+
+  it("logs an address that could not be checked, as an error count", async () => {
+    refreshEventDomains.mockResolvedValue({ checked: 0, verified: 0, failing: 0, errors: 1, more: false });
+
+    await tick();
+
+    expect(registrationLines()).toEqual([expect.stringMatching(/event_domains checked=0 verified=0 failing=0 errors=1$/), expect.stringMatching(/idle$/)]);
+  });
+
+  it("signals more to do when more addresses are due than one run checks", async () => {
+    refreshEventDomains.mockResolvedValue({ checked: 5, verified: 0, failing: 0, errors: 0, more: true });
+
+    await expect(tick()).resolves.toBe(true);
+  });
+
+  it("signals more to do when one mail was taken and more addresses are due", async () => {
+    drainRegistrationMails.mockResolvedValue({ ...idleDrain, claimed: 1, sent: 1, eventIds: ["evt1"] });
+    refreshEventDomains.mockResolvedValue({ checked: 5, verified: 0, failing: 0, errors: 0, more: true });
+
+    await expect(tick()).resolves.toBe(true);
+  });
+
+  it("does not let a failed check of the addresses stop the mail, and logs the class of the failure alone", async () => {
+    refreshEventDomains.mockRejectedValue(Object.assign(new Error("db down at summit.acme.example"), { name: "ConnectionError" }));
+    drainRegistrationMails.mockResolvedValue({ claimed: 1, sent: 1, failed: 0, cancelled: 0, skipped: 0, eventIds: ["evt1"] });
+
+    await expect(tick()).resolves.toBe(false);
+
+    expect(drainRegistrationMails).toHaveBeenCalledOnce();
+    expect(registrationLines()).toEqual([
+      expect.stringMatching(/FAILED event_domain_refresh error_class=ConnectionError$/),
+      expect.stringMatching(/ok claimed=1 sent=1/),
+    ]);
+    expect(logLevel("FAILED event_domain_refresh error_class=ConnectionError")).toBe("error");
+    expect(logLines.join("\n")).not.toContain("summit.acme.example");
+  });
+
+  it("logs a failure that is no Error as unknown", async () => {
+    refreshEventDomains.mockRejectedValue("summit.acme.example");
+
+    await tick();
+
+    expect(registrationLines()).toEqual([expect.stringMatching(/FAILED event_domain_refresh error_class=unknown$/), expect.stringMatching(/idle$/)]);
+  });
+
+  it("checks the addresses with no host of the instance while the instance has no address", async () => {
+    vi.mocked(resolveInstanceBaseUrl).mockRejectedValue(new InstanceUrlRequiredError());
+
+    await tick();
+
+    expect(refreshEventDomains).toHaveBeenCalledWith(expect.anything(), { instanceHostname: null });
+  });
+
+  it("drops the root dot of the host of the instance", async () => {
+    vi.mocked(resolveInstanceBaseUrl).mockResolvedValue("https://Tickets.Example.Test./");
+
+    await tick();
+
+    expect(refreshEventDomains).toHaveBeenCalledWith(expect.anything(), { instanceHostname: "tickets.example.test" });
+  });
+
+  it("logs a failure to read the address of the instance as a failure of the check, and goes on", async () => {
+    // The ticket drain and the mail drain each read it first; the third read, for the check, is the one that fails.
+    vi.mocked(resolveInstanceBaseUrl)
+      .mockResolvedValueOnce("https://example.test")
+      .mockResolvedValueOnce("https://example.test")
+      .mockRejectedValueOnce(Object.assign(new Error("boom"), { name: "ReadError" }));
+
+    await tick();
+
+    expect(refreshEventDomains).not.toHaveBeenCalled();
+    expect(registrationLines()).toEqual([expect.stringMatching(/FAILED event_domain_refresh error_class=ReadError$/), expect.stringMatching(/idle$/)]);
+  });
+
+  it("does not check the addresses while another worker holds the job", async () => {
+    const locks = { ...fakeLocks(), tryAcquire: vi.fn(async (job: string) => job !== "registration_mail") };
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    expect(refreshEventDomains).not.toHaveBeenCalled();
   });
 
   it("does not clean up the state of sign-ins while another worker holds the job", async () => {

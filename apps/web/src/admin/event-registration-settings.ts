@@ -22,8 +22,9 @@ import {
   type RegistrationAccessMethod,
   type RegistrationMode,
 } from "@admitto/db";
-import { resolveGuestOrigin, type GuestDomain } from "@admitto/shared";
+import { resolveGuestOrigin, type CustomDomainCheckResult, type CustomDomainStatus, type GuestDomain } from "@admitto/shared";
 import { loadRegistrantFormFields, writeAdminAuditLog, type RegistrantFormField, type StaffActor } from "@admitto/tickets";
+import { normalizeHostname } from "../guest-host/guest-host.js";
 import { lockAndLoadLegalGateRows, loadLegalGateRows, publishedConsentKeys } from "../legal/registration-gate.js";
 import type { SelectableAccessMethod } from "../registration/access-methods.js";
 import { isOver } from "../registration/form-model.js";
@@ -78,12 +79,31 @@ export function defaultSettings(): SettingsValues {
   };
 }
 
+/**
+ * How the event's own address for guests stands (D-C6), for the warning on the Access tab. Read only here: a superadmin sets the
+ * address and asks for a check elsewhere (./event-custom-domain-routes.ts). The address is not personal data, and guests see it in
+ * every link they are sent.
+ */
+export type OwnAddressDto = {
+  domain: string;
+  status: CustomDomainStatus;
+  /** What the last check found, null before the first. */
+  check_result: CustomDomainCheckResult | null;
+  /** The check has found it working once, so guests' links use it. */
+  verified: boolean;
+  checked_at: string | null;
+};
+
 export type RegistrationSettingsDto = SettingsValues & {
   /** Whether a password is stored for the event. Only that: never the hash, never its length. */
   password_set: boolean;
   /** The address guests use: `/r/<slug>` on the event's own address once it is verified (D-C6), else on the instance's. Null while the
    * instance has no address. */
   guest_url: string | null;
+  /** The host name of the instance (where an own address is pointed by CNAME), or null while it has no address. */
+  instance_host: string | null;
+  /** The event's own address and how it stands; null while the event has none. */
+  own_address: OwnAddressDto | null;
   readiness: RegistrationReadinessCheck[];
   /** The questions the form asks, in the order it asks them. */
   public_fields: PublicFieldDto[];
@@ -142,6 +162,9 @@ const SETTINGS_SELECT = {
   // Not settings of this form (a superadmin sets the address, ./event-custom-domain-routes.ts), but what the address of the form is.
   custom_domain: true,
   custom_domain_verified_at: true,
+  custom_domain_status: true,
+  custom_domain_check_result: true,
+  custom_domain_checked_at: true,
 } as const satisfies Prisma.EventRegistrationSettingsSelect;
 
 type StoredRow = Prisma.EventRegistrationSettingsGetPayload<{ select: typeof SETTINGS_SELECT }>;
@@ -164,7 +187,31 @@ function valuesOf(row: StoredRow): SettingsValues {
   };
 }
 
-type StoredSettings = { values: SettingsValues; passwordSet: boolean; domain: GuestDomain };
+/** What the row says of the event's own address: the columns that choose the host of the links, and the ones that say how it stands. */
+type StoredDomain = GuestDomain & Pick<StoredRow, "custom_domain_status" | "custom_domain_check_result" | "custom_domain_checked_at">;
+
+type StoredSettings = { values: SettingsValues; passwordSet: boolean; domain: StoredDomain };
+
+const NO_DOMAIN: StoredDomain = {
+  custom_domain: null,
+  custom_domain_verified_at: null,
+  custom_domain_status: "unchecked",
+  custom_domain_check_result: null,
+  custom_domain_checked_at: null,
+};
+
+/** How the address stands, or null for an event with none. */
+function ownAddressOf(domain: StoredDomain): OwnAddressDto | null {
+  if (domain.custom_domain === null) return null;
+  return {
+    domain: domain.custom_domain,
+    // The table's CHECKs keep both to their words; this keeps the types honest.
+    status: domain.custom_domain_status === "ok" || domain.custom_domain_status === "failing" ? domain.custom_domain_status : "unchecked",
+    check_result: domain.custom_domain_check_result as CustomDomainCheckResult | null,
+    verified: domain.custom_domain_verified_at !== null,
+    checked_at: domain.custom_domain_checked_at?.toISOString() ?? null,
+  };
+}
 
 async function readStoredSettings(db: Client, eventId: string): Promise<StoredSettings> {
   const row = await db.eventRegistrationSettings.findUnique({ where: { event_id: eventId }, select: SETTINGS_SELECT });
@@ -173,7 +220,7 @@ async function readStoredSettings(db: Client, eventId: string): Promise<StoredSe
   return {
     values: row ? valuesOf(row) : defaultSettings(),
     passwordSet: withPassword > 0,
-    domain: { custom_domain: row?.custom_domain ?? null, custom_domain_verified_at: row?.custom_domain_verified_at ?? null },
+    domain: row ?? NO_DOMAIN,
   };
 }
 
@@ -281,7 +328,7 @@ async function writeSettingsAudit(
 function toDto(args: {
   values: SettingsValues;
   passwordSet: boolean;
-  domain: GuestDomain;
+  domain: StoredDomain;
   slug: string;
   environment: ReadinessEnvironment;
   checks: RegistrationReadinessCheck[];
@@ -295,6 +342,8 @@ function toDto(args: {
       environment.instanceBaseUrl === null
         ? null
         : `${resolveGuestOrigin({ registration_settings: domain }, environment.instanceBaseUrl)}/r/${slug}`,
+    instance_host: environment.instanceBaseUrl === null ? null : normalizeHostname(new URL(environment.instanceBaseUrl).hostname),
+    own_address: ownAddressOf(domain),
     readiness: checks,
     public_fields: publicFieldsOf(fields),
   };

@@ -30,6 +30,7 @@ const REASON_SENTENCES = new Map<string, string>([
   ["mail_secret_decryption_failed", "Could not decrypt the stored mail secret"],
   ["keys_missing", "Turnstile keys are not saved"],
   ["secret_unreadable", "Could not decrypt the stored Turnstile secret"],
+  ["address_stopped", "An address that worked has stopped"],
 ]);
 
 const LIVE_CHECK_SENTENCES = new Map<string, string>([

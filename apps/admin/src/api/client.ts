@@ -12,6 +12,7 @@ import type {
   CheckInScanResponse,
   CheckInStatsResponse,
   CreateEventBody,
+  CustomDomainDto,
   DeliveryDto,
   CheckInEventDto,
   EventDto,
@@ -2793,6 +2794,28 @@ export async function setRegistrationPassword(eventId: string, password: string)
 /** Removes the password: guests cannot open the form until a new one is set. */
 export async function clearRegistrationPassword(eventId: string): Promise<void> {
   await parseNoContent(await fetch(eventRegistrationUrl(eventId, "password"), jsonDeleteInit()));
+}
+
+function customDomainUrl(eventId: string, check = false): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/registration/custom-domain${check ? "/check" : ""}`;
+}
+
+/**
+ * Sets the event's own address for guests, or removes it (`null`). Superadmin only. 422 `custom_domain_invalid` for a value that is no
+ * address a guest can use, 409 `custom_domain_taken` when another event has it. A change of the address takes back what was found.
+ */
+export async function saveCustomDomain(eventId: string, customDomain: string | null): Promise<CustomDomainDto> {
+  const res = await fetch(customDomainUrl(eventId), jsonPutInit({ custom_domain: customDomain }));
+  return parseJson<CustomDomainDto>(res);
+}
+
+/**
+ * Asks the event's own address for its proof now and answers what was found (the first success turns the address on for the guests'
+ * links). Superadmin only; 409 `custom_domain_not_set`; 429 `domain_check_rate_limited` after five a minute.
+ */
+export async function checkCustomDomain(eventId: string): Promise<CustomDomainDto> {
+  const res = await fetch(customDomainUrl(eventId, true), jsonPostInit({}));
+  return parseJson<CustomDomainDto>(res);
 }
 
 /** Probe weather provider from a draft (no persist). */

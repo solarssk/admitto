@@ -294,6 +294,7 @@ import {
   handleGetEventCustomDomain,
   handlePutEventCustomDomain,
 } from "./admin/event-custom-domain-routes.js";
+import { handleCheckEventCustomDomain, type CustomDomainCheckDeps } from "./admin/event-custom-domain-check-routes.js";
 import {
   MAX_REGISTRATION_SETTINGS_BODY_BYTES,
   handleGetEventRegistrationSettings,
@@ -561,6 +562,8 @@ export interface CreateAppOptions {
   registrationConfirm?: Pick<RegistrationConfirmDeps, "placement">;
   /** Test-only injection point of the memory of the events' own addresses (clock, lifetimes, size); see guest-host/guest-host.ts. */
   guestHosts?: GuestHostCacheOptions;
+  /** Test-only injection point of the check of an event's own address (`POST .../custom-domain/check`): the lookup and the pinned request. */
+  domainCheck?: NonNullable<CustomDomainCheckDeps["probe"]>;
 }
 
 /**
@@ -790,11 +793,8 @@ export function createApp(options: CreateAppOptions = {}) {
   // Routing by host (D-C6, 119b): before every other middleware and route, so that on the verified own address of an event nothing
   // but the guest's side of that event exists (a hidden path gets the one public 404, with none of the headers below), and the
   // kind of host is known to the handlers that must keep one address to one event. What it lets through is guest-host/guest-paths.ts.
-  const guestHosts = createGuestHostResolver(
-    db,
-    () => resolveInstanceHostname(() => resolveInstanceBaseUrl(db, process.env, mailInjectedBaseUrl)),
-    options.guestHosts,
-  );
+  const readInstanceHostname = () => resolveInstanceHostname(() => resolveInstanceBaseUrl(db, process.env, mailInjectedBaseUrl));
+  const guestHosts = createGuestHostResolver(db, readInstanceHostname, options.guestHosts);
   app.use(
     "*",
     createGuestHostMiddleware({
@@ -874,6 +874,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminNotificationSettingsTestRateLimit = rateLimit(rateLimitStore, "admin:notification-settings-test");
   const adminEventMailDiagnosticsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-diagnostics");
   const adminHealthLiveRateLimit = rateLimit(rateLimitStore, "admin:health-live");
+  const adminDomainCheckRateLimit = rateLimit(rateLimitStore, "admin:domain-check");
   const accountNotificationsPollRateLimit = rateLimit(rateLimitStore, "account:notifications-poll");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
   const adminAttendeesSearchRateLimit = rateLimit(rateLimitStore, "admin:attendees-search");
@@ -2280,6 +2281,21 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     customDomainBodyLimit,
     guardArchivedEvent((c) => handlePutEventCustomDomain(c, db, oidcPublicBaseUrl, () => guestHosts.clear())),
+  );
+  // "Check now" for that address (PR 120): superadmin only (the handler checks), limited per user, because the server makes a real
+  // request to the host a person typed. No body is read. The first success verifies the address, so the memory of the hosts is cleared.
+  app.post(
+    "/api/admin/events/:eventId/registration/custom-domain/check",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminDomainCheckRateLimit,
+    guardArchivedEvent((c) =>
+      handleCheckEventCustomDomain(c, db, {
+        instanceHostname: readInstanceHostname,
+        onChecked: () => guestHosts.clear(),
+        probe: options.domainCheck,
+      }),
+    ),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),

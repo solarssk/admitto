@@ -2,9 +2,10 @@ import { useRef, useState } from "react";
 import { useToast } from "@admitto/ui";
 import { ApiError, fetchLegalDocuments, fetchRegistrationSettings, saveRegistrationSettings } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { LegalDocumentDto, RegistrationSettingsDto, SaveRegistrationSettingsBody } from "../api/types.js";
+import type { CustomDomainDto, LegalDocumentDto, RegistrationSettingsDto, SaveRegistrationSettingsBody } from "../api/types.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
 import { claimErrors, draftFromSettings, settingsPatch, type AccessDraft } from "./accessSettings.js";
+import { ownAddressOf } from "./ownAddress.js";
 
 /** Why a save did not happen, shown at the form: the checks that are not met (from the keys of the server's answer), or a sentence. */
 export type AccessProblem = { kind: "not_ready"; blockers: readonly string[] } | { kind: "message"; text: string };
@@ -63,10 +64,10 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     // comes last, must not put back what the newer change took away, and neither may a slow read of the texts hold an old answer back.
     const mine = ++newestRead.current;
     try {
-      const [latest, texts] = await Promise.all([fetchRegistrationSettings(eventId), fetchLegalDocuments(eventId)]);
+      const [latest, texts] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchLegalDocuments(eventId)]);
       if (mine !== newestRead.current) return;
-      setServer(latest);
-      setLegalItems(texts.items);
+      if (latest.status === "fulfilled") setServer(latest.value);
+      if (texts.status === "fulfilled") setLegalItems(texts.value.items);
     } catch {
       // What the screen shows stays as it is, and so does the error that sent us here.
     }
@@ -145,5 +146,11 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     void refresh();
   }
 
-  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, submit: () => void submit(), cancelTurnOff, passwordChanged, eventArchived };
+  /** The own address was set, removed or checked by its own request: the card says so now, and the settings are read again (the link for guests moves with it). */
+  function addressChanged(state: CustomDomainDto) {
+    setServer((current) => ({ ...current, own_address: ownAddressOf(state) }));
+    void refresh();
+  }
+
+  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, submit: () => void submit(), cancelTurnOff, passwordChanged, addressChanged, eventArchived };
 }

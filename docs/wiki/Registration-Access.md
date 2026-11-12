@@ -12,6 +12,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 - You must be the Administrator of the event's organisation, or a Superadmin. An Operator cannot open this page.
 - Some things are set up for the whole instance, by a Superadmin: bot protection, which ways in are allowed, the identity provider for the company sign-in, email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
+- Only a Superadmin sets the address of the event for guests (see **Give the event an address of its own** below). Every Administrator of the event sees how it stands.
 - You write the legal texts and the questions yourself. See [Legal Texts and Consents](Legal-Texts-and-Consents) and [Registration Form Fields](Registration-Form-Fields).
 - An archived event keeps its settings. You can read them and copy the link, but you cannot change anything.
 
@@ -45,6 +46,18 @@ Registration is off for every event until you turn it on. Until then, the addres
 3. Switch **Styled form boxes** on if you want the form to draw its own boxes instead of the browser's. See [Styled boxes](#styled-boxes).
 4. Under **Extra consents**, tick each consent that guests must accept. The list holds the consents that you published on the **Legal** tab.
 5. Select **Save**.
+
+**Give the event an address of its own**
+
+A Superadmin does this. By default guests get links on the address of the instance. An event can have an address of its own instead, such as `events.example.com`, and then every link a guest is sent points at it.
+
+1. Open the **Access** tab. Under **Address for guests**, type the address in **Own address**. Type the host name only: no `https://`, port or path.
+2. Select **Save address**. The card says the address is not checked yet. Guests still get links on the main address.
+3. Ask your IT department to set it up. The card lists the steps: a CNAME record that points the address to the instance, HTTPS with a valid certificate, the `Host` header passed on to Admitto, and no sign-in gateway in front of the pages guests open. If the form uses the bot check (Turnstile), the address also has to be added to the hostnames of its widget, or guests on the address fail the check. Admitto does not issue certificates.
+4. When IT says it is ready, select **Check now**. The card says what the check found.
+5. When the card says **Working**, guests get links on the address.
+
+Admitto also checks the address by itself soon after you save it, and again every day.
 
 **Turn registration on**
 
@@ -143,6 +156,28 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 - The guest's confirmation email replaces the "received" email.
 - With the company sign-in this switch has no effect: the identity provider has already verified the address, so no confirmation link is sent. The switch is greyed out and keeps its setting for the other ways in.
 
+**The address for guests: what the check can find**
+
+| The card says | What it means | What IT does |
+|---|---|---|
+| Working | The address answers as this event on this instance | Nothing |
+| Not working yet | The check has not passed yet. Guests keep the main address | Fix what the card names |
+| Stopped working | The address worked once, and its last check failed. Guests are still sent links on it | Fix what the card names. Then select **Check now** |
+| Cannot be checked from this server | The name resolves to a private network address, as a name of an internal DNS does. This is no fault of the address, but Admitto cannot confirm it. An address that never passed a check keeps the main address for guests; one that passed earlier stays in use | Nothing, or use a public name |
+
+When a check fails, the card names the reason:
+
+| Reason | What IT does |
+|---|---|
+| The name does not resolve | Create a CNAME record that points the address to the instance |
+| The HTTPS certificate was refused | Serve a valid certificate for exactly this name |
+| The name answers, but not as this event on this instance | Point the name at the instance, and pass the `Host` header on |
+| The address did not answer in time | Allow HTTPS connections from the internet to the address |
+
+- An address that worked and then fails is never taken back by itself. Guests are not sent back to the main address, and links already sent keep pointing at the address. The tab warns every Administrator of the event, and **Organisation settings → Health check** shows the row **Event addresses**.
+- A wrong address, or a change of it, starts again: the verification is cleared and guests get the main address until the check passes.
+- With the company sign-in, the identity provider must also list `https://<address>/sso/callback` as an allowed redirect. See [Organisation Settings](Organisation-Settings).
+
 ## What changes after this action
 
 | Action | Result |
@@ -153,6 +188,8 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 | Move between **Automatic** and **With approval** | The new mode applies to new requests |
 | Switch **Styled form boxes** on or off | The next guest who opens the form gets the boxes you chose. A form that is already open keeps the boxes it has |
 | Turn registration off | The form answers "not found" at once |
+| Save, change or remove the address for guests | Saved at once, apart from the **Save** button of the page. The check starts again from "not checked yet", and the audit log records "Guest registration own address updated" |
+| Check now | Asks the address and shows what it found. The first success switches the links to the address. At most five checks a minute |
 | Save a limit to one company | The form accepts only guests whose sign-in matches. The change is recorded in the audit log as "Guest registration settings changed", with the claim and its values. They are settings, not guests' data |
 | Set, change or remove the password | The password is saved or removed at once. Removing it closes the form until you set a new one |
 
@@ -175,6 +212,9 @@ When you turn registration off:
 | A guest sees "Your company account did not give us a verified email address" | The identity provider sent no email address, or says the address is not verified. A Superadmin maps the email claim of the provider |
 | The restriction says "The restriction to one company works with the company sign-in only" | Choose **Company sign-in** as the way in, or clear both fields |
 | There is no link under **Link for guests** | The address of the instance is not set. Ask a Superadmin |
+| The tab warns that the address of the event stopped working | Ask a Superadmin or your IT department. The card under **Address for guests** names the reason |
+| **Check now** is off | The field holds an address that is not saved. Save it first |
+| "Another event already uses this address" | One address belongs to one event. Remove it from the other event first |
 | Registration is on, but the page warns that something is missing | A row of the checklist stopped being done, for example the bot protection keys. The form may be closed to guests until it is fixed |
 | **Save** and the controls are off | The event is archived, or a save is still running |
 | A message says you have no access | Your role does not let you manage this event. Ask a Superadmin |

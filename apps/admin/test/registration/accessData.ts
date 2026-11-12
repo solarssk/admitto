@@ -46,6 +46,8 @@ export function settings(overrides: Partial<RegistrationSettingsDto> = {}): Regi
     sso_claim_values: [],
     password_set: false,
     guest_url: "https://admitto.example.com/r/demo",
+    instance_host: "admitto.example.com",
+    own_address: null,
     readiness: checks(),
     public_fields: [{ key: "parking", label: "Do you need a parking space?", type: "boolean", required: false }],
     ...overrides,

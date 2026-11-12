@@ -349,12 +349,26 @@ describe("healthCheckGuidance", () => {
     expect(healthCheckGuidance(checkRow("registration_captcha", "not_configured"))).toBeNull();
   });
 
+  it("tells what to do about an event address that worked and has stopped, without a link away from the event", () => {
+    const guidance = healthCheckGuidance(checkRow("event_addresses", "degraded", [{ key: "reason", value: "address_stopped" }]));
+    expect(guidance?.cause).toContain("worked once");
+    expect(guidance?.impact).toContain("Guests are still sent links on that address");
+    expect(guidance?.nextStep).toContain("Access tab of Registration");
+    expect(guidance?.link).toBeUndefined();
+  });
+
+  it("says nothing for an event_addresses row that is ok or not configured, and does not guess for a state it does not know", () => {
+    expect(healthCheckGuidance(checkRow("event_addresses", "ok"))).toBeNull();
+    expect(healthCheckGuidance(checkRow("event_addresses", "not_configured"))).toBeNull();
+    expect(healthCheckGuidance(checkRow("event_addresses", "degraded"))).toBe(UNRECOGNISED_STATE_GUIDANCE);
+  });
+
   it("gives a registration_captcha row in a state it does not know the unrecognised-state guidance", () => {
     expect(healthCheckGuidance(checkRow("registration_captcha", "degraded"))).toBe(UNRECOGNISED_STATE_GUIDANCE);
     expect(healthCheckGuidance(checkRow("registration_captcha", "down"))).toBe(UNRECOGNISED_STATE_GUIDANCE);
   });
 
-  it.each(["identity_provider_idp-1", "cloudflare_access", "address_lookup", "bounce_ingest", "background_worker", "wallet_passes", "weather", "email_sending", "mail_delivery_queue", "registration_mail", "registration_captcha"])(
+  it.each(["identity_provider_idp-1", "cloudflare_access", "address_lookup", "bounce_ingest", "background_worker", "wallet_passes", "weather", "email_sending", "mail_delivery_queue", "registration_mail", "registration_captcha", "event_addresses"])(
     "gives %s degraded/reason=lookup_failed the shared could-not-read guidance",
     (id) => {
       const guidance = healthCheckGuidance(
