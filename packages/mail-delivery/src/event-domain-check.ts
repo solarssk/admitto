@@ -184,7 +184,7 @@ export type RecordedCheck =
  *   warns, there is no silent return to the instance's address).
  * The time written is read here, after the request, never the time the check began.
  */
-export async function recordDomainCheck(
+export function recordDomainCheck(
   db: PrismaClient,
   input: { eventId: string; domain: string; result: CustomDomainCheckResult; startedAt: Date; now?: () => Date },
 ): Promise<RecordedCheck> {
@@ -277,7 +277,7 @@ export async function refreshEventDomains(
   const result: RefreshEventDomainsResult = { checked: 0, verified: 0, failing: 0, errors: 0, more: due.length > limit };
   for (const { event_id } of due.slice(0, limit)) {
     try {
-      const { recorded } = await checkEventDomain(db, event_id, deps);
+      const { recorded } = await checkEventDomain(db, event_id, deps); // NOSONAR - one after the other on purpose: a tick opens one connection at a time to hosts we do not control
       result.checked += 1;
       if (recorded?.kind === "recorded") {
         if (recorded.firstVerified) result.verified += 1;

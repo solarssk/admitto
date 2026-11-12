@@ -56,7 +56,7 @@ export function stoppedWarning(address: RegistrationOwnAddressDto): string {
 
 /** What to do about each result, for the person who reads the card (a superadmin passes it on to IT). */
 export function checkAdvice(result: CustomDomainCheckResult, instanceHost: string | null): string {
-  const target = instanceHost ?? "the address of this instance";
+  const target = instanceHost === null ? "the address of this instance" : instanceHost;
   switch (result) {
     case "ok":
       return "The address answers as this event on this instance.";

@@ -563,7 +563,7 @@ export interface CreateAppOptions {
   /** Test-only injection point of the memory of the events' own addresses (clock, lifetimes, size); see guest-host/guest-host.ts. */
   guestHosts?: GuestHostCacheOptions;
   /** Test-only injection point of the check of an event's own address (`POST .../custom-domain/check`): the lookup and the pinned request. */
-  domainCheck?: CustomDomainCheckDeps["probe"];
+  domainCheck?: NonNullable<CustomDomainCheckDeps["probe"]>;
 }
 
 /**

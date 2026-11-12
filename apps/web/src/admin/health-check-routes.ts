@@ -1678,10 +1678,11 @@ async function eventAddressesRow(db: PrismaClient, checkedAt: string): Promise<H
     return row("ok", `${rows.length} event address${rows.length === 1 ? "" : "es"}, none has stopped working`, counts);
   }
   const named = stopped.slice(0, EVENT_ADDRESSES_LISTED).map((stoppedRow) => stoppedRow.custom_domain);
+  const more = stopped.length - named.length;
   return row("degraded", `${stopped.length} event address${stopped.length === 1 ? " has" : "es have"} stopped working`, [
     ...counts,
     ["reason", "address_stopped"],
-    ["stopped_addresses", `${named.join(", ")}${stopped.length > named.length ? `, and ${stopped.length - named.length} more` : ""}`],
+    ["stopped_addresses", more > 0 ? `${named.join(", ")}, and ${more} more` : named.join(", ")],
   ]);
 }
 

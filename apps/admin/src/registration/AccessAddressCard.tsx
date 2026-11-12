@@ -14,7 +14,7 @@ const TONE_ICONS: Record<AddressTone, string> = { ok: "check", warn: "alert-tria
 function AddressStatus({ address, instanceHost }: Readonly<{ address: RegistrationOwnAddressDto; instanceHost: string | null }>) {
   const line = addressStatusLine(address, instanceHost);
   return (
-    <div className="access-check access-address__status" role="status">
+    <output className="access-check access-address__status">
       <span className={`overview-check__icon overview-check__icon--${line.tone}`} aria-hidden="true">
         <i className={`ti ti-${TONE_ICONS[line.tone]}`} />
       </span>
@@ -25,7 +25,7 @@ function AddressStatus({ address, instanceHost }: Readonly<{ address: Registrati
         <span className="overview-check__detail">{line.detail}</span>
         {address.checked_at !== null && <span className="overview-check__detail">Last checked {formatUtcDateTime(address.checked_at)}.</span>}
       </span>
-    </div>
+    </output>
   );
 }
 
