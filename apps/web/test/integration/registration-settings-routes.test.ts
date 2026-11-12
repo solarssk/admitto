@@ -10,6 +10,7 @@ import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { SSO_PROVIDER_SETTINGS_KEY } from "../../src/registration/sso-provider.js";
+import { readRedirectUris } from "../../src/admin/registration-settings-routes.js";
 import { verifyBotChallenge, botChallengeCData } from "../../src/registration/bot-challenge.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
@@ -558,6 +559,52 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
       if (savedEnv !== undefined) process.env.BASE_URL = savedEnv;
       await prisma.systemSettings.deleteMany({ where: { key: "instance_url" } });
     }
+  });
+
+  it("lists every return address the provider must hold: the instance's, then one per own address of an event that uses the sign-in (D-C6)", async () => {
+    const rows = [
+      // [slug, methods, domain, verified, archived]
+      ["b", ["sso"], "b.acme.example", true, false],
+      ["a", ["sso"], "a.acme.example", false, false],
+      ["link", ["link"], "c.acme.example", true, false],
+      ["archived", ["sso"], "d.acme.example", true, true],
+      ["nodomain", ["sso"], null, false, false],
+    ] as const;
+    const ids = rows.map(([slug]) => `evt-reg-settings-uris-${slug}`);
+    try {
+      for (const [slug, methods, domain, verified, archived] of rows) {
+        const id = `evt-reg-settings-uris-${slug}`;
+        await prisma.event.create({
+          data: { id, title: `Uris ${slug}`, slug: id, date: new Date("2026-12-01"), organization_id: ORG_ID, archived_at: archived ? new Date() : null },
+        });
+        await prisma.eventRegistrationSettings.create({
+          data: { event_id: id, access_methods: [...methods], custom_domain: domain, custom_domain_verified_at: verified ? new Date() : null },
+        });
+      }
+      const instance = { uri: "https://tickets.example.com/sso/callback", host: "instance", verified: true };
+      const expected = [
+        instance,
+        { uri: "https://a.acme.example/sso/callback", host: "event_domain", verified: false },
+        { uri: "https://b.acme.example/sso/callback", host: "event_domain", verified: true },
+      ];
+
+      const readBody = (await (await read()).json()) as Offered & { redirect_uris: unknown };
+      const written = (await (await put("/api/admin/registration/sso-provider", { provider_id: providerId })).json()) as Offered & { redirect_uris: unknown };
+
+      expect(readBody.redirect_uris).toEqual(expected);
+      expect(written.redirect_uris).toEqual(expected);
+      // The one address of the instance stays where the screens that read one find it.
+      expect(readBody.redirect_uri).toBe(instance.uri);
+    } finally {
+      await prisma.eventRegistrationSettings.deleteMany({ where: { event_id: { in: ids } } });
+      await prisma.event.deleteMany({ where: { id: { in: ids } } });
+    }
+  });
+
+  it("lists only the instance's address while no event has an address of its own, and none while the instance has none", async () => {
+    const body = (await (await read()).json()) as Offered & { redirect_uris: unknown };
+    expect(body.redirect_uris).toEqual([{ uri: "https://tickets.example.com/sso/callback", host: "instance", verified: true }]);
+    expect(await readRedirectUris(prisma, null)).toEqual([]);
   });
 
   it("never sends a field of the provider but its id and its name", async () => {

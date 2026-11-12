@@ -57,6 +57,9 @@ export const CODE_MESSAGES: Record<string, string> = {
   consent_not_published:
     "One of the extra consents you chose is not published for this event. Publish its text first, or leave it out.",
   content_field_in_use: "This field is already shown on another item. Uncheck it there first.",
+  custom_domain_invalid:
+    "This is not an address guests can use. Enter a bare host name such as events.example.com: no https://, port or path, no IP address, and not the address of this instance.",
+  custom_domain_taken: "Another event already uses this address. One address belongs to one event.",
   delivery_not_created: "Could not create the delivery.",
   delivery_not_found: "Delivery not found.",
   duplicate_issuer: "An identity provider with this issuer already exists.",

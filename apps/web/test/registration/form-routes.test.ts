@@ -28,7 +28,7 @@ type Answer = ResolvedRegistration | { kind: "open"; form: ReturnType<typeof for
 function answer(state: Answer) {
   loadPage.mockResolvedValue(
     state.kind === "open" && !("eventId" in state)
-      ? { kind: "open", form: state.form, eventId: "evt-1", fields: [], access: { method: "link" } }
+      ? { kind: "open", form: state.form, eventId: "evt-1", fields: [], access: { method: "link" }, guestDomain: { custom_domain: null, custom_domain_verified_at: null } }
       : (state as ResolvedRegistration),
   );
 }

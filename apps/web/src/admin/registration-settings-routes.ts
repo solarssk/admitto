@@ -56,19 +56,31 @@ function serializeTurnstile(settings: TurnstileSettingsPublic) {
 
 const ssoProviderPutSchema = z.object({ provider_id: z.string().trim().min(1).max(128).nullable() }).strict();
 
+/**
+ * One address the provider's administrator lists as an allowed redirect: the instance's (`host: "instance"`, always first), then one
+ * for each address of its own that an event with the company sign-in has (`host: "event_domain"`, D-C6), whether it is verified yet or
+ * not (IT may enter an address before the check passes, and a guest signs in on it as soon as it is).
+ */
+export interface GuestRedirectUri {
+  uri: string;
+  host: "instance" | "event_domain";
+  verified: boolean;
+}
+
 function serializeSsoProvider(
   providerId: string | null,
   state: GuestSsoProviderState,
   providers: { id: string; display_name: string }[],
   redirectUri: string | null,
+  redirectUris: GuestRedirectUri[],
 ) {
-  return { provider_id: providerId, state, providers, redirect_uri: redirectUri };
+  return { provider_id: providerId, state, providers, redirect_uri: redirectUri, redirect_uris: redirectUris };
 }
 
 /** The address of the instance that the guests' sign-in is built on (the same `baseUrl` as `handleSsoStart`), or null while none is set. */
 export type SsoBaseUrl = () => Promise<string>;
 
-/** The one address the provider's administrator lists for the guests' sign-in, built where the flow builds it; null while the instance has no address. */
+/** The address of the instance that the guests' sign-in returns to, built where the flow builds it; null while the instance has no address. */
 export async function readRedirectUri(baseUrl: SsoBaseUrl): Promise<string | null> {
   try {
     return buildGuestSsoRedirectUri(await baseUrl());
@@ -77,15 +89,34 @@ export async function readRedirectUri(baseUrl: SsoBaseUrl): Promise<string | nul
   }
 }
 
+/**
+ * Every return address the provider must list: the instance's (when it has an address) and one per address of its own that an
+ * event that is not archived and uses the company sign-in has, sorted, each once (an address belongs to one event).
+ */
+export async function readRedirectUris(db: PrismaClient | Prisma.TransactionClient, instanceUri: string | null): Promise<GuestRedirectUri[]> {
+  const rows = await db.eventRegistrationSettings.findMany({
+    where: { custom_domain: { not: null }, access_methods: { has: "sso" }, event: { archived_at: null } },
+    select: { custom_domain: true, custom_domain_verified_at: true },
+  });
+  const ofDomains = rows.flatMap((row) =>
+    row.custom_domain === null
+      ? []
+      : [{ uri: buildGuestSsoRedirectUri(`https://${row.custom_domain}`), host: "event_domain" as const, verified: row.custom_domain_verified_at !== null }],
+  );
+  ofDomains.sort((a, b) => a.uri.localeCompare(b.uri, "en"));
+  return [...(instanceUri === null ? [] : [{ uri: instanceUri, host: "instance" as const, verified: true }]), ...ofDomains];
+}
+
 /** The choice, how it stands, and what can be chosen. Never a field of a provider but its id and the name staff gave it. */
 async function readSsoProvider(db: PrismaClient | Prisma.TransactionClient, redirectUri: string | null) {
   // The stored id is read once and the state is derived from it, so a change of provider between reads cannot make the two disagree.
   const providerId = await getSsoProviderId(db);
-  const [provider, providers] = await Promise.all([
+  const [provider, providers, redirectUris] = await Promise.all([
     providerId === null ? null : findOidcProviderById(db, providerId),
     listSelectableSsoProviders(db),
+    readRedirectUris(db, redirectUri),
   ]);
-  return serializeSsoProvider(providerId, ssoProviderState(providerId, provider), providers, redirectUri);
+  return serializeSsoProvider(providerId, ssoProviderState(providerId, provider), providers, redirectUri, redirectUris);
 }
 
 function serializeAvailability(list: AccessMethodAvailability[]) {
@@ -237,7 +268,8 @@ export async function handlePutRegistrationAccessMethods(c: Context, db: PrismaC
  * for none), where the choice stands (`state`: `ready`, `not_selected`, `missing` for a provider that was deleted, `disabled`)
  * the providers that can be chosen (`providers`: the enabled OIDC providers, by id and display name) and the address the
  * provider must list as a redirect (`redirect_uri`, built from the address of the instance as the sign-in builds it; null while
- * the instance has none).
+ * the instance has none) and every such address (`redirect_uris`: the instance's, then one per own address of an event that uses
+ * the sign-in, D-C6; `redirect_uri` stays for the screens that read one).
  */
 export async function handleGetRegistrationSsoProvider(c: Context, db: PrismaClient, baseUrl: SsoBaseUrl): Promise<Response> {
   const denied = await requireSuperadmin(c, db);

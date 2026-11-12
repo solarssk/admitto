@@ -12,15 +12,19 @@ import {
   type ResolvedTemplate,
   type TemplateVars,
 } from "@admitto/mail-templates";
+import { resolveGuestOrigin } from "@admitto/shared";
 import { formatDate, formatEventHoursRangeText } from "@admitto/shared/region-date-format";
 import { parseTicketAddressComponents } from "@admitto/tickets";
-import { buildConfirmUrl } from "./links.js";
+import { GUEST_DOMAIN_SELECT, buildConfirmUrl } from "./links.js";
 import type { RegistrationForMail } from "./registration-mail-check.js";
 
 /** What one event contributes to every registration mail of a drain, read once per event and tick. */
 export interface EventMailFacts {
   organizationId: string;
   slug: string;
+  /** Where this event's guests are sent: its own address once verified (D-C6), else the instance's. The base of the confirmation link and of
+   * every address in the mail that a guest's mail client fetches (`/m`, `/uploads` and `/assets` are served there). */
+  guestOrigin: string;
   /** Event name, date, place, branding, the event's image tokens and its contact: no value of any guest. */
   vars: TemplateVars;
   /** The event's image token names, which the renderer accepts besides the fixed placeholders. */
@@ -35,8 +39,9 @@ export async function loadEventMailFacts(
 ): Promise<EventMailFacts> {
   const event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
-    include: { organization: true, location_details: true },
+    include: { organization: true, location_details: true, registration_settings: { select: GUEST_DOMAIN_SELECT } },
   });
+  const guestOrigin = resolveGuestOrigin(event, baseUrl);
   const [assets, contact] = await Promise.all([
     resolveEventImageAssetVars(eventId, prisma),
     resolveEventContactVars(eventId, prisma),
@@ -46,12 +51,13 @@ export async function loadEventMailFacts(
   return {
     organizationId: event.organization_id,
     slug: event.slug,
+    guestOrigin,
     assetNames: assets.names,
     vars: {
       event_name: event.title,
       event_date: formatDate(event.date, country),
       event_hours: formatEventHoursRangeText(event.event_hours_start, event.event_hours_end, country, event.timezone, event.date),
-      ...buildEventLocationTemplateVars(event.id, event.location_details, baseUrl, env),
+      ...buildEventLocationTemplateVars(event.id, event.location_details, guestOrigin, env),
       logo_url: branding.logo_url,
       header_image_url: branding.header_image_url,
       ...assets.vars,
@@ -83,15 +89,13 @@ export function renderRegistrationMail(
   template: ResolvedTemplate,
   templateName: string,
   registration: RegistrationForMail,
-  baseUrl: string,
 ): RenderedTemplate {
   // The mail that confirms an address, without its link, would be sent and counted as sent, and the guest could do nothing
   // with it. A template saved before this was checked (or edited by hand) fails its row for good instead.
   const missing = findMissingRequiredPlaceholders("", template.compiledHtmlTemplate, requiredPlaceholdersForTemplate(templateName));
   if (missing.length > 0) throw new MissingRequiredPlaceholderError(missing);
   const named = mayShowNames(registration);
-  // Where a guest's links point. A custom address per event (D-C6, PR 119) replaces this one value.
-  const guestOrigin = baseUrl;
+  const { guestOrigin } = facts;
   const vars: TemplateVars = {
     ...facts.vars,
     email: registration.email,
@@ -103,6 +107,6 @@ export function renderRegistrationMail(
   return renderTemplate(
     { subject: template.subjectTemplate, compiledHtml: template.compiledHtmlTemplate },
     vars,
-    { baseUrl, customAssetPlaceholders: facts.assetNames },
+    { baseUrl: guestOrigin, customAssetPlaceholders: facts.assetNames },
   );
 }

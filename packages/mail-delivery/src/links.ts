@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import { decryptFromString, signRegistrationConfirm } from "@admitto/crypto";
 import { validateHttpUrl } from "@admitto/mail-templates";
+import { resolveGuestOrigin, type GuestDomain } from "@admitto/shared";
 
 /** Attendee fields required to build mail ticket/QR links. */
 export interface AttendeeLinkInput {
@@ -10,9 +11,11 @@ export interface AttendeeLinkInput {
   external_uuid: string | null;
 }
 
-/** Event fields required to build mail ticket/QR/wallet links. */
+/** Event fields required to build mail ticket/QR/wallet links. `registration_settings` carries the event's own address for guests
+ * (D-C6): it is part of the type so that a caller that did not load it does not compile, and the choice of host is made here. */
 export interface EventLinkInput {
   slug: string;
+  registration_settings: GuestDomain | null;
   wallet_enabled: boolean;
   wallet_template_id: string | null;
   wallet_api_key_enc: string | null;
@@ -31,6 +34,9 @@ export interface AttendeeMailLinks {
   google_wallet_url: string;
 }
 
+/** The columns of an event's registration settings that decide the host of its guests' links, and no others. */
+export const GUEST_DOMAIN_SELECT = { custom_domain: true, custom_domain_verified_at: true } as const;
+
 function agencyPayload(attendee: AttendeeLinkInput): string | null {
   return attendee.qr_payload ?? attendee.external_uuid;
 }
@@ -48,7 +54,8 @@ function validatedAgencyTicketUrl(payload: string): string | null {
 /** Wallet URLs off the same internal ticket path the on-demand routes are registered under
  * (apps/web/src/app.ts's /t/:token/wallet/:platform and /t/:eventSlug/a/:ref/wallet/:platform) -
  * built from `internalTicketPath`, never from `ticket_url` itself, since an agency ticket_url can
- * be an external override URL that these routes don't exist under. */
+ * be an external override URL that these routes don't exist under. The path is on the address of the
+ * INSTANCE, not the event's own: the wallet stays on the main address (D-C6). */
 function walletUrls(
   event: EventLinkInput,
   internalTicketPath: string,
@@ -61,7 +68,9 @@ function walletUrls(
 }
 
 /**
- * Build ticket_url, qr_image_url, and wallet URLs for mail template vars.
+ * Build ticket_url, qr_image_url, and wallet URLs for mail template vars. `baseUrl` is the address of the instance: the ticket page
+ * and the QR image are on the event's own address when it has a verified one (`resolveGuestOrigin`, D-C6), and the wallet links are
+ * always on the instance's.
  * @throws when agency attendee has no `public_ref` or internal attendee has no plaintext token
  */
 export function buildAttendeeMailLinks(
@@ -71,6 +80,7 @@ export function buildAttendeeMailLinks(
   plaintextToken?: string,
 ): AttendeeMailLinks {
   const root = baseUrl.replace(/\/$/, "");
+  const guestRoot = resolveGuestOrigin(event, root);
   const agency = agencyPayload(attendee);
 
   if (agency !== null) {
@@ -78,26 +88,25 @@ export function buildAttendeeMailLinks(
       throw new Error(`Agency attendee ${attendee.id} missing public_ref for mail links`);
     }
     const ref = attendee.public_ref;
-    const internalTicketPath = `${root}/t/${event.slug}/a/${ref}`;
-    const qr_image_url = `${root}/q/${event.slug}/a/${ref}.png`;
+    const qr_image_url = `${guestRoot}/q/${event.slug}/a/${ref}.png`;
     const agencyUrl = validatedAgencyTicketUrl(agency);
-    const ticket_url = agencyUrl ?? internalTicketPath;
-    return { ticket_url, qr_image_url, ...walletUrls(event, internalTicketPath) };
+    const ticket_url = agencyUrl ?? `${guestRoot}/t/${event.slug}/a/${ref}`;
+    return { ticket_url, qr_image_url, ...walletUrls(event, `${root}/t/${event.slug}/a/${ref}`) };
   }
 
   if (!plaintextToken) {
     throw new Error("Internal attendee requires plaintext token for mail links");
   }
 
-  const internalTicketPath = `${root}/t/${plaintextToken}`;
   return {
-    ticket_url: internalTicketPath,
-    qr_image_url: `${root}/q/${plaintextToken}.png`,
-    ...walletUrls(event, internalTicketPath),
+    ticket_url: `${guestRoot}/t/${plaintextToken}`,
+    qr_image_url: `${guestRoot}/q/${plaintextToken}.png`,
+    ...walletUrls(event, `${root}/t/${plaintextToken}`),
   };
 }
 
-/** Resolve mail links at send/retry — decrypts token_enc only in the point of use. */
+/** Resolve mail links at send/retry - decrypts token_enc only in the point of use. `baseUrl` is the instance's address; the host of
+ * the guest-facing links is chosen from the event (see `buildAttendeeMailLinks`), so no caller has to. */
 export async function resolveAttendeeMailLinks(
   attendeeId: string,
   prisma: PrismaClient,
@@ -105,7 +114,7 @@ export async function resolveAttendeeMailLinks(
 ): Promise<AttendeeMailLinks> {
   const attendee = await prisma.attendee.findUniqueOrThrow({
     where: { id: attendeeId },
-    include: { event: true },
+    include: { event: { include: { registration_settings: { select: GUEST_DOMAIN_SELECT } } } },
   });
 
   const agency = agencyPayload(attendee);

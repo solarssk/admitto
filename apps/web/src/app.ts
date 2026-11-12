@@ -290,6 +290,11 @@ import {
   handlePutRegistrationPassword,
 } from "./admin/registration-password-routes.js";
 import {
+  MAX_CUSTOM_DOMAIN_BODY_BYTES,
+  handleGetEventCustomDomain,
+  handlePutEventCustomDomain,
+} from "./admin/event-custom-domain-routes.js";
+import {
   MAX_REGISTRATION_SETTINGS_BODY_BYTES,
   handleGetEventRegistrationSettings,
   handlePutEventRegistrationSettings,
@@ -918,6 +923,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const registrationPasswordBodyLimit = bodyLimit({
     maxSize: MAX_REGISTRATION_PASSWORD_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const customDomainBodyLimit = bodyLimit({
+    maxSize: MAX_CUSTOM_DOMAIN_BODY_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const registrationSettingsBodyLimit = bodyLimit({
@@ -2227,6 +2236,18 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     registrationSettingsBodyLimit,
     guardArchivedEvent((c) => handlePutEventRegistrationSettings(c, db)),
+  );
+  // The event's own address for guests (D-C6, 119a): SUPERADMIN ONLY, on both routes (the handlers check the role themselves; the gate
+  // only proves a staff session). The PUT has the chain of the other settings of an event and a small body cap.
+  app.get("/api/admin/events/:eventId/registration/custom-domain", staffAdminGate, (c) =>
+    handleGetEventCustomDomain(c, db),
+  );
+  app.put(
+    "/api/admin/events/:eventId/registration/custom-domain",
+    jsonPostCsrf,
+    staffAdminGate,
+    customDomainBodyLimit,
+    guardArchivedEvent((c) => handlePutEventCustomDomain(c, db, oidcPublicBaseUrl)),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),

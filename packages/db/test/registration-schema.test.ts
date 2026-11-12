@@ -123,6 +123,10 @@ describe("EventRegistrationSettings", () => {
       ask_department: false,
       consent_keys: [],
       styled_form_controls: false,
+      custom_domain: null,
+      custom_domain_status: "unchecked",
+      custom_domain_verified_at: null,
+      custom_domain_checked_at: null,
     });
   });
 
@@ -175,6 +179,67 @@ describe("EventRegistrationSettings", () => {
       "23514",
       "EventRegistrationSettings_max_companions_check",
     );
+  });
+});
+
+describe("EventRegistrationSettings: the event's own address (D-C6)", () => {
+  const setDomain = (eventId: string, domain: string | null) =>
+    prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain" = ${domain} WHERE "event_id" = ${eventId}`;
+
+  beforeAll(async () => {
+    await prisma.eventRegistrationSettings.upsert({ where: { event_id: EVENT_ID }, create: { event_id: EVENT_ID }, update: {} });
+    await prisma.eventRegistrationSettings.upsert({ where: { event_id: OTHER_EVENT_ID }, create: { event_id: OTHER_EVENT_ID }, update: {} });
+  });
+
+  afterAll(async () => {
+    await prisma.eventRegistrationSettings.updateMany({
+      data: { custom_domain: null, custom_domain_verified_at: null, custom_domain_status: "unchecked" },
+    });
+  });
+
+  it("is one address for one event: a second event cannot hold it, while many events can hold none", async () => {
+    await setDomain(EVENT_ID, "summit.acme.example");
+    await expectViolation(() => setDomain(OTHER_EVENT_ID, "summit.acme.example"), "23505", "EventRegistrationSettings_custom_domain_key");
+    await setDomain(EVENT_ID, null);
+    await setDomain(OTHER_EVENT_ID, null);
+    expect(await prisma.eventRegistrationSettings.count({ where: { custom_domain: null } })).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps out of the table anything that is not a bare host name in lower case, whatever writes it", async () => {
+    const refused = ["Summit.Acme.Example", "https://summit.acme.example", "summit.acme.example/path", "summit.acme.example:8080", "user@summit.acme.example", "summit acme.example", "", "a".repeat(254), "sümmit.acme.example"];
+    for (const value of refused) {
+      await expectViolation(() => setDomain(EVENT_ID, value), "23514", "EventRegistrationSettings_custom_domain_check");
+    }
+    for (const value of ["summit.acme.example", "xn--mnchen-3ya.de", `${"a".repeat(63)}.example.com`, "a".repeat(253)]) {
+      await setDomain(EVENT_ID, value);
+      expect((await prisma.eventRegistrationSettings.findUniqueOrThrow({ where: { event_id: EVENT_ID } })).custom_domain).toBe(value);
+    }
+    await setDomain(EVENT_ID, null);
+  });
+
+  it("knows three states of the check and no other", async () => {
+    for (const status of ["unchecked", "ok", "failing"]) {
+      await prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_status" = ${status} WHERE "event_id" = ${EVENT_ID}`;
+    }
+    await expectViolation(
+      () => prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_status" = 'verified' WHERE "event_id" = ${EVENT_ID}`,
+      "23514",
+      "EventRegistrationSettings_custom_domain_status_check",
+    );
+    await prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_status" = 'unchecked' WHERE "event_id" = ${EVENT_ID}`;
+  });
+
+  it("cannot keep the proof of an address that is gone", async () => {
+    await expectViolation(
+      () => prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_verified_at" = now() WHERE "event_id" = ${EVENT_ID} AND "custom_domain" IS NULL`,
+      "23514",
+      "EventRegistrationSettings_custom_domain_verified_check",
+    );
+    await setDomain(EVENT_ID, "summit.acme.example");
+    await prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_verified_at" = now() WHERE "event_id" = ${EVENT_ID}`;
+    await expectViolation(() => setDomain(EVENT_ID, null), "23514", "EventRegistrationSettings_custom_domain_verified_check");
+    await prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_verified_at" = NULL WHERE "event_id" = ${EVENT_ID}`;
+    await setDomain(EVENT_ID, null);
   });
 });
 

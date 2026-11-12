@@ -18,6 +18,15 @@ export {
   type SsoClaimValueProblem,
 } from "./ssoClaim.js";
 export {
+  CUSTOM_DOMAIN_MAX,
+  CUSTOM_DOMAIN_STATUSES,
+  parseCustomDomain,
+  type CustomDomainParse,
+  type CustomDomainProblem,
+  type CustomDomainStatus,
+} from "./customDomain.js";
+export { customGuestOrigin, resolveGuestOrigin, type GuestDomain, type GuestOriginEvent } from "./guestOrigin.js";
+export {
   REGISTRATION_PASSWORD_MAX,
   REGISTRATION_PASSWORD_MIN,
   registrationPasswordLength,

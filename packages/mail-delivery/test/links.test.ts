@@ -5,6 +5,7 @@ import { buildAttendeeMailLinks, buildConfirmUrl } from "../src/links.js";
 const BASE = "https://tickets.example.com";
 const EVENT = {
   slug: "summer-gala",
+  registration_settings: null,
   wallet_enabled: false,
   wallet_template_id: null,
   wallet_api_key_enc: null,
@@ -115,6 +116,59 @@ describe("buildAttendeeMailLinks", () => {
         BASE,
       ),
     ).toThrow("missing public_ref");
+  });
+});
+
+describe("buildAttendeeMailLinks - the event's own address (D-C6)", () => {
+  const OWN = "https://summit.acme.example";
+  const VERIFIED_AT = new Date("2026-11-11T10:00:00Z");
+  const withDomain = (verifiedAt: Date | null, extra: object = {}) => ({
+    ...EVENT_WITH_WALLET,
+    ...extra,
+    registration_settings: { custom_domain: "summit.acme.example", custom_domain_verified_at: verifiedAt },
+  });
+  const INTERNAL = { id: "att-1", public_ref: null, qr_payload: null, external_uuid: null };
+  const TOKEN = "tok_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
+  const AGENCY = { id: "att-b", public_ref: PUBLIC_REF, qr_payload: "AGENCY-QR-001", external_uuid: null };
+
+  it("sends the ticket page and the QR image to the event's address once it is verified, and the wallet to the instance", () => {
+    const links = buildAttendeeMailLinks(INTERNAL, withDomain(VERIFIED_AT), BASE, TOKEN);
+    expect(links.ticket_url).toBe(`${OWN}/t/${TOKEN}`);
+    expect(links.qr_image_url).toBe(`${OWN}/q/${TOKEN}.png`);
+    expect(links.apple_wallet_url).toBe(`${BASE}/t/${TOKEN}/wallet/apple`);
+    expect(links.google_wallet_url).toBe(`${BASE}/t/${TOKEN}/wallet/google`);
+  });
+
+  it("does the same for a ticket that has a reference (agency) and no token", () => {
+    const links = buildAttendeeMailLinks(AGENCY, withDomain(VERIFIED_AT), BASE);
+    expect(links.ticket_url).toBe(`${OWN}/t/summer-gala/a/${PUBLIC_REF}`);
+    expect(links.qr_image_url).toBe(`${OWN}/q/summer-gala/a/${PUBLIC_REF}.png`);
+    expect(links.apple_wallet_url).toBe(`${BASE}/t/summer-gala/a/${PUBLIC_REF}/wallet/apple`);
+  });
+
+  it("keeps an agency's own ticket address as it is, and still hosts the QR image on the event's address", () => {
+    const agency = { ...AGENCY, qr_payload: "https://agency.example.com/ticket/123" };
+    const links = buildAttendeeMailLinks(agency, withDomain(VERIFIED_AT), BASE);
+    expect(links.ticket_url).toBe("https://agency.example.com/ticket/123");
+    expect(links.qr_image_url).toBe(`${OWN}/q/summer-gala/a/${PUBLIC_REF}.png`);
+  });
+
+  it("uses the instance for everything while the address is set but not verified", () => {
+    const links = buildAttendeeMailLinks(INTERNAL, withDomain(null), BASE, TOKEN);
+    expect(links.ticket_url).toBe(`${BASE}/t/${TOKEN}`);
+    expect(links.qr_image_url).toBe(`${BASE}/q/${TOKEN}.png`);
+    for (const url of Object.values(links)) expect(url).not.toContain("acme.example");
+  });
+
+  it("uses the instance for everything when the event has no address of its own", () => {
+    const links = buildAttendeeMailLinks(INTERNAL, EVENT_WITH_WALLET, BASE, TOKEN);
+    for (const url of Object.values(links)) expect(new URL(url).origin).toBe(BASE);
+  });
+
+  it("puts no link of the instance in a ticket or a QR link of an event with a verified address", () => {
+    const links = buildAttendeeMailLinks(INTERNAL, withDomain(VERIFIED_AT), `${BASE}/`, TOKEN);
+    expect(links.ticket_url).not.toContain("tickets.example.com");
+    expect(links.qr_image_url).not.toContain("tickets.example.com");
   });
 });
 

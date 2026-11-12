@@ -200,12 +200,11 @@ async function sendMail(
   prepared: PreparedMail,
   row: QueuedRegistrationMail,
   registration: RegistrationForMail,
-  baseUrl: string,
   assertOwned: () => Promise<void>,
 ): Promise<Resolution> {
   let rendered: RenderedTemplate;
   try {
-    rendered = renderRegistrationMail(prepared.facts, prepared.template, row.template_name, registration, baseUrl);
+    rendered = renderRegistrationMail(prepared.facts, prepared.template, row.template_name, registration);
   } catch {
     // Only this row fails, and for good: a retry cannot change the text. The rest of the queue carries on.
     throw new RegistrationMailFailure(MAIL_FAILURE.unusable, false);
@@ -283,7 +282,7 @@ async function runRow(context: EventMailContext, row: QueuedRegistrationMail, as
 
   // A ticket row passed the check, which refuses a registration without an attendee.
   const resolution = prepared
-    ? await sendMail(prepared, row, check.registration, context.baseUrl, assertOwned)
+    ? await sendMail(prepared, row, check.registration, assertOwned)
     : await handOverTicket(context, row, check.attendeeId!);
   await assertOwned();
   const written = await writeMailResult(context.prisma, row, resolution.data);

@@ -256,6 +256,23 @@ describe("who may use the settings routes", () => {
 });
 
 describe("reading the settings", () => {
+  it("gives the address of the form on the event's own address once it is verified (D-C6), and on the instance's until then, on a read and on a save", async () => {
+    const event = await addEvent("own-address");
+    const domain = `own-address-${event.slug}.acme.example`;
+    const guestUrl = async () => (await dto(await get(event.id))).guest_url;
+
+    await prisma.eventRegistrationSettings.update({ where: { event_id: event.id }, data: { custom_domain: domain } });
+    expect(await guestUrl()).toBe(`https://tickets.example.com/r/${event.slug}`);
+    expect((await dto(await put(event.id, { waitlist_enabled: false }))).guest_url).toBe(`https://tickets.example.com/r/${event.slug}`);
+
+    await prisma.eventRegistrationSettings.update({ where: { event_id: event.id }, data: { custom_domain_verified_at: new Date(), custom_domain_status: "ok" } });
+    expect(await guestUrl()).toBe(`https://${domain}/r/${event.slug}`);
+    expect((await dto(await put(event.id, { waitlist_enabled: true }))).guest_url).toBe(`https://${domain}/r/${event.slug}`);
+
+    // The address is not one of the settings an organiser saves: a save leaves it, and its proof, as they were.
+    expect(await settingsRow(event.id)).toMatchObject({ custom_domain: domain, custom_domain_status: "ok", custom_domain_verified_at: expect.any(Date) });
+  });
+
   it("gives an event with no settings row the defaults, registration off, and a readiness list", async () => {
     const event = await addEvent("no-row", { settings: null });
 

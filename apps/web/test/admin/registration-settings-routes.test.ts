@@ -28,6 +28,7 @@ import {
   handlePutRegistrationSsoProvider,
   handlePutRegistrationTurnstile,
 } from "../../src/admin/registration-settings-routes.js";
+import { readRedirectUris } from "../../src/admin/registration-settings-routes.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { SSO_PROVIDER_SETTINGS_KEY } from "../../src/registration/sso-provider.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
@@ -48,8 +49,11 @@ function memoryDb(options: { providers?: ProviderRow[]; values?: Record<string, 
       all.find((provider) => provider.id === where.id && provider.provider_type === where.provider_type) ?? null,
     ),
   };
+  // The own addresses of events that use the sign-in (D-C6): none in these tests, the integration test has them.
+  const eventRegistrationSettings = { findMany: vi.fn(async (): Promise<unknown[]> => []) };
   const executeRaw = vi.fn(async () => 1);
   const db = {
+    eventRegistrationSettings,
     systemSettings: memory.systemSettings,
     identityProvider,
     $executeRaw: executeRaw,
@@ -63,7 +67,7 @@ function memoryDb(options: { providers?: ProviderRow[]; values?: Record<string, 
       }
     }),
   };
-  return { db: db as unknown as PrismaClient, rows: memory.rows, systemSettings: memory.systemSettings, identityProvider, executeRaw };
+  return { db: db as unknown as PrismaClient, rows: memory.rows, systemSettings: memory.systemSettings, identityProvider, eventRegistrationSettings, executeRaw };
 }
 
 /** The address of the instance of these tests; the return address of the company sign-in is built on it. */
@@ -349,6 +353,22 @@ describe("access methods", () => {
   });
 });
 
+describe("the return addresses of the guests' sign-in (D-C6)", () => {
+  it("leaves out a row that has no address of its own, lists the others sorted, and none of the instance's while the instance has none", async () => {
+    const { db, eventRegistrationSettings } = memoryDb();
+    eventRegistrationSettings.findMany.mockResolvedValueOnce([
+      { custom_domain: "b.acme.example", custom_domain_verified_at: new Date() },
+      { custom_domain: null, custom_domain_verified_at: null },
+      { custom_domain: "a.acme.example", custom_domain_verified_at: null },
+    ] as never);
+
+    expect(await readRedirectUris(db, null)).toEqual([
+      { uri: "https://a.acme.example/sso/callback", host: "event_domain", verified: false },
+      { uri: "https://b.acme.example/sso/callback", host: "event_domain", verified: true },
+    ]);
+  });
+});
+
 describe("the identity provider guests sign in with (D-C4)", () => {
   const company = { id: "idp-1", display_name: "Company IdP", enabled: true };
   const other = { id: "idp-2", display_name: "Other IdP", enabled: true };
@@ -367,6 +387,7 @@ describe("the identity provider guests sign in with (D-C4)", () => {
         { id: "idp-2", display_name: "Other IdP" },
       ],
       redirect_uri: `${INSTANCE_URL}/sso/callback`,
+      redirect_uris: [{ uri: `${INSTANCE_URL}/sso/callback`, host: "instance", verified: true }],
     });
   });
 
@@ -378,7 +399,7 @@ describe("the identity provider guests sign in with (D-C4)", () => {
     const write = await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-1" });
 
     expect(read.status).toBe(200);
-    expect(await read.json()).toMatchObject({ provider_id: null, redirect_uri: null });
+    expect(await read.json()).toMatchObject({ provider_id: null, redirect_uri: null, redirect_uris: [] });
     expect(write.status).toBe(200);
     expect(await write.json()).toMatchObject({ provider_id: "idp-1", state: "ready", redirect_uri: null });
   });
