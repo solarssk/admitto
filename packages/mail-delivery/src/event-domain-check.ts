@@ -86,8 +86,9 @@ function resultOfLookupFailure(error: unknown): CustomDomainCheckResult {
 
 /** The first `max` bytes of the body as text, or null when it is longer (the rest is not read). */
 async function readCapped(response: Response, max: number): Promise<string | null> {
-  const reader = response.body?.getReader();
-  if (!reader) return "";
+  const body: ReadableStream<Uint8Array> | null = response.body;
+  if (!body) return "";
+  const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (;;) {
