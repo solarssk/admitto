@@ -72,10 +72,8 @@ class ExpiringMap<V> {
   set(key: string, value: V): void {
     this.entries.delete(key);
     if (this.entries.size >= this.max) {
-      for (const oldest of this.entries.keys()) {
-        this.entries.delete(oldest);
-        break;
-      }
+      // A Map keeps insertion order, so the first key is the oldest. With a `max` of 0 there is none and the delete does nothing.
+      this.entries.delete(this.entries.keys().next().value as string);
     }
     this.entries.set(key, { value, expiresAt: this.now() + this.ttlMs });
   }
