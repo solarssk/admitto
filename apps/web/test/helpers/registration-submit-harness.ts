@@ -7,9 +7,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { vi } from "vitest";
 import type { Prisma, PrismaClient } from "@admitto/db";
-import { createApp } from "../../src/app.js";
+import { createApp, type CreateAppOptions } from "../../src/app.js";
 import { setEnabledAccessMethods, ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { patchTurnstileSettings, TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
+import type { GuestHostCacheOptions } from "../../src/guest-host/guest-host.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import type { RateLimitStore } from "../../src/rate-limit/types.js";
 import type { AnswerPace } from "../../src/registration/submit-route.js";
@@ -192,6 +193,10 @@ export type HarnessOptions = {
   whileChallenged?: () => Promise<void>;
   /** The access log of the app (one line a request on `console.info`). Default: off, as in the tests of the other routes. */
   logHttpRequests?: boolean;
+  /** The memory of the events' own addresses. Default: none (lifetimes of 0), so a test that changes an address in the database sees it at once. */
+  guestHosts?: GuestHostCacheOptions;
+  /** The resolver of `/m/:filename`, when a test reads it. */
+  eventStaticMapService?: CreateAppOptions["eventStaticMapService"];
 };
 
 /** The app with the route's test injection points filled, and a way to post to it as the page does. */
@@ -213,6 +218,8 @@ export function harness(options: HarnessOptions) {
     },
     ...(options.placement ? { registrationConfirm: { placement: options.placement } } : {}),
     ...(options.logHttpRequests === undefined ? {} : { logHttpRequests: options.logHttpRequests }),
+    guestHosts: options.guestHosts ?? { foundTtlMs: 0, missingTtlMs: 0 },
+    ...(options.eventStaticMapService ? { eventStaticMapService: options.eventStaticMapService } : {}),
   });
 
   /** A body the page would send for an event, with a fresh token and address; `overrides` replace any key. */

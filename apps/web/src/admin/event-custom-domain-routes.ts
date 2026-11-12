@@ -177,7 +177,13 @@ async function storeDomain(c: Context, db: PrismaClient, eventId: string, actor:
 }
 
 /** PUT /api/admin/events/:eventId/registration/custom-domain */
-export async function handlePutEventCustomDomain(c: Context, db: PrismaClient, instanceUrl: CustomDomainInstanceUrl): Promise<Response> {
+export async function handlePutEventCustomDomain(
+  c: Context,
+  db: PrismaClient,
+  instanceUrl: CustomDomainInstanceUrl,
+  /** Called after a change that was stored, so the memory of the events' own addresses of this process does not hold the old answer. */
+  onChanged: () => void,
+): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
   const eventId = requireEventId(c);
@@ -190,5 +196,7 @@ export async function handlePutEventCustomDomain(c: Context, db: PrismaClient, i
   const judged = await judgeCustomDomain(body.value, instanceUrl);
   // The word that says what is wrong, and never the value that was sent.
   if (!judged.ok) return c.json({ error: "custom_domain_invalid", problem: judged.problem }, 422);
-  return storeDomain(c, db, eventId, actor, judged.domain);
+  const answer = await storeDomain(c, db, eventId, actor, judged.domain);
+  if (answer.ok) onChanged();
+  return answer;
 }
