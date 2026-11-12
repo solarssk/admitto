@@ -378,7 +378,7 @@ An event can let guests in by signing in with the company's identity provider in
 
 ## An event's own address for guests
 
-An event can have an address of its own for its guests, for example `summit.acme.example` (D-C6): every link a guest is sent (the form, the confirmation, the ticket, the QR image, the images and the map in a mail) then points at it, and the address of the panel does not reach a guest. This step is the data, the setting and the choice of host in the links. The address does not route requests yet: until a later step makes the application answer on it, it must be pointed at the instance by the organisation's IT department (a CNAME and HTTPS are theirs: Admitto issues no certificate).
+An event can have an address of its own for its guests, for example `summit.acme.example` (D-C6): every link a guest is sent (the form, the confirmation, the ticket, the QR image, the images and the map in a mail) then points at it, and the address of the panel does not reach a guest. This step is the data, the setting and the choice of host in the links. The address does not route requests yet: until a later step makes the application answer on it, and checks it, nobody should point the name at the instance. Afterwards the organisation's IT department points it at the instance (a CNAME and HTTPS are theirs: Admitto issues no certificate).
 
 | Control | What it does |
 |---------|--------------|

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { MAX_CUSTOM_DOMAIN_BODY_BYTES, judgeCustomDomain } from "../../src/admin/event-custom-domain-routes.js";
+import { InstanceUrlRequiredError } from "../../src/instance-base-url.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
@@ -270,11 +271,16 @@ describe("judgeCustomDomain: the rule that needs the instance's address", () => 
   });
 
   it("refuses nothing for want of an instance address: an instance with none has no host to take", async () => {
-    const noAddress = () => Promise.reject(new Error("no instance url"));
+    const noAddress = () => Promise.reject(new InstanceUrlRequiredError());
     expect(await judgeCustomDomain("tickets.example.com", noAddress)).toEqual({ ok: true, domain: "tickets.example.com" });
     expect(await judgeCustomDomain(null, noAddress)).toEqual({ ok: true, domain: null });
     // The shape is still judged.
     expect(await judgeCustomDomain("x.com/path", noAddress)).toEqual({ ok: false, problem: "bad_characters" });
+  });
+
+  it("does not let a failed lookup of the instance address pass the instance host: the failure reaches the caller", async () => {
+    const broken = () => Promise.reject(new Error("database unavailable"));
+    await expect(judgeCustomDomain("tickets.example.com", broken)).rejects.toThrow("database unavailable");
   });
 });
 

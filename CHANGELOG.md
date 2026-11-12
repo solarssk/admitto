@@ -56,7 +56,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Use one return address for the guests' company sign-in on the whole instance, so the identity provider needs a single entry and not one per event ([#1850](https://github.com/solarssk/admitto/pull/1850))
 - Add the company sign-in to Ways in, with a provider picker, a return address to copy and an optional limit to one company for each event ([#1851](https://github.com/solarssk/admitto/pull/1851))
 - Refuse turning an attendee field sensitive while the wallet field mapping still names it, so issued passes cannot keep its answer ([#1867](https://github.com/solarssk/admitto/pull/1867))
-- Let a superadmin give an event an address of its own for guests, so the form, confirmation, ticket and QR links point at it once it is verified and not at the panel's address ([#1868](https://github.com/solarssk/admitto/pull/1868))
+- Let a superadmin store an own guest address for an event (not live yet: verification and routing follow) ([#1868](https://github.com/solarssk/admitto/pull/1868))
 
 ### Changed
 

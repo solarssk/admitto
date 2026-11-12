@@ -12,10 +12,10 @@ import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/
 import {
   GUEST_SSO_SESSION_COOKIE,
   Jar,
+  browse,
   goToProvider,
   installProvider,
   removeProvider,
-  walk,
   type App,
 } from "../helpers/registration-sso-harness.js";
 import { ORIGIN, SelectiveStore, eventSeeder, harness } from "../helpers/registration-submit-harness.js";
@@ -69,30 +69,50 @@ afterAll(async () => {
   await stopMockOidcIdp(idp);
 });
 
-/** The return address of the start and the one the token was asked for, after a whole flow on `host`. */
+/**
+ * A whole flow the way a browser walks it: it begins on `host`, and the provider sends it back to the host of the return address it
+ * was given. The browser keeps one jar per host, so a flow cookie set on one host is not sent to another. `asked` is the return address
+ * the token was exchanged with: empty when the callback was refused before the exchange.
+ */
 async function flowOn(host: string) {
-  const app = onHost(host);
-  const jar = new Jar();
+  const startHost = new URL(`https://${host}`).host;
+  const jars = new Map<string, Jar>();
+  const jarOf = (h: string) => {
+    if (!jars.has(h)) jars.set(h, new Jar());
+    return jars.get(h)!;
+  };
   const before = idp.tokenRedirectUris().length;
-  const w = await walk(app, jar, SLUG, idp);
+  const began = await goToProvider(onHost(host), jarOf(startHost), SLUG, idp);
+  const landedHost = began.callbackUrl.host;
+  const callback = await browse(onHost(landedHost), jarOf(landedHost), `${began.callbackUrl.pathname}${began.callbackUrl.search}`);
   const asked = idp.tokenRedirectUris().slice(before);
-  return { w, jar, sentTo: w.authorizeUrl.searchParams.get("redirect_uri"), asked };
+  return { w: { ...began, callback }, jar: jarOf(landedHost), sentTo: began.authorizeUrl.searchParams.get("redirect_uri"), asked, crossed: landedHost !== startHost };
+}
+
+/** The flow ended on another host than it began on: there is no flow cookie there, so it is refused before the token is asked for. */
+function expectRefusedBeforeExchange(flow: Awaited<ReturnType<typeof flowOn>>, label: string) {
+  expect(flow.crossed, label).toBe(true);
+  expect(flow.asked, label).toEqual([]);
+  expect(flow.w.callback.status, label).toBe(302);
+  expect(flow.w.callback.headers.get("location"), label).toBe(`/r/${SLUG}?sso=failed`);
 }
 
 describe("the return address of a guest's sign-in", () => {
   it("is the instance's for an event with no address of its own, wherever the guest is", async () => {
     for (const host of ["tickets.example.com", OWN]) {
-      const { sentTo, asked } = await flowOn(host);
-      expect(sentTo, host).toBe("https://tickets.example.com/sso/callback");
-      expect(asked, host).toEqual([sentTo]);
+      const flow = await flowOn(host);
+      expect(flow.sentTo, host).toBe("https://tickets.example.com/sso/callback");
+      // On the instance the flow ends where it began; from the other host the provider sends the browser to the instance, without the cookie.
+      if (host === "tickets.example.com") expect(flow.asked, host).toEqual([flow.sentTo]);
+      else expectRefusedBeforeExchange(flow, host);
     }
   });
 
   it("is the instance's while the address is set but not verified, even for a guest who is on it", async () => {
     await setDomain(false);
-    const { sentTo, asked } = await flowOn(OWN);
-    expect(sentTo).toBe("https://tickets.example.com/sso/callback");
-    expect(asked).toEqual([sentTo]);
+    const flow = await flowOn(OWN);
+    expect(flow.sentTo).toBe("https://tickets.example.com/sso/callback");
+    expectRefusedBeforeExchange(flow, OWN);
   });
 
   it("is the event's own once it is verified and the guest is on it, and the token is asked for with the same one", async () => {
@@ -123,9 +143,9 @@ describe("the return address of a guest's sign-in", () => {
   it("is never built on a host the request merely carries: another host gets the instance's address", async () => {
     await setDomain(true);
     for (const host of ["evil.example.net", `evil.${OWN}`, `${OWN}.evil.example.net`, "other.acme.example"]) {
-      const { sentTo, asked } = await flowOn(host);
-      expect(sentTo, host).toBe("https://tickets.example.com/sso/callback");
-      expect(asked, host).toEqual([sentTo]);
+      const flow = await flowOn(host);
+      expect(flow.sentTo, host).toBe("https://tickets.example.com/sso/callback");
+      expectRefusedBeforeExchange(flow, host);
     }
   });
 

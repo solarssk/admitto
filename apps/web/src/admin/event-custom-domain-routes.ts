@@ -24,6 +24,7 @@ import { z } from "zod";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { parseCustomDomain, type CustomDomainProblem, type CustomDomainStatus } from "@admitto/shared";
 import { writeAdminAuditLog, type StaffActor } from "@admitto/tickets";
+import { InstanceUrlRequiredError } from "../instance-base-url.js";
 import { requireAuditActor, requireEventId, requireSuperadmin } from "./admin-helpers.js";
 
 /** The body is one short host name. */
@@ -73,11 +74,15 @@ function stateOf(row: StateRow | null): CustomDomainState {
 
 /** Whether `domain` is the host of the instance. An instance with no address has no host to take, so nothing is refused for it. */
 async function isInstanceHost(domain: string, instanceUrl: CustomDomainInstanceUrl): Promise<boolean> {
+  let base: string;
   try {
-    return new URL(await instanceUrl()).hostname.toLowerCase() === domain;
-  } catch {
-    return false;
+    base = await instanceUrl();
+  } catch (err) {
+    // Only an instance with no address is let through; any other failure of the lookup fails the request rather than saving the value unchecked.
+    if (err instanceof InstanceUrlRequiredError) return false;
+    throw err;
   }
+  return new URL(base).hostname.toLowerCase() === domain;
 }
 
 /** The address as a value to store, or the reason it cannot be: `null` is no address, a string is judged. */
