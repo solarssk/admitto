@@ -68,7 +68,7 @@ function sampleOf(path: string): string {
   return path
     .replace(/:(?:slug|eventSlug)\b/g, SLUG)
     .replace(/:[A-Za-z]+/g, "p1")
-    .replace("*", "x");
+    .replaceAll("*", "x");
 }
 
 function isStaffRoute(path: string): boolean {
