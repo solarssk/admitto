@@ -54,9 +54,12 @@ export function stoppedWarning(address: RegistrationOwnAddressDto): string {
   return `The address of this event for guests, ${address.domain}, stopped working: ${shortFault(address.check_result)}. Guests are still sent links on it, so they may not open. Ask a superadmin or your IT department to look at it.`;
 }
 
+/** Where a CNAME has to point: the instance's host, or words for it when the instance has no address yet. */
+const instanceTarget = (host: string | null): string => host ?? "the address of this instance";
+
 /** What to do about each result, for the person who reads the card (a superadmin passes it on to IT). */
 export function checkAdvice(result: CustomDomainCheckResult, instanceHost: string | null): string {
-  const target = instanceHost === null ? "the address of this instance" : instanceHost;
+  const target = instanceTarget(instanceHost);
   switch (result) {
     case "ok":
       return "The address answers as this event on this instance.";
