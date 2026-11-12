@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { lookup } from "node:dns/promises";
 import { fetch as undiciFetch } from "undici";
 import sharp from "sharp";
@@ -42,6 +42,21 @@ async function solidTilePng(color: { r: number; g: number; b: number }): Promise
     .png()
     .toBuffer();
 }
+
+// The first sharp render of SVG text in a process pays one-time setup (SVG loader, Pango, font
+// lookup). On a cold CI runner that landed on the first attribution test of this file and ran
+// past the default 5 s once, while the other 43 tests took under 2 s together. Pay it here under
+// its own budget so every test below keeps the default limit.
+beforeAll(async () => {
+  const label = Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="20">' +
+      '<text x="2" y="14" font-size="11" font-family="DejaVu Sans, Arial, Helvetica, sans-serif">© Test</text></svg>',
+  );
+  await sharp({ create: { width: 64, height: 20, channels: 3, background: "#ffffff" } })
+    .composite([{ input: label, left: 0, top: 0 }])
+    .png()
+    .toBuffer();
+}, 30_000);
 
 describe("redactTileUrlForLogs", () => {
   it("strips query strings and fragments that may hold API keys", () => {
