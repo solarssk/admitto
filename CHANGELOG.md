@@ -59,7 +59,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Let a superadmin store an own guest address for an event (not live yet: verification and routing follow) ([#1868](https://github.com/solarssk/admitto/pull/1868))
 - Serve only the guest pages of an event on its verified own address and hide the panel there; add the address proof at `/.well-known/admitto-domain-check` ([#1871](https://github.com/solarssk/admitto/pull/1871))
 - Check an event's own guest address on demand and every day, warn when it stops working, and list its company sign-in return address ([#1872](https://github.com/solarssk/admitto/pull/1872))
-- Add an IT checklist for an event's own address: DNS, HTTPS, Cloudflare Access bypass paths, company sign-in redirects, Turnstile hostname and the HSTS gap ([#PR](https://github.com/solarssk/admitto/pull/PR))
+- Add an IT checklist for an event's own address: DNS, HTTPS, Cloudflare Access bypass paths, company sign-in redirects, Turnstile hostname and the HSTS gap ([#1873](https://github.com/solarssk/admitto/pull/1873))
 
 ### Changed
 
