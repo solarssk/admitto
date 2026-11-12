@@ -46,6 +46,7 @@ import type { PrismaClient } from "@admitto/db";
 import { customGuestOrigin, type GuestDomain } from "@admitto/shared";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { resolveRequestOrigin } from "../auth/same-origin-post.js";
+import { isOtherEventOnGuestHost } from "../guest-host/guest-host-middleware.js";
 import { respondRegistrationNotFound } from "../registration-page-security.js";
 import { resolveRegistration, type GuestAccess, type ResolvedRegistration } from "./form-model.js";
 import { identityFromToken, noticeFor, type SsoNotice, type SsoRefusal } from "./sso-identity.js";
@@ -106,6 +107,7 @@ type FailureReason =
   | "flow_cookie_mismatch"
   | "state_invalid"
   | "state_mismatch"
+  | "host_mismatch"
   | "provider_unavailable"
   | "instance_url_missing"
   | "token_validation"
@@ -267,6 +269,9 @@ async function signInForEvent(
   const { db } = deps;
   // The event, its slug and the provider are the ones the state was written for, not anything the request said.
   const { eventId, eventSlug: slug } = spent;
+  // On the own address of an event the state must be that event's: one address, one event. The flow cookie is host-only, so a state
+  // of another event does not normally get here, and this keeps it from signing a guest in for an event on another event's address.
+  if (isOtherEventOnGuestHost(c, eventId)) return refuse(c, flow, slug, "host_mismatch", "failed", eventId);
 
   const target = await openSsoEvent(db, slug);
   if (!target) {

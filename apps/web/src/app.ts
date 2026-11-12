@@ -314,6 +314,18 @@ import { handlePostRegistration, type RegistrationSubmitDeps } from "./registrat
 import { handleSsoCallback, handleSsoStart } from "./registration/sso-routes.js";
 import { GUEST_SSO_CALLBACK_PATH } from "./registration/sso-session.js";
 import {
+  configuredInstanceHostname,
+  createGuestHostResolver,
+  resolveInstanceHostname,
+  type GuestHostCacheOptions,
+} from "./guest-host/guest-host.js";
+import {
+  createGuestHostMiddleware,
+  handleDomainCheck,
+  isOtherEventOnGuestHost,
+} from "./guest-host/guest-host-middleware.js";
+import { DOMAIN_CHECK_PATH } from "./guest-host/guest-paths.js";
+import {
   handleListEventTicketTypes,
   handleCreateEventTicketType,
   handlePatchEventTicketType,
@@ -547,6 +559,8 @@ export interface CreateAppOptions {
   registrationSubmit?: Pick<RegistrationSubmitDeps, "challenge" | "placement" | "pace">;
   /** Test-only injection point of `POST /r/:slug/confirm/:token`: the wait for a lock and the places among the writes. */
   registrationConfirm?: Pick<RegistrationConfirmDeps, "placement">;
+  /** Test-only injection point of the memory of the events' own addresses (clock, lifetimes, size); see guest-host/guest-host.ts. */
+  guestHosts?: GuestHostCacheOptions;
 }
 
 /**
@@ -773,6 +787,21 @@ export function createApp(options: CreateAppOptions = {}) {
   if (options.logHttpRequests ?? resolveLogHttpRequests()) {
     app.use("*", createRequestLogMiddleware());
   }
+  // Routing by host (D-C6, 119b): before every other middleware and route, so that on the verified own address of an event nothing
+  // but the guest's side of that event exists (a hidden path gets the one public 404, with none of the headers below), and the
+  // kind of host is known to the handlers that must keep one address to one event. What it lets through is guest-host/guest-paths.ts.
+  const guestHosts = createGuestHostResolver(
+    db,
+    () => resolveInstanceHostname(() => resolveInstanceBaseUrl(db, process.env, mailInjectedBaseUrl)),
+    options.guestHosts,
+  );
+  app.use(
+    "*",
+    createGuestHostMiddleware({
+      resolver: guestHosts,
+      configuredInstanceHostname: () => configuredInstanceHostname(mailInjectedBaseUrl),
+    }),
+  );
   // Applied after next() so it lands on responses handlers build via c.json()/c.body()
   // AND ones that return a bare `new Response(...)` (e.g. CSV/PDF/XLSX exports) — Hono only
   // merges pre-next() c.header() calls into responses built through its own c.json()/c.body().
@@ -1814,6 +1843,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/healthz", healthzRateLimit, (c) => handleHealthz(c, db));
   app.get("/robots.txt", handleGetRobotsTxt);
   app.get("/.well-known/change-password", (c) => handleGetChangePasswordWellKnown(c, db));
+  // The proof an own address of an event gives that it reaches this instance (D-C6, 119b). Answers on any host that is an address
+  // that is set, verified or not; elsewhere it is the 404 of a path that is not there.
+  app.get(DOMAIN_CHECK_PATH, publicRateLimit, (c) => handleDomainCheck(c));
   app.get("/favicon.svg", handleGetFaviconSvg);
   app.get("/favicon-32.png", handleGetFavicon32Png);
   app.get("/favicon.ico", handleGetFaviconIco);
@@ -2247,7 +2279,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     customDomainBodyLimit,
-    guardArchivedEvent((c) => handlePutEventCustomDomain(c, db, oidcPublicBaseUrl)),
+    guardArchivedEvent((c) => handlePutEventCustomDomain(c, db, oidcPublicBaseUrl, () => guestHosts.clear())),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
@@ -3368,7 +3400,8 @@ export function createApp(options: CreateAppOptions = {}) {
   // (venue coordinates are intended for attendees). Filename is "{eventId}.png".
   app.get("/m/:filename", async (c) => {
     const eventId = parseEventIdFromStaticMapFilename(c.req.param("filename"));
-    if (!eventId) {
+    // On the own address of an event, the map of another event is not there (one address, one event).
+    if (!eventId || isOtherEventOnGuestHost(c, eventId)) {
       return c.body(null, 404);
     }
     // Events list cards request a wider preview; tickets/mail omit the query (default +1).
@@ -3475,7 +3508,9 @@ export function createApp(options: CreateAppOptions = {}) {
     route: string,
   ): Promise<Awaited<ReturnType<typeof resolveTicket>> | Response> {
     try {
-      return await resolveTicket(token, db);
+      const resolved = await resolveTicket(token, db);
+      // On the own address of an event, a ticket of another event is the same 404 as a token that is not one (one address, one event).
+      return resolved && isOtherEventOnGuestHost(c, resolved.event.id) ? null : resolved;
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientInitializationError ||
@@ -3651,7 +3686,7 @@ export function createApp(options: CreateAppOptions = {}) {
       });
       return c.body(null, 500);
     }
-    if (!attendee) {
+    if (!attendee || isOtherEventOnGuestHost(c, attendee.event_id)) {
       return c.body(null, 404);
     }
     try {

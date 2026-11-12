@@ -130,6 +130,7 @@ Open the file before you start, not after review. Tools that load nested `AGENTS
 | CI workflows, Sonar, ESLint, Vitest, workspace packages, `process.env` | [standards/ci-and-tooling.md](standards/ci-and-tooling.md) |
 | `Dockerfile`, `deploy/`, entrypoint, GeoIP, a new runtime package | [standards/infra-and-deploy.md](standards/infra-and-deploy.md) |
 | Markdown documents, the Wiki, a PR body | [standards/docs-and-wiki.md](standards/docs-and-wiki.md) |
+| A route in `apps/web/src/app.ts` (a new route is hidden on an event's own address until listed) | [docs/dev/guest-host-routes.md](docs/dev/guest-host-routes.md) |
 | Wallet or mail providers (extension points) | [docs/dev/README.md](docs/dev/README.md) |
 | Release | [VERSIONING.md](VERSIONING.md) |
 | Cursor Cloud VM, local Postgres/Redis | [standards/cursor-cloud-setup.md](standards/cursor-cloud-setup.md) |

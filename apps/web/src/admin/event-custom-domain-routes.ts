@@ -24,6 +24,7 @@ import { z } from "zod";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { parseCustomDomain, type CustomDomainProblem, type CustomDomainStatus } from "@admitto/shared";
 import { writeAdminAuditLog, type StaffActor } from "@admitto/tickets";
+import { normalizeHostname } from "../guest-host/guest-host.js";
 import { InstanceUrlRequiredError } from "../instance-base-url.js";
 import { requireAuditActor, requireEventId, requireSuperadmin } from "./admin-helpers.js";
 
@@ -82,7 +83,7 @@ async function isInstanceHost(domain: string, instanceUrl: CustomDomainInstanceU
     if (err instanceof InstanceUrlRequiredError) return false;
     throw err;
   }
-  return new URL(base).hostname.toLowerCase() === domain;
+  return normalizeHostname(new URL(base).hostname) === domain;
 }
 
 /** The address as a value to store, or the reason it cannot be: `null` is no address, a string is judged. */
@@ -177,7 +178,13 @@ async function storeDomain(c: Context, db: PrismaClient, eventId: string, actor:
 }
 
 /** PUT /api/admin/events/:eventId/registration/custom-domain */
-export async function handlePutEventCustomDomain(c: Context, db: PrismaClient, instanceUrl: CustomDomainInstanceUrl): Promise<Response> {
+export async function handlePutEventCustomDomain(
+  c: Context,
+  db: PrismaClient,
+  instanceUrl: CustomDomainInstanceUrl,
+  /** Called after a change that was stored, so the memory of the events' own addresses of this process does not hold the old answer. */
+  onChanged: () => void,
+): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
   const eventId = requireEventId(c);
@@ -190,5 +197,7 @@ export async function handlePutEventCustomDomain(c: Context, db: PrismaClient, i
   const judged = await judgeCustomDomain(body.value, instanceUrl);
   // The word that says what is wrong, and never the value that was sent.
   if (!judged.ok) return c.json({ error: "custom_domain_invalid", problem: judged.problem }, 422);
-  return storeDomain(c, db, eventId, actor, judged.domain);
+  const answer = await storeDomain(c, db, eventId, actor, judged.domain);
+  if (answer.ok) onChanged();
+  return answer;
 }
