@@ -113,6 +113,9 @@ export function createGuestHostResolver(
   const found = new ExpiringMap<GuestHost>(max, options.foundTtlMs ?? 30_000, now);
   const missing = new ExpiringMap<true>(max, options.missingTtlMs ?? 10_000, now);
 
+  // Bumped by clear(): a read that began before a clear holds the answer of before it, so it is returned but not remembered.
+  let generation = 0;
+
   return {
     async resolve(hostname) {
       // A name the setting would refuse is no address of an event, whatever the table holds: no read for localhost, an IP address or a name with a port.
@@ -121,16 +124,20 @@ export function createGuestHostResolver(
       if (known !== undefined) return known;
       if (missing.get(hostname) !== undefined) return NOT_A_GUEST_HOST;
       let host: GuestHost;
+      const started = generation;
       try {
         host = await readHost(db, hostname, instanceHostname);
       } catch {
         throw new GuestHostLookupError();
       }
-      if (host.kind === "none") missing.set(hostname, true);
-      else found.set(hostname, host);
+      if (started === generation) {
+        if (host.kind === "none") missing.set(hostname, true);
+        else found.set(hostname, host);
+      }
       return host;
     },
     clear() {
+      generation += 1;
       found.clear();
       missing.clear();
     },
@@ -138,12 +145,18 @@ export function createGuestHostResolver(
   };
 }
 
+/** A host name in lower case, without the root dot that URL parsing keeps: the form a request host and a stored address have. */
+export function normalizeHostname(hostname: string): string {
+  const lower = hostname.toLowerCase();
+  return lower.endsWith(".") ? lower.slice(0, -1) : lower;
+}
+
 /** The host name of the instance as the configuration gives it (the injected address, else `BASE_URL`), or null when neither is set. */
 export function configuredInstanceHostname(injectedBaseUrl: string | undefined, env: NodeJS.ProcessEnv = process.env): string | null {
   const raw = injectedBaseUrl?.trim() || env["BASE_URL"]?.trim();
   if (!raw) return null;
   try {
-    return new URL(raw).hostname.toLowerCase();
+    return normalizeHostname(new URL(raw).hostname);
   } catch {
     return null;
   }
@@ -152,7 +165,7 @@ export function configuredInstanceHostname(injectedBaseUrl: string | undefined, 
 /** The host name of the instance by every source, the database's setting included, or null while the instance has no address. */
 export async function resolveInstanceHostname(resolveBaseUrl: () => Promise<string>): Promise<string | null> {
   try {
-    return new URL(await resolveBaseUrl()).hostname.toLowerCase();
+    return normalizeHostname(new URL(await resolveBaseUrl()).hostname);
   } catch (error) {
     if (error instanceof InstanceUrlRequiredError) return null;
     throw error;

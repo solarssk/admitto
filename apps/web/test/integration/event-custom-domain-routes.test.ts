@@ -278,6 +278,10 @@ describe("judgeCustomDomain: the rule that needs the instance's address", () => 
     expect(await judgeCustomDomain("x.com/path", noAddress)).toEqual({ ok: false, problem: "bad_characters" });
   });
 
+  it("refuses the host of the instance also when the configured address ends in a root dot", async () => {
+    expect(await judgeCustomDomain("tickets.example.com", async () => "https://tickets.example.com.")).toEqual({ ok: false, problem: "instance_host" });
+  });
+
   it("does not let a failed lookup of the instance address pass the instance host: the failure reaches the caller", async () => {
     const broken = () => Promise.reject(new Error("database unavailable"));
     await expect(judgeCustomDomain("tickets.example.com", broken)).rejects.toThrow("database unavailable");

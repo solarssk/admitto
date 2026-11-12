@@ -4,6 +4,7 @@ import {
   GuestHostLookupError,
   configuredInstanceHostname,
   createGuestHostResolver,
+  normalizeHostname,
   resolveInstanceHostname,
 } from "../../src/guest-host/guest-host.js";
 import { InstanceUrlRequiredError } from "../../src/instance-base-url.js";
@@ -141,6 +142,28 @@ describe("the memory", () => {
     expect(findUnique).toHaveBeenCalledTimes(4);
   });
 
+  it("does not remember a read that began before a clear: the answer goes to its caller, the next request reads again", async () => {
+    const rows: Record<string, Row> = { [OWN]: VERIFIED };
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const findUnique = vi.fn(async (args: { where: { custom_domain: string } }) => {
+      const row = rows[args.where.custom_domain] ?? null;
+      await gate;
+      return row;
+    });
+    const resolver = createGuestHostResolver({ eventRegistrationSettings: { findUnique } } as unknown as PrismaClient, noInstanceHost);
+
+    const inFlight = resolver.resolve(OWN);
+    rows[OWN] = null;
+    resolver.clear();
+    release();
+
+    expect((await inFlight).kind).toBe("guest");
+    expect(resolver.size()).toEqual({ found: 0, missing: 0 });
+    expect((await resolver.resolve(OWN)).kind).toBe("none");
+    expect(findUnique).toHaveBeenCalledTimes(2);
+  });
+
   it("holds at most the number of hosts it is given of each kind, however many different names come", async () => {
     const { db, findUnique } = fakeDb({ [OWN]: VERIFIED });
     const resolver = createGuestHostResolver(db, noInstanceHost, { maxEntries: 50 });
@@ -214,6 +237,9 @@ describe("the host of the instance", () => {
 
   it("is the host of the resolved address, null while the instance has none, and an error for any other failure", async () => {
     expect(await resolveInstanceHostname(async () => "https://Tickets.Example.com:8443")).toBe("tickets.example.com");
+    expect(await resolveInstanceHostname(async () => "https://tickets.example.com.")).toBe("tickets.example.com");
+    expect(configuredInstanceHostname("https://tickets.example.com.", {})).toBe("tickets.example.com");
+    expect(normalizeHostname("Tickets.Example.com.")).toBe("tickets.example.com");
     expect(await resolveInstanceHostname(async () => Promise.reject(new InstanceUrlRequiredError()))).toBeNull();
     await expect(resolveInstanceHostname(async () => Promise.reject(new Error("down")))).rejects.toThrow("down");
   });

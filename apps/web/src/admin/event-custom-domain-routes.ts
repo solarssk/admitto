@@ -24,6 +24,7 @@ import { z } from "zod";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { parseCustomDomain, type CustomDomainProblem, type CustomDomainStatus } from "@admitto/shared";
 import { writeAdminAuditLog, type StaffActor } from "@admitto/tickets";
+import { normalizeHostname } from "../guest-host/guest-host.js";
 import { InstanceUrlRequiredError } from "../instance-base-url.js";
 import { requireAuditActor, requireEventId, requireSuperadmin } from "./admin-helpers.js";
 
@@ -82,7 +83,7 @@ async function isInstanceHost(domain: string, instanceUrl: CustomDomainInstanceU
     if (err instanceof InstanceUrlRequiredError) return false;
     throw err;
   }
-  return new URL(base).hostname.toLowerCase() === domain;
+  return normalizeHostname(new URL(base).hostname) === domain;
 }
 
 /** The address as a value to store, or the reason it cannot be: `null` is no address, a string is judged. */
