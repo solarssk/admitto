@@ -76,6 +76,10 @@ The row holds no address and no text, only the template name, the status and a f
 
 A row whose registration is in another state when its turn comes is not sent. It becomes `cancelled` with the code `registration_changed` (`confirmation_expired` for a link that ran out).
 
+### The check of an event's own address
+
+The same job checks the own addresses of events for guests (`refreshEventDomains`, `event-domain-check.ts`), after the mail of the tick: an address that was never checked, or last checked over a day ago, five at a time. `checkEventDomain` is also what "Check now" in the panel calls. It asks `https://<address>/.well-known/admitto-domain-check` through the SSRF-safe client (`resolveSafeHostname`, then `withPinnedFetch`) and writes one of six results under the lock of the event's settings row. Rules: [An event's own address for guests](../../docs/security/SECURITY-CONTROLS.md#an-events-own-address-for-guests).
+
 ### What a tick does
 
 The job runs after the ticket drain, in the same slot of the worker tick, and is never skipped because tickets are queued. They do not run side by side, because the provider's rate limit is per mailer and a second mailer would double the pace. It takes up to 20 rows: the queued ones first, oldest first, then failed rows that may be tried again. The rows of one event share one mailer.

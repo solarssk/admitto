@@ -117,3 +117,47 @@
 .access-claim .at-hint {
   overflow-wrap: anywhere;
 }
+
+/* The event's own address for guests: its state is a row of the checklist's kind with no rule above it; the field and its buttons are
+ * spaced by the card's gap, and the steps for IT are a numbered list that wraps instead of widening the card. */
+.access-address__status {
+  padding: 0;
+}
+
+.access-address__controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.access-address__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.access-address__it {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.access-address__it ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+  overflow-wrap: anywhere;
+}
+
+.access-address__status .overview-check__body,
+.access-address__status .overview-check__detail {
+  overflow-wrap: anywhere;
+}

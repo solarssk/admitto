@@ -348,6 +348,8 @@ describe("reading the settings", () => {
       sso_claim_values: [],
       password_set: false,
       guest_url: `https://tickets.example.com/r/${event.slug}`,
+      instance_host: "tickets.example.com",
+      own_address: null,
       readiness: READINESS_KEYS.filter((key) => key !== "password" && key !== "identity_provider").map((key) => ({ key, ok: true })),
       public_fields: [
         { key: "parking", label: "Parking", type: "boolean", required: false },
@@ -373,8 +375,10 @@ describe("reading the settings", () => {
       "ask_department",
       "consent_keys",
       "guest_url",
+      "instance_host",
       "max_companions",
       "mode",
+      "own_address",
       "password_set",
       "public_fields",
       "readiness",
@@ -568,6 +572,7 @@ describe("turning registration on", () => {
     const allowed = await updateEventRegistrationSettings(prisma, { eventId: event.id, patch: { mode: "automatic" }, actor: actorOf(adminId), env: {} });
 
     expect(read?.guest_url).toBeNull();
+    expect(read?.instance_host).toBeNull();
     expect(read?.readiness).toContainEqual({ key: "instance_url", ok: false });
     expect(refused).toEqual({ kind: "not_ready", blockers: ["instance_url"] });
     expect(allowed.kind).toBe("saved");

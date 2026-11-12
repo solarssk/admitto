@@ -19,6 +19,33 @@ export const CUSTOM_DOMAIN_MAX = 253;
 export const CUSTOM_DOMAIN_STATUSES = ["unchecked", "ok", "failing"] as const;
 export type CustomDomainStatus = (typeof CUSTOM_DOMAIN_STATUSES)[number];
 
+/** The path on an event's address that answers the proof of the address (served by the web app, asked for by the check of the address). */
+export const DOMAIN_CHECK_PATH = "/.well-known/admitto-domain-check";
+
+/**
+ * What one check of an address found (PR 120): `ok` (it reaches this instance, for this event), `dns_failed` (the name does not
+ * resolve), `tls_failed` (the name resolves, but the HTTPS certificate is not accepted), `wrong_target` (an answer that is not this
+ * instance's proof for this event: another service, another event or another instance), `unreachable` (no answer in time, or the
+ * connection was refused) and `not_verifiable_from_server` (the name resolves to a private address, as a name of an internal DNS
+ * does: the server cannot judge it, and that is no fault of the address). Only `dns_failed`, `tls_failed`, `wrong_target` and
+ * `unreachable` make the status `failing`.
+ */
+export const CUSTOM_DOMAIN_CHECK_RESULTS = [
+  "ok",
+  "dns_failed",
+  "tls_failed",
+  "wrong_target",
+  "unreachable",
+  "not_verifiable_from_server",
+] as const;
+export type CustomDomainCheckResult = (typeof CUSTOM_DOMAIN_CHECK_RESULTS)[number];
+
+/** The status a result leaves: `ok` is `ok`, a fault is `failing`, and a name the server cannot judge is no news, so `unchecked`. */
+export function statusOfCheckResult(result: CustomDomainCheckResult): CustomDomainStatus {
+  if (result === "ok") return "ok";
+  return result === "not_verifiable_from_server" ? "unchecked" : "failing";
+}
+
 /**
  * Why a value is not an address of that kind:
  * - `empty`: nothing;

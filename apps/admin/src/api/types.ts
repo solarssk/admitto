@@ -1,4 +1,6 @@
 import type {
+  CustomDomainCheckResult,
+  CustomDomainStatus,
   DeliveryDto,
   EventCustomFieldRules,
   EventCustomFieldType,
@@ -1514,6 +1516,16 @@ export interface RegistrationSsoProviderDto {
   state: RegistrationSsoProviderState;
   providers: Array<{ id: string; display_name: string }>;
   redirect_uri: string | null;
+  /** Every return address to list at the provider: the instance's first, then one for each event with an own address of its own that
+   * uses the company sign-in, verified or not (`verified` says which). */
+  redirect_uris: RegistrationRedirectUriDto[];
+}
+
+/** One return address of the company sign-in. */
+export interface RegistrationRedirectUriDto {
+  uri: string;
+  host: "instance" | "event_domain";
+  verified: boolean;
 }
 
 /** PUT: the provider to use, or `null` for none. Only a provider that is turned on can be chosen (422 `provider_not_available`). */
@@ -1676,8 +1688,34 @@ export interface RegistrationSettingsDto {
   sso_claim_values: string[];
   password_set: boolean;
   guest_url: string | null;
+  /** The host name of this instance (where an own address is pointed), or null while it has no address. */
+  instance_host: string | null;
+  /** The event's own address for guests and how it stands; null while the event has none. A superadmin sets it (`CustomDomainDto`). */
+  own_address: RegistrationOwnAddressDto | null;
   readiness: RegistrationReadinessCheckDto[];
   public_fields: RegistrationPublicFieldDto[];
+}
+
+/** How the event's own address for guests stands, for every administrator of the event to read. `verified`: a check found it
+ * working once, so guests' links use it; a later failure only warns (`status` `failing`). `check_result` is why, null before the
+ * first check. */
+export interface RegistrationOwnAddressDto {
+  domain: string;
+  status: CustomDomainStatus;
+  check_result: CustomDomainCheckResult | null;
+  verified: boolean;
+  /** When the last check ran (UTC instant), null before the first. */
+  checked_at: string | null;
+}
+
+/** GET and PUT /api/admin/events/:eventId/registration/custom-domain, and POST .../custom-domain/check: the address and what the last
+ * check found. Superadmin only. */
+export interface CustomDomainDto {
+  custom_domain: string | null;
+  custom_domain_status: CustomDomainStatus;
+  custom_domain_check_result: CustomDomainCheckResult | null;
+  custom_domain_verified_at: string | null;
+  custom_domain_checked_at: string | null;
 }
 
 /** PUT of the settings: a part of them, and only the part that changed. An unknown key is refused (400). */

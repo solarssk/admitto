@@ -44,6 +44,7 @@ const CHECK_ICONS: Record<string, string> = {
   identity_providers: "shield-lock",
   cloudflare_access: "brand-cloudflare",
   registration_captcha: "shield-check",
+  event_addresses: "world-www",
 };
 
 /** Shared by the "Run live checks" tooltip and its mirror item in More actions (mobile). */

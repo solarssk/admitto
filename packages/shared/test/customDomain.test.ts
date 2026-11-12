@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { CUSTOM_DOMAIN_MAX, CUSTOM_DOMAIN_STATUSES, parseCustomDomain, type CustomDomainProblem } from "../src/customDomain.js";
+import {
+  CUSTOM_DOMAIN_CHECK_RESULTS,
+  CUSTOM_DOMAIN_MAX,
+  CUSTOM_DOMAIN_STATUSES,
+  DOMAIN_CHECK_PATH,
+  parseCustomDomain,
+  statusOfCheckResult,
+  type CustomDomainProblem,
+} from "../src/customDomain.js";
 
 const LONG_LABEL = "a".repeat(64);
 const LABEL_63 = "a".repeat(63);
@@ -10,6 +18,24 @@ describe("the limits of an address of an event", () => {
   it("are the ones the server and the panel both keep to", () => {
     expect(CUSTOM_DOMAIN_MAX).toBe(253);
     expect([...CUSTOM_DOMAIN_STATUSES]).toEqual(["unchecked", "ok", "failing"]);
+  });
+});
+
+describe("the result of a check of an address", () => {
+  it("names six results, and the path that the proof is served at", () => {
+    expect([...CUSTOM_DOMAIN_CHECK_RESULTS]).toEqual(["ok", "dns_failed", "tls_failed", "wrong_target", "unreachable", "not_verifiable_from_server"]);
+    expect(DOMAIN_CHECK_PATH).toBe("/.well-known/admitto-domain-check");
+  });
+
+  it.each([
+    ["ok", "ok"],
+    ["dns_failed", "failing"],
+    ["tls_failed", "failing"],
+    ["wrong_target", "failing"],
+    ["unreachable", "failing"],
+    ["not_verifiable_from_server", "unchecked"],
+  ] as const)("%s leaves the status %s", (result, status) => {
+    expect(statusOfCheckResult(result)).toBe(status);
   });
 });
 

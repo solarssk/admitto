@@ -27,11 +27,14 @@ export const SSO_PROVIDERS = [
  * return address (a made-up instance address; `null` for an instance that has none).
  */
 export function ssoProviderDto(overrides: Partial<RegistrationSsoProviderDto> = {}): RegistrationSsoProviderDto {
-  return {
+  const dto = {
     provider_id: null,
-    state: "not_selected",
+    state: "not_selected" as const,
     providers: SSO_PROVIDERS,
-    redirect_uri: "https://tickets.example.com/sso/callback",
+    redirect_uri: "https://tickets.example.com/sso/callback" as string | null,
     ...overrides,
   };
+  // Unless a test lists the addresses itself, they are the instance's one, as the server lists them for an instance with no own address.
+  const instanceOnly = dto.redirect_uri === null ? [] : [{ uri: dto.redirect_uri, host: "instance" as const, verified: true }];
+  return { ...dto, redirect_uris: overrides.redirect_uris ?? instanceOnly };
 }

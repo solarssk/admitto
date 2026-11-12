@@ -12,6 +12,8 @@ export const api = {
   clearRegistrationPassword: vi.fn(),
   fetchLegalDocuments: vi.fn(),
   fetchRegistrationCounts: vi.fn(),
+  saveCustomDomain: vi.fn(),
+  checkCustomDomain: vi.fn(),
 };
 
 export const addToast = vi.fn();

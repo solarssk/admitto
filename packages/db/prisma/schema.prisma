@@ -918,6 +918,9 @@ model EventRegistrationSettings {
   // The first time the check found the address working. Set: the guests' links, and the host routing, use the address.
   custom_domain_verified_at DateTime?
   custom_domain_checked_at  DateTime?
+  // The word the last check found (CUSTOM_DOMAIN_CHECK_RESULTS in @admitto/shared), null before the first check and after the address changes.
+  // CHECKs in migration SQL: EventRegistrationSettings_custom_domain_result_check, _custom_domain_result_domain_check.
+  custom_domain_check_result String?
   created_at                DateTime  @default(now())
   updated_at                DateTime  @updatedAt
 }

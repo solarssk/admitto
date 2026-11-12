@@ -496,6 +496,19 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** "Check now" on an event's own address for guests (PR 120): the server makes a real request to a host a superadmin typed, so the
+   * number of requests a person can start is bounded, as for the probes above. The daily check of the worker is not a request. */
+  "admin:domain-check": {
+    checks: [
+      {
+        keyOf: (c) => `admin:domain-check:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 5,
+        onExceeded: (c) => c.json({ error: "domain_check_rate_limited" }, 429),
+        logOnExceeded: { scope: "admin_domain_check" },
+      },
+    ],
+  },
   // Same burst+sustained shape and reasoning as admin:mail-transport-test above, just scoped to
   // the event-level test endpoint's own user-keyed bucket.
   "admin:event-mail-transport-test": {

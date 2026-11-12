@@ -1,17 +1,21 @@
 import { useEffect } from "react";
 import { useBlocker } from "react-router";
 import { Notice } from "@admitto/ui";
+import { useOptionalAuth } from "../auth/AuthProvider.js";
+import { isSuperadmin } from "../auth/capabilities.js";
 import type { EventDto, LegalDocumentDto, RegistrationSettingsDto } from "../api/types.js";
 import { isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SettingsFooter } from "../settings/mailTransportFormParts.js";
 import { claimErrors, missingChecks } from "./accessSettings.js";
+import { AccessAddressCard } from "./AccessAddressCard.js";
 import { AccessFormCard } from "./AccessFormCard.js";
 import { AccessModeCard } from "./AccessModeCard.js";
 import { AccessQuestionsCard } from "./AccessQuestionsCard.js";
 import { AccessReadinessCard, MissingChecks } from "./AccessReadinessCard.js";
 import { AccessWayInCard } from "./AccessWayInCard.js";
 import { GuestLinkField } from "./GuestLinkField.js";
+import { hasStopped, stoppedWarning } from "./ownAddress.js";
 import { useAccessForm, type AccessProblem } from "./useAccessForm.js";
 import "./registration-access.css";
 
@@ -70,6 +74,8 @@ export function RegistrationAccessForm({
   const missing = missingChecks(server.readiness);
   // A move between the two modes that are on is never refused, so only an event that has registration off needs to be ready.
   const canTurnOn = server.mode !== null || missing.length === 0;
+  // The address of the event is a superadmin's to set; every administrator of the event is told when it stops working.
+  const canEditAddress = isSuperadmin(useOptionalAuth()?.assignments ?? []);
 
   // A change of the path or of `?tab=` leaves the form: with changes in it, the person is asked first.
   const blocker = useBlocker(
@@ -88,6 +94,7 @@ export function RegistrationAccessForm({
       {server.mode !== null && missing.length > 0 && (
         <Notice variant="warning">Registration is on, but something it needs is missing, so guests may not be able to register. The checklist says what.</Notice>
       )}
+      {hasStopped(server.own_address) && <Notice variant="warning">{stoppedWarning(server.own_address)}</Notice>}
       <AccessModeCard mode={draft.mode} canTurnOn={canTurnOn} unsaved={dirty} disabled={archived || saving} onChange={(mode) => form.edit({ mode })}>
         <GuestLinkField url={server.guest_url} registrationOn={server.mode !== null} />
       </AccessModeCard>
@@ -108,6 +115,16 @@ export function RegistrationAccessForm({
       />
       <AccessFormCard draft={draft} legalItems={form.legalItems} disabled={archived || saving} onChange={form.edit} />
       <AccessQuestionsCard fields={server.public_fields} />
+      <AccessAddressCard
+        eventId={eventId}
+        event={event}
+        address={server.own_address}
+        instanceHost={server.instance_host}
+        canEdit={canEditAddress}
+        disabled={archived || saving}
+        onChanged={form.addressChanged}
+        onArchived={form.eventArchived}
+      />
       {problem && !confirmOffOpen && <ProblemMessage eventId={eventId} problem={problem} />}
       {!archived && <SettingsFooter hasUnsavedChanges={dirty} saving={saving} onReset={form.reset} onSave={form.save} />}
       <ConfirmDialog

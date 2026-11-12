@@ -261,6 +261,17 @@ function registrationCaptchaGuidance(check: HealthCheckRowDto): HealthCheckGuida
   return null;
 }
 
+/** Only reached for a degraded row: an address that was found working has failed its last check. Guests were sent links on it, so
+ * this is where the superadmin finds out which, before a guest does. Nothing is switched back by itself (D-C6). */
+function eventAddressesGuidance(check: HealthCheckRowDto): HealthCheckGuidance | null {
+  if (check.status !== "degraded" || detailValue(check, "reason") !== "address_stopped") return null;
+  return {
+    cause: "An event's own address worked once, and its last check failed. The name, the certificate or the route to Admitto may have changed.",
+    impact: "Guests are still sent links on that address, and the pages behind those links may not open. Guests with an older link on the main address are not affected.",
+    nextStep: "Open the Access tab of Registration for the event. It says what the check found and what to ask IT to fix. Select Check now once it is fixed.",
+  };
+}
+
 /** `not_a_directory`/`not_writable` (both original) and `cannot_create_directory` (added later
  * by #1477's canCreateUploadDir(), after this guidance table was first drafted) all describe the
  * same underlying problem - no working upload folder - so they share one message. */
@@ -431,6 +442,7 @@ const GUIDANCE_BY_ID = new Map<string, (check: HealthCheckRowDto) => HealthCheck
   ["email_sending", emailSendingGuidance],
   ["cloudflare_access", cloudflareAccessGuidance],
   ["registration_captcha", registrationCaptchaGuidance],
+  ["event_addresses", eventAddressesGuidance],
   ["file_storage", fileStorageGuidance],
   ["address_lookup", addressLookupGuidance],
   ["weather", weatherGuidance],

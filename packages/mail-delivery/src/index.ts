@@ -12,6 +12,18 @@ export type {
 } from "./registration-mail-drain.js";
 export { sweepExpiredRegistrations, REGISTRATION_EXPIRY_BATCH_SIZE } from "./registration-mail-sweep.js";
 export { sweepRegistrationSsoStates, SSO_STATE_SWEEP_BATCH_SIZE } from "./registration-sso-sweep.js";
+export {
+  checkEventDomain,
+  probeEventDomain,
+  readDomainCheckState,
+  recordDomainCheck,
+  refreshEventDomains,
+  DOMAIN_CHECK_MAX_BODY_BYTES,
+  DOMAIN_CHECK_REFRESH_MS,
+  DOMAIN_CHECK_SWEEP_BATCH,
+  DOMAIN_CHECK_TIMEOUT_MS,
+} from "./event-domain-check.js";
+export type { DomainCheckDeps, DomainCheckState, RecordedCheck, RefreshEventDomainsResult } from "./event-domain-check.js";
 export type { SweepRegistrationSsoStatesResult } from "./registration-sso-sweep.js";
 export type { SweepExpiredRegistrationsResult } from "./registration-mail-sweep.js";
 export { cancelBulkSendBatch } from "./cancel.js";

@@ -3,17 +3,17 @@
  * SUPERADMIN ONLY, checked on the server on both routes (an organisation admin and an operator get 403): a wrong host, or a host
  * that an organiser's hijacked account typed, would be where the ticket tokens of every guest of the event are sent.
  *
- * - `GET` answers `{ custom_domain, custom_domain_status, custom_domain_verified_at, custom_domain_checked_at }`.
+ * - `GET` answers `{ custom_domain, custom_domain_status, custom_domain_check_result, custom_domain_verified_at, custom_domain_checked_at }`.
  * - `PUT` with `{ "custom_domain": "<host>" | null }` sets the address or, with `null`, removes it. The address is judged by
  *   `parseCustomDomain` (`@admitto/shared`: a bare host name, lower case, punycode, no scheme, port, path, IP address or reserved
  *   name; a refusal is `422 custom_domain_invalid` with `problem`, a fixed word and never the value). The server adds two rules that
  *   need the data: it is not the address of the instance itself (`problem: "instance_host"`: the panel would be taken for a guest's
  *   page), and it is not the address of another event (`409 custom_domain_taken`: one address, one event).
  *
- * Any change of the address, to another or to none, resets what was found about it: status `unchecked`, no verification and no
- * check time. An address is used for guests' links and for routing only once it is VERIFIED (by the check of PR 120, which is the
- * only writer of the other three columns), and the verification of the old address says nothing about the new one. Saving the
- * address an event has already changes and records nothing.
+ * Any change of the address, to another or to none, resets what was found about it: status `unchecked`, no result, no verification
+ * and no check time. An address is used for guests' links and for routing only once it is VERIFIED (by the check of PR 120,
+ * ./event-custom-domain-check-routes.ts and the worker, which are the only writers of the other four columns), and the verification
+ * of the old address says nothing about the new one. Saving the address an event has already changes and records nothing.
  *
  * Every change is one entry of the central audit log (`registration_custom_domain_updated`: the event, the address before and
  * after; an address is not personal data), written in the transaction of the change. Mounted behind the archived-event guard on the
@@ -22,7 +22,7 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { Prisma, type PrismaClient } from "@admitto/db";
-import { parseCustomDomain, type CustomDomainProblem, type CustomDomainStatus } from "@admitto/shared";
+import { parseCustomDomain, type CustomDomainCheckResult, type CustomDomainProblem, type CustomDomainStatus } from "@admitto/shared";
 import { writeAdminAuditLog, type StaffActor } from "@admitto/tickets";
 import { normalizeHostname } from "../guest-host/guest-host.js";
 import { InstanceUrlRequiredError } from "../instance-base-url.js";
@@ -42,6 +42,8 @@ type RefusalProblem = CustomDomainProblem | "instance_host";
 export interface CustomDomainState {
   custom_domain: string | null;
   custom_domain_status: CustomDomainStatus;
+  /** The word the last check found (why the address does not work, or `ok`); null before the first check. */
+  custom_domain_check_result: CustomDomainCheckResult | null;
   custom_domain_verified_at: string | null;
   custom_domain_checked_at: string | null;
 }
@@ -49,6 +51,7 @@ export interface CustomDomainState {
 const NO_DOMAIN: CustomDomainState = {
   custom_domain: null,
   custom_domain_status: "unchecked",
+  custom_domain_check_result: null,
   custom_domain_verified_at: null,
   custom_domain_checked_at: null,
 };
@@ -56,18 +59,20 @@ const NO_DOMAIN: CustomDomainState = {
 const STATE_SELECT = {
   custom_domain: true,
   custom_domain_status: true,
+  custom_domain_check_result: true,
   custom_domain_verified_at: true,
   custom_domain_checked_at: true,
 } as const satisfies Prisma.EventRegistrationSettingsSelect;
 
 type StateRow = Prisma.EventRegistrationSettingsGetPayload<{ select: typeof STATE_SELECT }>;
 
-function stateOf(row: StateRow | null): CustomDomainState {
+export function stateOf(row: StateRow | null): CustomDomainState {
   if (row === null) return NO_DOMAIN;
   return {
     custom_domain: row.custom_domain,
-    // The table's CHECK keeps it to the three words; this keeps the type honest.
+    // The table's CHECKs keep both to their words; this keeps the types honest.
     custom_domain_status: row.custom_domain_status === "ok" || row.custom_domain_status === "failing" ? row.custom_domain_status : "unchecked",
+    custom_domain_check_result: row.custom_domain_check_result as CustomDomainCheckResult | null,
     custom_domain_verified_at: row.custom_domain_verified_at?.toISOString() ?? null,
     custom_domain_checked_at: row.custom_domain_checked_at?.toISOString() ?? null,
   };
@@ -116,7 +121,12 @@ async function writeDomainAudit(
 }
 
 /** What a change to an address leaves behind it: nothing that was found about the old one. */
-const RESET = { custom_domain_status: "unchecked", custom_domain_verified_at: null, custom_domain_checked_at: null } as const;
+const RESET = {
+  custom_domain_status: "unchecked",
+  custom_domain_check_result: null,
+  custom_domain_verified_at: null,
+  custom_domain_checked_at: null,
+} as const;
 
 type Change = { kind: "saved"; state: CustomDomainState } | { kind: "not_found" };
 

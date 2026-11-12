@@ -26,10 +26,12 @@ import {
   ingestBounces,
   nullifyDeliverySnapshots,
   parseBounceIngestTickSeconds,
+  refreshEventDomains,
   resolveDeliverySnapshotRetentionDays,
   sweepExpiredRegistrations,
   sweepRegistrationSsoStates,
   workerHeartbeatStaleMs,
+  type RefreshEventDomainsResult,
   type SweepExpiredRegistrationsResult,
   type SweepRegistrationSsoStatesResult,
 } from "@admitto/mail-delivery";
@@ -216,6 +218,41 @@ async function sweepSsoStatesOrLog(db: PrismaClient): Promise<SweepRegistrationS
   }
 }
 
+const NO_DOMAIN_REFRESH: RefreshEventDomainsResult = { checked: 0, verified: 0, failing: 0, errors: 0, more: false };
+
+/** The host name of the instance (lower case, no root dot), or null while it has no address: no event's own address may be that host. */
+async function instanceHostnameOrNull(db: PrismaClient): Promise<string | null> {
+  try {
+    const hostname = new URL(await resolveInstanceBaseUrl(db, process.env)).hostname.toLowerCase();
+    return hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
+  } catch (err) {
+    if (err instanceof InstanceUrlRequiredError) return null;
+    throw err;
+  }
+}
+
+/**
+ * The daily check of the events' own addresses for guests (D-C6, PR 120): the addresses that were never checked or were last
+ * checked over a day ago, a few at a time. It makes requests to hosts a superadmin chose (through the pinned client with the SSRF
+ * guard), so it follows the mail and the clean-ups in the tick and never stops them: a check that fails is logged by its class alone
+ * and nothing else is. The line holds counts only, and a line with a first verification or a fall to `failing` is the record of it.
+ */
+async function refreshEventDomainsOrLog(db: PrismaClient): Promise<RefreshEventDomainsResult> {
+  try {
+    const refreshed = await refreshEventDomains(db, { instanceHostname: await instanceHostnameOrNull(db) });
+    if (refreshed.checked > 0 || refreshed.errors > 0) {
+      log(
+        "registration_mail",
+        `event_domains checked=${refreshed.checked} verified=${refreshed.verified} failing=${refreshed.failing} errors=${refreshed.errors}`,
+      );
+    }
+    return refreshed;
+  } catch (err) {
+    log("registration_mail", `FAILED event_domain_refresh error_class=${err instanceof Error ? err.name : "unknown"}`);
+    return NO_DOMAIN_REFRESH;
+  }
+}
+
 const NO_REGISTRATION_DRAIN = { claimed: 0, sent: 0, failed: 0, cancelled: 0, skipped: 0, eventIds: [] as string[] };
 
 /**
@@ -269,16 +306,18 @@ async function runRegistrationMailJob(db: PrismaClient, locks: WorkerLockClient)
       (await whileNoOtherWorkerSendsTickets(locks, () =>
         withHeartbeatRefresh(db, "registration_mail", () => drainRegistrationMailsOfTheTick(db)),
       )) ?? NO_REGISTRATION_DRAIN;
+    // After the mail: a request to a host that does not answer takes up to its deadline, and a guest's mail waits for nothing.
+    const domains = await withHeartbeatRefresh(db, "registration_mail", () => refreshEventDomainsOrLog(db));
     if (drained.claimed === 0 && expired.deleted === 0) {
       log("registration_mail", "idle");
-      return ssoStates.more;
+      return ssoStates.more || domains.more;
     }
     log(
       "registration_mail",
       `ok claimed=${drained.claimed} sent=${drained.sent} failed=${drained.failed} cancelled=${drained.cancelled} skipped=${drained.skipped} expired=${expired.deleted}`,
     );
     await publishActivityChanged([...new Set([...drained.eventIds, ...expired.eventIds])]);
-    return drained.claimed >= DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT || expired.more || ssoStates.more;
+    return drained.claimed >= DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT || expired.more || ssoStates.more || domains.more;
   } catch (err) {
     throw new Error(`error_class=${err instanceof Error ? err.name : "unknown"}`);
   } finally {
