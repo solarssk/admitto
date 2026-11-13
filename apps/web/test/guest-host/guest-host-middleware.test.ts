@@ -10,6 +10,7 @@ import {
 } from "../../src/guest-host/guest-host.js";
 import {
   createGuestHostMiddleware,
+  hstsForError,
   guestHostOf,
   handleDomainCheck,
   isOtherEventOnGuestHost,
@@ -288,6 +289,43 @@ describe("a failed lookup", () => {
     const { app } = makeApp({ resolver: failing });
     const res = await app.request(`https://${OWN}/admin`);
     expect(res.status).toBe(500);
+  });
+});
+
+describe("hstsForError", () => {
+  function errorApp(resolver: GuestHostResolver) {
+    const app = new Hono();
+    app.use("*", createGuestHostMiddleware({ resolver, configuredInstanceHostname: () => "tickets.example.com" }));
+    app.get("/boom", () => {
+      throw new Error("boom");
+    });
+    app.onError((_err, c) => {
+      const hsts = hstsForError(c);
+      if (hsts !== null) c.header("Strict-Transport-Security", hsts);
+      return c.json({ error: "internal_error" }, 500);
+    });
+    return app;
+  }
+
+  it("is the value without includeSubDomains when the lookup failed, and nothing on a request that is not HTTPS", async () => {
+    const failing: GuestHostResolver = {
+      resolve: async () => {
+        throw new Error("down");
+      },
+      clear: () => {},
+      size: () => ({ found: 0, missing: 0 }),
+    };
+    const app = errorApp(failing);
+    expect((await app.request(`https://${OWN}/boom`)).headers.get("strict-transport-security")).toBe("max-age=31536000");
+    expect((await app.request(`http://${OWN}/boom`)).headers.get("strict-transport-security")).toBeNull();
+  });
+
+  it("keeps includeSubDomains for an error on the instance's own host and on a host that is nobody's, and drops it on a guest's address", async () => {
+    const { resolver } = resolverOf({ [OWN]: GUEST });
+    const app = errorApp(resolver);
+    expect((await app.request("https://tickets.example.com/boom")).headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains");
+    expect((await app.request("https://nobody.example.net/boom")).headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains");
+    expect((await app.request(`https://${OWN}/boom`)).headers.get("strict-transport-security")).toBe("max-age=31536000");
   });
 });
 

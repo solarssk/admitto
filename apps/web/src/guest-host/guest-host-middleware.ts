@@ -64,6 +64,18 @@ function withoutSubdomains(value: string | null): string | null {
 
 const HSTS_DEFAULT = "max-age=31536000; includeSubDomains";
 
+/**
+ * The header of an answer that the application's error handler writes (a throw never reaches the code after `next()`, and a failed
+ * lookup of the host throws before it). `null` for a request that is not HTTPS. The host's kind is the one the middleware found; when
+ * it found none (the lookup failed, or the middleware did not run) the answer may be on a guest's address, so it gets the value without
+ * `includeSubDomains`, which is safe on every host.
+ */
+export function hstsForError(c: Context): string | null {
+  if (!isSecureRequest(c)) return null;
+  const host = c.get(GUEST_HOST_KEY) as GuestHost | undefined;
+  return host !== undefined && host.kind !== "guest" ? HSTS_DEFAULT : withoutSubdomains(HSTS_DEFAULT);
+}
+
 /** The header of a guest's address: whatever is set loses `includeSubDomains`; when none is set, an HTTPS answer gets the default without it. */
 function guestHsts(headers: Headers, secure: boolean): string | null {
   return withoutSubdomains(headers.get("strict-transport-security") ?? (secure ? HSTS_DEFAULT : null));
