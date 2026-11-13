@@ -113,6 +113,15 @@ define whether staff paths are VPN-only, zero-trust gated, or public with strong
 - The initial platform administrator (a superadmin) is created in the browser on first start. With an empty database, every staff URL redirects to `/setup`.
 - The CLI (`docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin --email ...`) remains as a break-glass path when the web UI is unavailable.
 
+## Guest registration (0.8)
+
+Checklist for IT: [An event's own address for guests](../../deploy/README.md#an-events-own-address-for-guests-checklist-for-it). Points that matter for review:
+
+- **Company sign-in for guests.** Map `claim_email` to an attribute the directory administrator controls, and limit an event with a claim such as `tid` or a group. A self-editable attribute lets someone register under another person's address. Admitto treats `email_verified: false` as a refusal and a missing claim as consent (Microsoft Entra ID does not send it).
+- **Address of the event.** Put it on a domain whose sibling subdomains you trust: a taken-over sibling can set a cookie for the parent domain ("cookie tossing") and get around the login CSRF protection.
+- **Sensitive answers** (for example health) are stored without application-level encryption. Require disk and database encryption and restricted access to backups.
+- **Path rules on the proxy.** Keep `@hono/node-server` at 2.1.6 or newer: it answers 400 to a raw backslash in the path, which older versions read as `/`.
+
 ---
 
 ## Upgrade and rollback
