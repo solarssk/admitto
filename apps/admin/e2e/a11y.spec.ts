@@ -270,6 +270,7 @@ test("guest registration form with the keyboard only", async ({ page }) => {
   // Tab from the top of the page through every stop. The fields, the terms checkbox and the submit button are all reached, in that
   // order, and the checkbox is ticked with the space bar.
   const reached: string[] = [];
+  let reachedSubmit = false;
   for (let step = 0; step < 60; step += 1) {
     await page.keyboard.press("Tab");
     const id = await page.evaluate(() => document.activeElement?.id ?? "");
@@ -278,8 +279,12 @@ test("guest registration form with the keyboard only", async ({ page }) => {
       await page.keyboard.press("Space");
       await expect(page.locator("#f-terms")).toBeChecked();
     }
-    if (await page.evaluate(() => document.activeElement?.getAttribute("type") === "submit")) break;
+    if (await page.evaluate(() => document.activeElement?.getAttribute("type") === "submit")) {
+      reachedSubmit = true;
+      break;
+    }
   }
+  expect(reachedSubmit).toBe(true);
   const first = (id: string) => reached.indexOf(id);
   expect(first("f-first_name")).toBeGreaterThanOrEqual(0);
   expect(first("f-first_name")).toBeLessThan(first("f-last_name"));
@@ -300,7 +305,8 @@ test("guest registration form at 200% zoom has no sideways scroll", async ({ pag
 test("guest registration confirmation page", async ({ page }, testInfo) => {
   const seed = await readSeedData();
   await page.goto(seed.registrationConfirmPath);
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Confirm your email address" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirm my address" })).toBeVisible();
   await settle(page);
   await scanAndReport(page, testInfo, "registration-confirm");
 });

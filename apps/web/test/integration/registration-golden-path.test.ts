@@ -239,6 +239,7 @@ describe("an import and the form on one address (D-A3, D-B13, D-B14)", () => {
 
     const stranger = await h.post(slug, h.body(slug, { email: nextEmail("stranger") }));
     const same = await h.post(slug, h.body(slug, { email, first_name: "Other", last_name: "Person" }));
+    expect(stranger.status).toBe(200);
     expect(same.status).toBe(stranger.status);
     expect(await same.json()).toEqual(await stranger.json());
 
