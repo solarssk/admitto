@@ -179,18 +179,6 @@ export function EventGeneralInfoPanel({
               <span className="at-hint">All check-in times and reports use this timezone.</span>
             </div>
           </div>
-
-          <div className="settings-field-group slug-field">
-            <Input
-              label="Event link ID"
-              value={event.slug}
-              readOnly
-              disabled
-              className="mono"
-              icon={<i className="ti ti-link" aria-hidden="true" />}
-              hint="This can't be changed after the event is created - it's already part of every QR code sent to attendees."
-            />
-          </div>
         </div>
       </Card>
 

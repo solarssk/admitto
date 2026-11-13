@@ -136,7 +136,6 @@ export type CheckInEventDto = Omit<
 
 export interface CreateEventBody {
   title: string;
-  slug: string;
   date: string;
   timezone: string;
   /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */

@@ -479,6 +479,9 @@ describe("EventSettingsPage tabs", () => {
     );
     expect(screen.getByText("Basic information")).toBeTruthy();
     expect(screen.getByText("Status")).toBeTruthy();
+    // The link name is internal: no field, no value, no sentence about it.
+    expect(screen.queryByLabelText("Event link ID")).toBeNull();
+    expect(screen.queryByDisplayValue("summit")).toBeNull();
     expect(
       screen.getByText("When the event takes place."),
     ).toBeTruthy();

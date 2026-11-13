@@ -435,6 +435,32 @@ describe("POST /api/admin/events", () => {
     }
   });
 
+  it("makes a random slug when none is sent, with nothing from the title", async () => {
+    const create = async () => {
+      const res = await postCreateEvent(superCookie, {
+        title: "Autumn Summit Random Slug",
+        date: "2026-09-29",
+        timezone: "UTC",
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { event: { id: string; slug: string } }).event;
+    };
+    const first = await create();
+    const second = await create();
+
+    expect(first.slug).toMatch(/^[a-z2-7]{26}$/);
+    expect(second.slug).toMatch(/^[a-z2-7]{26}$/);
+    expect(second.slug).not.toBe(first.slug);
+    expect(first.slug).not.toContain("autumn");
+    const row = await prisma.event.findUnique({ where: { id: first.id } });
+    expect(row?.slug).toBe(first.slug);
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_CREATE, action_type: "event_created" },
+      orderBy: { created_at: "desc" },
+    });
+    expect((audit?.metadata as { slug?: string }).slug).toBe(second.slug);
+  });
+
   it("returns 409 when slug is taken", async () => {
     const res = await postCreateEvent(superCookie, {
       title: "Duplicate",
