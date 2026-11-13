@@ -147,7 +147,7 @@ describe("the golden path", () => {
     const attendee = await prisma.attendee.findUniqueOrThrow({ where: { id: accepted.attendee_id! }, include: { companions: true } });
     expect(attendee.companions.map((row) => [row.slot, row.name])).toEqual([[1, "Piotr Companion"]]);
     expect(await countSeatsInUse(prisma, eventId)).toBe(2);
-    expect((await prisma.registrationMail.findMany({ where: { registration_id: waiting.id }, select: { template_name: true } })).map((row) => row.template_name).sort()).toEqual(
+    expect((await prisma.registrationMail.findMany({ where: { registration_id: waiting.id }, select: { template_name: true } })).map((row) => row.template_name).sort((a, b) => a.localeCompare(b, "en"))).toEqual(
       ["registration-confirm", "ticket"],
     );
 
