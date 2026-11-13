@@ -3137,7 +3137,7 @@ describe("EventArchivingPanel rendering", () => {
 
     const link = await screen.findByRole("link", { name: "Spring Summit" });
     expect(link.getAttribute("href")).toBe("/admin/events/evt-spring-summit/overview");
-    expect(screen.getByText("spring-summit")).toBeTruthy();
+    expect(screen.queryByText("spring-summit")).toBeNull();
     expect(screen.getByText("42")).toBeTruthy();
     expect(screen.getByText("by Alice Admin")).toBeTruthy();
   });

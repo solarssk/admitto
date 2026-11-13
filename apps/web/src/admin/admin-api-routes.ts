@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
+import { generateEventSlug } from "@admitto/crypto";
 import { canManageInstance, getAdminEvent, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
@@ -55,7 +56,8 @@ const dateOnlyField = z
 // create-event form and the Location tab agree on limits.
 const createEventSchema = z.object({
   title: z.string().trim().min(1).max(200),
-  slug: slugField,
+  // Optional: the admin UI sends none and the server makes a random one; seeds, tests and scripts may still name it.
+  slug: slugField.optional(),
   date: z.union([z.string().datetime({ offset: true }), dateOnlyField]),
   timezone: timezoneField,
   event_hours_start: eventHoursField,
@@ -284,6 +286,17 @@ export async function handleGetAdminEvent(c: Context, db: PrismaClient): Promise
   });
 }
 
+const EVENT_SLUG_ATTEMPTS = 5;
+
+/** A random slug no event has yet; a taken one is simply drawn again. */
+export async function pickFreeEventSlug(db: PrismaClient): Promise<string> {
+  for (let attempt = 0; attempt < EVENT_SLUG_ATTEMPTS; attempt++) {
+    const slug = generateEventSlug();
+    if (!(await db.event.findUnique({ where: { slug }, select: { id: true } }))) return slug;
+  }
+  throw new Error("event_slug_exhausted");
+}
+
 /** POST /api/admin/events — create event (superadmin or org admin). */
 export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
@@ -303,7 +316,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
 
   const {
     title,
-    slug,
+    slug: givenSlug,
     date,
     timezone,
     event_hours_start,
@@ -335,8 +348,8 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
   if (orgIdOrRes instanceof Response) return orgIdOrRes;
   const orgId = orgIdOrRes;
 
-  const existing = await db.event.findUnique({ where: { slug } });
-  if (existing) {
+  const slug = givenSlug ?? (await pickFreeEventSlug(db));
+  if (givenSlug !== undefined && (await db.event.findUnique({ where: { slug } }))) {
     return c.json({ code: "slug_taken", error: "Slug is already in use." }, 409);
   }
 

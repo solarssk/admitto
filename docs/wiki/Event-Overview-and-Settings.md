@@ -159,7 +159,7 @@ The overview reflects the current event lifecycle, and saved settings are used b
 
 ## Important decisions
 
-- The event slug (link name) is created once and cannot be edited later. It appears in agency ticket URLs (`/t/{link-name}/a/…`). Ordinary tickets use `/t/{token}` without the link name.
+- A new event gets a random link name (a 26-character code), made by the server, never from the title; it is not shown in the settings and cannot be changed. It appears in the guest form, legal-text and agency ticket addresses (`/r/{link-name}`, `/legal/{link-name}/…`, `/t/{link-name}/a/…`); copy the whole address from the page that shows it. Events made before this change keep their old link name, so addresses already sent stay valid. Ordinary tickets use `/t/{token}` without the link name.
 - Capacity is managed here, not in the **New event** dialog. A blank capacity means unlimited.
 - Use the event's real time zone. Check-in times and report times depend on it.
 - **The Location tab is the only place to set an event's venue name and address.** The Location tab also holds the map coordinates and the directions and accessibility notes. It is optional. Leave it blank if the event needs no map.

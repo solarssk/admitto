@@ -71,6 +71,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Show the number on a tab in a darker grey, so it can be read on the grey page background ([#1796](https://github.com/solarssk/admitto/pull/1796))
 - Open the Requests tab on the requests that wait for a decision when staff decide by hand, with a shortcut to all requests ([#1807](https://github.com/solarssk/admitto/pull/1807))
 - Move the attendee fields from the Requirements page to the Fields tab of the Registration page, and point to them from Requirements ([#1828](https://github.com/solarssk/admitto/pull/1828))
+- Give a new event a random link name made by the server, not from its title, and remove "Event link ID" from Event settings; existing events keep theirs ([#1924](https://github.com/solarssk/admitto/pull/1924))
 
 ### Fixed
 
