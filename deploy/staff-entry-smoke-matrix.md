@@ -27,6 +27,8 @@ Manual verification after deploy or auth changes. It assumes:
 | 5 | Admin on event (WireGuard) | `/admin` | Redirect `/login` → password + TOTP → `/admin` | No CF layer |
 | 6 | Admin on event needs check-in | `/login` then `/operator` | Session cookie required before check-in | N/A |
 | 7 | Attendee ticket link | `/t/<token>` | Ticket page, no staff login | N/A |
+| 8 | Guest registration form | `/r/<event slug>` | Form or sign-in button, no staff login (bypass `/r/*`, `/legal/*`) | N/A |
+| 9 | Guest company sign-in return | `/sso/callback` | Not redirected to staff login by the gateway | N/A |
 
 ## Quick automated regression (CI)
 
