@@ -1,3 +1,4 @@
+import { createServer, type Server, type Socket } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RedisRateLimitStore } from "../../src/rate-limit/redis.js";
 import { createRateLimitStore } from "../../src/rate-limit/factory.js";
@@ -108,6 +109,64 @@ describe("RedisRateLimitStore fail-open", () => {
     for (const call of warnSpy.mock.calls) {
       expect(String(call[0])).not.toContain("supersecret");
     }
+
+    await store.disconnect();
+  });
+});
+
+describe("RedisRateLimitStore with a Redis that accepts the socket and never answers", () => {
+  let server: Server;
+  let sockets: Socket[];
+  let url: string;
+
+  beforeEach(async () => {
+    resetSystemLogBufferForTest();
+    sockets = [];
+    server = createServer((socket) => {
+      sockets.push(socket);
+      socket.on("error", () => {});
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (address === null || typeof address === "string") throw new Error("no port");
+    url = `redis://127.0.0.1:${address.port}`;
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  const silentRedis = { connectTimeoutMs: 150, commandTimeoutMs: 150, outageCooldownMs: 50 };
+
+  it("answers from the in-memory limiter within a second, again after the cooldown", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = new RedisRateLimitStore(url, silentRedis);
+
+    const started = Date.now();
+    const first = await store.hit("silent", 60_000, 5);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(first.allowed).toBe(true);
+    expect(first.remaining).toBe(4);
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const secondStarted = Date.now();
+    const second = await store.hit("silent", 60_000, 5);
+    expect(Date.now() - secondStarted).toBeLessThan(1_000);
+    expect(second.remaining).toBe(3);
+    expect(sockets.length).toBeGreaterThanOrEqual(2);
+
+    await store.disconnect();
+  });
+
+  it("reports health as not ok within a second instead of hanging", async () => {
+    const store = new RedisRateLimitStore(url, silentRedis);
+
+    const started = Date.now();
+    const health = await store.health();
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(health.ok).toBe(false);
 
     await store.disconnect();
   });
