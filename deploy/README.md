@@ -771,6 +771,7 @@ A superadmin can give an event an address on the organisation's own domain, such
 
    | Path | What it is |
    |------|------------|
+   | `/` (the root, exactly) | The address on its own: it sends the guest on to the form of the event |
    | `/r/*` | The form, its company sign-in and the confirmation link |
    | `/sso/callback` | The return address of the company sign-in |
    | `/legal/*` | The legal texts of the event |
@@ -779,7 +780,7 @@ A superadmin can give an event an address on the organisation's own domain, such
    | `/favicon*`, `/apple-touch-icon*` | Icon files |
    | `/.well-known/admitto-domain-check` | The proof the check asks for |
 
-   Everything else on the guest address answers the same public 404: the panel, `/login` and `/api/*` are not served there. On the main address of the instance, `/r/*` and `/sso/callback` must be public too, because older links and the sign-in of events without an own address use them.
+   Everything else on the guest address, apart from the paths above, answers the same public 404: the panel, `/login` and `/api/*` are not served there. On the main address of the instance, `/r/*` and `/sso/callback` must be public too, because older links and the sign-in of events without an own address use them.
 4. **Company sign-in (identity provider).** List `https://<instance host>/sso/callback` and one `https://<event address>/sso/callback` for each event address that uses the company sign-in among the provider's allowed redirects. It is one entry per address, never one per event, and never `/r/<slug>/sso/callback`. The superadmin's sign-in settings screen shows the full list (`redirect_uris`), addresses that are not verified yet included. A sign-in begun before the change fails closed and the guest starts again (state lives 10 minutes).
 5. **Turnstile.** Add the event address to the hostnames of the Turnstile widget. Without it guests on that address fail the challenge. This applies to events whose way in is the link or the password.
 6. **Check.** The check reaches `https://<event address>/.well-known/admitto-domain-check` from the server. Its result is one of `ok`, `dns_failed`, `tls_failed`, `wrong_target`, `unreachable` or `not_verifiable_from_server`; what each means and what to do is in [Registration access](../docs/wiki/Registration-Access.md). Admitto repeats the check every day. The first `ok` turns guest links on the address on. A later failure only warns (a banner on the Access tab and the Health row **Event addresses**); guests are not sent back to the main address.

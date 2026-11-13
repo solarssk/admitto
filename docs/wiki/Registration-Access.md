@@ -177,7 +177,7 @@ When a check fails, the card names the reason:
 - An address that worked and then fails is never taken back by itself. Guests are not sent back to the main address, and links already sent keep pointing at the address. The tab warns every Administrator of the event, and **Organisation settings → Health check** shows the row **Event addresses**.
 - A wrong address, or a change of it, starts again: the verification is cleared and guests get the main address until the check passes.
 - With the company sign-in, the identity provider must also list `https://<address>/sso/callback` as an allowed redirect. See [Organisation Settings](Organisation-Settings).
-- IT also keeps the guest pages public on the address. A gateway or Cloudflare Access needs a bypass for `/r/*`, `/sso/callback`, `/legal/*`, `/t/*`, `/q/*`, `/m/*`, `/assets/*`, `/uploads/*`, `/vendor/*`, the icon files and `/.well-known/admitto-domain-check`. Everything else on the address answers a plain "not found", so the panel is not reachable there. IT finds the full checklist, including the proxy and HSTS notes, in the deployment guide (`deploy/README.md`, "An event's own address for guests").
+- IT also keeps the guest pages public on the address. A gateway or Cloudflare Access needs a bypass for `/` (the root, exactly), `/r/*`, `/sso/callback`, `/legal/*`, `/t/*`, `/q/*`, `/m/*`, `/assets/*`, `/uploads/*`, `/vendor/*`, the icon files and `/.well-known/admitto-domain-check`. Everything else on the address answers a plain "not found", so the panel is not reachable there. IT finds the full checklist, including the proxy and HSTS notes, in the deployment guide (`deploy/README.md`, "An event's own address for guests").
 
 ## What changes after this action
 
