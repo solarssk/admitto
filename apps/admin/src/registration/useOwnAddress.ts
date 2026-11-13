@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useToast } from "@admitto/ui";
 import { ApiError, checkCustomDomain, saveCustomDomain } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -31,9 +31,14 @@ export function useOwnAddress({ eventId, saved, instanceHost, onChanged, onArchi
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // The typed text follows the saved address when a request changes it, so the controls stay mounted and keep the focus.
+  // The typed text follows the saved address when a request changes it, so the controls stay mounted and keep the focus. Not on the
+  // first render: the state starts from the saved address already, and a reset then runs after whatever the person typed before the
+  // first effects were flushed (on a loaded machine that is possible), which wiped the text and the judgement of it.
   const savedDomain = saved?.domain ?? "";
+  const followed = useRef(savedDomain);
   useEffect(() => {
+    if (followed.current === savedDomain) return;
+    followed.current = savedDomain;
     setTyped(savedDomain);
     setTouched(false);
   }, [savedDomain]);

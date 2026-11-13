@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useLayoutEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
+import { useOwnAddress } from "../../src/registration/useOwnAddress.js";
 import type { CustomDomainDto, RegistrationOwnAddressDto, RoleAssignment } from "../../src/api/types.js";
 import { getTooltipText, isOff } from "../test-utils.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
@@ -319,5 +321,32 @@ describe("an archived event", () => {
     for (const name of ["Save address", "Check now", "Remove"]) expect(isOff(button(name))).toBe(true);
     expect(field().disabled).toBe(true);
     expect(getTooltipText(button("Check now"))).toBe("This event is archived. Editing is disabled.");
+  });
+});
+
+describe("the typed address and the first effects of the card", () => {
+  type Api = ReturnType<typeof useOwnAddress>;
+
+  /** Types in the layout phase of the first commit, which is before React has flushed that commit's passive effects: the order of a
+   * person who types the moment the card is on screen on a machine that is slow to run its effects (a loaded CI runner). */
+  function TypesBeforeTheEffects({ onApi }: { onApi: (api: Api) => void }) {
+    const result = useOwnAddress({ eventId: "evt-1", saved: null, instanceHost: "admitto.example.com", onChanged: vi.fn(), onArchived: vi.fn() });
+    const typed = useRef(false);
+    useLayoutEffect(() => {
+      if (typed.current) return;
+      typed.current = true;
+      result.edit("Admitto.example.com");
+      result.leave();
+    });
+    onApi(result);
+    return null;
+  }
+
+  it("keeps what was typed and judges it, as the reset to the saved address is for a change of that address only", () => {
+    let latest: Api | undefined;
+    render(<TypesBeforeTheEffects onApi={(result) => (latest = result)} />);
+
+    expect(latest?.typed).toBe("Admitto.example.com");
+    expect(latest?.fieldError).toBe("This is the address of this instance. Guests need an address of their own for this event.");
   });
 });
