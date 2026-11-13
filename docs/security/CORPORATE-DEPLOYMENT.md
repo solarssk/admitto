@@ -108,7 +108,7 @@ define whether staff paths are VPN-only, zero-trust gated, or public with strong
 | Platform owner | IT / platform team | Admin UI; may combine with perimeter controls |
 | Event organizer | Business owner | Admin UI, organization scope |
 | Check-in operator | On-site staff | Operator UI, event scope |
-| Attendee | Guest | Public ticket link - no account |
+| Attendee | Guest | Public ticket link, and the registration form of an event that has one - no account |
 
 - The initial platform administrator (a superadmin) is created in the browser on first start. With an empty database, every staff URL redirects to `/setup`.
 - The CLI (`docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin --email ...`) remains as a break-glass path when the web UI is unavailable.

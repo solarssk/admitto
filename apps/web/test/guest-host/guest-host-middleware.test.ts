@@ -10,6 +10,7 @@ import {
 } from "../../src/guest-host/guest-host.js";
 import {
   createGuestHostMiddleware,
+  hstsForError,
   guestHostOf,
   handleDomainCheck,
   isOtherEventOnGuestHost,
@@ -58,6 +59,11 @@ function makeApp(options: { instanceHostname?: string | null; hosts?: Record<str
     c.header("Strict-Transport-Security", "max-age=31536000");
     return c.text("ok");
   });
+  app.get("/uploads/no-hsts", (c) => c.text("ok"));
+  app.get("/uploads/boom", () => {
+    throw new Error("boom");
+  });
+  app.onError((_err, c) => c.text("failed", 500));
   app.get("/.well-known/admitto-domain-check", (c) => handleDomainCheck(c));
   return { app, resolve };
 }
@@ -230,6 +236,34 @@ describe("on a guest's address", () => {
   });
 });
 
+describe("Strict-Transport-Security is owned by the application (D-L3)", () => {
+  const WITH = "max-age=31536000; includeSubDomains";
+  const WITHOUT = "max-age=31536000";
+
+  it("adds it to every answer to an HTTPS request that has none: a file, an error and a 404, with includeSubDomains only off a guest's address", async () => {
+    const { app } = makeApp();
+    for (const path of ["/uploads/no-hsts", "/uploads/boom", "/uploads/missing"]) {
+      const main = await app.request(`https://tickets.example.com${path}`);
+      const guest = await app.request(`https://${OWN}${path}`);
+      expect(main.headers.get("strict-transport-security"), `main ${path}`).toBe(WITH);
+      expect(guest.headers.get("strict-transport-security"), `guest ${path}`).toBe(WITHOUT);
+    }
+    const hidden = await app.request(`https://${OWN}/api/admin/events`);
+    expect(hidden.status).toBe(404);
+    expect(hidden.headers.get("strict-transport-security")).toBe(WITHOUT);
+  });
+
+  it("adds none to a plain HTTP request on any host", async () => {
+    const { app } = makeApp();
+    for (const host of ["tickets.example.com", OWN]) {
+      for (const path of ["/uploads/no-hsts", "/admin"]) {
+        const res = await app.request(`http://${host}${path}`);
+        expect(res.headers.get("strict-transport-security"), `${host}${path}`).toBeNull();
+      }
+    }
+  });
+});
+
 describe("on a host that is only a pending address, or no address", () => {
   it("serves everything as before", async () => {
     const { app } = makeApp();
@@ -255,6 +289,43 @@ describe("a failed lookup", () => {
     const { app } = makeApp({ resolver: failing });
     const res = await app.request(`https://${OWN}/admin`);
     expect(res.status).toBe(500);
+  });
+});
+
+describe("hstsForError", () => {
+  function errorApp(resolver: GuestHostResolver) {
+    const app = new Hono();
+    app.use("*", createGuestHostMiddleware({ resolver, configuredInstanceHostname: () => "tickets.example.com" }));
+    app.get("/boom", () => {
+      throw new Error("boom");
+    });
+    app.onError((_err, c) => {
+      const hsts = hstsForError(c);
+      if (hsts !== null) c.header("Strict-Transport-Security", hsts);
+      return c.json({ error: "internal_error" }, 500);
+    });
+    return app;
+  }
+
+  it("is the value without includeSubDomains when the lookup failed, and nothing on a request that is not HTTPS", async () => {
+    const failing: GuestHostResolver = {
+      resolve: async () => {
+        throw new Error("down");
+      },
+      clear: () => {},
+      size: () => ({ found: 0, missing: 0 }),
+    };
+    const app = errorApp(failing);
+    expect((await app.request(`https://${OWN}/boom`)).headers.get("strict-transport-security")).toBe("max-age=31536000");
+    expect((await app.request(`http://${OWN}/boom`)).headers.get("strict-transport-security")).toBeNull();
+  });
+
+  it("keeps includeSubDomains for an error on the instance's own host and on a host that is nobody's, and drops it on a guest's address", async () => {
+    const { resolver } = resolverOf({ [OWN]: GUEST });
+    const app = errorApp(resolver);
+    expect((await app.request("https://tickets.example.com/boom")).headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains");
+    expect((await app.request("https://nobody.example.net/boom")).headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains");
+    expect((await app.request(`https://${OWN}/boom`)).headers.get("strict-transport-security")).toBe("max-age=31536000");
   });
 });
 

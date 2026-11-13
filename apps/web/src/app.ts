@@ -323,6 +323,7 @@ import {
 import {
   createGuestHostMiddleware,
   handleDomainCheck,
+  hstsForError,
   isOtherEventOnGuestHost,
 } from "./guest-host/guest-host-middleware.js";
 import { DOMAIN_CHECK_PATH } from "./guest-host/guest-paths.js";
@@ -762,6 +763,10 @@ export function createApp(options: CreateAppOptions = {}) {
   // diagnostics on stderr. Live-tail gets error class/code only - never stack, Prisma detail,
   // or concrete request paths beyond the matched route template.
   app.onError((err, c) => {
+    // The application owns HSTS (D-L3, nginx adds none): an answer written here has none from a route, and a failed lookup of the host
+    // throws before the middleware can set it.
+    const hsts = hstsForError(c);
+    if (hsts !== null) c.header("Strict-Transport-Security", hsts);
     if (err instanceof HTTPException) return err.getResponse();
 
     // Hono only invokes onError for Error instances (non-Error throws bypass it).

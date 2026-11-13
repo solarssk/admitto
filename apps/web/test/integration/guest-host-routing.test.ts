@@ -121,6 +121,20 @@ afterAll(async () => {
 /** What the application answers for a page that is not there, on the host of the instance. */
 const NOT_THERE = "/r/no-such-event";
 
+describe("a failed lookup of the host", () => {
+  it("is a 500 that still carries the HSTS of the application, without includeSubDomains, because the host's kind is not known", async () => {
+    const failing = vi.spyOn(prisma.eventRegistrationSettings, "findUnique").mockRejectedValue(new Error("database unavailable"));
+    try {
+      const res = await h.app.request(`https://${HOST_A}/admin`);
+      expect(res.status).toBe(500);
+      expect(res.headers.get("strict-transport-security")).toBe("max-age=31536000");
+      expect(await res.text()).not.toContain(HOST_A);
+    } finally {
+      failing.mockRestore();
+    }
+  });
+});
+
 describe("a path of the panel on each kind of host", () => {
   const STAFF_PATHS: Array<[string, string]> = [
     ["GET", "/admin"],

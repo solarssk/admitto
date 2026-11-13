@@ -21,6 +21,14 @@ Use this checklist before an event. It is a practical starting point, not a repl
 - [ ] Send a test message to a synthetic or approved test address.
 - [ ] [Send tickets](Sending-Tickets-and-Delivery), count the intended recipients, and monitor delivery status.
 
+## Let guests register (only if the event takes registrations)
+
+- [ ] A Superadmin has saved the Turnstile keys and the way guests sign in, and the mail sending works ([Organisation Settings](Organisation-Settings)).
+- [ ] IT keeps the guest pages public at the gateway, and an event with an address of its own has it checked ([Registration Access](Registration-Access)).
+- [ ] The event's questions and texts are ready ([Registration Form Fields](Registration-Form-Fields), [Legal Texts and Consents](Legal-Texts-and-Consents)).
+- [ ] Turn the registration mode on for the event. Until it is on, the form answers "not found", so nobody can send a test.
+- [ ] Open the form in a private window and send one test registration with a synthetic address. See it arrive in [Registration Requests](Registration-Requests), and watch the mail queue. Turn the mode off again if something is wrong: the form then answers "not found".
+
 ## Prepare event day
 
 - [ ] Confirm who will operate check-in and which event they can access.

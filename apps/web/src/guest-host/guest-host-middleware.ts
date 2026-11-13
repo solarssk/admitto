@@ -11,8 +11,10 @@
  * - A host that is only a pending address, or no address, is served as before; the exception is the proof at
  *   `/.well-known/admitto-domain-check` ({@link handleDomainCheck}), which answers for any address that is set.
  * - `GET /` on a guest's address goes to `/r/<slug of the event, from the database>`: the target is never taken from the request.
- * - The responses of a guest's address do not carry `includeSubDomains` in `Strict-Transport-Security`: the address belongs to the
- *   organisation's own domain, and a page of ours must not pin HTTPS for the rest of its tree.
+ * - The application is the only owner of `Strict-Transport-Security` (the nginx of the compose stack adds none, D-L3). Every answer to
+ *   an HTTPS request carries it, an error, a 404 and a file included: the one the route set stays, and an answer without one gets
+ *   the default here. The responses of a guest's address do not carry `includeSubDomains`: the address belongs to the organisation's
+ *   own domain, and a page of ours must not pin HTTPS for the rest of its tree.
  *
  * A failed lookup is an error (a 500 from the application's handler, naming no host), never a quiet fall-back to "not a guest's
  * address": the panel must not appear on an address that may be a guest's because the database was out for a moment.
@@ -20,6 +22,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { signDomainCheck } from "@admitto/crypto";
 import { resolveRequestOrigin } from "../auth/same-origin-post.js";
+import { isSecureRequest } from "../is-secure-request.js";
 import { respondRegistrationNotFound } from "../registration-page-security.js";
 import { NOT_A_GUEST_HOST, type GuestHost, type GuestHostResolver } from "./guest-host.js";
 import { classifyGuestRequest } from "./guest-paths.js";
@@ -59,9 +62,28 @@ function withoutSubdomains(value: string | null): string | null {
   return kept.join(";").trim();
 }
 
-function dropSubdomainPinning(headers: Headers): void {
-  const value = withoutSubdomains(headers.get("strict-transport-security"));
-  if (value !== null) headers.set("Strict-Transport-Security", value);
+const HSTS_DEFAULT = "max-age=31536000; includeSubDomains";
+
+/**
+ * The header of an answer that the application's error handler writes (a throw never reaches the code after `next()`, and a failed
+ * lookup of the host throws before it). `null` for a request that is not HTTPS. The host's kind is the one the middleware found; when
+ * it found none (the lookup failed, or the middleware did not run) the answer may be on a guest's address, so it gets the value without
+ * `includeSubDomains`, which is safe on every host.
+ */
+export function hstsForError(c: Context): string | null {
+  if (!isSecureRequest(c)) return null;
+  const host = c.get(GUEST_HOST_KEY) as GuestHost | undefined;
+  return host !== undefined && host.kind !== "guest" ? HSTS_DEFAULT : withoutSubdomains(HSTS_DEFAULT);
+}
+
+/** The header of a guest's address: whatever is set loses `includeSubDomains`; when none is set, an HTTPS answer gets the default without it. */
+function guestHsts(headers: Headers, secure: boolean): string | null {
+  return withoutSubdomains(headers.get("strict-transport-security") ?? (secure ? HSTS_DEFAULT : null));
+}
+
+/** The header of any other host: an HTTPS answer that has none gets the default (the instance pins its subdomains, as before). */
+function ensureInstanceHsts(c: Context): void {
+  if (isSecureRequest(c) && !c.res.headers.has("strict-transport-security")) c.header("Strict-Transport-Security", HSTS_DEFAULT);
 }
 
 /** The answer of the middleware itself for a request on a guest's address, or null to let the router answer. */
@@ -79,15 +101,20 @@ export function createGuestHostMiddleware(deps: GuestHostDeps): MiddlewareHandle
     const hostname = hostnameOf(c);
     const host = hostname === deps.configuredInstanceHostname() ? NOT_A_GUEST_HOST : await deps.resolver.resolve(hostname);
     c.set(GUEST_HOST_KEY, host);
-    if (host.kind !== "guest") return next();
+    if (host.kind !== "guest") {
+      await next();
+      ensureInstanceHsts(c);
+      return;
+    }
 
     const answer = answerFor(c, host);
     if (answer) {
-      dropSubdomainPinning(answer.headers);
+      const value = guestHsts(answer.headers, isSecureRequest(c));
+      if (value !== null) answer.headers.set("Strict-Transport-Security", value);
       return answer;
     }
     await next();
-    const pinned = withoutSubdomains(c.res.headers.get("strict-transport-security"));
+    const pinned = guestHsts(c.res.headers, isSecureRequest(c));
     if (pinned !== null) c.header("Strict-Transport-Security", pinned);
   };
 }
