@@ -52,6 +52,8 @@ npm run start -w @admitto/web
 | `/api/wallet/webhook/passcreator/:eventId` (+ `/voided`, `/first-confirmed`) | signature verified against the provider's public key | PassCreator callbacks (rate-limited) |
 | `/api/ops/system-logs` | `OPS_HEALTH_TOKEN` | System log ingest from the worker |
 
+The public registration routes (`/r/*`, `/legal/*`, `/sso/callback`) serve a browser. The shape of their answers (status codes, the `error` names, the JSON of `POST /r/:eventSlug`) is not a stable contract for scripts or integrations, and it can change in a minor release.
+
 Path classification for Cloudflare Access: [`deploy/README.md`](../../deploy/README.md#cloudflare-and-wireguard).
 
 Staff entry smoke matrix (manual QA): [`deploy/staff-entry-smoke-matrix.md`](../../deploy/staff-entry-smoke-matrix.md).

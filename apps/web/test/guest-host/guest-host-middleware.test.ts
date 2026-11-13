@@ -58,6 +58,11 @@ function makeApp(options: { instanceHostname?: string | null; hosts?: Record<str
     c.header("Strict-Transport-Security", "max-age=31536000");
     return c.text("ok");
   });
+  app.get("/uploads/no-hsts", (c) => c.text("ok"));
+  app.get("/uploads/boom", () => {
+    throw new Error("boom");
+  });
+  app.onError((_err, c) => c.text("failed", 500));
   app.get("/.well-known/admitto-domain-check", (c) => handleDomainCheck(c));
   return { app, resolve };
 }
@@ -227,6 +232,34 @@ describe("on a guest's address", () => {
     expect(plain.headers.get("strict-transport-security")).toBe("max-age=31536000");
     expect(hidden.headers.get("strict-transport-security")).toBe("max-age=31536000");
     expect(main.headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains");
+  });
+});
+
+describe("Strict-Transport-Security is owned by the application (D-L3)", () => {
+  const WITH = "max-age=31536000; includeSubDomains";
+  const WITHOUT = "max-age=31536000";
+
+  it("adds it to every answer to an HTTPS request that has none: a file, an error and a 404, with includeSubDomains only off a guest's address", async () => {
+    const { app } = makeApp();
+    for (const path of ["/uploads/no-hsts", "/uploads/boom", "/uploads/missing"]) {
+      const main = await app.request(`https://tickets.example.com${path}`);
+      const guest = await app.request(`https://${OWN}${path}`);
+      expect(main.headers.get("strict-transport-security"), `main ${path}`).toBe(WITH);
+      expect(guest.headers.get("strict-transport-security"), `guest ${path}`).toBe(WITHOUT);
+    }
+    const hidden = await app.request(`https://${OWN}/api/admin/events`);
+    expect(hidden.status).toBe(404);
+    expect(hidden.headers.get("strict-transport-security")).toBe(WITHOUT);
+  });
+
+  it("adds none to a plain HTTP request on any host", async () => {
+    const { app } = makeApp();
+    for (const host of ["tickets.example.com", OWN]) {
+      for (const path of ["/uploads/no-hsts", "/admin"]) {
+        const res = await app.request(`http://${host}${path}`);
+        expect(res.headers.get("strict-transport-security"), `${host}${path}`).toBeNull();
+      }
+    }
   });
 });
 
