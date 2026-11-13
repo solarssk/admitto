@@ -245,3 +245,62 @@ test("admin pages", async ({ page, baseURL }, testInfo) => {
     });
   }
 });
+
+// The public pages of guest registration (no sign-in): the form of the seeded event and the page its confirmation link opens. The
+// form is scanned twice, at the desktop width and at 390 px, where the reflow and target-size rules see the phone layout. The
+// contrast rule runs here, in a real browser: the jsdom scan of the markup (apps/web/test/registration/form-page-axe.test.ts) cannot.
+test("guest registration form", async ({ page }, testInfo) => {
+  const seed = await readSeedData();
+  await page.goto(`/r/${seed.registrationSlug}`);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.getByLabel("Email")).toBeVisible();
+  await settle(page);
+  await scanAndReport(page, testInfo, "registration-form");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await settle(page);
+  await scanAndReport(page, testInfo, "registration-form-390");
+});
+
+test("guest registration form with the keyboard only", async ({ page }) => {
+  const seed = await readSeedData();
+  await page.goto(`/r/${seed.registrationSlug}`);
+  await expect(page.getByLabel("Email")).toBeVisible();
+
+  // Tab from the top of the page through every stop. The fields, the terms checkbox and the submit button are all reached, in that
+  // order, and the checkbox is ticked with the space bar.
+  const reached: string[] = [];
+  for (let step = 0; step < 60; step += 1) {
+    await page.keyboard.press("Tab");
+    const id = await page.evaluate(() => document.activeElement?.id ?? "");
+    if (id) reached.push(id);
+    if (id === "f-terms") {
+      await page.keyboard.press("Space");
+      await expect(page.locator("#f-terms")).toBeChecked();
+    }
+    if (await page.evaluate(() => document.activeElement?.getAttribute("type") === "submit")) break;
+  }
+  const first = (id: string) => reached.indexOf(id);
+  expect(first("f-first_name")).toBeGreaterThanOrEqual(0);
+  expect(first("f-first_name")).toBeLessThan(first("f-last_name"));
+  expect(first("f-last_name")).toBeLessThan(first("f-email"));
+  expect(first("f-email")).toBeLessThan(first("f-terms"));
+});
+
+test("guest registration form at 200% zoom has no sideways scroll", async ({ page }) => {
+  const seed = await readSeedData();
+  // 200% zoom of a 1280 px window is a 640 px wide page: the layout the zoomed browser lays out.
+  await page.setViewportSize({ width: 640, height: 720 });
+  await page.goto(`/r/${seed.registrationSlug}`);
+  await expect(page.getByLabel("Email")).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test("guest registration confirmation page", async ({ page }, testInfo) => {
+  const seed = await readSeedData();
+  await page.goto(seed.registrationConfirmPath);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await settle(page);
+  await scanAndReport(page, testInfo, "registration-confirm");
+});
