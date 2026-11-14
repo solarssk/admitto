@@ -28,7 +28,7 @@ export interface AccessDraft {
   companion: boolean;
   consent_keys: string[];
   styled_form_controls: boolean;
-  /** The company sign-in only: the claim a guest's token must hold, as typed. Empty for no restriction. */
+  /** The company SSO only: the claim a guest's token must hold, as typed. Empty for no restriction. */
   sso_claim_name: string;
   /** The values of that claim that may register, as typed: one on each line. Empty for no restriction. */
   sso_claim_values: string;
@@ -93,8 +93,8 @@ function valuesError(values: readonly string[], hasName: boolean): string | unde
 }
 
 /**
- * What is wrong with the restriction of the company sign-in, as the server would refuse it: the name and the values go together
- * (both or neither), within the limits. Only the company sign-in has a restriction, so any other way in has none to check.
+ * What is wrong with the restriction of the company SSO, as the server would refuse it: the name and the values go together
+ * (both or neither), within the limits. Only the company SSO has a restriction, so any other way in has none to check.
  */
 export function claimErrors(draft: AccessDraft): ClaimErrors {
   if (draft.method !== "sso") return {};
@@ -121,8 +121,8 @@ function sameKeys(a: readonly string[], b: readonly string[]): boolean {
 }
 
 /**
- * The restriction of the company sign-in, when it changed: the name and the values together, `null` and an empty list to take it away.
- * A way in other than the company sign-in has no restriction: the server clears it when the way in changes, so none is sent then.
+ * The restriction of the company SSO, when it changed: the name and the values together, `null` and an empty list to take it away.
+ * A way in other than the company SSO has no restriction: the server clears it when the way in changes, so none is sent then.
  * Turning registration off must always be possible, so a restriction that is not complete is left out of that save.
  */
 function claimPatch(draft: AccessDraft, base: AccessDraft): Pick<SaveRegistrationSettingsBody, "sso_claim_name" | "sso_claim_values"> {

@@ -1,4 +1,4 @@
-/* The provider block under the switch of the company sign-in: its parts are spaced by a gap, and a long name or address wraps. */
+/* The provider block under the switch of the company SSO: its parts are spaced by a gap, and a long name or address wraps. */
 .ways-in-sso {
   display: flex;
   flex-direction: column;

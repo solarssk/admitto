@@ -1,5 +1,4 @@
 import { useId, useState } from "react";
-import { Link } from "react-router";
 import { Button, Card, Notice, useToast } from "@admitto/ui";
 import { ApiError, clearRegistrationPassword } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -16,33 +15,20 @@ import "./registration-access.css";
 const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
   { value: "link", label: "Link" },
   { value: "password", label: "Password" },
-  { value: "sso", label: "Company sign-in" },
+  { value: "sso", label: "Company SSO" },
 ];
 
-const METHOD_HINTS: Readonly<Record<AccessMethod, string>> = {
+/** What the chosen way means, in one notice under the choice. */
+const METHOD_NOTICES: Readonly<Record<AccessMethod, string>> = {
   link: "Anyone who has the link can ask to join. A bot check protects the form.",
-  password: "Guests must type the event password to open the form. A bot check protects it too.",
-  sso: "Guests sign in with the company's identity provider to open the form. The email address comes from that sign-in and cannot be changed on the form.",
+  password: "Guests need the link and the event password to open the form. A bot check protects it.",
+  sso: "Guests sign in with the company account. Their email comes from that sign-in.",
 };
 
-/** What the person reads under the choice for a way in that a superadmin has not turned on for the organisation: the superadmin gets the place to do it. */
-function NotAllowedReasons({
-  methods,
-  isSuperadmin,
-  id,
-}: Readonly<{ methods: readonly SegmentedOption<AccessMethod>[]; isSuperadmin: boolean; id: string }>) {
-  if (methods.length === 0) return null;
-  return (
-    <ul id={id} className="access-not-allowed">
-      {methods.map((method) => (
-        <li key={method.value} className="at-hint">
-          <strong>{method.label}:</strong> Not turned on for this organisation.{" "}
-          {isSuperadmin ? <Link to="/admin/settings?tab=external">Turn it on in Organisation settings</Link> : "Ask a superadmin."}
-        </li>
-      ))}
-    </ul>
-  );
-}
+/** Why a way is off, in the tooltip of its button: the superadmin is told where to turn it on, the organiser to ask. */
+const NOT_TURNED_ON = "Not turned on for this organisation.";
+const REASON_FOR_SUPERADMIN = `${NOT_TURNED_ON} Turn it on in Organisation settings, External services.`;
+const REASON_FOR_ORGANISER = `${NOT_TURNED_ON} Ask a superadmin.`;
 
 /** The shared password of the event: whether one is set, and the buttons to set, change or remove it. It never shows the password. */
 function EventPasswordRow({
@@ -112,13 +98,13 @@ export function AccessWayInCard({
   /** The way in the form holds now, and the one that is saved. */
   method: AccessMethod | null;
   savedMethod: AccessMethod | null;
-  /** The restriction of the company sign-in as typed, and what is wrong with it. */
+  /** The restriction of the company SSO as typed, and what is wrong with it. */
   claim: Pick<AccessDraft, "sso_claim_name" | "sso_claim_values">;
   claimErrors: ClaimErrors;
   passwordSet: boolean;
   /** The ways in a superadmin has turned on for the organisation. The others cannot be chosen. */
   enabledMethods: readonly AccessMethod[];
-  /** A superadmin is told where to turn a way in on, and is the only one who changes the restriction of the company sign-in. */
+  /** A superadmin is told where to turn a way in on, and is the only one who changes the restriction of the company SSO. */
   isSuperadmin: boolean;
   disabled: boolean;
   onMethodChange: (method: AccessMethod) => void;
@@ -128,10 +114,11 @@ export function AccessWayInCard({
   onArchived: () => void;
 }>) {
   const { addToast } = useToast();
-  const reasonsId = useId();
-  // A way in that is not turned on is greyed, also the one the event has chosen: it stays chosen, nothing is removed.
-  const options = METHOD_OPTIONS.map((option) => ({ ...option, disabled: !enabledMethods.includes(option.value) }));
-  const notAllowed = options.filter((option) => option.disabled);
+  // A way that is not turned on is greyed, also the one the event has chosen: it stays chosen, nothing is removed. Its reason is a tooltip.
+  const reason = isSuperadmin ? REASON_FOR_SUPERADMIN : REASON_FOR_ORGANISER;
+  const options = METHOD_OPTIONS.map((option) =>
+    enabledMethods.includes(option.value) ? option : { ...option, disabled: true, tooltip: reason },
+  );
   const [setOpen, setSetOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -170,23 +157,18 @@ export function AccessWayInCard({
   }
 
   return (
-    <Card title="Way in">
+    <Card title="How guests open the form">
       <div className="settings-card-stack">
+        <p className="settings-card-intro">Choose how guests open the registration form.</p>
         <Segmented
           className="access-seg"
-          ariaLabel="Way in"
+          ariaLabel="How guests open the form"
           options={options}
           value={method}
           disabled={disabled}
-          describedBy={notAllowed.length > 0 ? reasonsId : undefined}
           onChange={onMethodChange}
         />
-        <NotAllowedReasons methods={notAllowed} isSuperadmin={isSuperadmin} id={reasonsId} />
-        {method === null ? (
-          <p className="settings-card-intro">Choose how guests open the form. You can use one way in at a time.</p>
-        ) : (
-          <p className="settings-card-intro">{METHOD_HINTS[method]}</p>
-        )}
+        {method !== null && <Notice variant="info">{METHOD_NOTICES[method]}</Notice>}
         {method === "password" && (
           <>
             <EventPasswordRow event={event} passwordSet={passwordSet} disabled={disabled} onSet={() => setSetOpen(true)} onRemove={() => setRemoveOpen(true)} />

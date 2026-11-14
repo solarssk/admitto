@@ -74,7 +74,7 @@ export function RegistrationAccessForm({
   const missing = missingChecks(server.readiness);
   // A move between the two modes that are on is never refused, so only an event that has registration off needs to be ready.
   const canTurnOn = server.mode !== null || missing.length === 0;
-  // The address of the event, and the restriction of the company sign-in, are a superadmin's to set; every administrator of the event is told when it stops working.
+  // The address of the event, and the restriction of the company SSO, are a superadmin's to set; every administrator of the event is told when it stops working.
   const superadmin = isSuperadmin(useOptionalAuth()?.assignments ?? []);
 
   // A change of the path or of `?tab=` leaves the form: with changes in it, the person is asked first.

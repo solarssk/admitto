@@ -13,7 +13,7 @@ const CARD_HINT =
 const CARD_INTRO =
   "Cloudflare Turnstile checks that a guest on the registration form is not a bot. Without both keys, a public link or password form stays closed.";
 const CONFIRM_MESSAGE =
-  "After you save, guests are no longer checked for bots. For an event that needs a firm barrier, use the company sign-in or a strong password.";
+  "After you save, guests are no longer checked for bots. For an event that needs a firm barrier, use the company SSO or a strong password.";
 const PROVIDER_HINT = "The service that checks a guest is not a bot. Cloudflare Turnstile is the only one for now.";
 const PROVIDERS = [{ id: "turnstile", label: "Cloudflare Turnstile" }];
 const SITE_KEY_HINT = "The public key of your Turnstile widget. Add the address of this instance to its hostnames in Cloudflare.";

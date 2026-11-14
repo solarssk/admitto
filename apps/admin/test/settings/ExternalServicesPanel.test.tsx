@@ -1177,7 +1177,7 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
     expect(dialog()).not.toBeNull();
     expect(within(dialog()!).getByText("Turn the bot check off?")).toBeTruthy();
     expect(dialog()!.textContent).toMatch(/guests are no longer checked for bots/);
-    expect(dialog()!.textContent).toMatch(/use the company sign-in or a strong password/);
+    expect(dialog()!.textContent).toMatch(/use the company SSO or a strong password/);
     expect(dialog()!.textContent).not.toMatch(/stricter/);
     // Nothing changed yet: the choice, the keys and the Save button are as they were.
     expect(toggle().checked).toBe(true);
@@ -1277,18 +1277,18 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
 });
 
 describe("ExternalServicesPanel, ways in card", () => {
-  type WayName = "Link" | "Password" | "Company sign-in";
+  type WayName = "Link" | "Password" | "Company SSO";
   const card = () => screen.getByText("Ways in").closest(".at-card") as HTMLElement;
   const wayIn = (name: WayName) => within(card()).getByRole("switch", { name }) as HTMLInputElement;
   const save = () => screen.getByRole("button", { name: "Save" });
   const keysWarning = () => within(card()).queryByText(/stay closed until the Turnstile keys above are ready/);
   const describedBy = (input: HTMLElement) => document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent ?? "";
 
-  it("shows a switch for the link, one for the password and one for the company sign-in, all off until a superadmin turns one on", async () => {
+  it("shows a switch for the link, one for the password and one for the company SSO, all off until a superadmin turns one on", async () => {
     await renderLoaded();
     expect(wayIn("Link").checked).toBe(false);
     expect(wayIn("Password").checked).toBe(false);
-    expect(wayIn("Company sign-in").checked).toBe(false);
+    expect(wayIn("Company SSO").checked).toBe(false);
     expect(within(card()).getAllByText("Off")).toHaveLength(3);
     expect(isOff(save())).toBe(true);
     expect(mockFetchAccess).toHaveBeenCalledTimes(1);
@@ -1299,7 +1299,7 @@ describe("ExternalServicesPanel, ways in card", () => {
     await renderLoaded();
     expect(describedBy(wayIn("Link"))).toMatch(/Anyone who has the link of an event can open its form, after a bot check\./);
     expect(describedBy(wayIn("Password"))).toMatch(/needs the password of the event, as well as its link/);
-    expect(describedBy(wayIn("Company sign-in"))).toMatch(/signs in with the identity provider chosen below to open the form\. The sign-in replaces the bot check/);
+    expect(describedBy(wayIn("Company SSO"))).toMatch(/signs in with the identity provider chosen below to open the form\. The sign-in replaces the bot check/);
     expect(card().textContent).toMatch(/An organiser can choose only a way that is on\./);
     expect(card().textContent).toMatch(/Turning one off closes the registration form of every event that uses it, at once: guests see a page that is not found\./);
     expect(card().textContent).toMatch(/Nothing is deleted, and turning it on again opens those forms again\./);
@@ -1381,7 +1381,7 @@ describe("ExternalServicesPanel, ways in card", () => {
     expect(mockSaveAccess).not.toHaveBeenCalled();
   });
 
-  it("keeps the company sign-in in the list when it saves another way, and sends the list in the order of the server", async () => {
+  it("keeps the company SSO in the list when it saves another way, and sends the list in the order of the server", async () => {
     mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
     await renderLoaded();
     fireEvent.click(wayIn("Link"));
@@ -1422,9 +1422,9 @@ describe("ExternalServicesPanel, ways in card", () => {
     expect(keysWarning()).toBeNull();
   });
 
-  it("does not warn about the Turnstile keys for the company sign-in, which needs no bot check", async () => {
+  it("does not warn about the Turnstile keys for the company SSO, which needs no bot check", async () => {
     await renderLoaded();
-    fireEvent.click(wayIn("Company sign-in"));
+    fireEvent.click(wayIn("Company SSO"));
     expect(keysWarning()).toBeNull();
     fireEvent.click(wayIn("Link"));
     expect(keysWarning()).toBeTruthy();
@@ -1542,9 +1542,9 @@ describe("ExternalServicesPanel, ways in card", () => {
 /** A provider that is on, other than the chosen one of a test whose choice is off. */
 const SSO_OTHER = { id: "idp-okta", display_name: "Okta" };
 
-describe("ExternalServicesPanel, company sign-in on the ways in card", () => {
+describe("ExternalServicesPanel, company SSO on the ways in card", () => {
   const card = () => screen.getByText("Ways in").closest(".at-card") as HTMLElement;
-  const toggle = () => within(card()).getByRole("switch", { name: "Company sign-in" }) as HTMLInputElement;
+  const toggle = () => within(card()).getByRole("switch", { name: "Company SSO" }) as HTMLInputElement;
   const save = () => screen.getByRole("button", { name: "Save" });
   const picker = () => el<HTMLButtonElement>("external-access-sso-provider");
   const choose = (name: string) => {
@@ -1553,7 +1553,7 @@ describe("ExternalServicesPanel, company sign-in on the ways in card", () => {
   };
   const noteText = () => document.getElementById("external-access-sso-note")?.textContent ?? "";
 
-  it("shows nothing of the provider while the company sign-in is off, and the picker, the sentence and the address once it is on", async () => {
+  it("shows nothing of the provider while the company SSO is off, and the picker, the sentence and the address once it is on", async () => {
     await renderLoaded();
     expect(document.getElementById("external-access-sso-provider")).toBeNull();
     expect(within(card()).queryByText("Return address")).toBeNull();
@@ -1579,7 +1579,7 @@ describe("ExternalServicesPanel, company sign-in on the ways in card", () => {
   });
 
   it.each([
-    ["not_selected", null, /No identity provider is chosen yet\. Forms of events that use the company sign-in stay closed, and nothing is deleted\./],
+    ["not_selected", null, /No identity provider is chosen yet\. Forms of events that use the company SSO stay closed, and nothing is deleted\./],
     ["missing", "gone", /The identity provider that was chosen no longer exists\. Forms of events .* stay closed, and nothing is deleted\./],
     ["disabled", "idp-entra", /The identity provider that was chosen is turned off\. Forms of events .* stay closed, and nothing is deleted\./],
   ] as const)("says that forms stay closed when the choice is %s, as a warning", async (state, providerId, text) => {
@@ -1611,7 +1611,7 @@ describe("ExternalServicesPanel, company sign-in on the ways in card", () => {
     await renderLoaded();
 
     expect(card().textContent).toMatch(/Enter this address once at the identity provider/);
-    expect(card().textContent).toMatch(/same for every event that uses the company sign-in/);
+    expect(card().textContent).toMatch(/same for every event that uses the company SSO/);
     expect(card().textContent).toMatch(/let \/sso\/callback through without a sign-in, together with \/r\/\*/);
     fireEvent.click(within(card()).getByRole("button", { name: "Copy the return address" }));
 

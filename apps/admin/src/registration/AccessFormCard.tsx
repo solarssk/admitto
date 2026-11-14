@@ -28,11 +28,11 @@ const TOGGLES: ReadonlyArray<{ key: ToggleKey; title: string; text: string }> = 
   },
 ];
 
-/** What the confirmation switch says under the company sign-in: the identity provider has verified the address, so no link is sent. */
+/** What the confirmation switch says under the company SSO: the identity provider has verified the address, so no link is sent. */
 const VERIFY_EMAIL_PROVIDER_TEXT =
-  "Not used with the company sign-in: the identity provider has already verified the address, so guests are sent no confirmation link. Your choice is kept for the other ways in.";
+  "Not used with the company SSO: the identity provider has already verified the address, so guests are sent no confirmation link. Your choice is kept for the other ways in.";
 
-/** Whether the provider's sign-in makes this switch meaningless (the server skips the link for the company sign-in). */
+/** Whether the provider's sign-in makes this switch meaningless (the server skips the link for the company SSO). */
 function providerDecides(key: ToggleKey, draft: AccessDraft): boolean {
   return key === "verify_email" && draft.method === "sso";
 }

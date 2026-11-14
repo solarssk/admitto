@@ -166,14 +166,14 @@ export const CODE_MESSAGES: Record<string, string> = {
   sensitive_reveal_limit: "You have shown many sensitive answers in a short time. Wait a moment and try again.",
   sensitive_wallet_field: "A sensitive field is never put on a wallet pass. Remove its row from the field mapping.",
   setup_not_ready: "Complete the setup steps before finishing.",
-  // The answer of the guest route to a company sign-in that is gone or never was. A guest's page handles it itself (it
+  // The answer of the guest route to a company SSO that is gone or never was. A guest's page handles it itself (it
   // reloads to its sign-in); it is mapped here so that nothing that reads this map is left with a bare code.
   sign_in_required: "The sign-in has run out. Sign in again.",
   show_when_not_on_form:
     "A field with a condition can be on the registration form only when the field it depends on is on the form too.",
   source_field_conflict: "A custom field with this key already exists for this event.",
   sso_claim_needs_sso:
-    "The restriction to one company works with the company sign-in only. Choose the company sign-in as the way in, or leave the restriction out.",
+    "The restriction to one company works with the company SSO only. Choose the company SSO as the way in, or leave the restriction out.",
   sso_claim_superadmin_only: "Only a superadmin can change the restriction to one company.",
   source_provider_unavailable:
     "Select an enabled direct OIDC identity provider before enabling Cloudflare Access.",

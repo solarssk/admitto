@@ -26,7 +26,7 @@ const METHODS: Readonly<Record<SwitchedAccessMethod, { name: string; text: strin
     textWithoutCheck: "A guest needs the password of the event, as well as its link, to open the form. There is no bot check, so use a strong password.",
   },
   sso: {
-    name: "Company sign-in",
+    name: "Company SSO",
     text: "A guest signs in with the identity provider chosen below to open the form. The sign-in replaces the bot check, and the guest's email comes from the provider.",
     textWithoutCheck: "A guest signs in with the identity provider chosen below to open the form. The guest's email comes from the provider.",
   },
@@ -35,7 +35,7 @@ const METHODS: Readonly<Record<SwitchedAccessMethod, { name: string; text: strin
 /** Organisation Settings → External services: which ways in to the guest registration form are on for the whole instance.
  * The draft lives in the panel, so the one Save of the page saves it with Weather, Maps and the Turnstile keys.
  * `keys` is the saved state of the Turnstile keys: a link or a password is open to guests only while they are ready. `sso` is the
- * saved state of the identity provider choice, which only the company sign-in needs. `botProtection` is the saved mode of the bot
+ * saved state of the identity provider choice, which only the company SSO needs. `botProtection` is the saved mode of the bot
  * check: with `not_used` the link and the password need no keys, and their text says there is no check. */
 export function RegistrationAccessMethodsCard({
   draft,

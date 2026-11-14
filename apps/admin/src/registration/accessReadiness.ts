@@ -17,7 +17,7 @@ export interface ReadinessCopy {
 }
 
 const ASK_A_SUPERADMIN = { text: "Ask a superadmin to set it up." } as const;
-/** The identity provider of the company sign-in is chosen by a superadmin, on the same card as the switch. */
+/** The identity provider of the company SSO is chosen by a superadmin, on the same card as the switch. */
 const ASK_FOR_THE_PROVIDER = { text: "Ask a superadmin to choose the identity provider in Organisation settings, External services, Ways in." } as const;
 /** The ways in of the whole instance are turned on by a superadmin, on a card of their own. */
 const ASK_FOR_THE_WAY_IN = { text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." } as const;
@@ -29,14 +29,14 @@ const ASK_FOR_THE_WAY_IN = { text: "Ask a superadmin to turn it on in Organisati
  */
 export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, ReadinessCopy>> = {
   access_method: {
-    title: "Way in",
-    met: "A way in is chosen.",
-    missing: "Choose how guests get in: with a link, with a password or with the company sign-in.",
+    title: "How guests open the form",
+    met: "A way for guests to open the form is chosen.",
+    missing: "Choose how guests open the form: with a link, with a password or with company SSO.",
   },
   access_method_enabled: {
-    title: "Way in allowed",
-    met: "This way in is allowed on this instance.",
-    missing: "This way in is not allowed on this instance.",
+    title: "How guests open the form: allowed",
+    met: "This way is turned on for the organisation.",
+    missing: "This way is not turned on for the organisation.",
     remedy: ASK_FOR_THE_WAY_IN,
   },
   bot_protection: {
@@ -52,9 +52,9 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     info: true,
   },
   identity_provider: {
-    title: "Company sign-in",
-    met: "The company sign-in is set up.",
-    missing: "The company sign-in is not set up, so the form stays closed.",
+    title: "Company SSO",
+    met: "The company SSO is set up.",
+    missing: "The company SSO is not set up, so the form stays closed.",
     remedy: ASK_FOR_THE_PROVIDER,
   },
   password: {

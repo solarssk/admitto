@@ -68,7 +68,7 @@ export function legalAnswer(items: LegalDocumentDto[]): LegalDocumentsListRespon
   return { items, missing: [], limits: LEGAL_LIMITS };
 }
 
-/** The checks of an event that has chosen the company sign-in: no bot protection among them, and the identity provider instead. */
+/** The checks of an event that has chosen the company SSO: no bot protection among them, and the identity provider instead. */
 export function ssoChecks(...missing: RegistrationReadinessKey[]): RegistrationReadinessCheckDto[] {
   return LINK_KEYS.map((key) => (key === "bot_protection" ? "identity_provider" : key)).map((key) => ({ key, ok: !missing.includes(key) }));
 }

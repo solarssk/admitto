@@ -67,7 +67,7 @@ describe("buildAccessMethodsSaveBody", () => {
     expect(buildAccessMethodsSaveBody(draft(), draft({ password: true }))).toEqual({ methods: [] });
   });
 
-  it("keeps the company sign-in in the list when another way is turned on", () => {
+  it("keeps the company SSO in the list when another way is turned on", () => {
     expect(buildAccessMethodsSaveBody(draft({ link: true, sso: true }), draft({ sso: true }))).toEqual({ methods: ["link", "sso"] });
   });
 });
@@ -146,7 +146,7 @@ describe("ssoProviderOptions", () => {
 
 describe("ssoProviderNote", () => {
   it.each([
-    ["not_selected", null, /No identity provider is chosen yet\. Forms of events that use the company sign-in stay closed, and nothing is deleted\./],
+    ["not_selected", null, /No identity provider is chosen yet\. Forms of events that use the company SSO stay closed, and nothing is deleted\./],
     ["missing", "gone", /The identity provider that was chosen no longer exists\. Forms .* stay closed/],
     ["disabled", "idp-entra", /The identity provider that was chosen is turned off\. Forms .* stay closed/],
   ] as const)("warns for a choice that is %s, and says that forms stay closed", (state, providerId, text) => {

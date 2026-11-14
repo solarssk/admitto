@@ -12,7 +12,7 @@ const MATCH_HINT =
   "A value must match exactly, with capital letters as they are. Never use the end of an email address here: it says where mail goes, not who the person is. A change counts at once, also for guests who have already signed in.";
 
 /**
- * The restriction of the company sign-in to the people of one company: the name of one claim and the values of it that may register.
+ * The restriction of the company SSO to the people of one company: the name of one claim and the values of it that may register.
  * The server takes the two together, so an error on one says what the other is missing. The values are typed one on each line.
  */
 export function AccessSsoClaim({
@@ -71,7 +71,7 @@ export function AccessSsoClaim({
           {...NO_AUTOFILL_PROPS}
           onChange={(event) => edit({ sso_claim_values: event.target.value })}
         />
-        <span id={`${valuesId}-note`} className={`at-hint${errors.values ? " at-hint--error" : ""}`}>
+        <span id={`${valuesId}-note`} className={`settings-card-intro${errors.values ? " at-hint--error" : ""}`}>
           {errors.values ?? `One value on each line, up to ${SSO_CLAIM_VALUES_MAX}, each up to ${SSO_CLAIM_VALUE_MAX} characters. ${MATCH_HINT}`}
         </span>
       </div>

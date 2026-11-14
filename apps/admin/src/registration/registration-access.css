@@ -102,18 +102,7 @@
   overflow-wrap: anywhere;
 }
 
-/* Why a way in cannot be chosen: one line each, under the choice, as the hint of a field wraps. */
-.access-not-allowed {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-wrap: anywhere;
-}
-
-/* The restriction of the company sign-in sits in the Way in card, under the choice: its fields are spaced by the card's gap, and a
+/* The restriction of the company SSO sits in the Way in card, under the choice: its fields are spaced by the card's gap, and a
  * long GUID or an explanation wraps instead of widening the card. */
 .access-claim {
   display: flex;
@@ -124,8 +113,7 @@
   border-top: 1px solid var(--border);
 }
 
-.access-claim .settings-card-intro,
-.access-claim .at-hint {
+.access-claim .settings-card-intro {
   overflow-wrap: anywhere;
 }
 

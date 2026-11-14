@@ -11,7 +11,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 ## Before you start
 
 - You must be the Administrator of the event's organisation, or a Superadmin. An Operator cannot open this page.
-- Some things are set up for the whole instance, by a Superadmin: bot protection, which ways in are allowed, the identity provider for the company sign-in, email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
+- Some things are set up for the whole instance, by a Superadmin: bot protection, which ways in are allowed, the identity provider for the company SSO, email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
 - Only a Superadmin sets the address of the event for guests (see **Give the event an address of its own** below). Every Administrator of the event sees how it stands.
 - You write the legal texts and the questions yourself. See [Legal Texts and Consents](Legal-Texts-and-Consents) and [Registration Form Fields](Registration-Form-Fields).
 - An archived event keeps its settings. You can read them and copy the link, but you cannot change anything.
@@ -27,16 +27,16 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 **Choose how guests get in**
 
-1. Under **Way in**, choose **Link**, **Password** or **Company sign-in**. An event has one way in at a time. A way in that a Superadmin has not turned on for your organisation is grey and cannot be chosen: its reason says "Not turned on for this organisation. Ask a Superadmin." A Superadmin sees a link to Organisation settings instead, where it is turned on.
+1. Under **How guests open the form**, choose **Link**, **Password** or **Company SSO**. An event has one way in at a time. A way that a Superadmin has not turned on for your organisation is grey and cannot be chosen. Hover over it to read why: "Not turned on for this organisation. Ask a superadmin." A Superadmin reads "Turn it on in Organisation settings, External services." instead.
 2. For **Password**, select **Set password**, type a password of 8 to 128 characters and select **Save password**. This is saved at once, apart from the **Save** button of the page.
-3. For **Company sign-in**, optionally limit the form to one company. See **Limit the company sign-in to one company** below.
+3. For **Company SSO**, optionally limit the form to one company. See **Limit the company SSO to one company** below.
 4. Select **Save** at the bottom of the page.
 
-**Limit the company sign-in to one company**
+**Limit the company SSO to one company**
 
 Only a Superadmin can change this limit. An Administrator sees the claim name and the allowed values, with the note "Only a superadmin can change this.", and cannot edit them.
 
-1. Under **Way in**, choose **Company sign-in**.
+1. Under **How guests open the form**, choose **Company SSO**.
 2. In **Claim name**, type the name of the claim that the identity provider puts in the sign-in. With Microsoft Entra ID it is usually `tid`.
 3. In **Allowed values**, type one value on each line. With `tid`, the value is the tenant ID of the company, a GUID.
 4. Select **Save**. Leave both fields empty for no limit.
@@ -89,20 +89,20 @@ Admitto also checks the address by itself soon after you save it, and again ever
 
 When the event is full, a new request goes on the waiting list. You accept people from the list by hand, in either mode. Without the **Waiting list** switch, a full event says that no places are left and saves nothing.
 
-**Link, password or company sign-in**
+**Link, password or company SSO**
 
-| Way in | Who can open the form |
+| Way | Who can open the form |
 |---|---|
 | **Link** | Anyone who has the link |
 | **Password** | Anyone who has the link and types the event password |
-| **Company sign-in** | Anyone who has the link and signs in with the identity provider of your organisation |
+| **Company SSO** | Anyone who has the link and signs in with the identity provider of your organisation |
 
-- The link and the password are protected by a bot check, unless a Superadmin switched the bot check **Off** for your organisation. Then the checklist shows **Bot protection** in grey, as information, and a script can send the form or guess an event password within the usual limits. Use the company sign-in or a strong password for an event that matters. The company sign-in needs no bot check, because the form opens only after the sign-in.
+- The link and the password are protected by a bot check, unless a Superadmin switched the bot check **Off** for your organisation. Then the checklist shows **Bot protection** in grey, as information, and a script can send the form or guess an event password within the usual limits. Use the company SSO or a strong password for an event that matters. The company SSO needs no bot check, because the form opens only after the sign-in.
 - You cannot read the password again after you save it. Keep a copy where you share it with guests.
 - A new password does not change the requests that guests already sent.
 - Choosing another way in and saving removes the password.
 
-**Company sign-in**
+**Company SSO**
 
 - The guest signs in with the identity provider that a Superadmin chose. The form shows the email address from that sign-in, and the guest cannot change it. A sign-in without an email address cannot register.
 - A guest who signs in does not get an Admitto account and cannot open the staff screens.
@@ -110,7 +110,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 - Use a claim that the identity provider vouches for, such as the tenant. Never use the end of an email address: it says where mail goes, not who the person is.
 - A change of the limit counts at once, also for guests who have already signed in. A guest who does not match sees a message and cannot register.
 - Moving the event to another way in removes the limit.
-- A way in that was chosen and that a Superadmin turned off later stays chosen, grey, with the same reason. Nothing is deleted, and the **Way in allowed** row of the checklist warns that guests cannot open the form.
+- A way in that was chosen and that a Superadmin turned off later stays chosen, grey, with the same reason in its hover text. Nothing is deleted, and the **How guests open the form: allowed** row of the checklist warns that guests cannot open the form.
 
 **Styled boxes**
 
@@ -133,10 +133,10 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 
 | Row | If it is not done |
 |---|---|
-| **Way in** | Choose **Link**, **Password** or **Company sign-in** on this tab |
-| **Way in allowed** | Ask a Superadmin to turn that way in on: Organisation settings > External services > Ways in |
-| **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company sign-in does not have this row. If your organisation does not use a bot check, the row is grey, says "Not used for this organisation" and does not block anything |
-| **Company sign-in** | Ask a Superadmin to choose the identity provider: Organisation settings > External services > Ways in. Only a form with the company sign-in has this row |
+| **How guests open the form** | Choose **Link**, **Password** or **Company SSO** on this tab |
+| **How guests open the form: allowed** | Ask a Superadmin to turn that way in on: Organisation settings > External services > Ways in |
+| **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company SSO does not have this row. If your organisation does not use a bot check, the row is grey, says "Not used for this organisation" and does not block anything |
+| **Company SSO** | Ask a Superadmin to choose the identity provider: Organisation settings > External services > Ways in. Only a form with the company SSO has this row |
 | **Event password** | Set the password on this tab |
 | **Legal texts** | Publish the privacy notice, the terms and the consents you chose on the **Legal** tab |
 | **Form questions** | A required question cannot be shown on the form. Open the **Fields** tab |
@@ -157,7 +157,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 - Guests confirm their address with a link in an email. The link works for 24 hours.
 - A request that is not confirmed in that time is deleted.
 - The guest's confirmation email replaces the "received" email.
-- With the company sign-in this switch has no effect: the identity provider has already verified the address, so no confirmation link is sent. The switch is greyed out and keeps its setting for the other ways in.
+- With the company SSO this switch has no effect: the identity provider has already verified the address, so no confirmation link is sent. The switch is greyed out and keeps its setting for the other ways in.
 
 **The address for guests: what the check can find**
 
@@ -179,7 +179,7 @@ When a check fails, the card names the reason:
 
 - An address that worked and then fails is never taken back by itself. Guests are not sent back to the main address, and links already sent keep pointing at the address. The tab warns every Administrator of the event, and **Organisation settings → Health check** shows the row **Event addresses**.
 - A wrong address, or a change of it, starts again: the verification is cleared and guests get the main address until the check passes.
-- With the company sign-in, the identity provider must also list `https://<address>/sso/callback` as an allowed redirect. See [Organisation Settings](Organisation-Settings).
+- With the company SSO, the identity provider must also list `https://<address>/sso/callback` as an allowed redirect. See [Organisation Settings](Organisation-Settings).
 - IT also keeps the guest pages public on the address. A gateway or Cloudflare Access needs a bypass for `/` (the root, exactly), `/r/*`, `/sso/callback`, `/legal/*`, `/t/*`, `/q/*`, `/m/*`, `/assets/*`, `/uploads/*`, `/vendor/*`, the icon files and `/.well-known/admitto-domain-check`. Everything else on the address answers a plain "not found", so the panel is not reachable there. IT finds the full checklist, including the proxy and HSTS notes, in the deployment guide (`deploy/README.md`, "An event's own address for guests").
 
 ## What changes after this action
@@ -215,7 +215,7 @@ When you turn registration off:
 | A guest sees "This event is not open to your company account." | The sign-in does not hold one of your allowed values. Check the claim name and the values on this tab |
 | A guest sees "Your company account did not give us a verified email address" | The identity provider sent no email address, or says the address is not verified. A Superadmin maps the email claim of the provider |
 | Saving says "Only a superadmin can change the restriction to one company" | The limit to one company is a Superadmin's to set. Ask a Superadmin to change it |
-| The restriction says "The restriction to one company works with the company sign-in only" | Choose **Company sign-in** as the way in, or clear both fields |
+| The restriction says "The restriction to one company works with the company SSO only" | Choose **Company SSO** as the way in, or clear both fields |
 | There is no link under **Link for guests** | The address of the instance is not set. Ask a Superadmin |
 | The tab warns that the address of the event stopped working | Ask a Superadmin or your IT department. The card under **Address for guests** names the reason |
 | **Check now** is off | The field holds an address that is not saved. Save it first |

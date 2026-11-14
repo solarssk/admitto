@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RegistrationSettingsDto, RoleAssignment } from "../../src/api/types.js";
-import { isOff } from "../test-utils.js";
+import { getTooltipText, isOff } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
 import { settings, ssoChecks } from "./accessData.js";
 import { card, radio, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
@@ -35,7 +35,7 @@ const SUPERADMIN: RoleAssignment = { role: "superadmin", scope_type: "instance",
 const ORG_ADMIN: RoleAssignment = { role: "admin", scope_type: "organization", scope_id: "org-1" };
 const REASON = "Not turned on for this organisation.";
 
-const wayInCard = () => card("Way in");
+const wayInCard = () => card("How guests open the form");
 const ssoSettings = (overrides: Partial<RegistrationSettingsDto> = {}) => settings({ access_methods: ["sso"], readiness: ssoChecks(), ...overrides });
 const isGreyed = (name: string) => (radio(name) as HTMLButtonElement).disabled;
 
@@ -49,38 +49,49 @@ afterEach(() => {
 });
 
 describe("the ways in a superadmin has not turned on", () => {
-  it("leaves all three choosable when all three are on, and says nothing about a reason", async () => {
+  const forOrganiser = `${REASON} Ask a superadmin.`;
+  const forSuperadmin = `${REASON} Turn it on in Organisation settings, External services.`;
+
+  it("leaves all three choosable when all three are on, with no hover text", async () => {
     await renderLoaded(settings({ enabled_access_methods: ["link", "password", "sso"] }));
 
-    expect([isGreyed("Link"), isGreyed("Password"), isGreyed("Company sign-in")]).toEqual([false, false, false]);
-    expect(within(wayInCard()).queryByText(REASON, { exact: false })).toBeNull();
+    expect([isGreyed("Link"), isGreyed("Password"), isGreyed("Company SSO")]).toEqual([false, false, false]);
+    for (const name of ["Link", "Password", "Company SSO"]) expect(getTooltipText(radio(name))).toBeNull();
   });
 
-  it("greys out each way that is off, names it with its reason, and tells an administrator to ask a superadmin", async () => {
+  it("greys out each way that is off with only a hover text, and tells an administrator to ask a superadmin", async () => {
     await renderLoaded(settings({ access_methods: ["link"], enabled_access_methods: ["link"] }));
 
-    expect([isGreyed("Link"), isGreyed("Password"), isGreyed("Company sign-in")]).toEqual([false, true, true]);
-    const reasons = within(wayInCard()).getAllByRole("listitem");
-    expect(reasons.map((item) => item.textContent)).toEqual([
-      `Password: ${REASON} Ask a superadmin.`,
-      `Company sign-in: ${REASON} Ask a superadmin.`,
-    ]);
+    expect([isGreyed("Link"), isGreyed("Password"), isGreyed("Company SSO")]).toEqual([false, true, true]);
+    expect(getTooltipText(radio("Password"))).toBe(forOrganiser);
+    expect(getTooltipText(radio("Company SSO"))).toBe(forOrganiser);
+    expect(getTooltipText(radio("Link"))).toBeNull();
+    // Nothing is written in the card about it, and nothing links anywhere.
+    expect(within(wayInCard()).queryByText(REASON, { selector: "p, li, a" })).toBeNull();
     expect(within(wayInCard()).queryByRole("link")).toBeNull();
+    expect(wayInCard().querySelector(".at-hint, strong")).toBeNull();
   });
 
-  it("ties the reasons to the choice for a screen reader", async () => {
+  it("describes a greyed way to a screen reader with the same text, kept out of sight", async () => {
     await renderLoaded(settings({ enabled_access_methods: ["link", "password"] }));
 
-    const group = within(wayInCard()).getByRole("radiogroup", { name: "Way in" });
-    const reasons = document.getElementById(group.getAttribute("aria-describedby") ?? "none");
-    expect(reasons?.textContent).toBe(`Company sign-in: ${REASON} Ask a superadmin.`);
+    const note = document.getElementById(radio("Company SSO").getAttribute("aria-describedby") ?? "none");
+    expect(note?.textContent).toBe(forOrganiser);
+    expect(note?.className).toBe("sr-only");
+    expect(radio("Link").getAttribute("aria-describedby")).toBeNull();
   });
 
-  it("does not change the way in when a greyed one is pressed, and sends nothing", async () => {
+  it("keeps the choice in the narrow group of the segmented control", async () => {
+    await renderLoaded(settings({ enabled_access_methods: ["link"] }));
+
+    expect(within(wayInCard()).getByRole("radiogroup", { name: "How guests open the form" }).classList.contains("access-seg")).toBe(true);
+  });
+
+  it("does not change the way when a greyed one is pressed, and sends nothing", async () => {
     await renderLoaded(settings({ access_methods: ["link"], enabled_access_methods: ["link"] }));
 
     fireEvent.click(radio("Password"));
-    fireEvent.click(radio("Company sign-in"));
+    fireEvent.click(radio("Company SSO"));
 
     expect(radio("Link").getAttribute("aria-checked")).toBe("true");
     expect(radio("Password").getAttribute("aria-checked")).toBe("false");
@@ -88,23 +99,21 @@ describe("the ways in a superadmin has not turned on", () => {
     expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
   });
 
-  it("gives a superadmin the place to turn it on instead of the advice to ask", async () => {
+  it("tells a superadmin where to turn it on, in the same hover text", async () => {
     assignments = [SUPERADMIN];
     await renderLoaded(settings({ access_methods: ["link"], enabled_access_methods: ["link"] }));
 
-    const links = within(wayInCard()).getAllByRole("link", { name: "Turn it on in Organisation settings" });
-    expect(links).toHaveLength(2);
-    expect(links.map((link) => link.getAttribute("href"))).toEqual(["/admin/settings?tab=external", "/admin/settings?tab=external"]);
-    expect(within(wayInCard()).queryByText("Ask a superadmin.", { exact: false })).toBeNull();
+    expect(getTooltipText(radio("Password"))).toBe(forSuperadmin);
+    expect(getTooltipText(radio("Company SSO"))).toBe(forSuperadmin);
+    expect(within(wayInCard()).queryByRole("link")).toBeNull();
   });
 
-  it("keeps a chosen way in chosen, greyed with the same reason, when a superadmin turned it off afterwards", async () => {
+  it("keeps a chosen way chosen, greyed with the same hover text, when a superadmin turned it off afterwards", async () => {
     await renderLoaded(settings({ access_methods: ["password"], password_set: true, enabled_access_methods: ["link", "sso"] }));
 
     expect(radio("Password").getAttribute("aria-checked")).toBe("true");
     expect(isGreyed("Password")).toBe(true);
-    expect(within(wayInCard()).getByRole("listitem").textContent).toBe(`Password: ${REASON} Ask a superadmin.`);
-    // The other ways stay open to be chosen, and nothing of the event is removed by looking.
+    expect(getTooltipText(radio("Password"))).toBe(forOrganiser);
     expect(isGreyed("Link")).toBe(false);
     expect(isOff(saveButton())).toBe(true);
     expect(screen.getByText("Event password")).toBeTruthy();
@@ -120,7 +129,23 @@ describe("the ways in a superadmin has not turned on", () => {
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["link"] }));
   });
 
-  it("is free of axe violations with a greyed way in", async () => {
+  it("is named at the top of the card with one short instruction, and says what the chosen way means in one notice, none when nothing is chosen", async () => {
+    await renderLoaded(settings({ access_methods: [], enabled_access_methods: ["link", "password", "sso"] }));
+
+    expect(within(wayInCard()).getByText("Choose how guests open the registration form.")).toBeTruthy();
+    expect(wayInCard().textContent).not.toMatch(/Way in/);
+    expect(wayInCard().querySelector(".at-notice")).toBeNull();
+
+    const notice = () => wayInCard().querySelectorAll(".at-notice");
+    fireEvent.click(radio("Link"));
+    expect([notice().length, notice()[0]?.textContent]).toEqual([1, "Anyone who has the link can ask to join. A bot check protects the form."]);
+    fireEvent.click(radio("Password"));
+    expect([notice().length, notice()[0]?.textContent]).toEqual([1, "Guests need the link and the event password to open the form. A bot check protects it."]);
+    fireEvent.click(radio("Company SSO"));
+    expect([notice().length, notice()[0]?.textContent]).toEqual([1, "Guests sign in with the company account. Their email comes from that sign-in."]);
+  });
+
+  it("is free of axe violations with a greyed way", async () => {
     await renderLoaded(settings({ enabled_access_methods: ["link"] }));
 
     const result = await axe.run(wayInCard(), { rules: { "color-contrast": { enabled: false } } });
@@ -129,7 +154,7 @@ describe("the ways in a superadmin has not turned on", () => {
   });
 });
 
-describe("the restriction of the company sign-in by who looks", () => {
+describe("the restriction of the company SSO by who looks", () => {
   const restricted = (overrides: Partial<RegistrationSettingsDto> = {}) =>
     ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111", "bbb-222"], ...overrides });
   const name = () => screen.getByLabelText("Claim name") as HTMLInputElement;

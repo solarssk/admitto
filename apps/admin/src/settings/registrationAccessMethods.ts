@@ -12,7 +12,7 @@ export const SWITCHED_ACCESS_METHODS = ["link", "password", "sso"] as const;
 
 export type SwitchedAccessMethod = (typeof SWITCHED_ACCESS_METHODS)[number];
 
-/** The ways in that need the Turnstile keys: the company sign-in does not, because its form stands behind the provider's sign-in. */
+/** The ways in that need the Turnstile keys: the company SSO does not, because its form stands behind the provider's sign-in. */
 export const TURNSTILE_ACCESS_METHODS = ["link", "password"] as const;
 
 /** What the card reads: the ways in of the instance, and the identity provider guests sign in with. */
@@ -92,14 +92,14 @@ export function mergeWaysIn(current: WaysIn, got: WaysInSaved): WaysIn {
   return { methods: got.methods ?? current.methods, sso: got.sso ?? current.sso };
 }
 
-/** What the sentence under the provider says: how the choice stands, and what a form that uses the company sign-in does meanwhile. */
+/** What the sentence under the provider says: how the choice stands, and what a form that uses the company SSO does meanwhile. */
 export interface SsoProviderNote {
   /** `warning` while guests cannot sign in, `info` otherwise. */
   tone: "warning" | "info";
   text: string;
 }
 
-const CLOSED = "Forms of events that use the company sign-in stay closed, and nothing is deleted.";
+const CLOSED = "Forms of events that use the company SSO stay closed, and nothing is deleted.";
 
 const NOTES: Readonly<Record<Exclude<RegistrationSsoProviderState, "ready">, string>> = {
   not_selected: `No identity provider is chosen yet. ${CLOSED}`,
