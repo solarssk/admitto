@@ -22,6 +22,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     saveMapsSettings: vi.fn(),
     testWeatherConnection: vi.fn(),
     testMapsConnection: vi.fn(),
+    testRegistrationTurnstile: vi.fn(),
   };
 });
 
@@ -37,6 +38,7 @@ import {
   saveRegistrationTurnstile,
   saveWeatherSettings,
   testMapsConnection,
+  testRegistrationTurnstile,
   testWeatherConnection,
 } from "../../src/api/client.js";
 
@@ -51,6 +53,7 @@ const mockSaveWeather = vi.mocked(saveWeatherSettings);
 const mockSaveMaps = vi.mocked(saveMapsSettings);
 const mockTestWeather = vi.mocked(testWeatherConnection);
 const mockTestMaps = vi.mocked(testMapsConnection);
+const mockTestTurnstile = vi.mocked(testRegistrationTurnstile);
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -90,7 +93,7 @@ function sampleResponse(
 }
 
 function sampleTurnstile(overrides: Partial<RegistrationTurnstileDto> = {}): RegistrationTurnstileDto {
-  return { site_key: null, secret_set: false, status: "incomplete", ...overrides };
+  return { site_key: null, secret_set: false, status: "incomplete", bot_protection: "required", ...overrides };
 }
 
 const READY_TURNSTILE = sampleTurnstile({ site_key: "0x4AAAAAAAsite", secret_set: true, status: "ready" });
@@ -108,6 +111,7 @@ beforeEach(() => {
     site_key: body.site_key === undefined ? null : body.site_key,
     secret_set: body.secret_key !== null && body.secret_key !== undefined,
     status: "ready",
+    bot_protection: body.bot_protection ?? "required",
   }));
   mockSaveWeather.mockImplementation(async (body) => ({
     ...sampleResponse().weather,
@@ -800,13 +804,13 @@ describe("ExternalServicesPanel", () => {
     });
   });
 
-  it("keeps Nominatim when the maps provider select is changed", async () => {
+  it("greys out the maps provider select, because Nominatim is the only one", async () => {
     await renderLoaded();
-    fireEvent.click(el<HTMLButtonElement>("external-maps-provider"));
-    fireEvent.click(screen.getByRole("button", { name: "OpenStreetMap (Nominatim)" }));
-    expect(el<HTMLButtonElement>("external-maps-provider").textContent).toContain(
-      "OpenStreetMap (Nominatim)",
-    );
+    const select = el<HTMLButtonElement>("external-maps-provider");
+    expect(isOff(select)).toBe(true);
+    fireEvent.click(select);
+    expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
+    expect(select.textContent).toContain("OpenStreetMap (Nominatim)");
   });
 
   it("allows Open-Meteo save with an invalid base URL (commercial host gate stays off)", async () => {
@@ -958,8 +962,8 @@ describe("ExternalServicesPanel", () => {
   });
 });
 
-describe("ExternalServicesPanel, guest registration card", () => {
-  const card = () => screen.getByText("Guest registration").closest(".at-card") as HTMLElement;
+describe("ExternalServicesPanel, bot protection card", () => {
+  const card = () => screen.getByText("Bot protection").closest(".at-card") as HTMLElement;
 
   /** Opens the secret field, types a value and confirms it, as the mail and wallet panels do. */
   function typeSecret(value: string) {
@@ -967,19 +971,82 @@ describe("ExternalServicesPanel, guest registration card", () => {
     fireEvent.change(el<HTMLInputElement>("external-turnstile-secret-key"), { target: { value } });
   }
 
+  it("drops a secret key that was being typed when Cancel is chosen", async () => {
+    await renderLoaded();
+    typeSecret("half-typed");
+
+    fireEvent.click(within(card()).getByRole("button", { name: "Cancel" }));
+
+    expect(document.getElementById("external-turnstile-secret-key")).toBeNull();
+    expect(within(card()).getByText("Not set")).toBeTruthy();
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
+  });
+
   it("shows the card with its two keys, closed until both are saved", async () => {
     await renderLoaded();
-    expect(within(card()).getByText("Not set up")).toBeTruthy();
     expect(el<HTMLInputElement>("external-turnstile-site-key").value).toBe("");
     expect(within(card()).getByText("Not set")).toBeTruthy();
     expect(card().textContent).toMatch(/public link or password form stays closed/);
-    expect(card().textContent).toMatch(/privacy notice/);
+    expect(card().textContent).toMatch(/hostnames/);
+  });
+
+  it("lays the provider out like the wallet: one option, greyed out, with Test connection beside it", async () => {
+    await renderLoaded();
+    const row = within(card()).getByRole("button", { name: "Test connection" }).closest(".external-provider-and-test") as HTMLElement;
+    const select = within(row).getByRole("button", { name: /Cloudflare Turnstile/ });
+    expect(select.id).toBe("external-bot-protection-provider");
+    // One provider is built, so the choice is greyed out like the one of the wallet.
+    expect(isOff(select)).toBe(true);
+    fireEvent.click(select);
+    expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
+  });
+
+  it("tests the saved key when none is typed, and toasts the answer", async () => {
+    mockFetchTurnstile.mockResolvedValue(READY_TURNSTILE);
+    mockTestTurnstile.mockResolvedValue({ ok: true, message: "Cloudflare accepted the secret key." });
+    await renderLoaded();
+    fireEvent.click(within(card()).getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Cloudflare accepted the secret key."));
+    expect(screen.getByTestId("at-toast").getAttribute("data-variant")).toBe("success");
+    expect(mockTestTurnstile).toHaveBeenCalledWith({});
+    expect(mockSaveTurnstile).not.toHaveBeenCalled();
+  });
+
+  it("tests the typed key, not the saved one, and shows a refusal as an error", async () => {
+    mockTestTurnstile.mockResolvedValue({ ok: false, error: "Cloudflare did not accept the secret key." });
+    await renderLoaded();
+    typeSecret("  typedSecret ");
+    fireEvent.click(within(card()).getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Cloudflare did not accept the secret key."));
+    expect(screen.getByTestId("at-toast").getAttribute("data-variant")).toBe("error");
+    expect(mockTestTurnstile).toHaveBeenCalledWith({ secret_key: "typedSecret" });
+  });
+
+  it("falls back to a plain sentence when the test answers without a message or an error", async () => {
+    mockTestTurnstile.mockResolvedValueOnce({ ok: true });
+    await renderLoaded();
+    fireEvent.click(within(card()).getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Connected."));
+    mockTestTurnstile.mockResolvedValueOnce({ ok: false });
+    fireEvent.click(within(card()).getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Could not test the connection."));
+  });
+
+  it("toasts an operator-safe error when the test fails, and is busy while it runs", async () => {
+    let reject: (reason: unknown) => void = () => {};
+    mockTestTurnstile.mockReturnValueOnce(new Promise((_resolve, rej) => (reject = rej)));
+    await renderLoaded();
+    fireEvent.click(within(card()).getByRole("button", { name: "Test connection" }));
+    const busy = await within(card()).findByRole("button", { name: "Testing…" });
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    await act(async () => reject(new ApiError(500, "secret_probe")));
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not test the connection/));
+    expect(screen.queryByText("secret_probe")).toBeNull();
   });
 
   it("shows the saved site key and says the secret is set, without any value for it", async () => {
     mockFetchTurnstile.mockResolvedValue(READY_TURNSTILE);
     await renderLoaded();
-    expect(within(card()).getByText("Ready")).toBeTruthy();
     expect(el<HTMLInputElement>("external-turnstile-site-key").value).toBe("0x4AAAAAAAsite");
     expect(within(card()).getByText(/set$/)).toBeTruthy();
     expect(document.getElementById("external-turnstile-secret-key")).toBeNull();
@@ -989,11 +1056,10 @@ describe("ExternalServicesPanel, guest registration card", () => {
   it("warns when the saved secret cannot be read", async () => {
     mockFetchTurnstile.mockResolvedValue(sampleTurnstile({ site_key: "0x4AAAAAAAsite", secret_set: true, status: "unreadable" }));
     await renderLoaded();
-    expect(within(card()).getByText("Needs attention")).toBeTruthy();
     expect(within(card()).getByText(/cannot be read, probably because ENCRYPTION_KEY changed/)).toBeTruthy();
   });
 
-  it("saves a new site key and secret with the one Save, then shows the card as ready", async () => {
+  it("saves a new site key and secret with the one Save, then shows the secret as set", async () => {
     await renderLoaded();
     fireEvent.change(el<HTMLInputElement>("external-turnstile-site-key"), { target: { value: "  0x4AAAAAAAsite " } });
     typeSecret("0x4AAAAAAAsecret");
@@ -1003,7 +1069,7 @@ describe("ExternalServicesPanel, guest registration card", () => {
     expect(mockSaveTurnstile).toHaveBeenCalledWith({ site_key: "0x4AAAAAAAsite", secret_key: "0x4AAAAAAAsecret" });
     expect(mockSaveWeather).not.toHaveBeenCalled();
     expect(mockSaveMaps).not.toHaveBeenCalled();
-    await waitFor(() => expect(within(card()).getByText("Ready")).toBeTruthy());
+    await waitFor(() => expect(within(card()).getByRole("button", { name: "Change" })).toBeTruthy());
     // The typed secret is gone from the screen once saved.
     expect(document.getElementById("external-turnstile-secret-key")).toBeNull();
     expect(document.body.textContent).not.toContain("0x4AAAAAAAsecret");
@@ -1087,6 +1153,126 @@ describe("ExternalServicesPanel, guest registration card", () => {
     await screen.findByRole("button", { name: "Retry" });
     expect(screen.getByText("Could not load external services")).toBeTruthy();
     expect(document.getElementById("external-turnstile-site-key")).toBeNull();
+  });
+});
+
+describe("ExternalServicesPanel, the bot check of guest registration (A2)", () => {
+  const card = () => screen.getByText("Bot protection").closest(".at-card") as HTMLElement;
+  const toggle = () => el<HTMLInputElement>("external-bot-protection-enabled");
+  const dialog = () => screen.queryByRole("dialog");
+  const save = () => screen.getByRole("button", { name: "Save" });
+
+  it("is required by default: the keys are there, and so is the choice, with no risk sentence", async () => {
+    await renderLoaded();
+
+    expect(toggle().checked).toBe(true);
+    expect(document.getElementById("external-turnstile-site-key")).not.toBeNull();
+  });
+
+  it("asks before it turns the check off, and says what follows, in plain words", async () => {
+    await renderLoaded();
+
+    fireEvent.click(toggle());
+
+    expect(dialog()).not.toBeNull();
+    expect(within(dialog()!).getByText("Turn the bot check off?")).toBeTruthy();
+    expect(dialog()!.textContent).toMatch(/guests are no longer checked for bots/);
+    expect(dialog()!.textContent).toMatch(/use the company sign-in or a strong password/);
+    expect(dialog()!.textContent).not.toMatch(/stricter/);
+    // Nothing changed yet: the choice, the keys and the Save button are as they were.
+    expect(toggle().checked).toBe(true);
+    expect(isOff(save())).toBe(true);
+  });
+
+  it("keeps the check when the question is answered with Cancel", async () => {
+    await renderLoaded();
+    fireEvent.click(toggle());
+
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Cancel" }));
+
+    expect(dialog()).toBeNull();
+    expect(toggle().checked).toBe(true);
+    expect(isOff(save())).toBe(true);
+    expect(mockSaveTurnstile).not.toHaveBeenCalled();
+  });
+
+  it("turns the check off once confirmed: the switch says Off, the provider and the keys stay on the screen, and Save is on", async () => {
+    await renderLoaded();
+    fireEvent.click(toggle());
+
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Turn off" }));
+
+    expect(dialog()).toBeNull();
+    expect(toggle().checked).toBe(false);
+    expect(within(card()).getByText("Off")).toBeTruthy();
+    expect(document.getElementById("external-bot-protection-provider")).not.toBeNull();
+    expect(document.getElementById("external-turnstile-site-key")).not.toBeNull();
+    expect(isOff(save())).toBe(false);
+  });
+
+  it("saves the mode alone with the one Save, and shows it as saved", async () => {
+    await renderLoaded();
+    fireEvent.click(toggle());
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Turn off" }));
+
+    fireEvent.click(save());
+
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("External services saved."));
+    expect(mockSaveTurnstile).toHaveBeenCalledWith({ bot_protection: "not_used" });
+    expect(toggle().checked).toBe(false);
+    expect(isOff(save())).toBe(true);
+  });
+
+  it("does not take a change of the choice while Save is running, because the answer would overwrite it", async () => {
+    let resolveSave!: (value: ReturnType<typeof sampleTurnstile>) => void;
+    mockSaveTurnstile.mockReturnValueOnce(new Promise((resolve) => (resolveSave = resolve)));
+    await renderLoaded();
+    fireEvent.click(toggle());
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Turn off" }));
+
+    fireEvent.click(save());
+
+    await waitFor(() => expect(toggle().disabled).toBe(true));
+    resolveSave(sampleTurnstile({ bot_protection: "not_used" }));
+    await waitFor(() => expect(toggle().disabled).toBe(false));
+  });
+
+  it("turns the check back on with no question, and saves nothing when the draft is as saved again", async () => {
+    mockFetchTurnstile.mockResolvedValue(sampleTurnstile({ bot_protection: "not_used" }));
+    await renderLoaded();
+    expect(toggle().checked).toBe(false);
+
+    fireEvent.click(toggle());
+
+    expect(dialog()).toBeNull();
+    expect(document.getElementById("external-turnstile-site-key")).not.toBeNull();
+    expect(isOff(save())).toBe(false);
+    fireEvent.click(toggle());
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Turn off" }));
+    expect(isOff(save())).toBe(true);
+  });
+
+  it("goes back to the saved choice when Reset is chosen", async () => {
+    await renderLoaded();
+    fireEvent.click(toggle());
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Turn off" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(toggle().checked).toBe(true);
+    expect(document.getElementById("external-turnstile-site-key")).not.toBeNull();
+  });
+
+  it("tells the ways in card there is no check: no warning about keys, and the words of the link and the password change", async () => {
+    mockFetchTurnstile.mockResolvedValue(sampleTurnstile({ bot_protection: "not_used" }));
+    mockFetchAccess.mockResolvedValue(accessMethodsDto(["link", "password"], true));
+    await renderLoaded();
+    const ways = screen.getByText("Ways in").closest(".at-card") as HTMLElement;
+
+    expect(within(ways).queryByText(/stay closed until the Turnstile keys above are ready/)).toBeNull();
+    expect(ways.textContent).toMatch(/Anyone who has the link of an event can open its form\. There is no bot check\./);
+    expect(ways.textContent).toMatch(/There is no bot check, so use a strong password\./);
+    expect(ways.textContent).not.toMatch(/after a bot check/);
   });
 });
 

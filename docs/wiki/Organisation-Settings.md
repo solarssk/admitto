@@ -53,8 +53,14 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - Turning **Maps** off disables static map tiles and map previews. Address lookup (Nominatim) for the Location tab keeps working.
 - The Nominatim HTTP timeout (`GEOCODING_TIMEOUT_MS`) stays a deployment setting with no UI field.
 
-**Guest registration**
+**Bot protection**
 
+- The **On/Off** switch says whether your organisation uses a bot check on guest registration at all. Only a Superadmin can change it. It is **On** by default.
+- Turn it **Off** for a form that runs inside your own network, or if your organisation does not use Cloudflare. Admitto asks you to confirm. The link and the password then work without keys, Admitto does not contact Cloudflare, and the provider and key fields are hidden.
+- Without the check, a script can send the form and guess an event password. The usual limits still apply, with no tightening: 30 password tries in 15 minutes from one address, 120 a minute for one event, and 600 registrations a minute for one event. You can retune them with `RATE_LIMIT_OVERRIDES`. An event password is often weak, so for an event with a public link or a weak password, use the company sign-in or a strong password.
+- The saved keys are kept while the check is **Off**. Turn it **On** again and they apply.
+- The change is recorded in **Logs**, on the **Audit** view, as "Guest registration bot protection updated".
+- While it is **On**, choose the provider (Cloudflare Turnstile is the only one for now) and use **Test connection** to ask Cloudflare whether it accepts the secret key you typed, or the saved one when you typed none. Nothing is saved by the test.
 - Save the Cloudflare Turnstile **Site key** and **Secret key** here. Turnstile checks that a visitor to the registration form is not a bot. A form that guests reach by a public link or a password stays closed until both keys are saved.
 - The secret key is stored encrypted and is never shown again. Use **Set**, **Change** or **Clear** on it, then Save once for the whole tab.
 - In Cloudflare, add the address of this instance to the hostnames of the widget.
@@ -66,7 +72,8 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - Turn **Link**, **Password** or **Company sign-in** on to let organisers choose it for their events. An organiser picks one way in for each event, on the **Access** tab of its **Registration** page.
 - A way that is off cannot be chosen. Turning one off closes the form of every event that uses it, at once: guests see a page that is not found.
 - Nothing is deleted when you turn a way off. Turn it on again and those forms open again.
-- A link or a password opens a form only while the Turnstile keys are ready. The card warns you when they are not. The company sign-in needs no Turnstile keys.
+- While the bot check is **On**, a link or a password opens a form only while the Turnstile keys are ready. The card warns you when they are not. The company sign-in needs no Turnstile keys.
+- While the bot check is **Off**, the link and the password need no keys. The Provider and the keys stay on the card, so you can keep them ready.
 - Save once for the whole tab. The change is recorded in **Logs**, on the **Audit** view, as "Guest registration access methods updated".
 
 **Company sign-in**
@@ -160,7 +167,7 @@ Review Core infrastructure and External integrations status.
 - **Background worker** (in Core): a heartbeat from the Admitto worker process that drains mail and runs import and export jobs, bounce detection and retention. If that row is degraded, start the worker (`npm run worker` locally, or the compose `worker` service). Once its heartbeat is at least a minute old, its expanded details show **Last seen** (for example "12 min before this report"). It is measured against this report's own **Generated** time, not the current time.
 - **Registration mail queue** (in Core) counts the emails that guest registrations queue, such as the confirmation link, the same way **Mail delivery queue** counts ticket emails. It is Degraded when an email failed and will be tried again, when an email failed for good in the last seven days (the mail service refused it, its text could not be used, or every attempt was used, so the worker has stopped trying), or when 50 or more are waiting. It shows counts only. A registration that is not confirmed within 24 hours is deleted, so a confirmation link that never arrives means the guest has to register again.
 - **External rows** are labelled **role, provider**, for example `Address lookup, Nominatim`, `Map tiles, OpenStreetMap`, and `Weather, MET Norway` or `Weather, Open-Meteo`. Turning **Maps** off in External services marks **Map tiles** as Maps disabled. **Address lookup, Nominatim** stays available for the Location tab. Each configured identity provider appears as its own row. Cloudflare Access is listed separately.
-- **Bot protection, Turnstile** is Degraded when guest registration by public link or password is on for an event but the Turnstile keys are not saved, or when the saved secret key cannot be read (often a changed `ENCRYPTION_KEY`). It is Not configured while no event needs the keys and none are saved. It does not call Cloudflare, so it does not show whether Cloudflare accepts the keys.
+- **Bot protection, Turnstile** is Degraded when guest registration by public link or password is on for an event but the Turnstile keys are not saved, or when the saved secret key cannot be read (often a changed `ENCRYPTION_KEY`). It is Not configured while no event needs the keys and none are saved, and it says "Not used for this organisation" while the bot check is **Off**. It does not call Cloudflare, so it does not show whether Cloudflare accepts the keys.
 - **File storage** reports whether the local upload directory (`UPLOAD_DIR`) exists and is writable. If the folder is missing, it shows as not configured (Admitto creates it on the first branding upload). A misconfigured path that points at a file instead of a folder is reported as down.
 
 **Run live checks and export**

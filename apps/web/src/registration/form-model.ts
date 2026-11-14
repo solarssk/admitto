@@ -40,6 +40,7 @@ import {
 import { legalDocumentPath } from "../legal/legal-documents.js";
 import { loadRequiredLegalDocuments, type RequiredLegalDocuments } from "../legal/registration-gate.js";
 import { resolveAccessMethodAvailability } from "./access-methods.js";
+import { getBotProtectionMode } from "./bot-protection-mode.js";
 import { canBeMet, canDrawQuestion, controllersByKey, type FormQuestionType } from "./form-fields.js";
 import { restrictionOf, type ClaimRestriction } from "./sso-claim.js";
 import { getSsoProviderId } from "./sso-provider.js";
@@ -126,9 +127,12 @@ export interface RegistrationFormModel {
   termsPath: string;
   consents: FormConsent[];
   contact: FormContact | null;
-  /** The public Turnstile key; the page has no widget without one, and then it is not served. Empty for the company
-   * sign-in, which has no widget: the form stands behind a sign-in. */
+  /** The public Turnstile key; a page that has the widget is not served without one. Empty when the page has no widget: for the
+   * company sign-in (the form stands behind a sign-in) and when the superadmin set bot protection to "not used". */
   turnstileSiteKey: string;
+  /** Whether the page has the bot check and the submission must carry its token: the link and the password while bot protection is
+   * required (./bot-protection-mode.ts). False for the company sign-in and when the check is not used. */
+  needsChallenge: boolean;
   /** Whether the way in is the event's password: the page then asks for it first and keeps the form behind it. Only that:
    * the hash of the password is never part of what the page is built from. */
   needsPassword: boolean;
@@ -355,9 +359,10 @@ async function loadOpenForm(
   event: FormEvent,
   access: GuestAccess,
 ): Promise<ResolvedRegistration> {
-  const [availability, keys, legal, fields, contact] = await Promise.all([
+  const [availability, keys, botMode, legal, fields, contact] = await Promise.all([
     resolveAccessMethodAvailability(db),
     resolveTurnstileKeys(db),
+    getBotProtectionMode(db),
     loadRequiredLegalDocuments(db, row.id, settings.consent_keys),
     loadRegistrantFormFields(db, row.id),
     loadContact(db, row.id),
@@ -365,9 +370,10 @@ async function loadOpenForm(
   const way = availability.find((entry) => entry.method === access.method);
   const paths = legalPaths(row.slug, legal);
   const questions = drawQuestions(fields, "guest");
-  // The link and the password need the bot check; the company sign-in does not, because the form stands behind a sign-in.
-  const botCheckReady = access.method === "sso" || keys.state === "ready";
-  if (!way?.available || !botCheckReady || !paths || !questions) return NOT_FOUND;
+  // The link and the password need the bot check unless the superadmin set it to "not used"; the company sign-in never does,
+  // because the form stands behind a sign-in.
+  const needsChallenge = access.method !== "sso" && botMode === "required";
+  if (!way?.available || (needsChallenge && keys.state !== "ready") || !paths || !questions) return NOT_FOUND;
   return {
     kind: "open",
     eventId: row.id,
@@ -387,7 +393,8 @@ async function loadOpenForm(
       termsPath: paths.terms,
       consents: paths.consents,
       contact,
-      turnstileSiteKey: keys.state === "ready" && access.method !== "sso" ? keys.siteKey : "",
+      turnstileSiteKey: needsChallenge && keys.state === "ready" ? keys.siteKey : "",
+      needsChallenge,
       needsPassword: access.method === "password",
       needsSso: access.method === "sso",
       styledControls: settings.styled_form_controls,
@@ -435,8 +442,8 @@ export function isOver(row: EventEndColumns, now: Date): boolean {
  * - Not an event, archived, registration off, an access method that is not exactly one of the three, the password with
  *   none set, or the company sign-in with no provider chosen: `not_found`.
  * - Over (see `eventEndsAtUtc`): `closed`, as long as it had registration on.
- * - Otherwise `open`, provided the event's way in is available (the Turnstile keys are saved and the system
- *   administrator allowed it; for the company sign-in: the provider chosen for guests exists and is enabled, and no keys are
+ * - Otherwise `open`, provided the event's way in is available (the Turnstile keys are saved, unless the superadmin set bot
+ *   protection to "not used", and the system administrator allowed it; for the company sign-in: the provider chosen for guests exists and is enabled, and no keys are
  *   needed), every text the event's registration needs is published and every
  *   required question can be drawn; else `not_found`, as if registration were off.
  */

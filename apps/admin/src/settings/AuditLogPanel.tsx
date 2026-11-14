@@ -112,6 +112,7 @@ const ACTION_LABELS: Record<string, string> = {
   org_branding_logo_uploaded: "Organization branding logo uploaded",
   registration_accepted: "Guest registration accepted",
   registration_access_methods_updated: "Guest registration access methods updated",
+  registration_bot_protection_updated: "Guest registration bot protection updated",
   registration_custom_domain_updated: "Guest registration own address updated",
   registration_password_changed: "Guest registration password changed",
   registration_sso_provider_updated: "Guest registration company sign-in provider updated",

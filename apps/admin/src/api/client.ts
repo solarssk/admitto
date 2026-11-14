@@ -2621,6 +2621,12 @@ export async function saveRegistrationTurnstile(body: SaveRegistrationTurnstileB
   return parseJson<RegistrationTurnstileDto>(res);
 }
 
+/** Asks Cloudflare whether it knows a secret key: the typed one, or the saved one when left out. Superadmin only. Nothing is saved. */
+export async function testRegistrationTurnstile(body: { secret_key?: string }): Promise<ConnectionTestResponse> {
+  const res = await fetch("/api/admin/registration/turnstile/test", jsonPostInit(body));
+  return parseJson<ConnectionTestResponse>(res);
+}
+
 /** Every way in to the guest registration form and whether the superadmin has it on. Superadmin only. */
 export async function fetchRegistrationAccessMethods(signal?: AbortSignal): Promise<RegistrationAccessMethodsDto> {
   const res = await fetch("/api/admin/registration/access-methods", { credentials: "same-origin", signal });
