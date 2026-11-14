@@ -62,6 +62,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add an IT checklist for an event's own address: DNS, HTTPS, Cloudflare Access bypass paths, company sign-in redirects, Turnstile hostname and the HSTS gap ([#1873](https://github.com/solarssk/admitto/pull/1873))
 - Add the Legal tab to the Registration page, where an administrator writes, publishes and withdraws an event's privacy notice, event terms and extra consents with a visual editor ([#1779](https://github.com/solarssk/admitto/pull/1779))
 - Add a Bot protection card to Organisation settings with an On/Off switch (Off needs no Turnstile keys; the usual limits stay), the provider and a Test connection button for the secret key ([#1926](https://github.com/solarssk/admitto/pull/1926))
+- Grey out a registration way in that a superadmin has not turned on, with the reason; only a superadmin changes the company limit of the company sign-in (#NNNN)
 
 ### Changed
 

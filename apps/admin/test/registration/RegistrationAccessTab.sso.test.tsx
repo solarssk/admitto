@@ -23,6 +23,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 });
 vi.mock("../../src/connection/ConnectionStateProvider.js");
 vi.mock("../../src/auth/login-navigation.js", () => ({ goToLogin: vi.fn() }));
+// The restriction is a superadmin's to change (RegistrationAccessTab.wayin.test.tsx holds what anybody else sees).
+vi.mock("../../src/auth/AuthProvider.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/auth/AuthProvider.js")>()),
+  useOptionalAuth: () => ({ assignments: [{ role: "superadmin", scope_type: "instance", scope_id: null }] }),
+}));
 vi.mock("@admitto/ui", async (importOriginal) => {
   const { addToast: toast } = await import("./accessApiMocks.js");
   return { ...(await importOriginal<typeof import("@admitto/ui")>()), useToast: () => ({ addToast: toast }) };

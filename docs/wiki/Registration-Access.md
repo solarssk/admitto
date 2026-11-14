@@ -27,12 +27,14 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 **Choose how guests get in**
 
-1. Under **Way in**, choose **Link**, **Password** or **Company sign-in**. An event has one way in at a time.
+1. Under **Way in**, choose **Link**, **Password** or **Company sign-in**. An event has one way in at a time. A way in that a Superadmin has not turned on for your organisation is grey and cannot be chosen: its reason says "Not turned on for this organisation. Ask a Superadmin." A Superadmin sees a link to Organisation settings instead, where it is turned on.
 2. For **Password**, select **Set password**, type a password of 8 to 128 characters and select **Save password**. This is saved at once, apart from the **Save** button of the page.
 3. For **Company sign-in**, optionally limit the form to one company. See **Limit the company sign-in to one company** below.
 4. Select **Save** at the bottom of the page.
 
 **Limit the company sign-in to one company**
+
+Only a Superadmin can change this limit. An Administrator sees the claim name and the allowed values, with the note "Only a superadmin can change this.", and cannot edit them.
 
 1. Under **Way in**, choose **Company sign-in**.
 2. In **Claim name**, type the name of the claim that the identity provider puts in the sign-in. With Microsoft Entra ID it is usually `tid`.
@@ -108,6 +110,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 - Use a claim that the identity provider vouches for, such as the tenant. Never use the end of an email address: it says where mail goes, not who the person is.
 - A change of the limit counts at once, also for guests who have already signed in. A guest who does not match sees a message and cannot register.
 - Moving the event to another way in removes the limit.
+- A way in that was chosen and that a Superadmin turned off later stays chosen, grey, with the same reason. Nothing is deleted, and the **Way in allowed** row of the checklist warns that guests cannot open the form.
 
 **Styled boxes**
 
@@ -211,6 +214,7 @@ When you turn registration off:
 | A phone question shows the browser's box although the styled boxes are on | The question asks for digits only, or sets a shortest or longest length. A country code would break that rule. Remove the rule if the question should take a country |
 | A guest sees "This event is not open to your company account." | The sign-in does not hold one of your allowed values. Check the claim name and the values on this tab |
 | A guest sees "Your company account did not give us a verified email address" | The identity provider sent no email address, or says the address is not verified. A Superadmin maps the email claim of the provider |
+| Saving says "Only a superadmin can change the restriction to one company" | The limit to one company is a Superadmin's to set. Ask a Superadmin to change it |
 | The restriction says "The restriction to one company works with the company sign-in only" | Choose **Company sign-in** as the way in, or clear both fields |
 | There is no link under **Link for guests** | The address of the instance is not set. Ask a Superadmin |
 | The tab warns that the address of the event stopped working | Ask a Superadmin or your IT department. The card under **Address for guests** names the reason |

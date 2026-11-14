@@ -339,6 +339,7 @@ describe("reading the settings", () => {
     expect(body).toEqual({
       mode: "approval",
       access_methods: ["link"],
+      enabled_access_methods: ["link", "password"],
       waitlist_enabled: false,
       verify_email: false,
       max_companions: 1,
@@ -376,6 +377,7 @@ describe("reading the settings", () => {
       "ask_company",
       "ask_department",
       "consent_keys",
+      "enabled_access_methods",
       "guest_url",
       "instance_host",
       "max_companions",
@@ -1199,7 +1201,7 @@ describe("the company sign-in as the way in, and its restriction to one company 
   it("saves the restriction, says it back, and audits the claim and the values that may register", async () => {
     const event = await addEvent("sso-claim");
 
-    const res = await put(event.id, { access_methods: ["sso"], ...claim });
+    const res = await put(event.id, { access_methods: ["sso"], ...claim }, cookies.superadmin);
     const body = await dto(res);
 
     expect(res.status).toBe(200);
@@ -1217,7 +1219,7 @@ describe("the company sign-in as the way in, and its restriction to one company 
   it("keeps a value that is given twice once, in the order it came", async () => {
     const event = await addEvent("sso-claim-twice");
 
-    const body = await dto(await put(event.id, { access_methods: ["sso"], sso_claim_name: "tid", sso_claim_values: ["b", "a", "b"] }));
+    const body = await dto(await put(event.id, { access_methods: ["sso"], sso_claim_name: "tid", sso_claim_values: ["b", "a", "b"] }, cookies.superadmin));
 
     expect(body.sso_claim_values).toEqual(["b", "a"]);
   });
@@ -1225,8 +1227,8 @@ describe("the company sign-in as the way in, and its restriction to one company 
   it("changes the restriction of an event that has the sign-in, and removes it with null and an empty list", async () => {
     const event = await addEvent("sso-claim-change", { settings: { access_methods: ["sso"], ...claim } });
 
-    const changed = await dto(await put(event.id, { sso_claim_name: "groups", sso_claim_values: ["staff"] }));
-    const removed = await dto(await put(event.id, { sso_claim_name: null, sso_claim_values: [] }));
+    const changed = await dto(await put(event.id, { sso_claim_name: "groups", sso_claim_values: ["staff"] }, cookies.superadmin));
+    const removed = await dto(await put(event.id, { sso_claim_name: null, sso_claim_values: [] }, cookies.superadmin));
 
     expect(changed).toMatchObject({ sso_claim_name: "groups", sso_claim_values: ["staff"] });
     expect(removed).toMatchObject({ sso_claim_name: null, sso_claim_values: [] });
@@ -1282,7 +1284,7 @@ describe("the company sign-in as the way in, and its restriction to one company 
     const event = await addEvent("sso-claim-on", { settings: { access_methods: ["sso"], mode: "automatic" } });
     await prisma.identityProvider.update({ where: { id: PROVIDER }, data: { enabled: false } });
     try {
-      const res = await put(event.id, claim);
+      const res = await put(event.id, claim, cookies.superadmin);
 
       expect(res.status).toBe(200);
       expect(await settingsRow(event.id)).toMatchObject(claim);
@@ -1301,5 +1303,129 @@ describe("the company sign-in as the way in, and its restriction to one company 
       prisma.eventRegistrationSettings.update({ where: { event_id: event.id }, data: { sso_claim_values: ["tenant-a"] } }),
     ).rejects.toThrow("EventRegistrationSettings_sso_claim_pair_check");
     expect(await settingsRow(event.id)).toMatchObject({ sso_claim_name: null, sso_claim_values: [] });
+  });
+});
+
+describe("who may change the restriction of the company sign-in (A3)", () => {
+  const claim = { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b"] };
+  const none = { sso_claim_name: null, sso_claim_values: [] };
+  // Registration stays off in these events, so none of it waits for the provider to be set up.
+  const withClaim = (label: string) => addEvent(label, { settings: { access_methods: ["sso"], ...claim } });
+
+  it("refuses an administrator who sets a restriction with the move to the company sign-in: 403, nothing saved, nothing audited", async () => {
+    const event = await addEvent("a3-set");
+
+    const res = await put(event.id, { access_methods: ["sso"], ...claim });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "sso_claim_superadmin_only" });
+    expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["link"], ...none });
+    expect(await auditOf(event.id)).toHaveLength(0);
+  });
+
+  it("refuses an administrator who changes or removes the restriction that is there, and keeps it", async () => {
+    const event = await withClaim("a3-change");
+
+    const changed = await put(event.id, { sso_claim_name: "groups", sso_claim_values: ["staff"] });
+    const widened = await put(event.id, { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b", "tenant-c"] });
+    const renamed = await put(event.id, { sso_claim_name: "groups", sso_claim_values: claim.sso_claim_values });
+    const removed = await put(event.id, none);
+
+    for (const res of [changed, widened, renamed, removed]) {
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "sso_claim_superadmin_only" });
+    }
+    expect(await settingsRow(event.id)).toMatchObject(claim);
+    expect(await auditOf(event.id)).toHaveLength(0);
+  });
+
+  it("refuses the claim together with another change, and saves none of it", async () => {
+    const event = await withClaim("a3-together");
+
+    const res = await put(event.id, { waitlist_enabled: false, sso_claim_name: "tid", sso_claim_values: ["other"] });
+
+    expect(res.status).toBe(403);
+    expect(await settingsRow(event.id)).toMatchObject({ waitlist_enabled: true, ...claim });
+  });
+
+  it("lets an administrator save other settings of an event that has a restriction, with no word of it or with it as it is", async () => {
+    const event = await withClaim("a3-other");
+
+    const without = await put(event.id, { waitlist_enabled: false });
+    const same = await put(event.id, { ask_company: true, sso_claim_name: "tid", sso_claim_values: ["tenant-b", "tenant-a"] });
+
+    expect(without.status).toBe(200);
+    // The same two values in another order are the same restriction.
+    expect(same.status).toBe(200);
+    expect(await settingsRow(event.id)).toMatchObject({ waitlist_enabled: false, ask_company: true, sso_claim_name: "tid" });
+    expect((await settingsRow(event.id))?.sso_claim_values).toEqual(expect.arrayContaining(claim.sso_claim_values));
+  });
+
+  it("lets an administrator move to the company sign-in with no restriction, and away from it, which takes the restriction away", async () => {
+    const plain = await addEvent("a3-move-in");
+    const restricted = await withClaim("a3-move-out");
+
+    const into = await put(plain.id, { access_methods: ["sso"], ...none });
+    const away = await put(restricted.id, { access_methods: ["link"] });
+
+    expect(into.status).toBe(200);
+    expect(away.status).toBe(200);
+    expect(await settingsRow(plain.id)).toMatchObject({ access_methods: ["sso"], ...none });
+    expect(await settingsRow(restricted.id)).toMatchObject({ access_methods: ["link"], ...none });
+  });
+
+  it("lets a superadmin set, change and remove it", async () => {
+    const event = await addEvent("a3-super");
+
+    const set = await put(event.id, { access_methods: ["sso"], ...claim }, cookies.superadmin);
+    const changed = await put(event.id, { sso_claim_name: "groups", sso_claim_values: ["staff"] }, cookies.superadmin);
+    const removed = await put(event.id, none, cookies.superadmin);
+
+    expect([set.status, changed.status, removed.status]).toEqual([200, 200, 200]);
+    expect(await settingsRow(event.id)).toMatchObject(none);
+    expect(await auditOf(event.id)).toHaveLength(3);
+  });
+
+  it("answers an administrator who is not of the event with the same 403 as before, and an operator too", async () => {
+    const event = await withClaim("a3-others");
+
+    for (const cookie of [cookies.otherAdmin, cookies.operator]) {
+      const res = await put(event.id, { sso_claim_name: "x", sso_claim_values: ["y"] }, cookie);
+      expect(res.status).toBe(403);
+      expect(await res.json()).not.toEqual({ error: "sso_claim_superadmin_only" });
+    }
+  });
+
+  it("refuses a caller of the function who does not say that they may, and allows one who does", async () => {
+    const event = await withClaim("a3-function");
+    const patch = { sso_claim_name: "groups", sso_claim_values: ["staff"] };
+
+    const left = await updateEventRegistrationSettings(prisma, { eventId: event.id, patch, actor: actorOf(adminId) });
+    const allowed = await updateEventRegistrationSettings(prisma, { eventId: event.id, patch, actor: actorOf(superadminId), canChangeSsoClaim: true });
+
+    expect(left.kind).toBe("sso_claim_superadmin_only");
+    expect(allowed.kind).toBe("saved");
+  });
+});
+
+describe("the ways in that are turned on, in the answer (A3)", () => {
+  it.each([
+    [[], []],
+    [["sso", "link"], ["link", "sso"]],
+    [["link", "password", "sso"], ["link", "password", "sso"]],
+  ])("says %j is on as %j, in the order of the model, to an administrator", async (turnedOn, said) => {
+    await setEnabledAccessMethods(prisma, turnedOn);
+    const event = await addEvent("a3-enabled");
+
+    expect((await dto(await get(event.id))).enabled_access_methods).toEqual(said);
+    expect((await dto(await put(event.id, { waitlist_enabled: false }))).enabled_access_methods).toEqual(said);
+  });
+
+  it("lists a way in that is on even when what it needs is missing: the screen shows the readiness apart", async () => {
+    await setEnabledAccessMethods(prisma, ["link", "sso"]);
+    await prisma.systemSettings.deleteMany({ where: { key: SSO_PROVIDER_SETTINGS_KEY } });
+    const event = await addEvent("a3-needs");
+
+    expect((await dto(await get(event.id))).enabled_access_methods).toEqual(["link", "sso"]);
   });
 });

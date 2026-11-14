@@ -1679,6 +1679,8 @@ export interface RegistrationSettingsDto {
   mode: RegistrationMode | null;
   /** None or one way in. The server may hold a way this screen does not offer; it counts as no choice. */
   access_methods: RegistrationAccessMethod[];
+  /** The ways in a superadmin has turned on for the organisation, the only ones an event can choose. */
+  enabled_access_methods: RegistrationAccessMethod[];
   waitlist_enabled: boolean;
   verify_email: boolean;
   max_companions: number;
@@ -1736,7 +1738,8 @@ export interface SaveRegistrationSettingsBody {
   consent_keys?: string[];
   styled_form_controls?: boolean;
   /** Sent together with `sso_claim_values`: both set, or `null` and `[]` to remove the restriction. A restriction for an event
-   * whose way in is not the company sign-in is refused (422 `sso_claim_needs_sso`). */
+   * whose way in is not the company sign-in is refused (422 `sso_claim_needs_sso`). Only a superadmin may change it (403
+   * `sso_claim_superadmin_only`). */
   sso_claim_name?: string | null;
   sso_claim_values?: string[];
 }
