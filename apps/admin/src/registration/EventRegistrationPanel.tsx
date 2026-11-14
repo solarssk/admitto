@@ -36,7 +36,7 @@ const SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
  * superadmin may read. The name is a nicety: a read of it that fails leaves the row out, and the panel still works. */
 interface Loaded {
   settings: RegistrationSettingsDto;
-  providerName: string | null;
+  provider: { name: string; issuer: string } | null;
   /** Every return address of the company SSO that the instance lists, for the setup for IT. */
   redirectUris: RegistrationRedirectUriDto[];
 }
@@ -50,7 +50,7 @@ async function readBoth(eventId: string, signal: AbortSignal): Promise<Loaded> {
     if (err instanceof ApiError && err.status === 401) throw err;
   }
   const chosen = provider?.providers.find((candidate) => candidate.id === provider?.provider_id);
-  return { settings, providerName: chosen?.display_name ?? null, redirectUris: provider?.redirect_uris ?? [] };
+  return { settings, provider: chosen === undefined ? null : { name: chosen.display_name, issuer: chosen.issuer }, redirectUris: provider?.redirect_uris ?? [] };
 }
 
 /**
@@ -108,7 +108,7 @@ function EventRegistrationBody({ eventId, archived, refreshEvent, onDirtyChange,
       eventId={eventId}
       archived={archived}
       initial={loaded.settings}
-      providerName={loaded.providerName}
+      provider={loaded.provider}
       redirectUris={loaded.redirectUris}
       refreshEvent={refreshEvent}
       onDirtyChange={onDirtyChange}
@@ -122,7 +122,7 @@ function SsoClaimCard({
   usesSso,
   archived,
   saving,
-  providerName,
+  provider,
   draft,
   setup,
   onChange,
@@ -131,7 +131,7 @@ function SsoClaimCard({
   usesSso: boolean;
   archived: boolean;
   saving: boolean;
-  providerName: string | null;
+  provider: { name: string; issuer: string } | null;
   draft: AccessDraft;
   /** The setup for IT, under the fields. */
   setup: ReactNode;
@@ -145,7 +145,7 @@ function SsoClaimCard({
           values={draft.sso_claim_values}
           errors={claimErrors(draft)}
           disabled={!usesSso || archived || saving}
-          providerName={providerName}
+          provider={provider}
           note={usesSso ? undefined : NOT_USED_NOTE}
           onChange={onChange}
         />
@@ -165,7 +165,7 @@ function EventRegistrationCards({
   eventId,
   archived,
   initial,
-  providerName,
+  provider,
   redirectUris,
   refreshEvent,
   onDirtyChange,
@@ -174,7 +174,7 @@ function EventRegistrationCards({
   eventId: string;
   archived: boolean;
   initial: RegistrationSettingsDto;
-  providerName: string | null;
+  provider: { name: string; issuer: string } | null;
   redirectUris: readonly RegistrationRedirectUriDto[];
   refreshEvent?: () => Promise<unknown>;
   onDirtyChange?: (dirty: boolean) => void;
@@ -248,14 +248,13 @@ function EventRegistrationCards({
         usesSso={base.method === "sso"}
         archived={archived}
         saving={saving}
-        providerName={providerName}
+        provider={provider}
         draft={draft}
         setup={
           <SsoItSetup
             instanceUri={redirectUris.find((entry) => entry.host === "instance")?.uri ?? null}
             eventUri={eventReturnAddress(redirectUris, settings.own_address?.domain ?? null)}
             claim={{ name: base.sso_claim_name === "" ? null : base.sso_claim_name, values: parseClaim(base).values }}
-            defaultOpen={base.method === "sso"}
           />
         }
         onChange={(change) => {

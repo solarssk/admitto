@@ -3165,7 +3165,7 @@ describe("EventSettingsPage Registration tab (superadmin-only)", () => {
     vi.mocked(fetchRegistrationSsoProvider).mockResolvedValue({
       provider_id: "idp-1",
       state: "ready",
-      providers: [{ id: "idp-1", display_name: "Acme Entra ID" }],
+      providers: [{ id: "idp-1", display_name: "Acme Entra ID", issuer: "https://login.microsoftonline.com/tenant-a/v2.0" }],
       redirect_uri: null,
       redirect_uris: [],
     });

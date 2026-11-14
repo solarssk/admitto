@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { SSO_CLAIM_NAME_MAX, SSO_CLAIM_VALUE_MAX, SSO_CLAIM_VALUES_MAX } from "@admitto/shared";
 import { Input, Notice } from "@admitto/ui";
+import { SSO_PROVIDER_PROTOCOL, ssoProviderIcon } from "./ssoProviderKind.js";
 import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
 import type { AccessDraft, ClaimErrors } from "./accessSettings.js";
 import "./registration-access.css";
@@ -20,12 +21,12 @@ export function AccessSsoClaim({
   values,
   errors,
   disabled,
-  providerName,
+  provider,
   note,
   onChange,
 }: Readonly<{
   /** The identity provider chosen for the organisation, read only above the claim; none leaves the row out. */
-  providerName: string | null;
+  provider: { name: string; issuer: string } | null;
   /** One short info notice under the intro, such as why the fields are off. */
   note?: string;
   name: string;
@@ -41,12 +42,15 @@ export function AccessSsoClaim({
       <p className="settings-card-intro">{INTRO}</p>
       {note !== undefined && <Notice variant="info">{note}</Notice>}
       <div className="mail-transport-section">
-        {providerName !== null && (
-          <div className="at-field access-static">
-            <span className="at-label">Identity provider</span>
-            <span className="access-static__value">{providerName}</span>
-            <span className="at-hint">{PROVIDER_HINT}</span>
-          </div>
+        {provider !== null && (
+          <Input
+            label="Identity provider"
+            value={`${provider.name} (${SSO_PROVIDER_PROTOCOL})`}
+            icon={<i className={`ti ti-${ssoProviderIcon(provider.issuer)}`} />}
+            readOnly
+            disabled
+            hint={PROVIDER_HINT}
+          />
         )}
         <Input
           label="Claim name"

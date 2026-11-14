@@ -1,6 +1,6 @@
 import type { RegistrationRedirectUriDto } from "../api/types.js";
 import { EVENT_ADDRESS_HINT, GATEWAY_NOTE, REDIRECT_HINT, UNVERIFIED_NOTE } from "../settings/registrationSsoTexts.js";
-import { ItPanel, RecordCell } from "./ItSetup.js";
+import { ItPanel, RecordField } from "./ItSetup.js";
 
 const NO_INSTANCE_ADDRESS = "There is no return address for this instance yet, because its address is not set.";
 
@@ -42,16 +42,11 @@ function ssoInstructionsText(addresses: readonly string[], claim: SavedClaim): s
   ].join("\n");
 }
 
-/** One return address to enter at the identity provider, in a box as high as a field with a button that copies it. */
+/** One return address to enter at the identity provider, in a grey read only box with the button that copies it on its left. */
 function ReturnAddress({ label, uri }: Readonly<{ label: string; uri: string }>) {
   return (
     <div className="access-dns access-dns--single">
-      <div className="access-dns__row access-dns__row--head">
-        <span>{label}</span>
-      </div>
-      <div className="access-dns__row">
-        <RecordCell label={label} value={uri} placeholder="" copyLabel={`Copy the ${label.toLowerCase()}`} />
-      </div>
+      <RecordField label={label} value={uri} placeholder="" copyLabel={`Copy the ${label.toLowerCase()}`} />
     </div>
   );
 }
@@ -64,11 +59,10 @@ export function SsoItSetup({
   instanceUri,
   eventUri,
   claim,
-  defaultOpen,
-}: Readonly<{ instanceUri: string | null; eventUri: RegistrationRedirectUriDto | null; claim: SavedClaim; defaultOpen: boolean }>) {
+}: Readonly<{ instanceUri: string | null; eventUri: RegistrationRedirectUriDto | null; claim: SavedClaim }>) {
   const addresses = [...(instanceUri === null ? [] : [instanceUri]), ...(eventUri === null ? [] : [eventUri.uri])];
   return (
-    <ItPanel defaultOpen={defaultOpen} text={ssoInstructionsText(addresses, claim)}>
+    <ItPanel text={ssoInstructionsText(addresses, claim)}>
       <li>
         {instanceUri === null ? (
           <span>{NO_INSTANCE_ADDRESS}</span>

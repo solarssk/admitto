@@ -70,7 +70,7 @@ beforeEach(() => {
   api.fetchRegistrationSsoProvider.mockResolvedValue({
     provider_id: "idp-1",
     state: "ready",
-    providers: [{ id: "idp-1", display_name: "Acme Entra ID" }],
+    providers: [{ id: "idp-1", display_name: "Acme Entra ID", issuer: "https://login.microsoftonline.com/tenant-a/v2.0" }],
     redirect_uri: null,
     redirect_uris: [],
   });
@@ -84,16 +84,17 @@ describe("the Company SSO card", () => {
   it("shows the identity provider of the organisation, read only, with where it is chosen", async () => {
     await renderPanel(ssoSettings());
 
-    const row = within(ssoCard()).getByText("Identity provider", { selector: ".access-static .at-label" }).closest(".access-static") as HTMLElement;
-    expect(row.querySelector(".access-static__value")?.textContent).toBe("Acme Entra ID");
-    expect(row.querySelector(".at-hint")?.textContent).toBe("Chosen for the organisation, in Organisation settings, Identity.");
-    // Plain text: nothing in the row can take the focus or looks like a box to type in.
-    expect(row.querySelector("input, button, [tabindex]")).toBeNull();
-    expect(within(ssoCard()).queryByLabelText("Identity provider")).toBeNull();
+    const provider = within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement;
+    expect(provider.value).toBe("Acme Entra ID (OpenID Connect)");
+    // A field to look at: its frame and height are the standard ones, grey like the claim of an event that does not use the company SSO, and it takes no focus.
+    expect(provider.className).toContain("at-input");
+    expect([provider.readOnly, provider.disabled]).toEqual([true, true]);
+    expect(provider.closest(".at-control, .at-inputgroup")?.querySelector(".at-inputgroup__icon i")?.className).toContain("ti-brand-azure");
+    expect(within(ssoCard()).getByText("Chosen for the organisation, in Organisation settings, Identity.")).toBeTruthy();
   });
 
   it.each([
-    ["none is chosen", { provider_id: null, state: "none", providers: [{ id: "idp-1", display_name: "Acme Entra ID" }], redirect_uri: null, redirect_uris: [] }],
+    ["none is chosen", { provider_id: null, state: "none", providers: [{ id: "idp-1", display_name: "Acme Entra ID", issuer: "https://login.microsoftonline.com/tenant-a/v2.0" }], redirect_uri: null, redirect_uris: [] }],
   ])("leaves the provider row out when %s", async (_what, answer) => {
     api.fetchRegistrationSsoProvider.mockResolvedValue(answer);
     await renderPanel(ssoSettings());
@@ -290,6 +291,21 @@ describe("the address card and the typed restriction", () => {
     await save();
 
     expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["aaa-111"] });
+  });
+});
+
+describe("the icon of the identity provider", () => {
+  it.each([
+    ["https://login.microsoftonline.com/tenant-a/v2.0", "ti-brand-azure"],
+    ["https://sts.windows.net/tenant-a/", "ti-brand-azure"],
+    ["https://accounts.google.com", "ti-brand-google"],
+    ["https://sso.example.com/realms/acme", "ti-shield-lock"],
+    ["not an address", "ti-shield-lock"],
+  ])("is told from the issuer %s", async (issuer, icon) => {
+    api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme", issuer }], redirect_uri: null, redirect_uris: [] });
+    await renderPanel(ssoSettings());
+
+    expect(ssoCard().querySelector(".at-inputgroup__icon i")?.className).toContain(icon);
   });
 });
 

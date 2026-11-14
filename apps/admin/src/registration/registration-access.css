@@ -148,7 +148,9 @@
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
-  padding: var(--space-3) var(--space-4);
+  max-width: 44rem;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-page);
@@ -213,126 +215,47 @@
   color: var(--text-secondary);
 }
 
-/* The record: one row of three boxes, each the height of a field (--control-h), the same gaps, a copy button inside the box that does not
- * make it taller. On a narrow screen the boxes fall under one another, each with its label. */
+/* The record: three read only fields side by side, one under another on a narrow screen. Grey and in a fixed-width font, so that they do not
+ * look like something to type in; the button that copies a value is on the left of its field, as on the card of the ways in. */
 .access-dns {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.access-dns__row {
   display: grid;
   grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3);
-}
-
-.access-dns__row--head {
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  color: var(--text-muted);
-}
-
-.access-dns__cell {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  box-sizing: border-box;
-  height: var(--control-h);
-  min-width: 0;
-  padding: 0 var(--pad-control-x);
-  border: var(--border-width) solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface-card, #fff);
-  color: var(--text-primary);
-  font-size: var(--fs-body);
-}
-
-.access-dns__value {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.access-dns__value--placeholder {
-  color: var(--text-disabled);
-}
-
-.access-dns__arrow {
-  flex: none;
-  color: var(--text-muted);
-}
-
-.access-dns__copy {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.access-dns__copy:hover {
-  color: var(--text-primary);
-}
-
-.access-dns__copy:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
-}
-
-@media (max-width: 640px) {
-  .access-dns__row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-2);
-  }
-
-  .access-dns__row--head {
-    display: none;
-  }
-
-  .access-dns__cell::before {
-    content: attr(data-label);
-    flex: none;
-    width: 4rem;
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-medium);
-    color: var(--text-muted);
-  }
-}
-
-/* A value that is only read: the label, the value as plain text and a hint, with no box, no focus and no cursor of a field. */
-.access-static {
   min-width: 0;
 }
 
-.access-static__value {
-  overflow-wrap: anywhere;
-  font-size: var(--fs-body);
-  color: var(--text-primary);
-}
-
-/* One return address in the style of the DNS record: a single box, as high as a field, under its label. */
-.access-dns--single .access-dns__row {
+.access-dns--single {
   grid-template-columns: minmax(0, 1fr);
 }
 
-@media (max-width: 640px) {
-  .access-dns--single .access-dns__row--head {
-    display: flex;
-  }
+.at-input.access-readonly {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  background-color: var(--at-gray-100);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+}
 
-  .access-dns--single .access-dns__cell::before {
-    display: none;
+/* With the copy button, the frame is the group's: it is grey too, and it is as high as the box without a button beside it (the frame is
+ * inside that height, not on top of it). */
+.access-dns .at-inputgroup:has(.at-inputgroup__icon--action) {
+  box-sizing: border-box;
+  height: var(--control-h);
+}
+
+.access-dns .at-inputgroup .at-input {
+  height: 100%;
+}
+
+/* With the copy button, the frame is the group's: it is grey too. */
+.at-inputgroup:has(.at-input.access-readonly) {
+  background: var(--at-gray-100);
+}
+
+@media (max-width: 640px) {
+  .access-dns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
   }
 }
 

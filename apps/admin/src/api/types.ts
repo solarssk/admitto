@@ -1519,7 +1519,7 @@ export type RegistrationSsoProviderState = "ready" | "not_selected" | "missing" 
 export interface RegistrationSsoProviderDto {
   provider_id: string | null;
   state: RegistrationSsoProviderState;
-  providers: Array<{ id: string; display_name: string }>;
+  providers: Array<{ id: string; display_name: string; issuer: string }>;
   redirect_uri: string | null;
   /** Every return address to list at the provider: the instance's first, then one for each event with an own address of its own that
    * uses the company SSO, verified or not (`verified` says which). */

@@ -100,19 +100,20 @@ describe("the address card", () => {
   });
 
   it.each([
-    ["has no address yet", settings(), true],
-    ["is not checked yet", settings({ own_address: own() }), true],
-    ["did not pass its check", settings({ own_address: own({ status: "failing", check_result: "dns_failed" }) }), true],
-    ["is working", settings({ own_address: own({ status: "ok", verified: true, check_result: "ok" }) }), false],
-  ])("opens the setup for IT by itself only when the address %s", async (_what, saved, expanded) => {
+    ["has no address yet", settings()],
+    ["is not checked yet", settings({ own_address: own() })],
+    ["did not pass its check", settings({ own_address: own({ status: "failing", check_result: "dns_failed" }) })],
+    ["is working", settings({ own_address: own({ status: "ok", verified: true, check_result: "ok" }) })],
+  ])("keeps the setup for IT shut, whatever the address %s", async (_what, saved) => {
     await renderPanel(saved);
 
-    expect(stepsToggle().getAttribute("aria-expanded")).toBe(String(expanded));
-    expect(stepsBody().hidden).toBe(!expanded);
+    expect(stepsToggle().getAttribute("aria-expanded")).toBe("false");
+    expect(stepsBody().hidden).toBe(true);
   });
 
   it("opens and closes the setup with its heading, and keeps what the person chose when the address is saved", async () => {
     await renderPanel(settings({ own_address: own({ status: "ok", verified: true, check_result: "ok" }) }));
+    expect(stepsBody().hidden).toBe(true);
 
     fireEvent.click(stepsToggle());
     expect(stepsToggle().getAttribute("aria-expanded")).toBe("true");
@@ -121,38 +122,54 @@ describe("the address card", () => {
     expect(stepsBody().hidden).toBe(true);
   });
 
-  const cellOf = (label: string) => addressCard().querySelector(`.access-dns__cell[data-label="${label}"]`) as HTMLElement;
+  const recordField = (label: string) => within(addressCard().querySelector(".access-dns") as HTMLElement).getByLabelText(label) as HTMLInputElement;
+  const nameBox = () => recordField("Name");
 
-  it("shows the DNS record as one row of three boxes: CNAME, the address and the host of the instance", async () => {
+  it("shows the DNS record as three grey read only fields: CNAME, the address and the host of the instance", async () => {
     await renderPanel(settings({ own_address: own() }));
 
-    expect(["Type", "Name", "Target"].map((label) => cellOf(label).textContent)).toEqual(["CNAME", DOMAIN, "admitto.example.com"]);
-    expect([...addressCard().querySelectorAll(".access-dns__row--head span")].map((head) => head.textContent)).toEqual(["Type", "Name", "Target"]);
-    expect(addressCard().querySelectorAll(".access-dns__row:not(.access-dns__row--head)")).toHaveLength(1);
+    expect(["Type", "Name", "Target"].map((label) => recordField(label).value)).toEqual(["CNAME", DOMAIN, "admitto.example.com"]);
+    for (const label of ["Type", "Name", "Target"]) {
+      const box = recordField(label);
+      expect(box.readOnly).toBe(true);
+      expect(box.classList.contains("access-readonly")).toBe(true);
+    }
     expect(within(addressCard()).getByText("Create a CNAME record that points the address to admitto.example.com.")).toBeTruthy();
+  });
+
+  it("puts the copy button on the left of the field, in its frame, for the name and the target and not the type", async () => {
+    await renderPanel(settings({ own_address: own() }));
+    fireEvent.click(stepsToggle());
+
+    for (const [label, copyName] of [["Name", "Copy the name"], ["Target", "Copy the target"]]) {
+      const group = recordField(label).closest(".at-inputgroup") as HTMLElement;
+      expect(group.firstElementChild).toBe(within(group).getByRole("button", { name: copyName }));
+      expect(group.firstElementChild?.classList.contains("at-inputgroup__icon--action")).toBe(true);
+    }
+    expect(recordField("Type").closest(".at-inputgroup")).toBeNull();
   });
 
   it("never shows an empty box: a grey example for the name until there is an address, and for the target when the instance has no host", async () => {
     await renderPanel(settings({ instance_host: null }));
+    fireEvent.click(stepsToggle());
 
-    expect(cellOf("Name").textContent).toBe("events.example.com");
-    expect(cellOf("Name").querySelector(".access-dns__value--placeholder")).not.toBeNull();
-    expect(cellOf("Target").textContent).toBe("the address of this instance");
-    expect(cellOf("Target").querySelector(".access-dns__value--placeholder")).not.toBeNull();
-    expect(addressCard().querySelectorAll(".access-dns__copy")).toHaveLength(0);
+    expect(nameBox().value).toBe("");
+    expect(nameBox().placeholder).toBe("events.example.com");
+    expect(recordField("Target").placeholder).toBe("the address of this instance");
+    expect(within(addressCard()).queryByRole("button", { name: /^Copy the (name|target)$/ })).toBeNull();
     expect(within(addressCard()).getByText("Create a CNAME record that points the address to the address of this instance.")).toBeTruthy();
   });
 
   it("follows what is typed when the server would take it, falls back to the saved address when it would not, and to the example when there is none", async () => {
     await renderPanel(settings());
-    expect(cellOf("Name").textContent).toBe("events.example.com");
+    expect(nameBox().placeholder).toBe("events.example.com");
+    expect(nameBox().value).toBe("");
 
     type("  Summit.ACME.example ");
-    expect(cellOf("Name").textContent).toBe(DOMAIN);
-    expect(cellOf("Name").querySelector(".access-dns__value--placeholder")).toBeNull();
+    expect(nameBox().value).toBe(DOMAIN);
 
     type("https://nope");
-    expect(cellOf("Name").textContent).toBe("events.example.com");
+    expect(nameBox().value).toBe("");
   });
 
   it("keeps the saved address in the record while a mistyped one is in the field", async () => {
@@ -160,7 +177,7 @@ describe("the address card", () => {
 
     type("not an address");
 
-    expect(cellOf("Name").textContent).toBe(DOMAIN);
+    expect(nameBox().value).toBe(DOMAIN);
   });
 
   const text = (name: string, target: string) =>
@@ -217,6 +234,7 @@ describe("the address card", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     await renderPanel(settings({ own_address: own() }));
+    fireEvent.click(stepsToggle());
 
     fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy the name" }));
     fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy the target" }));
@@ -230,6 +248,7 @@ describe("the address card", () => {
   it("says it could not copy when the clipboard refuses", async () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockRejectedValue(new Error("no")) }, configurable: true });
     await renderPanel(settings({ own_address: own() }));
+    fireEvent.click(stepsToggle());
 
     fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy the target" }));
 
@@ -250,12 +269,19 @@ describe("the address card", () => {
 
   const css = () => readFileSync(join(__dirname, "../../src/registration/registration-access.css"), "utf8");
 
-  it("makes each box of the record as high as a field, in one row with equal gaps, and falls to one column on a narrow screen", () => {
-    expect(css()).toMatch(/\.access-dns__cell \{[^}]*box-sizing: border-box;[^}]*height: var\(--control-h\);/);
-    expect(css()).toMatch(/\.access-dns__row \{[^}]*grid-template-columns: minmax\(0, 7rem\) minmax\(0, 1fr\) minmax\(0, 1fr\);[^}]*gap: var\(--space-3\);/);
-    expect(css()).toMatch(/@media \(max-width: 640px\) \{\s*\.access-dns__row \{\s*grid-template-columns: minmax\(0, 1fr\);/);
-    // The copy button sits inside the box and is smaller than it, so it cannot make it taller.
-    expect(css()).toMatch(/\.access-dns__copy \{[^}]*width: 1\.5rem;[^}]*height: 1\.5rem;/);
+  it("sets the setup for IT apart as a help: narrower than the card, grey, in the small type", () => {
+    expect(css()).toMatch(/\.access-it \{[^}]*max-width: 44rem;[^}]*font-size: var\(--fs-sm\);[^}]*background: var\(--surface-page\);/);
+  });
+
+  it("makes the record fields the height of every other field, grey and fixed width, in a grid that falls to one column on a narrow screen", () => {
+    expect(css()).toMatch(/\.access-dns \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(0, 7rem\) minmax\(0, 1fr\) minmax\(0, 1fr\);/);
+    expect(css()).toMatch(/@media \(max-width: 640px\) \{\s*\.access-dns \{\s*grid-template-columns: minmax\(0, 1fr\);/);
+    expect(css()).toMatch(/\.at-input\.access-readonly \{[^}]*font-family: var\(--font-mono\);[^}]*background-color: var\(--at-gray-100\);/);
+    // No height of its own: the field is the standard one, so it is 36px high like Own address.
+    // A field with the copy button on its left is as high as one without (36px), the frame inside that height.
+    expect(css()).toMatch(/\.access-dns \.at-inputgroup:has\(\.at-inputgroup__icon--action\) \{\s*box-sizing: border-box;\s*height: var\(--control-h\);/);
+    expect(css().match(/\.at-input\.access-readonly \{[^}]*\}/)?.[0]).not.toMatch(/height/);
+    expect(css()).toMatch(/\.at-inputgroup:has\(\.at-input\.access-readonly\) \{\s*background: var\(--at-gray-100\);/);
   });
 
   it("puts the field and Save address in the row Provider and Test connection use on the other cards, and Check now and Remove under it once an address is saved", async () => {

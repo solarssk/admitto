@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { ItPanel, RecordCell } from "./ItSetup.js";
+import { ItPanel, RecordField } from "./ItSetup.js";
 import { Button, Card, Notice } from "@admitto/ui";
 import type { CustomDomainDto, RegistrationOwnAddressDto } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
@@ -63,20 +63,13 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
   const target = instanceHost ?? "the address of this instance";
   const name = recordName(own, address, instanceHost);
   return (
-    <ItPanel defaultOpen={address?.status !== "ok"} text={instructionsText(name, target)}>
+    <ItPanel text={instructionsText(name, target)}>
       <li>
         <span>Create a CNAME record that points the address to {target}.</span>
         <div className="access-dns">
-          <div className="access-dns__row access-dns__row--head">
-            <span>Type</span>
-            <span>Name</span>
-            <span>Target</span>
-          </div>
-          <div className="access-dns__row">
-            <RecordCell label="Type" value="CNAME" placeholder="" />
-            <RecordCell label="Name" value={name} placeholder={NAME_PLACEHOLDER} copyLabel="Copy the name" />
-            <RecordCell label="Target" value={instanceHost ?? ""} placeholder="the address of this instance" copyLabel="Copy the target" arrow />
-          </div>
+          <RecordField label="Type" value="CNAME" placeholder="" />
+          <RecordField label="Name" value={name} placeholder={NAME_PLACEHOLDER} copyLabel="Copy the name" />
+          <RecordField label="Target" value={instanceHost ?? ""} placeholder="the address of this instance" copyLabel="Copy the target" />
         </div>
       </li>
       <li>Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.</li>

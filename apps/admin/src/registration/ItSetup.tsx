@@ -1,15 +1,12 @@
 import { useId, useState, type ReactNode } from "react";
-import { Button, useToast } from "@admitto/ui";
+import { Button, Input, useToast } from "@admitto/ui";
 import "./registration-access.css";
 
-/** One value of a record to hand to IT, in a box as high as a field, or a grey example while there is none, with a button that copies it. */
-export function RecordCell({
-  label,
-  value,
-  placeholder,
-  copyLabel,
-  arrow,
-}: Readonly<{ label: string; value: string; placeholder: string; copyLabel?: string; arrow?: boolean }>) {
+/**
+ * One value to hand to IT: a read only box in the style of the return address on the card of the ways in (the field of the link for guests),
+ * grey and in a fixed-width font, with the button that copies it on its left. Without a value it shows a grey example and no button.
+ */
+export function RecordField({ label, value, placeholder, copyLabel }: Readonly<{ label: string; value: string; placeholder: string; copyLabel?: string }>) {
   const { addToast } = useToast();
   async function copy() {
     try {
@@ -19,37 +16,27 @@ export function RecordCell({
       addToast("Could not copy.", "error");
     }
   }
+  const copyable = copyLabel !== undefined && value !== "";
   return (
-    <div className="access-dns__cell" data-label={label}>
-      {arrow === true && (
-        <span className="access-dns__arrow" aria-hidden="true">
-          <i className="ti ti-arrow-right" />
-        </span>
-      )}
-      <span className={value === "" ? "access-dns__value access-dns__value--placeholder" : "access-dns__value"} title={value === "" ? undefined : value}>
-        {value === "" ? placeholder : value}
-      </span>
-      {copyLabel !== undefined && value !== "" && (
-        <button type="button" className="access-dns__copy" aria-label={copyLabel} onClick={() => void copy()}>
-          <i className="ti ti-copy" aria-hidden="true" />
-        </button>
-      )}
-    </div>
+    <Input
+      label={label}
+      value={value}
+      placeholder={placeholder}
+      readOnly
+      className="access-readonly"
+      {...(copyable ? { icon: <i className="ti ti-copy" />, iconLabel: copyLabel, onIconClick: () => void copy() } : {})}
+    />
   );
 }
 
 /**
  * The setup for the organisation's IT department, in a panel that opens and closes under its heading, with a button that copies all of it as
- * text for a person or an agent. The steps (an ordered list) are the children.
+ * text for a person or an agent. It is shut until it is opened: it is a help, not a part of the form. The steps (an ordered list) are the children.
  */
-export function ItPanel({
-  defaultOpen,
-  text,
-  children,
-}: Readonly<{ defaultOpen: boolean; /** What the button copies: whole in itself. */ text: string; children: ReactNode }>) {
+export function ItPanel({ text, children }: Readonly<{ /** What the button copies: whole in itself. */ text: string; children: ReactNode }>) {
   const bodyId = useId();
   const { addToast } = useToast();
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(false);
 
   async function copyAll() {
     try {

@@ -41,7 +41,7 @@ const css = () => readFileSync(join(__dirname, "../../src/registration/registrat
 
 async function renderPanel(saved: RegistrationSettingsDto, uris: RegistrationRedirectUriDto[] = [INSTANCE]) {
   api.fetchRegistrationSettings.mockResolvedValue(saved);
-  api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID" }], redirect_uri: null, redirect_uris: uris });
+  api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", issuer: "https://login.microsoftonline.com/tenant-a/v2.0" }], redirect_uri: null, redirect_uris: uris });
   render(<EventRegistrationPanel eventId="evt-1" archived={false} refreshEvent={refreshEvent} />);
   await screen.findByLabelText("Own address");
 }
@@ -57,21 +57,25 @@ afterEach(() => {
 const panel = () => card("Company SSO").querySelector("section.access-it") as HTMLElement;
 const toggle = () => within(panel()).getByRole("button", { name: "Setup for your IT team" });
 const steps = () => [...panel().querySelectorAll("ol.access-steps > li")] as HTMLElement[];
-const cell = (label: string) => panel().querySelector(`.access-dns__cell[data-label="${label}"]`) as HTMLElement;
+const field = (label: string) => within(panel()).getByLabelText(label) as HTMLInputElement;
+const fields = () => panel().querySelectorAll(".access-dns input");
 const copyButton = () => within(panel()).getByRole("button", { name: "Copy instructions for an AI agent" });
 
 describe("the setup for IT in the Company SSO card", () => {
-  it("is a panel like the one of the address, with the toggle and the copy button in the heading, and open for an event that uses the company SSO", async () => {
+  it("is a panel like the one of the address, with the toggle and the copy button in the heading, and shut", async () => {
     await renderPanel(ssoSettings());
 
     const head = panel().querySelector(".access-it__head") as HTMLElement;
     expect(within(head).getAllByRole("button").map((control) => control.textContent)).toEqual(["Setup for your IT team", "Copy instructions for an AI agent"]);
-    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
     expect(panel().querySelector("ul")).toBeNull();
   });
 
-  it("is shut for an event on another way, and opens and closes with its heading", async () => {
-    await renderPanel(settings({ access_methods: ["link"] }));
+  it.each([
+    ["an event that uses the company SSO", () => ssoSettings()],
+    ["an event on another way", () => settings({ access_methods: ["link"] })],
+  ])("is shut for %s, and opens and closes with its heading", async (_what, make) => {
+    await renderPanel(make());
 
     expect(toggle().getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(toggle());
@@ -84,14 +88,16 @@ describe("the setup for IT in the Company SSO card", () => {
     await renderPanel(ssoSettings());
 
     expect(steps().map((step) => step.querySelector("span")?.textContent ?? step.textContent)).toEqual([REDIRECT_HINT, GATEWAY_NOTE]);
-    expect(cell("Return address").textContent).toBe(INSTANCE.uri);
+    expect(field("Return address").value).toBe(INSTANCE.uri);
+    expect(field("Return address").readOnly).toBe(true);
+    expect(field("Return address").classList.contains("access-readonly")).toBe(true);
   });
 
   it("adds the return address of the event's own address, and no other event's", async () => {
     await renderPanel(ssoSettings({ own_address: OWN }), [INSTANCE, OTHER_EVENT, EVENT]);
 
     expect(steps().map((step) => step.querySelector("span")?.textContent ?? step.textContent)).toEqual([REDIRECT_HINT, EVENT_ADDRESS_HINT, GATEWAY_NOTE]);
-    expect(cell("Return address for summit.acme.example").textContent).toBe(EVENT.uri);
+    expect(field("Return address for summit.acme.example").value).toBe(EVENT.uri);
     expect(panel().textContent).not.toContain("other.acme.example");
   });
 
@@ -104,14 +110,14 @@ describe("the setup for IT in the Company SSO card", () => {
   it("has no return address of the event while the event has no own address, even when the instance lists others", async () => {
     await renderPanel(ssoSettings(), [INSTANCE, OTHER_EVENT]);
 
-    expect(panel().querySelectorAll(".access-dns__cell")).toHaveLength(1);
+    expect(fields()).toHaveLength(1);
   });
 
   it("says that the instance has no return address when its address is not set, and leaves the box out", async () => {
     await renderPanel(ssoSettings(), []);
 
     expect(steps()[0]?.textContent).toBe("There is no return address for this instance yet, because its address is not set.");
-    expect(panel().querySelectorAll(".access-dns__cell")).toHaveLength(0);
+    expect(fields()).toHaveLength(0);
   });
 
   it("adds the claim and its values as saved, and nothing while there is no restriction", async () => {
@@ -170,6 +176,7 @@ describe("the setup for IT in the Company SSO card", () => {
     const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("no"));
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     await renderPanel(ssoSettings());
+    fireEvent.click(toggle());
 
     fireEvent.click(within(panel()).getByRole("button", { name: "Copy the return address" }));
     await waitFor(() => expect(addToast).toHaveBeenCalledWith("Copied.", "success"));
@@ -179,10 +186,13 @@ describe("the setup for IT in the Company SSO card", () => {
     expect(writeText).toHaveBeenNthCalledWith(1, INSTANCE.uri);
   });
 
-  it("makes the boxes of the return addresses as high as a field, one under its label, on every width", () => {
-    expect(css()).toMatch(/\.access-dns__cell \{[^}]*height: var\(--control-h\);/);
-    expect(css()).toMatch(/\.access-dns--single \.access-dns__row \{\s*grid-template-columns: minmax\(0, 1fr\);/);
-    expect(css()).toMatch(/@media \(max-width: 640px\) \{\s*\.access-dns--single \.access-dns__row--head \{\s*display: flex;/);
+  it("puts the copy button of a return address on the left of its grey field, in the frame of the field", async () => {
+    await renderPanel(ssoSettings());
+    fireEvent.click(toggle());
+
+    const group = field("Return address").closest(".at-inputgroup") as HTMLElement;
+    expect(group.firstElementChild).toBe(within(group).getByRole("button", { name: "Copy the return address" }));
+    expect(css()).toMatch(/\.access-dns--single \{\s*grid-template-columns: minmax\(0, 1fr\);/);
   });
 
   it.each([

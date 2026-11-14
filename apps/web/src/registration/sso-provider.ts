@@ -66,8 +66,9 @@ export async function resolveGuestSsoProvider(db: ProviderDb): Promise<GuestSsoP
   return provider.enabled ? { state: "ready", provider } : { state: "disabled" };
 }
 
-/** What a superadmin may choose among: the enabled OIDC providers, by id and the name staff gave them. */
-export async function listSelectableSsoProviders(db: ProviderDb): Promise<{ id: string; display_name: string }[]> {
+/** What a superadmin may choose among: the enabled OIDC providers, by id, the name staff gave them and the issuer (an address, no secret: the
+ * screen tells the kind of provider from it). */
+export async function listSelectableSsoProviders(db: ProviderDb): Promise<{ id: string; display_name: string; issuer: string }[]> {
   const providers = await findEnabledOidcProviders(db);
-  return providers.map((provider) => ({ id: provider.id, display_name: provider.display_name }));
+  return providers.map((provider) => ({ id: provider.id, display_name: provider.display_name, issuer: provider.issuer }));
 }
