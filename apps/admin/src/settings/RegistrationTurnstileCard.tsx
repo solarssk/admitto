@@ -86,7 +86,7 @@ export function RegistrationTurnstileCard({
                   showLabel={false}
                   value="turnstile"
                   options={PROVIDERS}
-                  disabled={testing}
+                  disabled
                   onChange={() => undefined}
                 />
                 <Button

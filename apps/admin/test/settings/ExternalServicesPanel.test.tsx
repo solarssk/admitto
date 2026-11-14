@@ -979,14 +979,15 @@ describe("ExternalServicesPanel, bot protection card", () => {
     expect(card().textContent).toMatch(/privacy notice/);
   });
 
-  it("lays the provider out like Weather: one option, with Test connection beside it", async () => {
+  it("lays the provider out like the wallet: one option, greyed out, with Test connection beside it", async () => {
     await renderLoaded();
     const row = within(card()).getByRole("button", { name: "Test connection" }).closest(".external-provider-and-test") as HTMLElement;
     const select = within(row).getByRole("button", { name: /Cloudflare Turnstile/ });
     expect(select.id).toBe("external-bot-protection-provider");
+    // One provider is built, so the choice is greyed out like the one of the wallet.
+    expect(isOff(select)).toBe(true);
     fireEvent.click(select);
-    fireEvent.click(screen.getAllByRole("button", { name: "Cloudflare Turnstile" }).at(-1)!);
-    expect(within(row).getByRole("button", { name: /Cloudflare Turnstile/ })).toBeTruthy();
+    expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
   });
 
   it("tests the saved key when none is typed, and toasts the answer", async () => {
