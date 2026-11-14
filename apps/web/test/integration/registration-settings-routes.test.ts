@@ -10,7 +10,7 @@ import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
-import { SSO_PROVIDER_SETTINGS_KEY } from "../../src/registration/sso-provider.js";
+import { SSO_PROVIDER_SETTINGS_KEY, ssoProviderKind } from "../../src/registration/sso-provider.js";
 import { readRedirectUris } from "../../src/admin/registration-settings-routes.js";
 import { verifyBotChallenge, botChallengeCData } from "../../src/registration/bot-challenge.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
@@ -553,11 +553,11 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
 
   const read = (cookie = superCookie) => app.request("/api/admin/registration/sso-provider", { headers: { Cookie: cookie } });
 
-  type Offered = { provider_id: string | null; state: string; providers: { id: string; display_name: string }[]; redirect_uri: string | null };
+  type Offered = { provider_id: string | null; state: string; providers: { id: string; display_name: string; kind: string }[]; redirect_uri: string | null };
   const byId = (a: { id: string }, b: { id: string }): number => a.id.localeCompare(b.id);
   /** The providers the route can offer: the enabled ones of this worker's schema, in which another test file may have left rows. */
   const enabledProviders = async () =>
-    (await prisma.identityProvider.findMany({ where: { enabled: true }, select: { id: true, display_name: true } })).sort(byId);
+    (await prisma.identityProvider.findMany({ where: { enabled: true }, select: { id: true, display_name: true, issuer: true } })).map((provider) => ({ id: provider.id, display_name: provider.display_name, kind: ssoProviderKind(provider.issuer) })).sort(byId);
   const offered = (body: Offered) => [...body.providers].sort(byId);
 
   it("is for a superadmin alone: signed out is 401, an admin and an operator are 403, and nothing is written", async () => {
@@ -587,7 +587,7 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
     const before = (await (await read()).json()) as Offered;
     expect(before).toMatchObject({ provider_id: null, state: "not_selected" });
     expect(offered(before)).toEqual(await enabledProviders());
-    expect(offered(before)).toContainEqual({ id: providerId, display_name: "Reg Settings IdP" });
+    expect(offered(before)).toContainEqual({ id: providerId, display_name: "Reg Settings IdP", kind: "generic" });
 
     const chosen = await put("/api/admin/registration/sso-provider", { provider_id: providerId });
 
@@ -675,7 +675,7 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
     expect(await readRedirectUris(prisma, null)).toEqual([]);
   });
 
-  it("never sends a field of the provider but its id and its name", async () => {
+  it("never sends a field of the provider but its id, its name and its kind", async () => {
     await put("/api/admin/registration/sso-provider", { provider_id: providerId });
 
     const text = await (await read()).text();

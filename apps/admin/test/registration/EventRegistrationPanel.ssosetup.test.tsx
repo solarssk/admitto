@@ -41,7 +41,7 @@ const css = () => readFileSync(join(__dirname, "../../src/registration/registrat
 
 async function renderPanel(saved: RegistrationSettingsDto, uris: RegistrationRedirectUriDto[] = [INSTANCE]) {
   api.fetchRegistrationSettings.mockResolvedValue(saved);
-  api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", issuer: "https://login.microsoftonline.com/tenant-a/v2.0" }], redirect_uri: null, redirect_uris: uris });
+  api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: uris });
   render(<EventRegistrationPanel eventId="evt-1" archived={false} refreshEvent={refreshEvent} />);
   await screen.findByLabelText("Own address");
 }

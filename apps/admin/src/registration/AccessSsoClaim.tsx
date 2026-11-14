@@ -26,7 +26,7 @@ export function AccessSsoClaim({
   onChange,
 }: Readonly<{
   /** The identity provider chosen for the organisation, read only above the claim; none leaves the row out. */
-  provider: { name: string; issuer: string } | null;
+  provider: { name: string; kind: "entra" | "google" | "generic" } | null;
   /** One short info notice under the intro, such as why the fields are off. */
   note?: string;
   name: string;
@@ -46,7 +46,7 @@ export function AccessSsoClaim({
           <Input
             label="Identity provider"
             value={`${provider.name} (${SSO_PROVIDER_PROTOCOL})`}
-            icon={<i className={`ti ti-${ssoProviderIcon(provider.issuer)}`} />}
+            icon={<i className={`ti ti-${ssoProviderIcon(provider.kind)}`} />}
             readOnly
             disabled
             hint={PROVIDER_HINT}

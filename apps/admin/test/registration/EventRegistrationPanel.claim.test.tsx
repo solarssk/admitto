@@ -70,7 +70,7 @@ beforeEach(() => {
   api.fetchRegistrationSsoProvider.mockResolvedValue({
     provider_id: "idp-1",
     state: "ready",
-    providers: [{ id: "idp-1", display_name: "Acme Entra ID", issuer: "https://login.microsoftonline.com/tenant-a/v2.0" }],
+    providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }],
     redirect_uri: null,
     redirect_uris: [],
   });
@@ -94,7 +94,7 @@ describe("the Company SSO card", () => {
   });
 
   it.each([
-    ["none is chosen", { provider_id: null, state: "none", providers: [{ id: "idp-1", display_name: "Acme Entra ID", issuer: "https://login.microsoftonline.com/tenant-a/v2.0" }], redirect_uri: null, redirect_uris: [] }],
+    ["none is chosen", { provider_id: null, state: "none", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: [] }],
   ])("leaves the provider row out when %s", async (_what, answer) => {
     api.fetchRegistrationSsoProvider.mockResolvedValue(answer);
     await renderPanel(ssoSettings());
@@ -296,13 +296,11 @@ describe("the address card and the typed restriction", () => {
 
 describe("the icon of the identity provider", () => {
   it.each([
-    ["https://login.microsoftonline.com/tenant-a/v2.0", "ti-brand-azure"],
-    ["https://sts.windows.net/tenant-a/", "ti-brand-azure"],
-    ["https://accounts.google.com", "ti-brand-google"],
-    ["https://sso.example.com/realms/acme", "ti-shield-lock"],
-    ["not an address", "ti-shield-lock"],
-  ])("is told from the issuer %s", async (issuer, icon) => {
-    api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme", issuer }], redirect_uri: null, redirect_uris: [] });
+    ["entra", "ti-brand-azure"],
+    ["google", "ti-brand-google"],
+    ["generic", "ti-shield-lock"],
+  ] as const)("is the one of the kind %s", async (kind, icon) => {
+    api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme", kind }], redirect_uri: null, redirect_uris: [] });
     await renderPanel(ssoSettings());
 
     expect(ssoCard().querySelector(".at-inputgroup__icon i")?.className).toContain(icon);
