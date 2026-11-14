@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Card, HintLabel, Notice, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -39,18 +39,22 @@ interface Loaded {
   provider: SsoProviderSummary | null;
   /** Every return address of the company SSO that the instance lists, for the setup for IT. */
   redirectUris: RegistrationRedirectUriDto[];
+  /** The read of the identity provider failed (not for want of a session): the return addresses are not known, which is not the same as none. */
+  redirectUrisFailed: boolean;
 }
 
 async function readBoth(eventId: string, signal: AbortSignal): Promise<Loaded> {
   const settings = await fetchRegistrationSettings(eventId, signal);
   let provider: Awaited<ReturnType<typeof fetchRegistrationSsoProvider>> | null = null;
+  let redirectUrisFailed = false;
   try {
     provider = await fetchRegistrationSsoProvider(signal);
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) throw err;
+    redirectUrisFailed = true;
   }
   const chosen = provider?.providers.find((candidate) => candidate.id === provider?.provider_id);
-  return { settings, provider: chosen === undefined ? null : { name: chosen.display_name, kind: chosen.kind }, redirectUris: provider?.redirect_uris ?? [] };
+  return { settings, provider: chosen === undefined ? null : { name: chosen.display_name, kind: chosen.kind }, redirectUris: provider?.redirect_uris ?? [], redirectUrisFailed };
 }
 
 /**
@@ -110,6 +114,7 @@ function EventRegistrationBody({ eventId, archived, refreshEvent, onDirtyChange,
       initial={loaded.settings}
       provider={loaded.provider}
       redirectUris={loaded.redirectUris}
+      redirectUrisFailed={loaded.redirectUrisFailed}
       refreshEvent={refreshEvent}
       onDirtyChange={onDirtyChange}
       onSavingChange={onSavingChange}
@@ -167,6 +172,7 @@ function EventRegistrationCards({
   initial,
   provider,
   redirectUris,
+  redirectUrisFailed,
   refreshEvent,
   onDirtyChange,
   onSavingChange,
@@ -176,6 +182,7 @@ function EventRegistrationCards({
   initial: RegistrationSettingsDto;
   provider: SsoProviderSummary | null;
   redirectUris: readonly RegistrationRedirectUriDto[];
+  redirectUrisFailed: boolean;
   refreshEvent?: () => Promise<unknown>;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
@@ -188,6 +195,11 @@ function EventRegistrationCards({
   const [savedClaim, setSavedClaim] = useState(() => claimOf(draftFromSettings(initial)));
   const [typed, setTyped] = useState(savedClaim);
   const [returnAddresses, setReturnAddresses] = useState(redirectUris);
+  const [returnAddressesFailed, setReturnAddressesFailed] = useState(redirectUrisFailed);
+  const [retryingAddresses, setRetryingAddresses] = useState(false);
+  const [addressBusy, setAddressBusy] = useState(false);
+  // The newest read of the settings: a read that was started before a save, or before a newer read, never replaces what is newer.
+  const newestRead = useRef(0);
   const base = useMemo(() => ({ ...draftFromSettings(settings), ...savedClaim }), [settings, savedClaim]);
   const draft = useMemo(() => ({ ...base, ...typed }), [base, typed]);
   const [saving, setSaving] = useState(false);
@@ -197,14 +209,34 @@ function EventRegistrationCards({
   const guardEvent: ArchivedGuardEvent = { archived_at: archived ? "archived" : null };
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
-  useEffect(() => onSavingChange?.(saving), [saving, onSavingChange]);
+  // The page warns before it is left while a request of this tab is out: the save of the restriction, and the requests of the address card.
+  useEffect(() => onSavingChange?.(saving || addressBusy), [saving, addressBusy, onSavingChange]);
 
   /** Reads the settings and the return addresses again, quietly: the link for guests, the state of the address and the callback of a new
    * address move with a change. A read that fails leaves what the cards show as it is. */
   async function refresh() {
+    const mine = ++newestRead.current;
     const [latest, provider] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchRegistrationSsoProvider()]);
+    // A save that started meanwhile, or a newer read, has made this snapshot old.
+    if (mine !== newestRead.current) return;
     if (latest.status === "fulfilled") setSettings(latest.value);
-    if (provider.status === "fulfilled") setReturnAddresses(provider.value.redirect_uris);
+    if (provider.status === "fulfilled") {
+      setReturnAddresses(provider.value.redirect_uris);
+      setReturnAddressesFailed(false);
+    }
+  }
+
+  /** The Retry of the return addresses: reads them again, busy while it works, and the answer replaces the failure. */
+  async function retryReturnAddresses() {
+    setRetryingAddresses(true);
+    try {
+      setReturnAddresses((await fetchRegistrationSsoProvider()).redirect_uris);
+      setReturnAddressesFailed(false);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) redirectToLogin();
+    } finally {
+      setRetryingAddresses(false);
+    }
   }
 
   function archivedMeanwhile() {
@@ -227,8 +259,11 @@ function EventRegistrationCards({
     }
     setSaving(true);
     setError(null);
+    // A read that is out now would come back with the restriction as it was: it is made old by this save.
+    newestRead.current += 1;
     try {
       const answer = await saveRegistrationSettings(eventId, patch);
+      newestRead.current += 1;
       setSettings(answer);
       setSavedClaim(claimOf(draftFromSettings(answer)));
       setTyped(claimOf(draftFromSettings(answer)));
@@ -258,6 +293,9 @@ function EventRegistrationCards({
             instanceUri={returnAddresses.find((entry) => entry.host === "instance")?.uri ?? null}
             eventUri={eventReturnAddress(returnAddresses, settings.own_address?.domain ?? null)}
             claim={{ name: base.sso_claim_name === "" ? null : base.sso_claim_name, values: parseClaim(base).values }}
+            readFailed={returnAddressesFailed}
+            retrying={retryingAddresses}
+            onRetry={() => void retryReturnAddresses()}
           />
         }
         onChange={(change) => {
@@ -273,6 +311,7 @@ function EventRegistrationCards({
         disabled={archived}
         onChanged={addressChanged}
         onArchived={archivedMeanwhile}
+        onBusyChange={setAddressBusy}
       />
       {error !== null && (
         <Notice variant="error" role="alert">

@@ -2505,6 +2505,29 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
+  it("discards the Registration tab's typed restriction after archiving, as the other tabs' drafts", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(archiveEvent).mockResolvedValueOnce(undefined);
+    vi.mocked(fetchRegistrationSettings).mockResolvedValue({ ...registrationSettingsFixture(), access_methods: ["sso"] });
+    vi.mocked(fetchRegistrationSsoProvider).mockResolvedValue({ provider_id: null, state: "not_selected", providers: [], redirect_uri: null, redirect_uris: [] });
+    renderSettings("/admin/events/evt-1/settings?tab=registration");
+    const name = (await screen.findByLabelText("Claim name")) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "tid" } });
+    expect(name.value).toBe("tid");
+    expect(fetchRegistrationSettings).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Archive event/ }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => expect(archiveEvent).toHaveBeenCalledWith("evt-1"));
+    // The panel was mounted afresh and read the settings again: the typed text did not survive the warning that it would be lost.
+    await waitFor(() => expect(fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("tab", { name: "Registration" }));
+    expect(((await screen.findByLabelText("Claim name")) as HTMLInputElement).value).toBe("");
+  });
+
   it("keeps the Danger zone header title-only and shows the impact notice outside the panel", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();

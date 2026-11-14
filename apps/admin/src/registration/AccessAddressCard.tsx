@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { keepLastWords } from "../utils/keep-last-words.js";
 import { ItPanel, RecordField } from "./ItSetup.js";
 import { Button, Card, Notice } from "@admitto/ui";
@@ -197,6 +197,7 @@ export function AccessAddressCard({
   disabled,
   onChanged,
   onArchived,
+  onBusyChange,
 }: Readonly<{
   eventId: string;
   event: ArchivedGuardEvent;
@@ -205,8 +206,12 @@ export function AccessAddressCard({
   disabled: boolean;
   onChanged: (state: CustomDomainDto) => void;
   onArchived: () => void;
+  /** Whether a request of the card (save, check, remove) is out, for a page that warns before it is left. */
+  onBusyChange?: (busy: boolean) => void;
 }>) {
   const own = useOwnAddress({ eventId, saved: address, instanceHost, onChanged, onArchived });
+  const busy = own.saving || own.checking || own.removing;
+  useEffect(() => onBusyChange?.(busy), [busy, onBusyChange]);
   return (
     <Card title="Address for guests">
       <div className="settings-card-stack">

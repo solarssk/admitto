@@ -111,6 +111,43 @@ describe("the Company SSO card", () => {
     expect(claimName()).toBeTruthy();
   });
 
+  it("says that the return addresses could not be read, with a Retry that reads them again, and never says that the instance has no address", async () => {
+    api.fetchRegistrationSsoProvider.mockRejectedValueOnce(new ApiError(500, "internal_error"));
+    await renderPanel(ssoSettings());
+    fireEvent.click(within(ssoCard()).getByRole("button", { name: "Setup for your IT team" }));
+
+    expect(within(ssoCard()).getByText("Could not read the return addresses.")).toBeTruthy();
+    expect(within(ssoCard()).queryByText(/has no return address|not set/)).toBeNull();
+    expect(within(ssoCard()).queryByLabelText("Return address")).toBeNull();
+    api.fetchRegistrationSsoProvider.mockResolvedValue({
+      provider_id: "idp-1",
+      state: "ready",
+      providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }],
+      redirect_uri: null,
+      redirect_uris: [{ uri: "https://admitto.example.com/sso/callback", host: "instance", verified: true }],
+    });
+
+    fireEvent.click(within(ssoCard()).getByRole("button", { name: "Retry reading the return addresses" }));
+
+    await waitFor(() => expect((within(ssoCard()).getByLabelText("Return address") as HTMLInputElement).value).toBe("https://admitto.example.com/sso/callback"));
+    expect(within(ssoCard()).queryByText("Could not read the return addresses.")).toBeNull();
+    expect(api.fetchRegistrationSsoProvider).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the failure, and the Retry, when the Retry fails too, and sends a lost session to the sign-in", async () => {
+    api.fetchRegistrationSsoProvider.mockRejectedValue(new ApiError(500, "internal_error"));
+    await renderPanel(ssoSettings());
+    fireEvent.click(within(ssoCard()).getByRole("button", { name: "Setup for your IT team" }));
+
+    fireEvent.click(within(ssoCard()).getByRole("button", { name: "Retry reading the return addresses" }));
+    await waitFor(() => expect(api.fetchRegistrationSsoProvider).toHaveBeenCalledTimes(2));
+    expect(within(ssoCard()).getByText("Could not read the return addresses.")).toBeTruthy();
+
+    api.fetchRegistrationSsoProvider.mockRejectedValue(new ApiError(401, "unauthorized"));
+    fireEvent.click(within(ssoCard()).getByRole("button", { name: "Retry reading the return addresses" }));
+    await waitFor(() => expect(goToLogin).toHaveBeenCalled());
+  });
+
   it("explains the restriction in two sentences: the claim and its values, OpenID Connect, tid, exact matching, never an address, and empty for none", async () => {
     await renderPanel(ssoSettings());
     const text = plain(ssoCard().textContent);
@@ -313,6 +350,56 @@ describe("the address card and the typed restriction", () => {
     expect(claimValues()?.value).toBe("aaa-111");
   });
 
+  it("does not let a read that was started before a save replace what the save confirmed", async () => {
+    api.saveCustomDomain.mockResolvedValue(state);
+    await renderPanel(ssoSettings());
+    let finishOld: (answer: RegistrationSettingsDto) => void = () => undefined;
+    api.fetchRegistrationSettings.mockReturnValue(new Promise<RegistrationSettingsDto>((resolve) => (finishOld = resolve)));
+    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
+    type(claimName(), "tid");
+    type(claimValues(), "aaa-111");
+    await save();
+    await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+
+    // The old read comes back last, as the settings were before the save (the event was on another way then).
+    finishOld(settings({ access_methods: ["link"], own_address: own }));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(claimName()?.value).toBe("tid");
+    // What the save confirmed stands: the fields are still the ones of an event that uses the company SSO.
+    expect(claimName()?.disabled).toBe(false);
+    expect(ssoCard().querySelector(".at-notice--info")).toBeNull();
+  });
+
+  it("does not let a read that was started while the save was out replace what the save confirmed", async () => {
+    api.saveCustomDomain.mockResolvedValue(state);
+    await renderPanel(ssoSettings());
+    let finishSave: (answer: RegistrationSettingsDto) => void = () => undefined;
+    api.saveRegistrationSettings.mockReturnValue(new Promise<RegistrationSettingsDto>((resolve) => (finishSave = resolve)));
+    type(claimName(), "tid");
+    type(claimValues(), "aaa-111");
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(true));
+    let finishRead: (answer: RegistrationSettingsDto) => void = () => undefined;
+    api.fetchRegistrationSettings.mockReturnValue(new Promise<RegistrationSettingsDto>((resolve) => (finishRead = resolve)));
+    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+
+    finishSave(ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Registration settings saved.", "success"));
+    finishRead(settings({ access_methods: ["link"], own_address: own }));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(claimName()?.disabled).toBe(false);
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+  });
+
   it("still saves the typed claim after the address card was used", async () => {
     api.saveCustomDomain.mockResolvedValue(state);
     await renderPanel(ssoSettings());
@@ -340,6 +427,38 @@ describe("the icon of the identity provider", () => {
     await renderPanel(ssoSettings());
 
     expect(ssoCard().querySelector(".at-inputgroup__icon i")?.className).toContain(icon);
+  });
+});
+
+describe("the requests of the address card, for the page", () => {
+  it.each([
+    ["Save address", (resolve: (value: unknown) => void) => api.saveCustomDomain.mockReturnValue(new Promise(resolve)), "Save address"],
+    ["Check now", (resolve: (value: unknown) => void) => api.checkCustomDomain.mockReturnValue(new Promise(resolve)), "Check now"],
+  ])("tells the page that a request is out while %s runs, and that it is over", async (_what, hold, button) => {
+    let finish: (value: unknown) => void = () => undefined;
+    hold((resolve) => (finish = resolve));
+    await renderPanel(ssoSettings({ own_address: { domain: "summit.acme.example", status: "unchecked", check_result: null, verified: false, checked_at: null } }));
+    if (button === "Save address") fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "other.acme.example" } });
+
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: button }));
+
+    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(true));
+    finish({ custom_domain: "other.acme.example", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
+    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(false));
+  });
+
+  it("keeps the page told that a save is out while the claim saves and an address request has ended", async () => {
+    await renderPanel(ssoSettings());
+    let finish: (answer: RegistrationSettingsDto) => void = () => undefined;
+    api.saveRegistrationSettings.mockReturnValue(new Promise<RegistrationSettingsDto>((resolve) => (finish = resolve)));
+    type(claimName(), "tid");
+    type(claimValues(), "aaa-111");
+
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(true));
+    finish(ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
+
+    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(false));
   });
 });
 
