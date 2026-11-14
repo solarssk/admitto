@@ -1162,6 +1162,21 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
     expect(isOff(save())).toBe(true);
   });
 
+  it("does not take a change of the choice while Save is running, because the answer would overwrite it", async () => {
+    let resolveSave!: (value: ReturnType<typeof sampleTurnstile>) => void;
+    mockSaveTurnstile.mockReturnValueOnce(new Promise((resolve) => (resolveSave = resolve)));
+    await renderLoaded();
+    fireEvent.click(choice("Not used"));
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Turn off" }));
+
+    fireEvent.click(save());
+
+    await waitFor(() => expect(choice("Required").disabled).toBe(true));
+    expect(choice("Not used").disabled).toBe(true);
+    resolveSave(sampleTurnstile({ bot_protection: "not_used" }));
+    await waitFor(() => expect(choice("Required").disabled).toBe(false));
+  });
+
   it("turns the check back on with no question, and saves nothing when the draft is as saved again", async () => {
     mockFetchTurnstile.mockResolvedValue(sampleTurnstile({ bot_protection: "not_used" }));
     await renderLoaded();

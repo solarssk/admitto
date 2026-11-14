@@ -864,7 +864,7 @@ export function ExternalServicesPanel() {
         </div>
       </Card>
 
-      <RegistrationTurnstileCard dto={turnstile} draft={registration} onChange={setTurnstileDraft} />
+      <RegistrationTurnstileCard dto={turnstile} draft={registration} disabled={saving} onChange={setTurnstileDraft} />
 
       <RegistrationAccessMethodsCard
         draft={access}

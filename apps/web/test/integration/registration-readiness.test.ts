@@ -126,6 +126,7 @@ const ROWS: Row[] = [
     system: async () => {
       await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
       await setBotProtectionMode(prisma, "not_used");
+      await bothWays();
     },
     page: "not_found",
     blockers: ["password"],

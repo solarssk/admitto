@@ -47,10 +47,13 @@ function badgeOf(dto: RegistrationTurnstileDto, mode: RegistrationBotProtection)
 export function RegistrationTurnstileCard({
   dto,
   draft,
+  disabled = false,
   onChange,
 }: Readonly<{
   dto: RegistrationTurnstileDto;
   draft: TurnstileDraft;
+  /** True while Save is running: a change made now would be overwritten by the answer. */
+  disabled?: boolean;
   onChange: (next: TurnstileDraft) => void;
 }>) {
   const [confirming, setConfirming] = useState(false);
@@ -87,6 +90,7 @@ export function RegistrationTurnstileCard({
             options={MODE_OPTIONS}
             value={draft.botProtection}
             ariaLabel="Bot check"
+            disabled={disabled}
             describedBy="external-bot-protection-risk"
             onChange={chooseMode}
           />
