@@ -28,7 +28,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 **Choose how guests get in**
 
 1. Under **How guests open the form**, choose **Link**, **Password** or **Company SSO**. An event has one way in at a time. A way that a Superadmin has not turned on for your organisation is grey and cannot be chosen. Hover over it to read why: "Not turned on for this organisation. Ask a superadmin." A Superadmin reads "Turn it on in Organisation settings, External services." instead.
-2. For **Password**, select **Set password**, type a password of 8 to 128 characters and select **Save password**. This is saved at once, apart from the **Save** button of the page.
+2. For **Password**, select **Set**, type a password of 8 to 128 characters and select **Save** in the window that opens. This is saved at once, apart from the **Save** button of the page.
 3. For **Company SSO**, optionally limit the form to one company. See **Limit the company SSO to one company** below.
 4. Select **Save** at the bottom of the page.
 
@@ -100,7 +100,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 - The link and the password are protected by a bot check, unless a Superadmin switched the bot check **Off** for your organisation. Then the checklist shows **Bot protection** in grey, as information, and a script can send the form or guess an event password within the usual limits. Use the company SSO or a strong password for an event that matters. The company SSO needs no bot check, because the form opens only after the sign-in.
 - You cannot read the password again after you save it. Keep a copy where you share it with guests.
 - A new password does not change the requests that guests already sent.
-- Choosing another way in and saving removes the password.
+- Choosing another way while a password is set asks "Remove the event password?" first. Cancel keeps the password; Remove changes the choice, and the password is removed when you select **Save** at the bottom of the page.
 
 **Company SSO**
 

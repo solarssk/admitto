@@ -124,6 +124,8 @@ describe("the ways in a superadmin has not turned on", () => {
     api.saveRegistrationSettings.mockResolvedValue(settings({ access_methods: ["link"], enabled_access_methods: ["link"] }));
 
     fireEvent.click(radio("Link"));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Remove the event password?" })).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(radio("Link").getAttribute("aria-checked")).toBe("true"));
     fireEvent.click(saveButton());
 
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["link"] }));

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
@@ -40,7 +41,7 @@ const passwordField = (dialog: HTMLElement) => within(dialog).getByLabelText("Pa
 const rowTitle = () => screen.queryByText("Event password", { selector: ".settings-row__text strong" });
 const rowText = () => rowTitle()?.closest(".settings-row")?.textContent ?? "";
 
-async function openSetDialog(buttonName = "Set password") {
+async function openSetDialog(buttonName = "Set") {
   fireEvent.click(screen.getByRole("button", { name: buttonName }));
   return setDialog();
 }
@@ -66,15 +67,15 @@ describe("RegistrationAccessTab: the event password", () => {
     cleanup();
     await renderLoaded(withoutPassword());
     expect(rowText()).toContain("No password is set. Guests cannot open the form without one.");
-    expect(screen.getByRole("button", { name: "Set password" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Set" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
 
     cleanup();
     await renderLoaded(withPassword());
     expect(rowText()).toContain("A password is set. Guests need it to open the form. You cannot read it again, so keep a copy to share with them.");
-    expect(screen.getByRole("button", { name: "Change password" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Set password" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Set" })).toBeNull();
   });
 
   it("appears as soon as the password is chosen as the way in, before it is saved, so that it can be set first", async () => {
@@ -83,7 +84,30 @@ describe("RegistrationAccessTab: the event password", () => {
     fireEvent.click(radio("Password"));
 
     expect(rowText()).toContain("No password is set.");
-    expect(screen.getByText("Choosing another way in later removes the password.")).toBeTruthy();
+    expect(screen.queryByText(/Choosing another way in later removes the password/)).toBeNull();
+  });
+
+  it("has the button that shows the password at the right end of the box, inside it, with the hint under it and a panel wide enough for the hint", async () => {
+    await renderLoaded(withoutPassword());
+
+    const dialog = await openSetDialog();
+
+    const control = passwordField(dialog).closest(".event-password__control");
+    expect(control?.lastElementChild).toBe(within(dialog).getByRole("button", { name: "Show the password" }));
+    expect(control?.firstElementChild).toBe(passwordField(dialog));
+    expect(dialog.querySelector(".add-attendee-modal__panel--w560")).not.toBeNull();
+    expect(within(dialog).getByText("8 to 128 characters. Guests type it exactly as you do, spaces included.").previousElementSibling).toBe(control);
+    // Like the other dialogs of the app: no close icon in the corner, Cancel and Save at the foot.
+    expect(within(dialog).getAllByRole("button").map((button) => button.textContent || button.getAttribute("aria-label"))).toEqual(["Show the password", "Cancel", "Save"]);
+  });
+
+  it("is free of axe violations", async () => {
+    await renderLoaded(withoutPassword());
+    const dialog = await openSetDialog();
+
+    const result = await axe.run(dialog, { rules: { "color-contrast": { enabled: false } } });
+
+    expect(result.violations).toEqual([]);
   });
 
   it("is set in a dialog that asks for the password and says what the rule is", async () => {
@@ -118,13 +142,13 @@ describe("RegistrationAccessTab: the event password", () => {
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(api.setRegistrationPassword).toHaveBeenCalledWith("evt-1", PASSWORD));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(addToast).toHaveBeenCalledWith("Password saved.", "success");
     expect(rowText()).toContain("A password is set.");
-    expect(screen.getByRole("button", { name: "Change password" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
   });
 
   it("is never shown again: not on the page, not in a toast, and not in the settings that are read after it", async () => {
@@ -133,7 +157,7 @@ describe("RegistrationAccessTab: the event password", () => {
     api.fetchRegistrationSettings.mockResolvedValue(withPassword());
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     expect(document.body.innerHTML).not.toContain(PASSWORD);
@@ -149,7 +173,7 @@ describe("RegistrationAccessTab: the event password", () => {
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByText("A password is set.", { selector: ".overview-check__detail" })).toBeTruthy());
@@ -162,7 +186,7 @@ describe("RegistrationAccessTab: the event password", () => {
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
@@ -172,11 +196,11 @@ describe("RegistrationAccessTab: the event password", () => {
   it("is changed in the same dialog, with its own title, and replaces the one that is set", async () => {
     await renderLoaded(withPassword());
     api.setRegistrationPassword.mockResolvedValue(undefined);
-    const dialog = await openSetDialog("Change password");
+    const dialog = await openSetDialog("Change");
 
     expect(within(dialog).getByRole("heading", { name: "Change the event password" })).toBeTruthy();
     type(dialog, "another long password");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(api.setRegistrationPassword).toHaveBeenCalledWith("evt-1", "another long password"));
   });
@@ -190,7 +214,7 @@ describe("RegistrationAccessTab: the event password", () => {
     const dialog = await openSetDialog();
     type(dialog, value);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     expect(within(dialog).getByRole("alert").textContent).toBe("The password needs 8 to 128 characters.");
     expect(api.setRegistrationPassword).not.toHaveBeenCalled();
@@ -203,9 +227,9 @@ describe("RegistrationAccessTab: the event password", () => {
     const emoji = String.fromCodePoint(0x1f600);
 
     for (const value of ["12345678", "a".repeat(128), emoji.repeat(8)]) {
-      const dialog = await openSetDialog(screen.queryByRole("button", { name: "Change password" }) ? "Change password" : "Set password");
+      const dialog = await openSetDialog(screen.queryByRole("button", { name: "Change" }) ? "Change" : "Set");
       type(dialog, value);
-      fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
       await waitFor(() => expect(api.setRegistrationPassword).toHaveBeenLastCalledWith("evt-1", value));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     }
@@ -231,7 +255,7 @@ describe("RegistrationAccessTab: the event password", () => {
     await renderLoaded(withoutPassword());
     const dialog = await openSetDialog();
     type(dialog, "short");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(within(dialog).getByRole("alert")).toBeTruthy();
 
     type(dialog, "short one");
@@ -245,7 +269,7 @@ describe("RegistrationAccessTab: the event password", () => {
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(within(dialog).getByRole("alert").textContent).toBe("The event password needs 8 to 128 characters."));
     expect(passwordField(dialog).value).toBe(PASSWORD);
@@ -259,7 +283,7 @@ describe("RegistrationAccessTab: the event password", () => {
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(addToast).toHaveBeenCalledWith("This event is archived.", "error"));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -273,7 +297,7 @@ describe("RegistrationAccessTab: the event password", () => {
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(goToLogin).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/)));
   });
@@ -315,7 +339,7 @@ describe("RegistrationAccessTab: the event password", () => {
     api.setRegistrationPassword.mockReturnValue(sent.promise);
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
-    const button = within(dialog).getByRole("button", { name: "Save password" });
+    const button = within(dialog).getByRole("button", { name: "Save" });
     button.focus();
 
     fireEvent.click(button);
@@ -343,11 +367,11 @@ describe("RegistrationAccessTab: the event password", () => {
     fireEvent.click(saveButton());
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalled());
 
-    expect(isOff(screen.getByRole("button", { name: "Change password" }))).toBe(true);
+    expect(isOff(screen.getByRole("button", { name: "Change" }))).toBe(true);
     expect(isOff(screen.getByRole("button", { name: "Remove" }))).toBe(true);
 
     await act(async () => answer.resolve(withPassword()));
-    await waitFor(() => expect(isOff(screen.getByRole("button", { name: "Change password" }))).toBe(false));
+    await waitFor(() => expect(isOff(screen.getByRole("button", { name: "Change" }))).toBe(false));
   });
 });
 
@@ -360,7 +384,7 @@ describe("RegistrationAccessTab: a read that brings what somebody else changed",
     fireEvent.click(screen.getByRole("switch", { name: "Waiting list" }));
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     api.saveRegistrationSettings.mockResolvedValue(settings({ waitlist_enabled: false, ask_company: true }));
@@ -393,13 +417,13 @@ describe("RegistrationAccessTab: removing the event password", () => {
     api.clearRegistrationPassword.mockResolvedValue(undefined);
     api.fetchRegistrationSettings.mockResolvedValue(withoutPassword());
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Remove password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(api.clearRegistrationPassword).toHaveBeenCalledWith("evt-1"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(addToast).toHaveBeenCalledWith("Password removed.", "success");
     expect(rowText()).toContain("No password is set.");
-    expect(screen.getByRole("button", { name: "Set password" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Set" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
   });
@@ -408,7 +432,7 @@ describe("RegistrationAccessTab: removing the event password", () => {
     const dialog = await askToRemove();
     api.clearRegistrationPassword.mockRejectedValue(new ApiError(403, "event_archived", "event_archived"));
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Remove password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(addToast).toHaveBeenCalledWith("This event is archived.", "error"));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -426,10 +450,10 @@ describe("RegistrationAccessTab: removing the event password", () => {
 
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    fireEvent.click(within(await removeDialog()).getByRole("button", { name: "Remove password" }));
+    fireEvent.click(within(await removeDialog()).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(3));
 
@@ -446,7 +470,7 @@ describe("RegistrationAccessTab: removing the event password", () => {
     api.setRegistrationPassword.mockResolvedValue(undefined);
     const dialog = await openSetDialog();
     type(dialog, PASSWORD);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(rowText()).toContain("A password is set.");
 
@@ -474,7 +498,7 @@ describe("RegistrationAccessTab: removing the event password", () => {
     const dialog = await askToRemove();
     api.clearRegistrationPassword.mockRejectedValue(new ApiError(500, "unexpected_failure", "unexpected_failure"));
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Remove password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(within(dialog).getByRole("alert").textContent).toBe("Could not remove the password."));
     expect(screen.getByRole("dialog")).toBeTruthy();
@@ -485,7 +509,7 @@ describe("RegistrationAccessTab: removing the event password", () => {
   it("forgets a failure when it is cancelled, so the next time the dialog opens clean", async () => {
     let dialog = await askToRemove();
     api.clearRegistrationPassword.mockRejectedValue(new ApiError(500, "unexpected_failure", "unexpected_failure"));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Remove password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(within(dialog).getByRole("alert")).toBeTruthy());
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
@@ -499,51 +523,66 @@ describe("RegistrationAccessTab: removing the event password", () => {
     const dialog = await askToRemove();
     api.clearRegistrationPassword.mockRejectedValue(new ApiError(401, "authentication_required"));
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Remove password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(goToLogin).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/)));
   });
 });
 
 describe("RegistrationAccessTab: leaving the password as the way in", () => {
-  it("warns that saving removes the password, only while the saved way in is the password and a password is set", async () => {
+  const asked = () => screen.findByRole("dialog", { name: "Remove the event password?" });
+
+  it("asks before the choice changes, while the saved way is the password and a password is set, and says nothing else on the card", async () => {
     await renderLoaded(withPassword());
-    const warning = "Saving removes the event password. A new one has to be set if you choose the password again.";
-    expect(screen.queryByText(warning)).toBeNull();
-
-    fireEvent.click(radio("Link"));
-    expect(screen.getByText(warning)).toBeTruthy();
-
-    fireEvent.click(radio("Password"));
-    expect(screen.queryByText(warning)).toBeNull();
-  });
-
-  it("does not warn when no password is set, since there is nothing to remove", async () => {
-    await renderLoaded(withoutPassword());
+    expect(screen.queryByRole("dialog", { name: "Remove the event password?" })).toBeNull();
 
     fireEvent.click(radio("Link"));
 
+    const dialog = await asked();
+    expect(within(dialog).getByText("Choosing another way removes the password. You cannot read it again.")).toBeTruthy();
+    expect(radio("Password").getAttribute("aria-checked")).toBe("true");
+    expect(isOff(saveButton())).toBe(true);
     expect(screen.queryByText(/Saving removes the event password/)).toBeNull();
+    expect(screen.queryByText(/later removes the password/)).toBeNull();
   });
 
-  it("does not warn for a way in that was not the password to begin with", async () => {
-    await renderLoaded(settings({ access_methods: ["link"], password_set: true }));
-
-    fireEvent.click(radio("Password"));
+  it("keeps the password chosen when it is cancelled, and changes nothing", async () => {
+    await renderLoaded(withPassword());
     fireEvent.click(radio("Link"));
 
-    expect(screen.queryByText(/Saving removes the event password/)).toBeNull();
+    fireEvent.click(within(await asked()).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Remove the event password?" })).toBeNull());
+    expect(radio("Password").getAttribute("aria-checked")).toBe("true");
+    expect(isOff(saveButton())).toBe(true);
   });
 
-  it("sends the new way in, and the answer says that no password is set any more, and the warning goes", async () => {
+  it("changes the choice in the draft when it is confirmed, and the password goes with the save of the page", async () => {
     await renderLoaded(withPassword());
     api.saveRegistrationSettings.mockResolvedValue(settings({ access_methods: ["link"], password_set: false }));
-
     fireEvent.click(radio("Link"));
-    fireEvent.click(saveButton());
 
+    fireEvent.click(within(await asked()).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(radio("Link").getAttribute("aria-checked")).toBe("true"));
+    expect(api.clearRegistrationPassword).not.toHaveBeenCalled();
+    expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
+    fireEvent.click(saveButton());
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["link"] }));
-    await waitFor(() => expect(screen.queryByText(/Saving removes the event password/)).toBeNull());
-    expect(rowTitle()).toBeNull();
+    await waitFor(() => expect(rowTitle()).toBeNull());
   });
+
+  it.each([
+    ["the password that is chosen is pressed", withPassword, ["Password"], "Password"],
+    ["no password is set", withoutPassword, ["Link"], "Link"],
+    ["the saved way was not the password", () => settings({ access_methods: ["link"], password_set: true }), ["Password", "Link"], "Link"],
+  ])("does not ask when %s", async (_what, make, presses, chosen) => {
+    await renderLoaded(make());
+
+    for (const name of presses) fireEvent.click(radio(name));
+
+    expect(screen.queryByRole("dialog", { name: "Remove the event password?" })).toBeNull();
+    expect(radio(chosen).getAttribute("aria-checked")).toBe("true");
+  });
+});
 });

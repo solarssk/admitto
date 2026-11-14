@@ -53,7 +53,7 @@ function EventPasswordRow({
         <ArchivedGuard event={event} reasonId={`${id}-set`} disabled={disabled}>
           {(guard) => (
             <Button type="button" variant="secondary" {...guard} onClick={onSet}>
-              {passwordSet ? "Change password" : "Set password"}
+              {passwordSet ? "Change" : "Set"}
             </Button>
           )}
         </ArchivedGuard>
@@ -119,6 +119,8 @@ export function AccessWayInCard({
   const options = METHOD_OPTIONS.map((option) =>
     enabledMethods.includes(option.value) ? option : { ...option, disabled: true, tooltip: reason },
   );
+  // The way the person pressed while a password is set: it waits for the answer of the dialog, and the choice stays as it was until then.
+  const [leaving, setLeaving] = useState<AccessMethod | null>(null);
   const [setOpen, setSetOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -128,6 +130,13 @@ export function AccessWayInCard({
   function archived(message: string) {
     onArchived();
     addToast(message, "error");
+  }
+
+  /** Leaving the password removes it when the page is saved: the person is asked before the choice changes. */
+  function choose(next: AccessMethod) {
+    // The password is removed by the save of the page, and only an event that is saved with it has one to lose.
+    if (passwordSet && savedMethod === "password" && method === "password" && next !== "password") setLeaving(next);
+    else onMethodChange(next);
   }
 
   async function remove() {
@@ -166,14 +175,11 @@ export function AccessWayInCard({
           options={options}
           value={method}
           disabled={disabled}
-          onChange={onMethodChange}
+          onChange={choose}
         />
         {method !== null && <Notice variant="info">{METHOD_NOTICES[method]}</Notice>}
         {method === "password" && (
-          <>
-            <EventPasswordRow event={event} passwordSet={passwordSet} disabled={disabled} onSet={() => setSetOpen(true)} onRemove={() => setRemoveOpen(true)} />
-            <p className="settings-card-intro">Choosing another way in later removes the password.</p>
-          </>
+          <EventPasswordRow event={event} passwordSet={passwordSet} disabled={disabled} onSet={() => setSetOpen(true)} onRemove={() => setRemoveOpen(true)} />
         )}
         {method === "sso" && (
           <AccessSsoClaim
@@ -184,9 +190,6 @@ export function AccessWayInCard({
             canEdit={isSuperadmin}
             onChange={onClaimChange}
           />
-        )}
-        {savedMethod === "password" && method !== "password" && passwordSet && (
-          <Notice variant="warning">Saving removes the event password. A new one has to be set if you choose the password again.</Notice>
         )}
       </div>
       <EventPasswordDialog
@@ -202,10 +205,22 @@ export function AccessWayInCard({
         }}
       />
       <ConfirmDialog
+        open={leaving !== null}
+        title="Remove the event password?"
+        message="Choosing another way removes the password. You cannot read it again."
+        confirmLabel="Remove"
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (leaving !== null) onMethodChange(leaving);
+          setLeaving(null);
+        }}
+        onCancel={() => setLeaving(null)}
+      />
+      <ConfirmDialog
         open={removeOpen}
         title="Remove the event password?"
         message="Guests cannot open the form until you set a new password. You cannot read the old one again."
-        confirmLabel="Remove password"
+        confirmLabel="Remove"
         confirmVariant="danger"
         errorMessage={removeError}
         loading={removing}

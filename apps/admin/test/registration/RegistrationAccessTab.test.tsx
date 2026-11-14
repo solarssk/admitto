@@ -559,7 +559,7 @@ describe("RegistrationAccessTab: an archived event", () => {
   });
 
   it("turns the password buttons off with the reason, which is the one reason an archived event gives", () => {
-    for (const name of ["Change password", "Remove"]) {
+    for (const name of ["Change", "Remove"]) {
       const button = screen.getByRole("button", { name });
       expect(isOff(button), name).toBe(true);
       expect(getTooltipText(button)).toBe("This event is archived. Editing is disabled.");
