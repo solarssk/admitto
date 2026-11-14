@@ -277,6 +277,42 @@ describe("the address card and the typed restriction", () => {
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
   });
 
+  it("does not take a restriction that somebody else changed meanwhile for an edit, when the address card reads the settings again", async () => {
+    api.saveCustomDomain.mockResolvedValue(state);
+    await renderPanel(restricted());
+    api.fetchRegistrationSettings.mockResolvedValue(restricted({ own_address: own, sso_claim_name: "groups", sso_claim_values: ["staff"] }));
+    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
+
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    // The address is what was read again; the restriction is what the person saw.
+    expect(await within(card("Address for guests")).findByText(`${DOMAIN}: Not checked yet`)).toBeTruthy();
+    // The person did not touch the restriction: it is not a change, and Save has nothing of it to send.
+    expect(claimName()?.value).toBe("tid");
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+    expect(isOff(saveButton())).toBe(true);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    fireEvent.click(saveButton());
+    expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
+  });
+
+  it("takes an edit back, with Reset, to the restriction the person saw, not to the one another superadmin set meanwhile", async () => {
+    api.saveCustomDomain.mockResolvedValue(state);
+    await renderPanel(restricted());
+    api.fetchRegistrationSettings.mockResolvedValue(restricted({ own_address: own, sso_claim_name: "groups", sso_claim_values: ["staff"] }));
+    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    type(claimValues(), "aaa-111\nbbb-222");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(claimName()?.value).toBe("tid");
+    expect(claimValues()?.value).toBe("aaa-111");
+  });
+
   it("still saves the typed claim after the address card was used", async () => {
     api.saveCustomDomain.mockResolvedValue(state);
     await renderPanel(ssoSettings());

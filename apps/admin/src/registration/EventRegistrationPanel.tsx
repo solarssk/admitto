@@ -182,10 +182,13 @@ function EventRegistrationCards({
 }>) {
   const { addToast } = useToast();
   const [settings, setSettings] = useState(initial);
-  const base = useMemo(() => draftFromSettings(settings), [settings]);
-  // What is typed in the restriction. It is kept apart from the settings: what the address card does, and the settings that are read
-  // again after it, must never take the typed text away. It starts over only with Reset and with a save of its own.
-  const [typed, setTyped] = useState(() => claimOf(base));
+  // The restriction as the first read found it, and as typed. Both are kept apart from the settings: what the address card does, and the
+  // settings that are read again after it, change the address and nothing else. The saved restriction moves only with a save of its own
+  // (as the base of the Access form does), so a restriction that somebody else changed meanwhile is not taken for an edit of this person.
+  const [savedClaim, setSavedClaim] = useState(() => claimOf(draftFromSettings(initial)));
+  const [typed, setTyped] = useState(savedClaim);
+  const [returnAddresses, setReturnAddresses] = useState(redirectUris);
+  const base = useMemo(() => ({ ...draftFromSettings(settings), ...savedClaim }), [settings, savedClaim]);
   const draft = useMemo(() => ({ ...base, ...typed }), [base, typed]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -196,13 +199,12 @@ function EventRegistrationCards({
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   useEffect(() => onSavingChange?.(saving), [saving, onSavingChange]);
 
-  /** Reads the settings again, quietly: the link for guests and the state of the address move with a change. */
+  /** Reads the settings and the return addresses again, quietly: the link for guests, the state of the address and the callback of a new
+   * address move with a change. A read that fails leaves what the cards show as it is. */
   async function refresh() {
-    try {
-      setSettings(await fetchRegistrationSettings(eventId));
-    } catch {
-      // What the cards show stays as it is.
-    }
+    const [latest, provider] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchRegistrationSsoProvider()]);
+    if (latest.status === "fulfilled") setSettings(latest.value);
+    if (provider.status === "fulfilled") setReturnAddresses(provider.value.redirect_uris);
   }
 
   function archivedMeanwhile() {
@@ -228,6 +230,7 @@ function EventRegistrationCards({
     try {
       const answer = await saveRegistrationSettings(eventId, patch);
       setSettings(answer);
+      setSavedClaim(claimOf(draftFromSettings(answer)));
       setTyped(claimOf(draftFromSettings(answer)));
       addToast("Registration settings saved.", "success");
     } catch (err) {
@@ -252,8 +255,8 @@ function EventRegistrationCards({
         draft={draft}
         setup={
           <SsoItSetup
-            instanceUri={redirectUris.find((entry) => entry.host === "instance")?.uri ?? null}
-            eventUri={eventReturnAddress(redirectUris, settings.own_address?.domain ?? null)}
+            instanceUri={returnAddresses.find((entry) => entry.host === "instance")?.uri ?? null}
+            eventUri={eventReturnAddress(returnAddresses, settings.own_address?.domain ?? null)}
             claim={{ name: base.sso_claim_name === "" ? null : base.sso_claim_name, values: parseClaim(base).values }}
           />
         }
@@ -281,7 +284,7 @@ function EventRegistrationCards({
           hasUnsavedChanges={dirty}
           saving={saving}
           onReset={() => {
-            setTyped(claimOf(base));
+            setTyped(savedClaim);
             setError(null);
           }}
           onSave={() => void save()}

@@ -17,6 +17,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...(await importOriginal<typeof import("../../src/api/client.js")>()),
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
     fetchRegistrationSsoProvider: (...args: unknown[]) => mocks.fetchRegistrationSsoProvider(...args),
+    saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
   };
 });
 vi.mock("../../src/connection/ConnectionStateProvider.js");
@@ -100,6 +101,36 @@ describe("the setup for IT in the Company SSO card", () => {
     expect(steps().map((step) => plain(step.querySelector("span")?.textContent ?? step.textContent))).toEqual([REDIRECT_HINT, EVENT_ADDRESS_HINT, GATEWAY_NOTE]);
     expect(field("Return address for summit.acme.example").value).toBe(EVENT.uri);
     expect(panel().textContent).not.toContain("other.acme.example");
+  });
+
+  it("adds the return address of an address that was just saved, to the panel and to the copied text", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    api.saveCustomDomain.mockResolvedValue({ custom_domain: "summit.acme.example", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
+    await renderPanel(ssoSettings(), [INSTANCE]);
+    expect(panel().textContent).not.toContain("summit.acme.example");
+    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: { ...OWN, status: "unchecked", verified: false } }));
+    api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: [INSTANCE, { ...EVENT, verified: false }] });
+
+    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "summit.acme.example" } });
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+
+    await waitFor(() => expect(field("Return address for summit.acme.example").value).toBe(EVENT.uri));
+    fireEvent.click(copyButton());
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(writeText.mock.calls[0]?.[0]).toContain(`${INSTANCE.uri}, ${EVENT.uri}`);
+  });
+
+  it("keeps the return addresses it has when they cannot be read again after the address was saved", async () => {
+    api.saveCustomDomain.mockResolvedValue({ custom_domain: "summit.acme.example", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
+    await renderPanel(ssoSettings(), [INSTANCE]);
+    api.fetchRegistrationSsoProvider.mockRejectedValue(new Error("down"));
+
+    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "summit.acme.example" } });
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+
+    await waitFor(() => expect(api.fetchRegistrationSsoProvider).toHaveBeenCalledTimes(2));
+    expect(field("Return address").value).toBe(INSTANCE.uri);
   });
 
   it("tells the unverified own address to be entered now", async () => {
