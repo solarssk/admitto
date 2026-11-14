@@ -71,3 +71,8 @@ export function legalAnswer(items: LegalDocumentDto[]): LegalDocumentsListRespon
 export function ssoChecks(...missing: RegistrationReadinessKey[]): RegistrationReadinessCheckDto[] {
   return LINK_KEYS.map((key) => (key === "bot_protection" ? "identity_provider" : key)).map((key) => ({ key, ok: !missing.includes(key) }));
 }
+
+/** The checks of an event while the superadmin set bot protection to "not used": the information row in the place of the bot check. */
+export function notUsedChecks(...missing: RegistrationReadinessKey[]): RegistrationReadinessCheckDto[] {
+  return LINK_KEYS.map((key) => (key === "bot_protection" ? "bot_protection_not_used" : key)).map((key) => ({ key, ok: !missing.includes(key) }));
+}

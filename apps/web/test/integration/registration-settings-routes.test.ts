@@ -9,6 +9,7 @@ import { decryptFromString, encryptToString, SECRET_CONTEXTS } from "@admitto/cr
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
+import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
 import { SSO_PROVIDER_SETTINGS_KEY } from "../../src/registration/sso-provider.js";
 import { readRedirectUris } from "../../src/admin/registration-settings-routes.js";
 import { verifyBotChallenge, botChallengeCData } from "../../src/registration/bot-challenge.js";
@@ -41,6 +42,7 @@ let operatorCookie = "";
 const ROUTES: Array<{ method: string; path: string; body?: unknown }> = [
   { method: "GET", path: "/api/admin/registration/turnstile" },
   { method: "PUT", path: "/api/admin/registration/turnstile", body: { site_key: SITE_KEY } },
+  { method: "PUT", path: "/api/admin/registration/turnstile", body: { bot_protection: "not_used" } },
   { method: "POST", path: "/api/admin/registration/turnstile/test", body: {} },
   { method: "DELETE", path: "/api/admin/registration/turnstile" },
   { method: "GET", path: "/api/admin/registration/access-methods" },
@@ -67,7 +69,7 @@ async function storedValue(key: string): Promise<string | null> {
 
 async function cleanSettings() {
   await prisma.systemSettings.deleteMany({
-    where: { key: { in: [TURNSTILE_SETTINGS_KEY, ACCESS_METHODS_SETTINGS_KEY, SSO_PROVIDER_SETTINGS_KEY] } },
+    where: { key: { in: [TURNSTILE_SETTINGS_KEY, ACCESS_METHODS_SETTINGS_KEY, SSO_PROVIDER_SETTINGS_KEY, BOT_PROTECTION_SETTINGS_KEY] } },
   });
 }
 
@@ -147,6 +149,7 @@ describe("who may use the registration settings routes", () => {
       expect(await asAdmin.json()).toEqual({ error: "forbidden" });
       expect(await storedValue(TURNSTILE_SETTINGS_KEY)).toBeNull();
       expect(await storedValue(ACCESS_METHODS_SETTINGS_KEY)).toBeNull();
+      expect(await storedValue(BOT_PROTECTION_SETTINGS_KEY)).toBeNull();
       expect(await auditRows()).toHaveLength(0);
     },
   );
@@ -182,12 +185,76 @@ describe("who may use the registration settings routes", () => {
   });
 });
 
+describe("the mode of the bot check, end to end (A2)", () => {
+  const cleanAll = async () => {
+    await cleanSettings();
+    await prisma.adminAuditLog.deleteMany({ where: { action_type: { startsWith: "registration_" } } });
+  };
+  beforeEach(cleanAll);
+  // The tests after this block count the audit rows of their own writes.
+  afterAll(cleanAll);
+
+  it("is required by default, is set by a superadmin to not used and back, and each change is audited with the two modes", async () => {
+    const first = await app.request("/api/admin/registration/turnstile", { headers: { Cookie: superCookie } });
+    expect(await first.json()).toMatchObject({ bot_protection: "required" });
+
+    const off = await put("/api/admin/registration/turnstile", { bot_protection: "not_used" });
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ bot_protection: "not_used", status: "incomplete" });
+    expect(await storedValue(BOT_PROTECTION_SETTINGS_KEY)).toBe('"not_used"');
+    expect(await storedValue(TURNSTILE_SETTINGS_KEY)).toBeNull();
+
+    const on = await put("/api/admin/registration/turnstile", { bot_protection: "required" });
+    expect(await on.json()).toMatchObject({ bot_protection: "required" });
+
+    const rows = await auditRows();
+    expect(rows.map((row) => row.action_type)).toEqual(["registration_bot_protection_updated", "registration_bot_protection_updated"]);
+    expect(rows.map((row) => row.metadata)).toEqual([
+      { mode: "not_used", previous_mode: "required" },
+      { mode: "required", previous_mode: "not_used" },
+    ]);
+    expect(rows[0]!.actor_email).toBe(EMAILS.superadmin);
+    expect(rows[0]!.organization_id).toBe(await resolveInstanceOrganizationId(prisma));
+  });
+
+  it("opens the link and the password with no keys at all, once it is not used, and closes them again when it is required", async () => {
+    await put("/api/admin/registration/access-methods", { methods: ["link", "password"] });
+    const blocked = async () => {
+      const res = await app.request("/api/admin/registration/access-methods", { headers: { Cookie: superCookie } });
+      return ((await res.json()) as { methods: Array<{ method: string; available: boolean; blocked_by: string | null }> }).methods;
+    };
+    expect((await blocked()).map((entry) => [entry.method, entry.available, entry.blocked_by])).toEqual([
+      ["link", false, "bot_protection"],
+      ["password", false, "bot_protection"],
+      ["sso", false, null],
+    ]);
+
+    await put("/api/admin/registration/turnstile", { bot_protection: "not_used" });
+    expect((await blocked()).map((entry) => [entry.method, entry.available, entry.blocked_by])).toEqual([
+      ["link", true, null],
+      ["password", true, null],
+      ["sso", false, null],
+    ]);
+
+    await put("/api/admin/registration/turnstile", { bot_protection: "required" });
+    expect((await blocked()).map((entry) => entry.available)).toEqual([false, false, false]);
+  });
+
+  it("refuses a mode that is not one of the two, and writes nothing", async () => {
+    const res = await put("/api/admin/registration/turnstile", { bot_protection: "off" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "validation_failed", fields: ["bot_protection"] });
+    expect(await storedValue(BOT_PROTECTION_SETTINGS_KEY)).toBeNull();
+    expect(await auditRows()).toHaveLength(0);
+  });
+});
+
 describe("Turnstile keys, end to end", () => {
   it("saves the keys encrypted, hands the secret back to nobody and audits the change", async () => {
     const res = await put("/api/admin/registration/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(JSON.parse(text)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready" });
+    expect(JSON.parse(text)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready", bot_protection: "required" });
     expect(text).not.toContain(SECRET);
 
     const stored = (await storedValue(TURNSTILE_SETTINGS_KEY))!;
@@ -198,7 +265,7 @@ describe("Turnstile keys, end to end", () => {
 
     const get = await app.request("/api/admin/registration/turnstile", { headers: { Cookie: superCookie } });
     const getText = await get.text();
-    expect(JSON.parse(getText)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready" });
+    expect(JSON.parse(getText)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready", bot_protection: "required" });
     expect(getText).not.toContain(SECRET);
 
     const rows = await auditRows();
@@ -263,7 +330,7 @@ describe("Turnstile keys, end to end", () => {
 
     const res = await app.request("/api/admin/registration/turnstile", { method: "DELETE", headers: { ...sameOrigin, Cookie: superCookie } });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete" });
+    expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete", bot_protection: "required" });
     expect(await storedValue(TURNSTILE_SETTINGS_KEY)).toBeNull();
     expect(await verifyBotChallenge(prisma, input, { fetch: fetchFn })).toEqual({ ok: false, reason: "not_configured" });
     expect(seen).toEqual([SECRET]);
@@ -305,7 +372,7 @@ describe("Turnstile keys, end to end", () => {
       update: { value_json: JSON.stringify({ siteKey: SITE_KEY, secretEnc: encryptToString(SECRET, "another-purpose") }) },
     });
     const get = await app.request("/api/admin/registration/turnstile", { headers: { Cookie: superCookie } });
-    expect(await get.json()).toEqual({ site_key: SITE_KEY, secret_set: true, status: "unreadable" });
+    expect(await get.json()).toEqual({ site_key: SITE_KEY, secret_set: true, status: "unreadable", bot_protection: "required" });
   });
 });
 

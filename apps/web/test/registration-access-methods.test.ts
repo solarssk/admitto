@@ -8,6 +8,11 @@ import {
   resolveAccessMethodAvailability,
   setEnabledAccessMethods,
 } from "../src/registration/access-methods.js";
+import {
+  BOT_PROTECTION_SETTINGS_KEY,
+  getBotProtectionMode,
+  setBotProtectionMode,
+} from "../src/registration/bot-protection-mode.js";
 import { SSO_PROVIDER_SETTINGS_KEY } from "../src/registration/sso-provider.js";
 import { TURNSTILE_SETTINGS_KEY } from "../src/registration/turnstile-settings.js";
 import { memorySystemSettings } from "./helpers/memory-system-settings.js";
@@ -119,6 +124,29 @@ describe("resolveAccessMethodAvailability", () => {
     });
   });
 
+  it("opens link and password with no keys at all when the superadmin set bot protection to not used", async () => {
+    const values = { [ACCESS_METHODS_SETTINGS_KEY]: '["link","password","sso"]', [BOT_PROTECTION_SETTINGS_KEY]: '"not_used"' };
+    expect(byMethod(await resolveAccessMethodAvailability(fakeDb({ values }).db))).toEqual({
+      link: true,
+      password: true,
+      sso: false,
+    });
+  });
+
+  it("keeps requiring the keys for a mode that is missing, corrupt or unknown", async () => {
+    for (const mode of [undefined, "not json", '"off"', "null", "true", '{"mode":"not_used"}', '"NOT_USED"']) {
+      const values = {
+        [ACCESS_METHODS_SETTINGS_KEY]: '["link","password"]',
+        ...(mode === undefined ? {} : { [BOT_PROTECTION_SETTINGS_KEY]: mode }),
+      };
+      expect(byMethod(await resolveAccessMethodAvailability(fakeDb({ values }).db)), String(mode)).toEqual({
+        link: false,
+        password: false,
+        sso: false,
+      });
+    }
+  });
+
   it("keeps link and password closed when the saved secret cannot be read", async () => {
     const unreadable = JSON.stringify({ siteKey: "0x4AAAAAAAsite", secretEnc: encryptToString("s", "another-purpose") });
     const values = { [ACCESS_METHODS_SETTINGS_KEY]: '["link"]', [TURNSTILE_SETTINGS_KEY]: unreadable };
@@ -168,5 +196,26 @@ describe("resolveAccessMethodAvailability", () => {
     const none = fakeDb();
     await resolveAccessMethodAvailability(none.db);
     expect(none.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("the mode of bot protection", () => {
+  it("is required until a superadmin decides", async () => {
+    expect(await getBotProtectionMode(fakeDb().db)).toBe("required");
+  });
+
+  it("is stored and read back, either way", async () => {
+    const { db, rows } = fakeDb();
+    await setBotProtectionMode(db, "not_used");
+    expect(rows.get(BOT_PROTECTION_SETTINGS_KEY)).toBe('"not_used"');
+    expect(await getBotProtectionMode(db)).toBe("not_used");
+    await setBotProtectionMode(db, "required");
+    expect(await getBotProtectionMode(db)).toBe("required");
+  });
+
+  it("reads anything but exactly not_used as required, so a damaged row never drops the check", async () => {
+    for (const value of ["not json", "null", "[]", "{}", "0", '"required"', '"Not_Used"', '["not_used"]']) {
+      expect(await getBotProtectionMode(fakeDb({ values: { [BOT_PROTECTION_SETTINGS_KEY]: value } }).db), value).toBe("required");
+    }
   });
 });

@@ -813,8 +813,9 @@ function submitLabel(mode: RegistrationFormModel["mode"]): string {
 /** "Before you send": the terms, the extra consents, the challenge, the button and the privacy link. */
 export function renderAgreement(model: RegistrationFormModel): string {
   const checks = [renderTermsRow(model), ...model.consents.map((consent, index) => renderConsentRow(consent, index))].join("");
-  // The company sign-in has no bot check: the form stands behind a sign-in of the provider.
-  const challenge = model.needsSso ? "" : renderChallenge(model);
+  // The company sign-in has no bot check (the form stands behind a sign-in of the provider), and neither has a form whose bot
+  // protection the superadmin set to "not used".
+  const challenge = model.needsChallenge ? renderChallenge(model) : "";
   const button = `<button class="at-btn at-btn--primary at-btn--block at-btn--lg" type="submit" id="reg-submit" disabled>${icon("send", "ic reg-btn-icon")}<span id="reg-submit-label">${esc(submitLabel(model.mode))}</span></button>`;
   const fine = `<p class="reg-fine">How we use your details is in the ${legalLink(model.privacyPath, "privacy notice")}.</p>`;
   return `<div class="reg-section"><p class="reg-section__label">Before you send</p><div class="reg-checks">${checks}</div>${challenge}${button}${fine}</div>`;

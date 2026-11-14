@@ -7,7 +7,7 @@ import { reportApiError } from "../../src/connection/ConnectionStateProvider.js"
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import { advanceTimers, deferred, getTooltipText, hangUntilAborted, isOff } from "../test-utils.js";
 import { addToast, api } from "./accessApiMocks.js";
-import { archivedEvent, checks, event, legalAnswer, settings, texts } from "./accessData.js";
+import { archivedEvent, checks, event, legalAnswer, notUsedChecks, settings, texts } from "./accessData.js";
 import { accessPanel, card, loaded, radio, renderAccess, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 const goToLogin = vi.fn();
@@ -345,6 +345,23 @@ describe("RegistrationAccessTab: the checklist", () => {
     const [first, second] = checklistRows();
     expect(first?.querySelector(".sr-only")?.textContent).toBe("To do: ");
     expect(second?.querySelector(".sr-only")?.textContent).toBe("Done: ");
+  });
+
+  it("shows bot protection that is not used as grey information, last, with a dash, and does not count it", async () => {
+    await renderLoaded(settings({ readiness: notUsedChecks("mail_provider") }));
+
+    const rows = checklistRows();
+    expect(rows).toHaveLength(10);
+    const info = rows.at(-1) as HTMLElement;
+    expect(info.textContent).toContain("Bot protection");
+    expect(info.textContent).toContain("Not used for this organisation.");
+    expect(info.querySelector(".sr-only")?.textContent).toBe("Not used: ");
+    expect(info.querySelector(".overview-check__icon--neutral")).not.toBeNull();
+    expect(info.querySelector(".ti-minus")).not.toBeNull();
+    // Nine tasks, one of them not done, and the information row is not one of them.
+    expect(within(card("Setup checklist")).getByText("8 of 9 done")).toBeTruthy();
+    expect(rows[0]?.textContent).toContain("Email sending");
+    expect(within(info).queryByRole("link")).toBeNull();
   });
 
   it("sends a missing check to the tab that puts it right, and a superadmin's to the superadmin", async () => {
