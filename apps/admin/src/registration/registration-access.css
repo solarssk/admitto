@@ -109,8 +109,6 @@
   flex-direction: column;
   gap: var(--space-4);
   min-width: 0;
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border);
 }
 
 .access-claim .settings-card-intro {
@@ -136,6 +134,8 @@
   gap: var(--space-3);
 }
 
+/* The setup for IT: a heading that opens and closes it, set like a field label, and under it numbered steps. The steps and the record wrap
+ * instead of widening the card. */
 .access-address__it {
   display: flex;
   flex-direction: column;
@@ -143,17 +143,68 @@
   min-width: 0;
   padding-top: var(--space-4);
   border-top: 1px solid var(--border);
+}
+
+.access-address__it-toggle {
+  align-self: flex-start;
+  padding-left: 0;
   font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
   color: var(--text-secondary);
 }
 
-.access-address__it ol {
+.access-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: access-step;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.access-steps > li {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin: 0;
-  padding-left: var(--space-5);
-  overflow-wrap: anywhere;
+  min-width: 0;
+  padding-left: calc(1.25rem + var(--space-2));
+  counter-increment: access-step;
+}
+
+.access-steps > li::before {
+  content: counter(access-step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--surface-page);
+  border: 1px solid var(--border-strong);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+/* The record: its three fields side by side, and one under the other on a narrow screen. */
+.access-dns {
+  display: grid;
+  grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .access-dns {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .access-address__status .overview-check__body,

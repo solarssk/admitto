@@ -7,8 +7,7 @@ import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
-import type { AccessDraft, AccessMethod, ClaimErrors } from "./accessSettings.js";
-import { AccessSsoClaim } from "./AccessSsoClaim.js";
+import type { AccessMethod } from "./accessSettings.js";
 import { EventPasswordDialog } from "./EventPasswordDialog.js";
 import "./registration-access.css";
 
@@ -83,15 +82,12 @@ export function AccessWayInCard({
   event,
   method,
   savedMethod,
-  claim,
-  claimErrors,
   passwordSet,
   enabledMethods,
   botCheck,
   isSuperadmin,
   disabled,
   onMethodChange,
-  onClaimChange,
   onPasswordChanged,
   onArchived,
 }: Readonly<{
@@ -100,19 +96,15 @@ export function AccessWayInCard({
   /** The way in the form holds now, and the one that is saved. */
   method: AccessMethod | null;
   savedMethod: AccessMethod | null;
-  /** The restriction of the company SSO as typed, and what is wrong with it. */
-  claim: Pick<AccessDraft, "sso_claim_name" | "sso_claim_values">;
-  claimErrors: ClaimErrors;
   passwordSet: boolean;
   /** The ways in a superadmin has turned on for the organisation. The others cannot be chosen. */
   enabledMethods: readonly AccessMethod[];
   /** The organisation checks guests for bots on the link and password forms (a superadmin has not switched it off). */
   botCheck: boolean;
-  /** A superadmin is told where to turn a way in on, and is the only one who changes the restriction of the company SSO. */
+  /** A superadmin is told where to turn a way in on. */
   isSuperadmin: boolean;
   disabled: boolean;
   onMethodChange: (method: AccessMethod) => void;
-  onClaimChange: (change: Partial<Pick<AccessDraft, "sso_claim_name" | "sso_claim_values">>) => void;
   onPasswordChanged: (isSet: boolean) => void;
   /** A change of the password was refused because the event is archived: the page reads the event and the settings again. */
   onArchived: () => void;
@@ -184,16 +176,6 @@ export function AccessWayInCard({
         {method !== null && <Notice variant="info">{methodNotice(method, botCheck)}</Notice>}
         {method === "password" && (
           <EventPasswordRow event={event} passwordSet={passwordSet} disabled={disabled} onSet={() => setSetOpen(true)} onRemove={() => setRemoveOpen(true)} />
-        )}
-        {method === "sso" && (
-          <AccessSsoClaim
-            name={claim.sso_claim_name}
-            values={claim.sso_claim_values}
-            errors={claimErrors}
-            disabled={disabled}
-            canEdit={isSuperadmin}
-            onChange={onClaimChange}
-          />
         )}
       </div>
       <EventPasswordDialog

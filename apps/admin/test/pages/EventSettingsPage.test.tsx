@@ -16,6 +16,7 @@ import {
   renderWithToast,
 } from "../test-utils.js";
 import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
+import { settings as registrationSettingsFixture } from "../registration/accessData.js";
 
 const superadminAssignments: RoleAssignment[] = [
   makeSuperadminAssignment(),
@@ -78,6 +79,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchOpsConfig: vi.fn(),
     updateOpsConfig: vi.fn(),
     fetchEventItems: vi.fn(),
+    fetchRegistrationSettings: vi.fn(),
+    fetchRegistrationSsoProvider: vi.fn(),
   };
 });
 
@@ -128,6 +131,8 @@ import {
   saveEventBounceIngestSettings,
   fetchEventLocation,
   fetchEventSettings,
+  fetchRegistrationSettings,
+  fetchRegistrationSsoProvider,
   fetchTicketTypes,
   fetchMapTileConfig,
   fetchTimezoneForCoordinates,
@@ -3149,6 +3154,74 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     await screen.findByLabelText("Event title");
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByText("Event API connections are on the roadmap")).toBeNull();
+  });
+});
+
+describe("EventSettingsPage Registration tab (superadmin-only)", () => {
+  const registrationSettings = registrationSettingsFixture();
+
+  beforeEach(() => {
+    vi.mocked(fetchRegistrationSettings).mockResolvedValue(registrationSettings);
+    vi.mocked(fetchRegistrationSsoProvider).mockResolvedValue({
+      provider_id: "idp-1",
+      state: "ready",
+      providers: [{ id: "idp-1", display_name: "Acme Entra ID" }],
+      redirect_uri: null,
+      redirect_uris: [],
+    });
+  });
+
+  it("is in the row between Wallet and Integrations for a superadmin", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await screen.findByRole("tab", { name: "Registration" });
+
+    const names = screen.getAllByRole("tab").map((tab) => tab.textContent);
+    expect(names.slice(names.indexOf("Wallet"), names.indexOf("Danger zone"))).toEqual(["Wallet", "Registration", "Integrations"]);
+  });
+
+  it("opens with the Company SSO card and the address card, and reads nothing before it is opened", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await screen.findByRole("tab", { name: "Registration" });
+    expect(fetchRegistrationSettings).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Registration" }));
+
+    expect(await screen.findByLabelText("Own address")).toBeTruthy();
+    expect(screen.getByText("Company SSO", { selector: ".at-card__title" })).toBeTruthy();
+    expect(screen.getByText("Address for guests", { selector: ".at-card__title" })).toBeTruthy();
+    expect(fetchRegistrationSettings).toHaveBeenCalledWith("evt-1", expect.anything());
+  });
+
+  it("opens from a deep link ?tab=registration for a superadmin", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings("/admin/events/evt-1/settings?tab=registration");
+
+    expect(await screen.findByLabelText("Own address")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Registration" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("hides the tab for a non-superadmin org admin", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await screen.findByRole("tab", { name: "General" });
+    expect(screen.queryByRole("tab", { name: "Registration" })).toBeNull();
+  });
+
+  it("falls back to General when a non-superadmin deep-links ?tab=registration, and reads nothing", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings("/admin/events/evt-1/settings?tab=registration");
+    await screen.findByLabelText("Event title");
+
+    expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByLabelText("Own address")).toBeNull();
+    expect(fetchRegistrationSettings).not.toHaveBeenCalled();
   });
 });
 

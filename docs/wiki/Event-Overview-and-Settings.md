@@ -63,6 +63,7 @@ Each card that needs saving (Basic information, Location, Ticket types, Images, 
 | Check-in | Organisation Admin | Scan, manual lookup and item behaviour. See [Event Items and Check-in Behaviour](Event-Items-and-Check-in-Behaviour) |
 | Mailing | Superadmin | Event mail transport and bounce detection |
 | Wallet | Superadmin | Per-event PassCreator API key, template, and Apple and Google toggles |
+| Registration | Superadmin | Guest registration: the limit of the company SSO to one company, and the event's own address for guests |
 | Integrations | Superadmin | Not yet built. A placeholder for future inbound API connections |
 | Danger zone | Superadmin (an Organisation Admin can open the tab, but its actions are disabled) | Export personal data, bulk revoke, archive or restore, and delete |
 

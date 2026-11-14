@@ -1,4 +1,4 @@
-/** Event Settings tab ids — General/Location/Ticket types/Images/Check-in/Wallet/Integrations/
+/** Event Settings tab ids — General/Location/Ticket types/Images/Check-in/Wallet/Registration/Integrations/
  * Danger zone (single in-page tab row, no nested routes). */
 export type EventSettingsTab =
   | "general"
@@ -8,6 +8,7 @@ export type EventSettingsTab =
   | "checkin-behaviour"
   | "mail"
   | "wallet"
+  | "registration"
   | "integrations"
   | "danger-zone";
 
@@ -19,12 +20,13 @@ export const EVENT_SETTINGS_TABS = [
   { id: "checkin-behaviour", label: "Check-in" },
   { id: "mail", label: "Mailing" },
   { id: "wallet", label: "Wallet" },
+  { id: "registration", label: "Registration" },
   { id: "integrations", label: "Integrations" },
   { id: "danger-zone", label: "Danger zone" },
 ] as const;
 
 /** Tabs whose contents are superadmin-only (technical/API concerns kept out of non-technical org-admin view). */
-export const SUPERADMIN_ONLY_TABS: ReadonlySet<EventSettingsTab> = new Set(["mail", "wallet", "integrations"]);
+export const SUPERADMIN_ONLY_TABS: ReadonlySet<EventSettingsTab> = new Set(["mail", "wallet", "registration", "integrations"]);
 
 export function isEventSettingsTab(id: string): id is EventSettingsTab {
   return EVENT_SETTINGS_TABS.some((tab) => tab.id === id);

@@ -7,8 +7,7 @@ import type { EventDto, LegalDocumentDto, RegistrationSettingsDto } from "../api
 import { isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SettingsFooter } from "../settings/mailTransportFormParts.js";
-import { claimErrors, missingChecks } from "./accessSettings.js";
-import { AccessAddressCard } from "./AccessAddressCard.js";
+import { missingChecks } from "./accessSettings.js";
 import { AccessFormCard } from "./AccessFormCard.js";
 import { AccessModeCard } from "./AccessModeCard.js";
 import { AccessQuestionsCard } from "./AccessQuestionsCard.js";
@@ -70,11 +69,9 @@ export function RegistrationAccessForm({
   const form = useAccessForm({ eventId, settings, legalItems, refreshEvent });
   const { server, draft, base, dirty, saving, problem, confirmOffOpen } = form;
   const archived = isEventArchived(event);
-  const errors = claimErrors(draft);
   const missing = missingChecks(server.readiness);
   // A move between the two modes that are on is never refused, so only an event that has registration off needs to be ready.
   const canTurnOn = server.mode !== null || missing.length === 0;
-  // The address of the event, and the restriction of the company SSO, are a superadmin's to set; every administrator of the event is told when it stops working.
   const superadmin = isSuperadmin(useOptionalAuth()?.assignments ?? []);
 
   // A change of the path or of `?tab=` leaves the form: with changes in it, the person is asked first.
@@ -104,30 +101,17 @@ export function RegistrationAccessForm({
         event={event}
         method={draft.method}
         savedMethod={base.method}
-        claim={draft}
-        claimErrors={errors}
         passwordSet={server.password_set}
         enabledMethods={server.enabled_access_methods}
         botCheck={server.bot_protection !== "not_used"}
         isSuperadmin={superadmin}
         disabled={archived || saving}
         onMethodChange={(method) => form.edit({ method })}
-        onClaimChange={form.edit}
         onPasswordChanged={form.passwordChanged}
         onArchived={form.eventArchived}
       />
       <AccessFormCard draft={draft} legalItems={form.legalItems} disabled={archived || saving} onChange={form.edit} />
       <AccessQuestionsCard fields={server.public_fields} />
-      <AccessAddressCard
-        eventId={eventId}
-        event={event}
-        address={server.own_address}
-        instanceHost={server.instance_host}
-        canEdit={superadmin}
-        disabled={archived || saving}
-        onChanged={form.addressChanged}
-        onArchived={form.eventArchived}
-      />
       {problem && !confirmOffOpen && <ProblemMessage eventId={eventId} problem={problem} />}
       {!archived && <SettingsFooter hasUnsavedChanges={dirty} saving={saving} onReset={form.reset} onSave={form.save} />}
       <ConfirmDialog

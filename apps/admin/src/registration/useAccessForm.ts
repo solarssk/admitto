@@ -2,10 +2,9 @@ import { useRef, useState } from "react";
 import { useToast } from "@admitto/ui";
 import { ApiError, fetchLegalDocuments, fetchRegistrationSettings, saveRegistrationSettings } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { CustomDomainDto, LegalDocumentDto, RegistrationSettingsDto, SaveRegistrationSettingsBody } from "../api/types.js";
+import type { LegalDocumentDto, RegistrationSettingsDto, SaveRegistrationSettingsBody } from "../api/types.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
-import { claimErrors, draftFromSettings, settingsPatch, type AccessDraft } from "./accessSettings.js";
-import { ownAddressOf } from "./ownAddress.js";
+import { draftFromSettings, settingsPatch, type AccessDraft } from "./accessSettings.js";
 
 /** Why a save did not happen, shown at the form: the checks that are not met (from the keys of the server's answer), or a sentence. */
 export type AccessProblem = { kind: "not_ready"; blockers: readonly string[] } | { kind: "message"; text: string };
@@ -124,12 +123,6 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     // The Save button is off while nothing has changed and busy while a save runs, so a click never gets here then.
     /* v8 ignore if */
     if (saving || !dirty) return;
-    // The fields of the restriction say what is wrong with them; this says why nothing was saved. A save that turns registration off
-    // does not wait for it: that save leaves the restriction out (settingsPatch), and the form shows the saved one afterwards.
-    if (patch.mode !== null && Object.keys(claimErrors(draft)).length > 0) {
-      setProblem({ kind: "message", text: "Fix the restriction of the company SSO before you save." });
-      return;
-    }
     // Turning registration off closes the form for every guest at once: say what it does first.
     if (patch.mode === null) setConfirmOffOpen(true);
     else void submit();
@@ -146,11 +139,5 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     void refresh();
   }
 
-  /** The own address was set, removed or checked by its own request: the card says so now, and the settings are read again (the link for guests moves with it). */
-  function addressChanged(state: CustomDomainDto) {
-    setServer((current) => ({ ...current, own_address: ownAddressOf(state) }));
-    void refresh();
-  }
-
-  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, submit: () => void submit(), cancelTurnOff, passwordChanged, addressChanged, eventArchived };
+  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, submit: () => void submit(), cancelTurnOff, passwordChanged, eventArchived };
 }

@@ -47,6 +47,7 @@ import { CheckInBehaviourPanel } from "../settings/CheckInBehaviourPanel.js";
 import { EventDangerZonePanel } from "../settings/EventDangerZonePanel.js";
 import { EventGeneralInfoPanel } from "../settings/EventGeneralInfoPanel.js";
 import { EventImagesPanel } from "../settings/EventImagesPanel.js";
+import { EventRegistrationPanel } from "../registration/EventRegistrationPanel.js";
 import { EventWalletPanel } from "../settings/EventWalletPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
 import { EventSettingsHeader } from "../settings/EventSettingsHeader.js";
@@ -1681,6 +1682,12 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
             walletCustomFields={walletCustomFields}
             walletPushHistory={walletPushHistory}
           />
+        </EventSettingsTabPanel>
+      )}
+
+      {isSa && (
+        <EventSettingsTabPanel tab="registration" activeTab={tab} visited={visitedTabs} label="Registration">
+          <EventRegistrationPanel eventId={eventId} archived={isArchived} refreshEvent={refreshLayoutEvent} />
         </EventSettingsTabPanel>
       )}
 
