@@ -227,14 +227,14 @@ export async function handlePostRegistrationTurnstileTest(c: Context, db: Prisma
   const parsed = await parseBody(c, turnstileTestSchema);
   if (parsed.response) return parsed.response;
 
-  let secret = parsed.data.secret_key;
-  if (secret === undefined) {
+  let candidate = parsed.data.secret_key;
+  if (candidate === undefined) {
     const keys = await resolveTurnstileKeys(db);
     if (keys.state === "unreadable") return c.json({ ok: false, error: TURNSTILE_TEST_UNREADABLE });
     if (keys.state === "incomplete") return c.json({ ok: false, error: TURNSTILE_TEST_NO_SECRET });
-    secret = keys.secret;
+    candidate = keys.secret;
   }
-  const result = await checkTurnstileSecret(secret);
+  const result = await checkTurnstileSecret(candidate);
   if (result === "accepted") return c.json({ ok: true, message: TURNSTILE_TEST_OK });
   return c.json({ ok: false, error: result === "rejected" ? TURNSTILE_TEST_REJECTED : TURNSTILE_TEST_UNAVAILABLE });
 }
