@@ -127,7 +127,7 @@ describe("the address card", () => {
     await renderPanel(settings({ own_address: own() }));
 
     expect(["Type", "Name", "Target"].map((label) => cellOf(label).textContent)).toEqual(["CNAME", DOMAIN, "admitto.example.com"]);
-    expect(within(addressCard()).getAllByRole("columnheader").map((head) => head.textContent)).toEqual(["Type", "Name", "Target"]);
+    expect([...addressCard().querySelectorAll(".access-dns__row--head span")].map((head) => head.textContent)).toEqual(["Type", "Name", "Target"]);
     expect(addressCard().querySelectorAll(".access-dns__row:not(.access-dns__row--head)")).toHaveLength(1);
     expect(within(addressCard()).getByText("Create a CNAME record that points the address to admitto.example.com.")).toBeTruthy();
   });

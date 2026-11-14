@@ -51,7 +51,7 @@ function RecordCell({ label, value, placeholder, copyLabel, arrow }: Readonly<{ 
     }
   }
   return (
-    <div className="access-dns__cell" role="cell" data-label={label}>
+    <div className="access-dns__cell" data-label={label}>
       {arrow === true && (
         <span className="access-dns__arrow" aria-hidden="true">
           <i className="ti ti-arrow-right" />
@@ -88,7 +88,7 @@ function instructionsText(name: string, target: string): string {
 function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; address: RegistrationOwnAddressDto | null; instanceHost: string | null }>) {
   const bodyId = useId();
   const { addToast } = useToast();
-  const [open, setOpen] = useState(address === null || address.status !== "ok");
+  const [open, setOpen] = useState(address?.status !== "ok");
   const target = instanceHost ?? "the address of this instance";
   const name = recordName(own, address, instanceHost);
 
@@ -123,13 +123,13 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
         <ol className="access-steps">
           <li>
             <span>Create a CNAME record that points the address to {target}.</span>
-            <div className="access-dns" role="table" aria-label="DNS record">
-              <div className="access-dns__row access-dns__row--head" role="row">
-                <span role="columnheader">Type</span>
-                <span role="columnheader">Name</span>
-                <span role="columnheader">Target</span>
+            <div className="access-dns">
+              <div className="access-dns__row access-dns__row--head">
+                <span>Type</span>
+                <span>Name</span>
+                <span>Target</span>
               </div>
-              <div className="access-dns__row" role="row">
+              <div className="access-dns__row">
                 <RecordCell label="Type" value="CNAME" placeholder="" />
                 <RecordCell label="Name" value={name} placeholder={NAME_PLACEHOLDER} copyLabel="Copy the name" />
                 <RecordCell label="Target" value={instanceHost ?? ""} placeholder="the address of this instance" copyLabel="Copy the target" arrow />
