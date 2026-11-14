@@ -971,6 +971,17 @@ describe("ExternalServicesPanel, bot protection card", () => {
     fireEvent.change(el<HTMLInputElement>("external-turnstile-secret-key"), { target: { value } });
   }
 
+  it("drops a secret key that was being typed when Cancel is chosen", async () => {
+    await renderLoaded();
+    typeSecret("half-typed");
+
+    fireEvent.click(within(card()).getByRole("button", { name: "Cancel" }));
+
+    expect(document.getElementById("external-turnstile-secret-key")).toBeNull();
+    expect(within(card()).getByText("Not set")).toBeTruthy();
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
+  });
+
   it("shows the card with its two keys, closed until both are saved", async () => {
     await renderLoaded();
     expect(el<HTMLInputElement>("external-turnstile-site-key").value).toBe("");

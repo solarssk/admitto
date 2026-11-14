@@ -102,7 +102,7 @@ export function RegistrationTurnstileCard({
                   value="turnstile"
                   options={PROVIDERS}
                   disabled
-                  onChange={() => undefined}
+                  onChange={() => {}}
                 />
                 <Button
                   type="button"
