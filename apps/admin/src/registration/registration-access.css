@@ -141,7 +141,7 @@
   min-width: 0;
 }
 
-/* The setup for IT: a panel in the card's own background colour, as the other sub-panels, with a heading that opens and closes it and a
+/* The setup for IT: a white panel with a fine frame, as the other sub-panels, so that the grey values in it stand out as values, with a heading that opens and closes it and a
  * button that copies all of it as text. The steps and the record wrap instead of widening the card. */
 .access-it {
   display: flex;
@@ -152,7 +152,7 @@
   font-size: var(--fs-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-page);
+  background: var(--surface-card, #fff);
 }
 
 .access-it__body {

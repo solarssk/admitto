@@ -9,7 +9,7 @@ import { ApiError } from "../../src/api/client.js";
 import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
 import { useOwnAddress } from "../../src/registration/useOwnAddress.js";
 import type { CustomDomainDto, RegistrationOwnAddressDto, RegistrationSettingsDto } from "../../src/api/types.js";
-import { getTooltipText, isOff } from "../test-utils.js";
+import { getTooltipText, isOff, plain } from "../test-utils.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import { settings } from "./accessData.js";
 import { card, resetApi } from "./accessFixtures.js";
@@ -265,7 +265,7 @@ describe("the address card", () => {
 
     const steps = Array.from(stepsBody().querySelectorAll("ol.access-steps > li"));
     expect(steps.map((step) => step.querySelector(".access-dns") !== null)).toEqual([true, false, false, false]);
-    expect(steps.slice(1).map((step) => step.textContent)).toEqual([
+    expect(steps.slice(1).map((step) => plain(step.textContent))).toEqual([
       "Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.",
       "Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.",
       "Select Check now. Guests get links on the address once the check passes. Until then they keep the main address.",
@@ -283,8 +283,8 @@ describe("the address card", () => {
     expect(sizes[1]).toEqual(sizes[0]);
   });
 
-  it("sets the setup for IT apart as a help: as wide as the card, grey, in the small type, with one padding all round", () => {
-    expect(css()).toMatch(/\.access-it \{[^}]*padding: var\(--space-3\) var\(--space-4\);[^}]*font-size: var\(--fs-sm\);[^}]*background: var\(--surface-page\);/);
+  it("sets the setup for IT apart as a help: as wide as the card, white with a fine frame, in the small type, with one padding all round", () => {
+    expect(css()).toMatch(/\.access-it \{[^}]*padding: var\(--space-3\) var\(--space-4\);[^}]*font-size: var\(--fs-sm\);[^}]*background: var\(--surface-card, #fff\);/);
     expect(css().match(/\.access-it \{[^}]*\}/)?.[0]).not.toMatch(/max-width/);
   });
 
@@ -297,6 +297,14 @@ describe("the address card", () => {
     expect(css()).toMatch(/\.access-dns \.at-inputgroup:has\(\.at-inputgroup__icon--action\) \{\s*box-sizing: border-box;\s*height: var\(--control-h\);/);
     expect(css().match(/\.at-input\.access-readonly \{[^}]*\}/)?.[0]).not.toMatch(/height/);
     expect(css()).toMatch(/\.at-inputgroup:has\(\.at-input\.access-readonly\) \{\s*background: var\(--at-gray-100\);/);
+  });
+
+  it("keeps the end of the texts of the steps together, so that none wraps to a lone word", async () => {
+    await renderPanel(settings({ own_address: own() }));
+
+    const host = [...addressCard().querySelectorAll("ol.access-steps > li")].find((step) => step.textContent?.startsWith("Pass the Host header")) as HTMLElement;
+    expect(host.textContent?.endsWith("sign-in\u00A0gateway.")).toBe(true);
+    expect(addressCard().querySelector(".at-hint")?.textContent).toBe("The host name only, such as events.example.com.".replace("such as events.example.com.", "such as\u00A0events.example.com."));
   });
 
   it("puts the field and Save address in the row Provider and Test connection use on the other cards, and Check now and Remove under it once an address is saved", async () => {

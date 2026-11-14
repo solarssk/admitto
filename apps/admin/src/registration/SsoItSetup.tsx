@@ -1,5 +1,6 @@
 import type { RegistrationRedirectUriDto } from "../api/types.js";
 import { EVENT_ADDRESS_HINT, GATEWAY_NOTE, REDIRECT_HINT, UNVERIFIED_NOTE } from "../settings/registrationSsoTexts.js";
+import { keepLastWords } from "../utils/keep-last-words.js";
 import { ItPanel, RecordField } from "./ItSetup.js";
 
 const NO_INSTANCE_ADDRESS = "There is no return address for this instance yet, because its address is not set.";
@@ -65,22 +66,22 @@ export function SsoItSetup({
     <ItPanel text={ssoInstructionsText(addresses, claim)}>
       <li>
         {instanceUri === null ? (
-          <span>{NO_INSTANCE_ADDRESS}</span>
+          <span>{keepLastWords(NO_INSTANCE_ADDRESS)}</span>
         ) : (
           <>
-            <span>{REDIRECT_HINT}</span>
+            <span>{keepLastWords(REDIRECT_HINT)}</span>
             <ReturnAddress label="Return address" uri={instanceUri} />
           </>
         )}
       </li>
       {eventUri !== null && (
         <li>
-          <span>{eventUri.verified ? EVENT_ADDRESS_HINT : `${EVENT_ADDRESS_HINT}${UNVERIFIED_NOTE}`}</span>
+          <span>{keepLastWords(eventUri.verified ? EVENT_ADDRESS_HINT : `${EVENT_ADDRESS_HINT}${UNVERIFIED_NOTE}`)}</span>
           <ReturnAddress label={`Return address for ${hostOf(eventUri.uri)}`} uri={eventUri.uri} />
         </li>
       )}
-      <li>{GATEWAY_NOTE}</li>
-      {claim.name !== null && <li>{claimSentence({ ...claim, name: claim.name })}</li>}
+      <li>{keepLastWords(GATEWAY_NOTE)}</li>
+      {claim.name !== null && <li>{keepLastWords(claimSentence({ ...claim, name: claim.name }))}</li>}
     </ItPanel>
   );
 }

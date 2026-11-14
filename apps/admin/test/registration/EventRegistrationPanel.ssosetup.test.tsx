@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RegistrationRedirectUriDto, RegistrationSettingsDto } from "../../src/api/types.js";
 import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
+import { plain } from "../test-utils.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import { settings, ssoChecks } from "./accessData.js";
 import { card, resetApi } from "./accessFixtures.js";
@@ -87,7 +88,7 @@ describe("the setup for IT in the Company SSO card", () => {
   it("says, in the sentences of the card of the ways in, to enter the return address of the instance and that a gateway must let the callback through", async () => {
     await renderPanel(ssoSettings());
 
-    expect(steps().map((step) => step.querySelector("span")?.textContent ?? step.textContent)).toEqual([REDIRECT_HINT, GATEWAY_NOTE]);
+    expect(steps().map((step) => plain(step.querySelector("span")?.textContent ?? step.textContent))).toEqual([REDIRECT_HINT, GATEWAY_NOTE]);
     expect(field("Return address").value).toBe(INSTANCE.uri);
     expect(field("Return address").readOnly).toBe(true);
     expect(field("Return address").classList.contains("access-readonly")).toBe(true);
@@ -96,7 +97,7 @@ describe("the setup for IT in the Company SSO card", () => {
   it("adds the return address of the event's own address, and no other event's", async () => {
     await renderPanel(ssoSettings({ own_address: OWN }), [INSTANCE, OTHER_EVENT, EVENT]);
 
-    expect(steps().map((step) => step.querySelector("span")?.textContent ?? step.textContent)).toEqual([REDIRECT_HINT, EVENT_ADDRESS_HINT, GATEWAY_NOTE]);
+    expect(steps().map((step) => plain(step.querySelector("span")?.textContent ?? step.textContent))).toEqual([REDIRECT_HINT, EVENT_ADDRESS_HINT, GATEWAY_NOTE]);
     expect(field("Return address for summit.acme.example").value).toBe(EVENT.uri);
     expect(panel().textContent).not.toContain("other.acme.example");
   });
@@ -104,7 +105,7 @@ describe("the setup for IT in the Company SSO card", () => {
   it("tells the unverified own address to be entered now", async () => {
     await renderPanel(ssoSettings({ own_address: { ...OWN, status: "unchecked", verified: false } }), [INSTANCE, { ...EVENT, verified: false }]);
 
-    expect(steps()[1]?.querySelector("span")?.textContent).toContain("This address has not passed its check yet. Enter it now so that the sign-in works as soon as it does.");
+    expect(plain(steps()[1]?.querySelector("span")?.textContent)).toContain("This address has not passed its check yet. Enter it now so that the sign-in works as soon as it does.");
   });
 
   it("has no return address of the event while the event has no own address, even when the instance lists others", async () => {
@@ -116,17 +117,17 @@ describe("the setup for IT in the Company SSO card", () => {
   it("says that the instance has no return address when its address is not set, and leaves the box out", async () => {
     await renderPanel(ssoSettings(), []);
 
-    expect(steps()[0]?.textContent).toBe("There is no return address for this instance yet, because its address is not set.");
+    expect(plain(steps()[0]?.textContent)).toBe("There is no return address for this instance yet, because its address is not set.");
     expect(fields()).toHaveLength(0);
   });
 
   it("adds the claim and its values as saved, and nothing while there is no restriction", async () => {
     await renderPanel(ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111", "bbb-222"] }));
-    expect(steps().at(-1)?.textContent).toBe("The sign-in must carry the claim tid. Guests may register with one of 2 values: aaa-111, bbb-222.");
+    expect(plain(steps().at(-1)?.textContent)).toBe("The sign-in must carry the claim tid. Guests may register with one of 2 values: aaa-111, bbb-222.");
     cleanup();
 
     await renderPanel(ssoSettings({ sso_claim_name: "groups", sso_claim_values: ["staff"] }));
-    expect(steps().at(-1)?.textContent).toBe("The sign-in must carry the claim groups. Guests may register with one of 1 value: staff.");
+    expect(plain(steps().at(-1)?.textContent)).toBe("The sign-in must carry the claim groups. Guests may register with one of 1 value: staff.");
     cleanup();
 
     await renderPanel(ssoSettings());

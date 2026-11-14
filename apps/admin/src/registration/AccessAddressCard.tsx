@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { keepLastWords } from "../utils/keep-last-words.js";
 import { ItPanel, RecordField } from "./ItSetup.js";
 import { Button, Card, Notice } from "@admitto/ui";
 import type { CustomDomainDto, RegistrationOwnAddressDto } from "../api/types.js";
@@ -38,6 +39,9 @@ function recordName(own: OwnAddress, address: RegistrationOwnAddressDto | null, 
   return judged.ok ? judged.domain : (address?.domain ?? "");
 }
 
+const INTRO =
+  "Guests are sent links on the address of this instance. An event can have an address of its own instead, such as events.example.com. Guests get links on it only after a check finds it working.";
+
 const NAME_PLACEHOLDER = "events.example.com";
 
 /** The instructions for IT as plain text, whole in itself: a person can read them and so can an agent that has access to the DNS. */
@@ -65,16 +69,16 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
   return (
     <ItPanel text={instructionsText(name, target)}>
       <li>
-        <span>Create a CNAME record that points the address to {target}.</span>
+        <span>{keepLastWords(`Create a CNAME record that points the address to ${target}.`)}</span>
         <div className="access-dns">
           <RecordField label="Type" value="CNAME" placeholder="" copyLabel="Copy the type" />
           <RecordField label="Name" value={name} placeholder={NAME_PLACEHOLDER} copyLabel="Copy the name" />
           <RecordField label="Target" value={instanceHost ?? ""} placeholder="the address of this instance" copyLabel="Copy the target" />
         </div>
       </li>
-      <li>Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.</li>
-      <li>Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.</li>
-      <li>Select Check now. Guests get links on the address once the check passes. Until then they keep the main address.</li>
+      <li>{keepLastWords("Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.")}</li>
+      <li>{keepLastWords("Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.")}</li>
+      <li>{keepLastWords("Select Check now. Guests get links on the address once the check passes. Until then they keep the main address.")}</li>
     </ItPanel>
   );
 }
@@ -133,7 +137,7 @@ function AddressControls({
               </span>
             ) : (
               <span id={hintId} className="at-hint">
-                The host name only, such as events.example.com.
+                {keepLastWords("The host name only, such as events.example.com.")}
               </span>
             )}
           </div>
@@ -206,10 +210,7 @@ export function AccessAddressCard({
   return (
     <Card title="Address for guests">
       <div className="settings-card-stack">
-        <p className="settings-card-intro">
-          Guests are sent links on the address of this instance. An event can have an address of its own instead, such as events.example.com.
-          Guests get links on it only after a check finds it working.
-        </p>
+        <p className="settings-card-intro">{keepLastWords(INTRO)}</p>
         {address !== null && <AddressStatus address={address} instanceHost={instanceHost} />}
         <AddressControls event={event} own={own} address={address} disabled={disabled} />
         <ItSteps own={own} address={address} instanceHost={instanceHost} />

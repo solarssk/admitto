@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { SSO_CLAIM_NAME_MAX, SSO_CLAIM_VALUE_MAX, SSO_CLAIM_VALUES_MAX } from "@admitto/shared";
 import { Input, Notice } from "@admitto/ui";
+import { keepLastWords } from "../utils/keep-last-words.js";
 import { SSO_PROVIDER_PROTOCOL, ssoProviderIcon } from "./ssoProviderKind.js";
 import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
 import type { AccessDraft, ClaimErrors } from "./accessSettings.js";
@@ -47,8 +48,8 @@ export function AccessSsoClaim({
   const valuesId = `${id}-values`;
   return (
     <div className="access-claim">
-      <p className="settings-card-intro">{INTRO}</p>
-      {note !== undefined && <Notice variant="info">{note}</Notice>}
+      <p className="settings-card-intro">{keepLastWords(INTRO)}</p>
+      {note !== undefined && <Notice variant="info">{keepLastWords(note)}</Notice>}
       <div className="mail-transport-section">
         {provider !== null && (
           <Input
@@ -57,7 +58,7 @@ export function AccessSsoClaim({
             icon={<i className={`ti ti-${ssoProviderIcon(provider.kind)}`} />}
             readOnly
             disabled
-            hint={PROVIDER_HINT}
+            hint={keepLastWords(PROVIDER_HINT)}
           />
         )}
         <Input
@@ -89,7 +90,7 @@ export function AccessSsoClaim({
             onChange={(event) => onChange({ sso_claim_values: event.target.value })}
           />
           <span id={`${valuesId}-note`} className={`at-hint${errors.values ? " at-hint--error" : ""}`}>
-            {errors.values ?? `One value on each line, up to ${SSO_CLAIM_VALUES_MAX}, each up to ${SSO_CLAIM_VALUE_MAX} characters. ${MATCH_HINT}`}
+            {errors.values ?? keepLastWords(`One value on each line, up to ${SSO_CLAIM_VALUES_MAX}, each up to ${SSO_CLAIM_VALUE_MAX} characters. ${MATCH_HINT}`)}
           </span>
         </div>
       </div>

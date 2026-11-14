@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
 import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
-import { isOff } from "../test-utils.js";
+import { isOff, plain } from "../test-utils.js";
 import { reportApiError } from "../../src/connection/__mocks__/ConnectionStateProvider.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import { settings, ssoChecks } from "./accessData.js";
@@ -113,7 +113,7 @@ describe("the Company SSO card", () => {
 
   it("explains the restriction in two sentences: the claim and its values, OpenID Connect, tid, exact matching, never an address, and empty for none", async () => {
     await renderPanel(ssoSettings());
-    const text = ssoCard().textContent ?? "";
+    const text = plain(ssoCard().textContent);
 
     expect(text).toMatch(/OpenID Connect, such as Microsoft Entra ID/);
     expect(text).toMatch(/Name the claim and list the values that may register/);
@@ -130,7 +130,7 @@ describe("the Company SSO card", () => {
     expect(claimValues()?.disabled).toBe(true);
     expect(isOff(saveButton())).toBe(true);
     const notice = ssoCard().querySelector(".at-notice--info") as HTMLElement;
-    expect(notice.textContent).toBe("Company SSO is not chosen for this event. Choose it as the way guests open the form, on the Access tab of Registration.");
+    expect(plain(notice.textContent)).toBe("Company SSO is not chosen for this event. Choose it as the way guests open the form, on the Access tab of Registration.");
     // The explanation comes first, then the notice, then the fields.
     const parts = [...(ssoCard().querySelector(".access-claim") as HTMLElement).children];
     expect(parts.map((part) => part.className.split(" ")[0])).toEqual(["settings-card-intro", "at-notice", "mail-transport-section"]);
