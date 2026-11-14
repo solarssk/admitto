@@ -3215,6 +3215,26 @@ describe("EventSettingsPage Registration tab (superadmin-only)", () => {
     expect(screen.getByRole("tab", { name: "Registration" }).getAttribute("aria-selected")).toBe("true");
   });
 
+  it("counts an unsaved claim as an unsaved change of the page, and a saved one as none", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchRegistrationSettings).mockResolvedValue({ ...registrationSettings, access_methods: ["sso"] });
+    renderSettings("/admin/events/evt-1/settings?tab=registration");
+    const name = (await screen.findByLabelText("Claim name")) as HTMLInputElement;
+    const leave = () => {
+      const closing = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(closing);
+      return closing.defaultPrevented;
+    };
+    expect(leave()).toBe(false);
+
+    fireEvent.change(name, { target: { value: "tid" } });
+    await waitFor(() => expect(leave()).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    await waitFor(() => expect(leave()).toBe(false));
+  });
+
   it("hides the tab for a non-superadmin org admin", async () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);

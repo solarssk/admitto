@@ -6,6 +6,7 @@ import { ApiError } from "../../src/api/client.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
 import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
 import { isOff } from "../test-utils.js";
+import { reportApiError } from "../../src/connection/__mocks__/ConnectionStateProvider.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import { settings, ssoChecks } from "./accessData.js";
 import { card, resetApi } from "./accessFixtures.js";
@@ -34,11 +35,22 @@ const claimName = () => screen.queryByLabelText("Claim name") as HTMLInputElemen
 const claimValues = () => screen.queryByLabelText("Allowed values") as HTMLTextAreaElement | null;
 const type = (control: HTMLElement | null, value: string) => fireEvent.change(control as HTMLElement, { target: { value } });
 const ssoCard = () => card("Company SSO");
-const saveButton = () => within(ssoCard()).getByRole("button", { name: "Save" });
+const saveButton = () => screen.getByRole("button", { name: "Save" });
 
-async function renderPanel(saved: RegistrationSettingsDto, { archived = false } = {}) {
+const onDirtyChange = vi.fn();
+const onSavingChange = vi.fn();
+
+async function renderPanel(saved: RegistrationSettingsDto, { archived = false, withRefresh = true } = {}) {
   api.fetchRegistrationSettings.mockResolvedValue(saved);
-  render(<EventRegistrationPanel eventId="evt-1" archived={archived} refreshEvent={refreshEvent} />);
+  render(
+    <EventRegistrationPanel
+      eventId="evt-1"
+      archived={archived}
+      refreshEvent={withRefresh ? refreshEvent : undefined}
+      onDirtyChange={onDirtyChange}
+      onSavingChange={onSavingChange}
+    />,
+  );
   await screen.findByText("Company SSO", { selector: ".at-card__title" });
   await waitFor(() => expect(screen.queryByLabelText("Own address")).toBeTruthy());
 }
@@ -50,6 +62,8 @@ async function save() {
 
 beforeEach(() => {
   resetApi();
+  onDirtyChange.mockReset();
+  onSavingChange.mockReset();
   goToLogin.mockReset();
   api.fetchRegistrationSsoProvider.mockResolvedValue({
     provider_id: "idp-1",
@@ -111,7 +125,9 @@ describe("the Company SSO card", () => {
     expect(claimValues()?.disabled).toBe(true);
     expect((within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement).disabled).toBe(true);
     expect(isOff(saveButton())).toBe(true);
-    expect(within(ssoCard()).getByText("Choose Company SSO as the way guests open the form, on the Access tab of Registration.")).toBeTruthy();
+    const notice = ssoCard().querySelector(".at-notice--info");
+    expect(notice?.textContent).toBe("Choose Company SSO as the way guests open the form, on the Access tab of Registration.");
+    expect(notice?.nextElementSibling?.classList.contains("access-claim")).toBe(true);
   });
 
   it("does not react to typing in the grey fields, and says nothing of the way for an event that uses the company SSO", async () => {
@@ -122,7 +138,7 @@ describe("the Company SSO card", () => {
     cleanup();
 
     await renderPanel(ssoSettings());
-    expect(within(ssoCard()).queryByText(/Choose Company SSO as the way/)).toBeNull();
+    expect(ssoCard().querySelector(".at-notice")).toBeNull();
     expect(claimName()?.disabled).toBe(false);
   });
 
@@ -184,7 +200,8 @@ describe("the Company SSO card", () => {
 
     expect(claimName()?.disabled).toBe(true);
     expect(claimValues()?.disabled).toBe(true);
-    expect(isOff(saveButton())).toBe(true);
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
   });
 
   it("hands a lost session to the sign-in", async () => {
@@ -225,15 +242,111 @@ describe("the Company SSO card", () => {
   });
 });
 
+describe("reading the tab", () => {
+  it("is an error with a Retry when the settings cannot be read, tells the connection state, and loads when the Retry works", async () => {
+    api.fetchRegistrationSettings.mockRejectedValueOnce(new ApiError(500, "internal_error", "internal_error"));
+    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings());
+    render(<EventRegistrationPanel eventId="evt-1" archived={false} refreshEvent={refreshEvent} />);
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Could not load the registration settings|Something went wrong/);
+    expect(reportApiError).toHaveBeenCalledWith(500);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByLabelText("Own address")).toBeTruthy();
+    expect(claimName()).toBeTruthy();
+  });
+
+  it("hands a lost session to the sign-in when the name of the provider cannot be read for want of one", async () => {
+    api.fetchRegistrationSsoProvider.mockRejectedValue(new ApiError(401, "unauthorized"));
+    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings());
+    render(<EventRegistrationPanel eventId="evt-1" archived={false} refreshEvent={refreshEvent} />);
+
+    await waitFor(() => expect(goToLogin).toHaveBeenCalled());
+  });
+
+  it("keeps what the cards show when the settings cannot be read again after the event turned out to be archived", async () => {
+    await renderPanel(ssoSettings());
+    api.saveRegistrationSettings.mockRejectedValue(new ApiError(403, "event_archived", "event_archived"));
+    api.fetchRegistrationSettings.mockRejectedValue(new ApiError(500, "internal_error"));
+
+    type(claimName(), "tid");
+    type(claimValues(), "aaa-111");
+    await save();
+
+    await screen.findByRole("alert");
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    expect(claimName()?.value).toBe("tid");
+  });
+});
+
+describe("the Save and Reset of the tab", () => {
+  it("shows Unsaved changes with the first edit, tells the page, and takes the edit back with Reset", async () => {
+    await renderPanel(restricted());
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+
+    type(claimValues(), "aaa-111\nbbb-222");
+
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(claimValues()?.value).toBe("aaa-111");
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
+  });
+
+  it("tells the page that a save is running, and that it is over", async () => {
+    await renderPanel(restricted());
+    let finish: (answer: RegistrationSettingsDto) => void = () => undefined;
+    api.saveRegistrationSettings.mockReturnValue(new Promise<RegistrationSettingsDto>((resolve) => (finish = resolve)));
+
+    type(claimValues(), "aaa-111\nbbb-222");
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(true));
+    finish(restricted({ sso_claim_values: ["aaa-111", "bbb-222"] }));
+
+    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(false));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("keeps the text of an edit and says why when the save fails", async () => {
+    await renderPanel(restricted());
+    api.saveRegistrationSettings.mockRejectedValue(new ApiError(500, "internal_error", "internal_error"));
+
+    type(claimValues(), "aaa-111\nbbb-222");
+    await save();
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Something went wrong/);
+    expect(claimValues()?.value).toBe("aaa-111\nbbb-222");
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+  });
+
+  it("works without a way to read the event again when the save is refused because the event is archived", async () => {
+    await renderPanel(ssoSettings(), { withRefresh: false });
+    api.saveRegistrationSettings.mockRejectedValue(new ApiError(403, "event_archived", "event_archived"));
+
+    type(claimName(), "tid");
+    type(claimValues(), "aaa-111");
+    await save();
+
+    await screen.findByRole("alert");
+    expect(refreshEvent).not.toHaveBeenCalled();
+  });
+});
+
 describe("what is wrong with the restriction", () => {
-  it("names the missing value when only the name is typed, in the field, and keeps Save off", async () => {
+  it("names the missing value when only the name is typed, in the field, and says why nothing was saved when Save is pressed", async () => {
     await renderPanel(ssoSettings());
 
     type(claimName(), "tid");
-
     expect(screen.getByText("Enter at least one value, or clear the name.")).toBeTruthy();
     expect(claimValues()?.getAttribute("aria-invalid")).toBe("true");
-    expect(isOff(saveButton())).toBe(true);
+    fireEvent.click(saveButton());
+
+    expect((await screen.findByRole("alert")).textContent).toBe("Fix the restriction of the company SSO before you save.");
+    expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
+    type(claimValues(), "aaa-111");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("names the missing claim when only values are typed", async () => {
@@ -243,7 +356,6 @@ describe("what is wrong with the restriction", () => {
 
     expect(screen.getByText("Enter the name of the claim these values belong to.")).toBeTruthy();
     expect(claimName()?.getAttribute("aria-invalid")).toBe("true");
-    expect(isOff(saveButton())).toBe(true);
   });
 
   it("refuses a name with a space and says what a name may hold", async () => {
@@ -253,7 +365,6 @@ describe("what is wrong with the restriction", () => {
     type(claimValues(), "aaa-111");
 
     expect(screen.getByText("The name has letters, digits and signs only, with no spaces.")).toBeTruthy();
-    expect(isOff(saveButton())).toBe(true);
   });
 
   it("refuses more values than the server takes, and values that are too long", async () => {
@@ -275,7 +386,6 @@ describe("what is wrong with the restriction", () => {
 
     expect(screen.queryByText("Enter at least one value, or clear the name.")).toBeNull();
     expect(claimValues()?.getAttribute("aria-invalid")).toBeNull();
-    expect(isOff(saveButton())).toBe(false);
   });
 });
 

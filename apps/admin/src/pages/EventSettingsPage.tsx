@@ -1139,6 +1139,8 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const [locationCardResetKey, setLocationCardResetKey] = useState(0);
   const [checkinBehaviourDirty, setCheckinBehaviourDirty] = useState(false);
   const [checkinBehaviourSaving, setCheckinBehaviourSaving] = useState(false);
+  const [registrationDirty, setRegistrationDirty] = useState(false);
+  const [registrationSaving, setRegistrationSaving] = useState(false);
   // Same reasoning as mailCardResetKey above, applied to CheckInBehaviourPanel's own draft state.
   const [checkinBehaviourCardResetKey, setCheckinBehaviourCardResetKey] = useState(0);
   const basicValidationErrorsRef = useRef<HTMLUListElement>(null);
@@ -1190,10 +1192,10 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   // (CodeRabbit review).
   const mailTabDirty = mailDirty || bounceDirty;
   const mailTabSaving = mailSaving || bounceSaving;
-  const pageDirty = dirty || mailTabDirty || locationDirty || ticketTypesDirty || checkinBehaviourDirty;
+  const pageDirty = dirty || mailTabDirty || locationDirty || ticketTypesDirty || checkinBehaviourDirty || registrationDirty;
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
   // Mail or Location tab's own save is still in flight would race against it on the same event record.
-  const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving || checkinBehaviourSaving;
+  const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving || checkinBehaviourSaving || registrationSaving;
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       (pageDirty || pageBusy) && currentLocation.pathname !== nextLocation.pathname,
@@ -1687,7 +1689,13 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
 
       {isSa && (
         <EventSettingsTabPanel tab="registration" activeTab={tab} visited={visitedTabs} label="Registration">
-          <EventRegistrationPanel eventId={eventId} archived={isArchived} refreshEvent={refreshLayoutEvent} />
+          <EventRegistrationPanel
+            eventId={eventId}
+            archived={isArchived}
+            refreshEvent={refreshLayoutEvent}
+            onDirtyChange={setRegistrationDirty}
+            onSavingChange={setRegistrationSaving}
+          />
         </EventSettingsTabPanel>
       )}
 

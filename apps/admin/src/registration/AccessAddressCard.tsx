@@ -67,16 +67,17 @@ function RecordCell({ label, value, placeholder, copyLabel, arrow }: Readonly<{ 
   );
 }
 
-/** The instructions for IT as plain text, ready to paste into a mail: the record and the two things IT does besides. */
+/** The instructions for IT as plain text, whole in itself: a person can read them and so can an agent that has access to the DNS. */
 function instructionsText(name: string, target: string): string {
+  const address = name === "" ? NAME_PLACEHOLDER : name;
   return [
-    "Please set up an address for guest registration:",
+    "Set up an own address for the guest registration of an event in Admitto.",
     "",
-    `1. Create a CNAME record: ${name === "" ? NAME_PLACEHOLDER : name} -> ${target}`,
-    "2. Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.",
-    "3. Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.",
+    `1. DNS: create a CNAME record from ${address} to ${target}.`,
+    `2. Serve HTTPS on ${address} with a valid certificate. Admitto does not issue certificates.`,
+    `3. Pass the Host header on to Admitto, and keep ${address} open to guests, outside any sign-in gateway.`,
     "",
-    "Tell us when it is ready.",
+    "Report back when the address is ready.",
   ].join("\n");
 }
 
@@ -87,14 +88,16 @@ function instructionsText(name: string, target: string): string {
  */
 function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; address: RegistrationOwnAddressDto | null; instanceHost: string | null }>) {
   const bodyId = useId();
+  const textId = useId();
   const { addToast } = useToast();
   const [open, setOpen] = useState(address?.status !== "ok");
   const target = instanceHost ?? "the address of this instance";
   const name = recordName(own, address, instanceHost);
+  const text = instructionsText(name, target);
 
   async function copyAll() {
     try {
-      await navigator.clipboard.writeText(instructionsText(name, target));
+      await navigator.clipboard.writeText(text);
       addToast("Instructions copied.", "success");
     } catch {
       addToast("Could not copy.", "error");
@@ -115,11 +118,8 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
         >
           Setup for your IT team
         </Button>
-        <Button type="button" variant="secondary" size="sm" icon={<i className="ti ti-copy" aria-hidden="true" />} onClick={() => void copyAll()}>
-          Copy instructions
-        </Button>
       </div>
-      <div id={bodyId} hidden={!open}>
+      <div id={bodyId} className="access-it__body" hidden={!open}>
         <ol className="access-steps">
           <li>
             <span>Create a CNAME record that points the address to {target}.</span>
@@ -140,12 +140,23 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
           <li>Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.</li>
           <li>Select Check now. Guests get links on the address once the check passes. Until then they keep the main address.</li>
         </ol>
+        <div className="at-field">
+          <label className="at-label" htmlFor={textId}>
+            Instructions as text
+          </label>
+          <div className="access-it__text">
+            <textarea id={textId} className="at-textarea" rows={9} readOnly value={text} spellCheck={false} />
+            <Button type="button" variant="secondary" icon={<i className="ti ti-copy" aria-hidden="true" />} aria-label="Copy the instructions" onClick={() => void copyAll()}>
+              Copy
+            </Button>
+          </div>
+        </div>
       </div>
     </section>
   );
 }
 
-/** The field with Save address beside it, and Check now and Remove once an address is saved, in one row, with the question before the address is removed. */
+/** The field with Save address beside it (as Provider and Test connection on the other cards), Check now and Remove under it once an address is saved, and the question before the address is removed. */
 function AddressControls({
   event,
   own,
@@ -163,67 +174,71 @@ function AddressControls({
   const busy = disabled || own.saving || own.removing || own.checking;
   return (
     <div className="access-address__controls">
-      <div className="at-field">
-        <label className="at-label" htmlFor={`${id}-field`}>
-          Own address
-        </label>
-        <div className="access-address__row">
-          <div className="at-control access-address__input">
-            <input
-              id={`${id}-field`}
-              className={`at-input${own.fieldError ? " at-input--invalid" : ""}`}
-              value={own.typed}
-              placeholder={NAME_PLACEHOLDER}
-              autoComplete="off"
-              spellCheck={false}
-              disabled={disabled}
-              aria-invalid={own.fieldError ? true : undefined}
-              aria-describedby={hintId}
-              onChange={(changeEvent) => own.edit(changeEvent.target.value)}
-              onBlur={own.leave}
-            />
+      <div className="mail-transport-section">
+        <div className="mail-field-row">
+          <div className="at-field">
+            <label className="at-label" htmlFor={`${id}-field`}>
+              Own address
+            </label>
+            <div className="external-provider-and-test">
+              <div className="at-control">
+                <input
+                  id={`${id}-field`}
+                  className={`at-input${own.fieldError ? " at-input--invalid" : ""}`}
+                  value={own.typed}
+                  placeholder={NAME_PLACEHOLDER}
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={disabled}
+                  aria-invalid={own.fieldError ? true : undefined}
+                  aria-describedby={hintId}
+                  onChange={(changeEvent) => own.edit(changeEvent.target.value)}
+                  onBlur={own.leave}
+                />
+              </div>
+              <ArchivedGuard event={event} reasonId={`${id}-save`} disabled={(busy && !own.saving) || own.unchanged || own.typed.trim() === ""}>
+                {(guard) => (
+                  <Button type="button" variant="primary" {...guard} loading={own.saving} onClick={own.save}>
+                    Save address
+                  </Button>
+                )}
+              </ArchivedGuard>
+            </div>
+            {own.fieldError ? (
+              <span id={hintId} className="at-hint at-hint--error" role="alert">
+                {own.fieldError}
+              </span>
+            ) : (
+              <span id={hintId} className="at-hint">
+                The host name only, such as events.example.com.
+              </span>
+            )}
           </div>
-          <ArchivedGuard event={event} reasonId={`${id}-save`} disabled={(busy && !own.saving) || own.unchanged || own.typed.trim() === ""}>
+        </div>
+      </div>
+      {address !== null && (
+        <div className="access-address__buttons">
+          <ArchivedGuard
+            event={event}
+            reasonId={`${id}-check`}
+            disabled={(busy && !own.checking) || !own.unchanged}
+            tooltip={own.unchanged ? undefined : "Save the address first. The check asks the address that is saved."}
+          >
             {(guard) => (
-              <Button type="button" variant="primary" {...guard} loading={own.saving} onClick={own.save}>
-                Save address
+              <Button type="button" variant="secondary" {...guard} loading={own.checking} onClick={own.check}>
+                Check now
               </Button>
             )}
           </ArchivedGuard>
-          {address !== null && (
-            <>
-              <ArchivedGuard
-                event={event}
-                reasonId={`${id}-check`}
-                disabled={(busy && !own.checking) || !own.unchanged}
-                tooltip={own.unchanged ? undefined : "Save the address first. The check asks the address that is saved."}
-              >
-                {(guard) => (
-                  <Button type="button" variant="secondary" {...guard} loading={own.checking} onClick={own.check}>
-                    Check now
-                  </Button>
-                )}
-              </ArchivedGuard>
-              <ArchivedGuard event={event} reasonId={`${id}-remove`} disabled={busy}>
-                {(guard) => (
-                  <Button type="button" variant="ghost" {...guard} onClick={() => setConfirmOpen(true)}>
-                    Remove
-                  </Button>
-                )}
-              </ArchivedGuard>
-            </>
-          )}
+          <ArchivedGuard event={event} reasonId={`${id}-remove`} disabled={busy}>
+            {(guard) => (
+              <Button type="button" variant="ghost" {...guard} onClick={() => setConfirmOpen(true)}>
+                Remove
+              </Button>
+            )}
+          </ArchivedGuard>
         </div>
-        {own.fieldError ? (
-          <span id={hintId} className="at-hint at-hint--error" role="alert">
-            {own.fieldError}
-          </span>
-        ) : (
-          <span id={hintId} className="at-hint">
-            The host name only, such as events.example.com.
-          </span>
-        )}
-      </div>
+      )}
       {own.error !== null && (
         <Notice variant="error" role="alert">
           {own.error}

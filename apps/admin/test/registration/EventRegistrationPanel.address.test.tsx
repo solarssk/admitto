@@ -163,38 +163,44 @@ describe("the address card", () => {
     expect(cellOf("Name").textContent).toBe(DOMAIN);
   });
 
-  it("copies all the instructions as plain text for a mail, with the typed address and the host of the instance", async () => {
+  const instructions = () => within(addressCard()).getByLabelText("Instructions as text") as HTMLTextAreaElement;
+  const text = (name: string, target: string) =>
+    [
+      "Set up an own address for the guest registration of an event in Admitto.",
+      "",
+      `1. DNS: create a CNAME record from ${name} to ${target}.`,
+      `2. Serve HTTPS on ${name} with a valid certificate. Admitto does not issue certificates.`,
+      `3. Pass the Host header on to Admitto, and keep ${name} open to guests, outside any sign-in gateway.`,
+      "",
+      "Report back when the address is ready.",
+    ].join("\n");
+
+  it("gives the instructions as a read only text box that follows the typed address, and copies them with the button beside it", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     await renderPanel(settings());
+    expect(instructions().readOnly).toBe(true);
+    expect(instructions().value).toBe(text("events.example.com", "admitto.example.com"));
     type(DOMAIN);
+    expect(instructions().value).toBe(text(DOMAIN, "admitto.example.com"));
 
-    fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy instructions" }));
+    fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy the instructions" }));
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    expect(writeText).toHaveBeenCalledWith(
-      [
-        "Please set up an address for guest registration:",
-        "",
-        `1. Create a CNAME record: ${DOMAIN} -> admitto.example.com`,
-        "2. Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.",
-        "3. Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.",
-        "",
-        "Tell us when it is ready.",
-      ].join("\n"),
-    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(text(DOMAIN, "admitto.example.com")));
     expect(addToast).toHaveBeenCalledWith("Instructions copied.", "success");
+    expect(instructions().closest(".access-it__text")?.querySelector("button")?.textContent).toBe("Copy");
+    expect(instructions().value).not.toMatch(/\bus\b/);
   });
 
-  it("uses the example and the instance in general in the copied text when there is no address and no host, and says when it cannot copy", async () => {
+  it("uses the instance in general in the text when there is no host, and says when it cannot copy", async () => {
     const writeText = vi.fn().mockRejectedValue(new Error("no"));
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     await renderPanel(settings({ instance_host: null }));
 
-    fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy instructions" }));
+    fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy the instructions" }));
 
     await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not copy.", "error"));
-    expect(writeText.mock.calls[0]?.[0]).toContain("1. Create a CNAME record: events.example.com -> the address of this instance");
+    expect(writeText.mock.calls[0]?.[0]).toContain("from events.example.com to the address of this instance.");
   });
 
   it("copies the name and the target, and not the type, and says so", async () => {
@@ -242,30 +248,32 @@ describe("the address card", () => {
     expect(css()).toMatch(/\.access-dns__copy \{[^}]*width: 1\.5rem;[^}]*height: 1\.5rem;/);
   });
 
-  it("puts Save address, Check now and Remove in one row with the field, which takes half of the card", async () => {
+  it("puts the field and Save address in the row Provider and Test connection use on the other cards, and Check now and Remove under it once an address is saved", async () => {
     await renderPanel(settings({ own_address: own() }));
 
-    const row = field().closest(".access-address__row") as HTMLElement;
-    expect(within(row).getAllByRole("button").map((control) => control.textContent)).toEqual(["Save address", "Check now", "Remove"]);
-    expect(field().closest(".access-address__input")?.parentElement).toBe(row);
-    expect(css()).toMatch(/\.access-address__input \{[^}]*flex: 0 1 calc\(\(100% - var\(--space-4\)\) \/ 2\);/);
-    expect(css()).toMatch(/@media \(max-width: 640px\) \{\s*\.access-address__input \{\s*flex-basis: 100%;/);
+    const row = field().closest(".external-provider-and-test") as HTMLElement;
+    expect(row.closest(".mail-transport-section > .mail-field-row")).not.toBeNull();
+    expect(within(row).getAllByRole("button").map((control) => control.textContent)).toEqual(["Save address"]);
+    const below = within(addressCard()).getByRole("button", { name: "Check now" }).closest(".access-address__buttons") as HTMLElement;
+    expect(within(below).getAllByRole("button").map((control) => control.textContent)).toEqual(["Check now", "Remove"]);
+    expect(css()).toMatch(/\.external-provider-and-test > \.at-control \{[^}]*flex: 1 1 auto;[^}]*min-width: 0;/);
   });
 
-  it("has only Save address beside the field until an address is saved", async () => {
+  it("has no second row of buttons until an address is saved", async () => {
     await renderPanel(settings());
 
-    const row = field().closest(".access-address__row") as HTMLElement;
-    expect(within(row).getAllByRole("button").map((control) => control.textContent)).toEqual(["Save address"]);
+    expect(addressCard().querySelector(".access-address__buttons")).toBeNull();
+    expect(within(addressCard()).getAllByRole("button", { name: /Save address/ })).toHaveLength(1);
   });
 
-  it("puts the setup for IT in a panel of its own with Copy instructions at the right of its heading", async () => {
+  it("puts the setup for IT in a panel of its own with the toggle in its heading and the instructions as text under the steps", async () => {
     await renderPanel(settings());
 
     const panel = addressCard().querySelector("section.access-it") as HTMLElement;
     const head = panel.querySelector(".access-it__head") as HTMLElement;
-    expect(within(head).getAllByRole("button").map((control) => control.textContent)).toEqual(["Setup for your IT team", "Copy instructions"]);
+    expect(within(head).getAllByRole("button").map((control) => control.textContent)).toEqual(["Setup for your IT team"]);
     expect(panel.querySelector("ul")).toBeNull();
+    expect(panel.querySelector("ol.access-steps + .at-field textarea")).not.toBeNull();
   });
 
   it.each([

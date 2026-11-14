@@ -37,7 +37,7 @@ const TAB_SKELETONS: Readonly<Record<EventSettingsTab, TabSkeleton>> = {
       { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
       { id: "address", title: "Address for guests", intro: 2, fields: 1 },
     ],
-    footer: false,
+    footer: true,
   },
   integrations: { cards: rowsCard("integrations", "Integrations", 3, 76), footer: false },
   "danger-zone": { cards: rowsCard("danger-zone", "Danger zone", 5, 72, false), footer: false },

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, HintLabel, Notice, useToast } from "@admitto/ui";
+import { Card, HintLabel, Notice, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchRegistrationSettings,
@@ -8,10 +8,11 @@ import {
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CustomDomainDto, RegistrationSettingsDto } from "../api/types.js";
-import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
+import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { orLoginRedirect, redirectToLogin } from "../identity/loginRedirect.js";
+import { SettingsFooter } from "../settings/mailTransportFormParts.js";
 import { PanelLoadError } from "../settings/PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "../settings/SettingsPanelSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
@@ -49,19 +50,20 @@ async function readBoth(eventId: string, signal: AbortSignal): Promise<{ setting
  * restriction of the company SSO to the people of one company, and the event's own address for guests. A different event is a fresh
  * panel. The cards save themselves, as they did on the Access tab of the Registration page.
  */
-export function EventRegistrationPanel({
-  eventId,
-  archived,
-  refreshEvent,
-}: Readonly<{ eventId: string; archived: boolean; refreshEvent?: () => Promise<unknown> }>) {
-  return <EventRegistrationBody key={eventId} eventId={eventId} archived={archived} refreshEvent={refreshEvent} />;
+export function EventRegistrationPanel(props: Readonly<PanelProps>) {
+  return <EventRegistrationBody key={props.eventId} {...props} />;
 }
 
-function EventRegistrationBody({
-  eventId,
-  archived,
-  refreshEvent,
-}: Readonly<{ eventId: string; archived: boolean; refreshEvent?: () => Promise<unknown> }>) {
+interface PanelProps {
+  eventId: string;
+  archived: boolean;
+  refreshEvent?: () => Promise<unknown>;
+  /** The page asks first before it is left while the restriction has changes, as for its other tabs. */
+  onDirtyChange?: (dirty: boolean) => void;
+  onSavingChange?: (saving: boolean) => void;
+}
+
+function EventRegistrationBody({ eventId, archived, refreshEvent, onDirtyChange, onSavingChange }: Readonly<PanelProps>) {
   const { reportApiError } = useConnectionState();
   const [loaded, setLoaded] = useState<{ settings: RegistrationSettingsDto; providerName: string | null } | null>(null);
   const fetchAll = useMemo(
@@ -79,7 +81,7 @@ function EventRegistrationBody({
   const panel = usePanelLoad({ fetch: fetchAll, apply: setLoaded, fallback: "Could not load the registration settings." });
 
   if (!panel.gate.showContent) {
-    return <SettingsPanelSkeleton label="Loading registration settings" held={!panel.gate.showIndicator} slow={panel.slow} cards={SKELETON_CARDS} footer={false} />;
+    return <SettingsPanelSkeleton label="Loading registration settings" held={!panel.gate.showIndicator} slow={panel.slow} cards={SKELETON_CARDS} />;
   }
   if (panel.error !== null) {
     return (
@@ -93,90 +95,48 @@ function EventRegistrationBody({
     );
   }
   assertPresent(loaded);
-  return <EventRegistrationCards eventId={eventId} archived={archived} initial={loaded.settings} providerName={loaded.providerName} refreshEvent={refreshEvent} />;
+  return (
+    <EventRegistrationCards
+      eventId={eventId}
+      archived={archived}
+      initial={loaded.settings}
+      providerName={loaded.providerName}
+      refreshEvent={refreshEvent}
+      onDirtyChange={onDirtyChange}
+      onSavingChange={onSavingChange}
+    />
+  );
 }
 
-/** The card of the restriction: the provider (read only), the claim and its values, and the Save of the card. */
+/** The card of the restriction: the provider (read only), the claim and its values. The Save of the tab saves it. */
 function SsoClaimCard({
-  eventId,
   usesSso,
   archived,
+  saving,
   providerName,
-  base,
-  onSaved,
-  onArchived,
+  draft,
+  onChange,
 }: Readonly<{
-  eventId: string;
   /** The event's way in is the company SSO: the restriction belongs to that way alone, and the server refuses it for another. */
   usesSso: boolean;
   archived: boolean;
+  saving: boolean;
   providerName: string | null;
-  base: AccessDraft;
-  onSaved: (answer: RegistrationSettingsDto) => void;
-  onArchived: () => void;
+  draft: AccessDraft;
+  onChange: (change: Partial<Pick<AccessDraft, "sso_claim_name" | "sso_claim_values">>) => void;
 }>) {
-  const { addToast } = useToast();
-  const [draft, setDraft] = useState(base);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const errors = claimErrors(draft);
-  const patch = settingsPatch(draft, base);
-  const dirty = Object.keys(patch).length > 0;
-
-  // What the server holds after a save is the new starting point.
-  useEffect(() => setDraft(base), [base]);
-
-  async function save() {
-    // The button is busy while a save runs, and off while nothing changed or something is wrong.
-    /* v8 ignore if */
-    if (saving || !dirty) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const answer = await saveRegistrationSettings(eventId, patch);
-      addToast("Registration settings saved.", "success");
-      onSaved(answer);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        redirectToLogin();
-        return;
-      }
-      if (hasApiErrorCode(err, "event_archived")) onArchived();
-      setError(operatorApiErrorMessage(err, "Could not save the registration settings."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <Card title="Company SSO">
       <div className="settings-card-stack">
+        {!usesSso && <Notice variant="info">{NOT_USED_NOTE}</Notice>}
         <AccessSsoClaim
           name={draft.sso_claim_name}
           values={draft.sso_claim_values}
-          errors={errors}
+          errors={claimErrors(draft)}
           disabled={!usesSso || archived || saving}
           providerName={providerName}
-          note={usesSso ? undefined : NOT_USED_NOTE}
-          onChange={(change) => {
-            setDraft((current) => ({ ...current, ...change }));
-            setError(null);
-          }}
+          onChange={onChange}
         />
-        {error !== null && (
-          <Notice variant="error" role="alert">
-            {error}
-          </Notice>
-        )}
-        <div className="access-address__buttons">
-          <ArchivedGuard event={{ archived_at: archived ? "archived" : null }} reasonId={`sso-claim-${eventId}`} disabled={!dirty || Object.keys(errors).length > 0}>
-            {(guard) => (
-              <Button type="button" variant="primary" {...guard} loading={saving} onClick={() => void save()}>
-                Save
-              </Button>
-            )}
-          </ArchivedGuard>
-        </div>
       </div>
     </Card>
   );
@@ -188,16 +148,31 @@ function EventRegistrationCards({
   initial,
   providerName,
   refreshEvent,
+  onDirtyChange,
+  onSavingChange,
 }: Readonly<{
   eventId: string;
   archived: boolean;
   initial: RegistrationSettingsDto;
   providerName: string | null;
   refreshEvent?: () => Promise<unknown>;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSavingChange?: (saving: boolean) => void;
 }>) {
+  const { addToast } = useToast();
   const [settings, setSettings] = useState(initial);
   const base = useMemo(() => draftFromSettings(settings), [settings]);
+  const [draft, setDraft] = useState(base);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const patch = settingsPatch(draft, base);
+  const dirty = Object.keys(patch).length > 0;
   const guardEvent: ArchivedGuardEvent = { archived_at: archived ? "archived" : null };
+
+  // What the server holds after a save is the new starting point.
+  useEffect(() => setDraft(base), [base]);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  useEffect(() => onSavingChange?.(saving), [saving, onSavingChange]);
 
   /** Reads the settings again, quietly: the link for guests and the state of the address move with a change. */
   async function refresh() {
@@ -218,16 +193,43 @@ function EventRegistrationCards({
     void refresh();
   }
 
+  async function save() {
+    // The Save button is off while nothing changed and busy while a save runs.
+    /* v8 ignore if */
+    if (saving || !dirty) return;
+    if (Object.keys(claimErrors(draft)).length > 0) {
+      setError("Fix the restriction of the company SSO before you save.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      setSettings(await saveRegistrationSettings(eventId, patch));
+      addToast("Registration settings saved.", "success");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (hasApiErrorCode(err, "event_archived")) archivedMeanwhile();
+      setError(operatorApiErrorMessage(err, "Could not save the registration settings."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="settings-sections at-fade-in">
       <SsoClaimCard
-        eventId={eventId}
         usesSso={base.method === "sso"}
         archived={archived}
+        saving={saving}
         providerName={providerName}
-        base={base}
-        onSaved={setSettings}
-        onArchived={archivedMeanwhile}
+        draft={draft}
+        onChange={(change) => {
+          setDraft((current) => ({ ...current, ...change }));
+          setError(null);
+        }}
       />
       <AccessAddressCard
         eventId={eventId}
@@ -238,6 +240,22 @@ function EventRegistrationCards({
         onChanged={addressChanged}
         onArchived={archivedMeanwhile}
       />
+      {error !== null && (
+        <Notice variant="error" role="alert">
+          {error}
+        </Notice>
+      )}
+      {!archived && (
+        <SettingsFooter
+          hasUnsavedChanges={dirty}
+          saving={saving}
+          onReset={() => {
+            setDraft(base);
+            setError(null);
+          }}
+          onSave={() => void save()}
+        />
+      )}
     </div>
   );
 }
