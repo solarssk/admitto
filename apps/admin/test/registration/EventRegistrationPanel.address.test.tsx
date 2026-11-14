@@ -137,16 +137,16 @@ describe("the address card", () => {
     expect(within(addressCard()).getByText("Create a CNAME record that points the address to admitto.example.com.")).toBeTruthy();
   });
 
-  it("puts the copy button on the left of the field, in its frame, for the name and the target and not the type", async () => {
+  it("gives all three fields of the record the same frame, each with its copy button on the left", async () => {
     await renderPanel(settings({ own_address: own() }));
     fireEvent.click(stepsToggle());
 
-    for (const [label, copyName] of [["Name", "Copy the name"], ["Target", "Copy the target"]]) {
+    for (const [label, copyName] of [["Type", "Copy the type"], ["Name", "Copy the name"], ["Target", "Copy the target"]]) {
       const group = recordField(label).closest(".at-inputgroup") as HTMLElement;
       expect(group.firstElementChild).toBe(within(group).getByRole("button", { name: copyName }));
       expect(group.firstElementChild?.classList.contains("at-inputgroup__icon--action")).toBe(true);
+      expect(recordField(label).classList.contains("access-readonly")).toBe(true);
     }
-    expect(recordField("Type").closest(".at-inputgroup")).toBeNull();
   });
 
   it("never shows an empty box: a grey example for the name until there is an address, and for the target when the instance has no host", async () => {
@@ -156,7 +156,10 @@ describe("the address card", () => {
     expect(nameBox().value).toBe("");
     expect(nameBox().placeholder).toBe("events.example.com");
     expect(recordField("Target").placeholder).toBe("the address of this instance");
-    expect(within(addressCard()).queryByRole("button", { name: /^Copy the (name|target)$/ })).toBeNull();
+    // The frame is the same, and the button is off until there is a value to copy.
+    expect((within(addressCard()).getByRole("button", { name: "Copy the name" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(addressCard()).getByRole("button", { name: "Copy the target" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(addressCard()).getByRole("button", { name: "Copy the type" }) as HTMLButtonElement).disabled).toBe(false);
     expect(within(addressCard()).getByText("Create a CNAME record that points the address to the address of this instance.")).toBeTruthy();
   });
 
@@ -230,7 +233,7 @@ describe("the address card", () => {
     expect(writeText.mock.calls[0]?.[0]).toContain("from events.example.com to the address of this instance.");
   });
 
-  it("copies the name and the target, and not the type, and says so", async () => {
+  it("copies the name, the target and the type, one value each, and says so", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     await renderPanel(settings({ own_address: own() }));
@@ -241,7 +244,9 @@ describe("the address card", () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
     expect(writeText.mock.calls.map((call) => call[0])).toEqual([DOMAIN, "admitto.example.com"]);
-    expect(within(addressCard()).queryByRole("button", { name: "Copy the type" })).toBeNull();
+    fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy the type" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(3));
+    expect(writeText).toHaveBeenLastCalledWith("CNAME");
     expect(addToast).toHaveBeenCalledWith("Copied.", "success");
   });
 
@@ -269,8 +274,18 @@ describe("the address card", () => {
 
   const css = () => readFileSync(join(__dirname, "../../src/registration/registration-access.css"), "utf8");
 
-  it("sets the setup for IT apart as a help: narrower than the card, grey, in the small type", () => {
-    expect(css()).toMatch(/\.access-it \{[^}]*max-width: 44rem;[^}]*font-size: var\(--fs-sm\);[^}]*background: var\(--surface-page\);/);
+  it("sets the toggle and the copy button of the heading to one size, so that they sit on one line", async () => {
+    await renderPanel(settings());
+
+    const head = addressCard().querySelector(".access-it__head") as HTMLElement;
+    const sizes = within(head).getAllByRole("button").map((control) => control.className.split(" ").filter((name) => /sm$/.test(name)));
+    expect(sizes[0]).toHaveLength(1);
+    expect(sizes[1]).toEqual(sizes[0]);
+  });
+
+  it("sets the setup for IT apart as a help: as wide as the card, grey, in the small type, with one padding all round", () => {
+    expect(css()).toMatch(/\.access-it \{[^}]*padding: var\(--space-3\) var\(--space-4\);[^}]*font-size: var\(--fs-sm\);[^}]*background: var\(--surface-page\);/);
+    expect(css().match(/\.access-it \{[^}]*\}/)?.[0]).not.toMatch(/max-width/);
   });
 
   it("makes the record fields the height of every other field, grey and fixed width, in a grid that falls to one column on a narrow screen", () => {

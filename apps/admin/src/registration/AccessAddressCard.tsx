@@ -67,7 +67,7 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
       <li>
         <span>Create a CNAME record that points the address to {target}.</span>
         <div className="access-dns">
-          <RecordField label="Type" value="CNAME" placeholder="" />
+          <RecordField label="Type" value="CNAME" placeholder="" copyLabel="Copy the type" />
           <RecordField label="Name" value={name} placeholder={NAME_PLACEHOLDER} copyLabel="Copy the name" />
           <RecordField label="Target" value={instanceHost ?? ""} placeholder="the address of this instance" copyLabel="Copy the target" />
         </div>

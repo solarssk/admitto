@@ -1,12 +1,14 @@
 import { useId, useState, type ReactNode } from "react";
-import { Button, Input, useToast } from "@admitto/ui";
+import { Button, useToast } from "@admitto/ui";
 import "./registration-access.css";
 
 /**
  * One value to hand to IT: a read only box in the style of the return address on the card of the ways in (the field of the link for guests),
- * grey and in a fixed-width font, with the button that copies it on its left. Without a value it shows a grey example and no button.
+ * grey and in a fixed-width font, with the button that copies it in a frame on its left. Every value has the frame and the button; the
+ * button is off while there is no value yet (a grey example shows instead), so that all the boxes of a record look alike.
  */
-export function RecordField({ label, value, placeholder, copyLabel }: Readonly<{ label: string; value: string; placeholder: string; copyLabel?: string }>) {
+export function RecordField({ label, value, placeholder, copyLabel }: Readonly<{ label: string; value: string; placeholder: string; copyLabel: string }>) {
+  const id = useId();
   const { addToast } = useToast();
   async function copy() {
     try {
@@ -16,16 +18,18 @@ export function RecordField({ label, value, placeholder, copyLabel }: Readonly<{
       addToast("Could not copy.", "error");
     }
   }
-  const copyable = copyLabel !== undefined && value !== "";
   return (
-    <Input
-      label={label}
-      value={value}
-      placeholder={placeholder}
-      readOnly
-      className="access-readonly"
-      {...(copyable ? { icon: <i className="ti ti-copy" />, iconLabel: copyLabel, onIconClick: () => void copy() } : {})}
-    />
+    <div className="at-field">
+      <label className="at-label" htmlFor={id}>
+        {label}
+      </label>
+      <div className="at-inputgroup">
+        <button type="button" className="at-inputgroup__icon at-inputgroup__icon--action" aria-label={copyLabel} disabled={value === ""} onClick={() => void copy()}>
+          <i className="ti ti-copy" aria-hidden="true" />
+        </button>
+        <input id={id} className="at-input access-readonly" value={value} placeholder={placeholder} readOnly />
+      </div>
+    </div>
   );
 }
 
@@ -53,6 +57,7 @@ export function ItPanel({ text, children }: Readonly<{ /** What the button copie
         <Button
           type="button"
           variant="ghost"
+          size="sm"
           className="access-it__toggle"
           icon={<i className={`ti ti-chevron-${open ? "down" : "right"}`} aria-hidden="true" />}
           aria-expanded={open}
