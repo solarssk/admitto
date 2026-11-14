@@ -61,7 +61,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Check an event's own guest address on demand and every day, warn when it stops working, and list its company sign-in return address ([#1872](https://github.com/solarssk/admitto/pull/1872))
 - Add an IT checklist for an event's own address: DNS, HTTPS, Cloudflare Access bypass paths, company sign-in redirects, Turnstile hostname and the HSTS gap ([#1873](https://github.com/solarssk/admitto/pull/1873))
 - Add the Legal tab to the Registration page, where an administrator writes, publishes and withdraws an event's privacy notice, event terms and extra consents with a visual editor ([#1779](https://github.com/solarssk/admitto/pull/1779))
-- Let a superadmin turn the guest form's bot check off ("Not used") with stricter limits instead, so the link and password need no Turnstile keys ([#PR](https://github.com/solarssk/admitto/pull/PR))
+- Let a superadmin turn the guest form's bot check off ("Not used") with stricter limits instead, so the link and password need no Turnstile keys ([#1926](https://github.com/solarssk/admitto/pull/1926))
 
 ### Changed
 
