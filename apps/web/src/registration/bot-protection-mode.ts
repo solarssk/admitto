@@ -5,8 +5,9 @@
  * - `required` (the default, and what every row that is missing or does not read back means): the link and the password
  *   need the Turnstile keys, and every submission carries a token that Cloudflare confirms (./bot-challenge.ts).
  * - `not_used`: for an organisation that runs the form inside its own network or does not use Cloudflare. The link and the
- *   password work without keys, the page has no widget, and the submission is guarded by the stricter limits of
- *   `apps/web/src/rate-limit/policies.ts` instead. The company sign-in is not affected: it never had a check.
+ *   password work without keys, the page has no widget, and nothing but the usual limits of
+ *   `apps/web/src/rate-limit/policies.ts` stands between a script and the form (they are not tightened: the guests of a company
+ *   share one address, and a form opens at a fixed hour). The company sign-in is not affected: it never had a check.
  *
  * Read at every request, never cached, like the keys: a change is in force at once on every replica.
  */

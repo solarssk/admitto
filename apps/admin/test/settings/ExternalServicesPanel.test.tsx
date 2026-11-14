@@ -1096,7 +1096,7 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
   const choice = (name: "Required" | "Not used") => within(card()).getByRole("radio", { name }) as HTMLButtonElement;
   const dialog = () => screen.queryByRole("dialog");
   const save = () => screen.getByRole("button", { name: "Save" });
-  const risk = () => within(card()).queryByText(/Without the check, anyone who can open the form can send it by script/);
+  const risk = () => within(card()).queryByText(/Without the check, a script can send the form and guess an event password as often as the usual limits allow/);
 
   it("is required by default: the keys are there, and so is the choice, with no risk sentence", async () => {
     await renderLoaded();
@@ -1114,9 +1114,10 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
 
     expect(dialog()).not.toBeNull();
     expect(within(dialog()!).getByText("Turn the bot check off?")).toBeTruthy();
-    expect(dialog()!.textContent).toMatch(/An event with a public link can then be filled in by a script/);
-    expect(dialog()!.textContent).toMatch(/the password of an event can be guessed, with only the stricter limits in the way/);
-    expect(dialog()!.textContent).toMatch(/use the company sign-in/);
+    expect(dialog()!.textContent).toMatch(/A script can then fill in the form of an event with a public link, and guess the password of an event, as often as the usual limits allow/);
+    expect(dialog()!.textContent).toMatch(/An event password is often weak/);
+    expect(dialog()!.textContent).toMatch(/use the company sign-in or a strong password/);
+    expect(dialog()!.textContent).not.toMatch(/stricter/);
     // Nothing changed yet: the choice, the keys and the Save button are as they were.
     expect(choice("Required").getAttribute("aria-checked")).toBe("true");
     expect(isOff(save())).toBe(true);
@@ -1204,7 +1205,7 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
 
     expect(within(ways).queryByText(/stay closed until the Turnstile keys above are ready/)).toBeNull();
     expect(ways.textContent).toMatch(/Anyone who has the link of an event can open its form\. There is no bot check\./);
-    expect(ways.textContent).toMatch(/There is no bot check, so the number of tries is limited more strictly\./);
+    expect(ways.textContent).toMatch(/There is no bot check, so use a strong password\./);
     expect(ways.textContent).not.toMatch(/after a bot check/);
   });
 });

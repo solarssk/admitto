@@ -23,7 +23,7 @@ const METHODS: Readonly<Record<SwitchedAccessMethod, { name: string; text: strin
   password: {
     name: "Password",
     text: "A guest needs the password of the event, as well as its link, to open the form, after a bot check.",
-    textWithoutCheck: "A guest needs the password of the event, as well as its link, to open the form. There is no bot check, so the number of tries is limited more strictly.",
+    textWithoutCheck: "A guest needs the password of the event, as well as its link, to open the form. There is no bot check, so use a strong password.",
   },
   sso: {
     name: "Company sign-in",

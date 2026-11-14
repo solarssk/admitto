@@ -1,7 +1,7 @@
 /**
  * Guest registration while the superadmin set bot protection to "not used" (A2), against a real database: the form opens
  * and takes a submission without the Turnstile keys and without a token, never calls Cloudflare, and is held back by the
- * stricter counts instead. The tests of the same routes with the check are in ./registration-submit-route.test.ts and
+ * same counts as with the check (they are not tightened: the people of a company share one address). The tests of the same routes with the check are in ./registration-submit-route.test.ts and
  * ./registration-submit-password.test.ts.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -150,33 +150,22 @@ describe("a submission without the check", () => {
     expect(await registrations(eventId)).toBe(0);
   });
 
-  it("is held to the stricter ceiling of the event, in a key of its own, and not to the usual one", async () => {
+  it("is held to the usual ceiling of the event, 600 a minute, and to no other", async () => {
     const slug = nextSlug("ceiling");
     const eventId = await addLinkEvent(slug);
     const store = new SelectiveStore();
     const h = harness({ prisma, store });
 
     expect((await h.post(slug, h.body(slug))).status).toBe(200);
-    expect(store.keys).toContain(`registration:event-unchecked:${eventId}`);
-    expect(store.keys).not.toContain(`registration:event:${eventId}`);
+    expect(store.keys.filter((key) => key.includes("event"))).toEqual([`registration:event:${eventId}`]);
 
-    for (let i = 0; i < 59; i += 1) await store.inner.hit(`registration:event-unchecked:${eventId}`, 60_000, 60); // NOSONAR - counts requests in order
+    for (let i = 0; i < 599; i += 1) await store.inner.hit(`registration:event:${eventId}`, 60_000, 600); // NOSONAR - counts requests in order
     const before = await registrations(eventId);
     const refused = await h.post(slug, h.body(slug));
 
     expect(refused.status).toBe(429);
     expect(await refused.json()).toEqual({ error: "too many requests" });
     expect(await registrations(eventId)).toBe(before);
-  });
-
-  it("is not held by the usual ceiling's count, which is the other mode's", async () => {
-    const slug = nextSlug("ceiling-other");
-    const eventId = await addLinkEvent(slug);
-    const store = new SelectiveStore();
-    const h = harness({ prisma, store });
-    for (let i = 0; i < 600; i += 1) await store.inner.hit(`registration:event:${eventId}`, 60_000, 600); // NOSONAR - counts requests in order
-
-    expect((await h.post(slug, h.body(slug))).status).toBe(200);
   });
 
   it("is the one 404 for an event that is not open, whatever the mode", async () => {
@@ -205,13 +194,13 @@ describe("the password without the check", () => {
     expect(h.cf.mock).not.toHaveBeenCalled();
   });
 
-  it("allows 10 tries in 15 minutes for a client, the right ones too, and the 11th is a 429 with one line for the operator", async () => {
+  it("allows 30 tries in 15 minutes for a client, as with the check, and the 31st is a 429 with one line for the operator", async () => {
     const slug = nextSlug("pw-client");
     const eventId = await addPasswordEvent(slug);
     const store = new SelectiveStore();
     const h = harness({ prisma, store });
 
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 30; i += 1) {
       expect((await h.post(slug, h.body(slug, { password: WRONG }))).status, `try ${i + 1}`).toBe(403);
     }
     const before = await registrations(eventId);
@@ -219,7 +208,6 @@ describe("the password without the check", () => {
 
     expect(refused.status).toBe(429);
     expect(await registrations(eventId)).toBe(before);
-    expect(store.keys.filter((key) => key.startsWith("registration:password:ip:"))).toEqual([]);
     const lines = querySystemLogs({ search: "registration_password_tries_refused" });
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({ level: "warn", source: "security", fields: { event_id: eventId, budget: "client" } });
@@ -228,35 +216,45 @@ describe("the password without the check", () => {
     expect((await h.post(slug, h.body(slug, { password: PASSWORD }))).status).toBe(200);
   });
 
-  it("allows 20 tries a minute for the event from everybody, and the 21st is a 429 in the budget of the event", async () => {
+  it("allows 120 tries a minute for the event from everybody, as with the check, and the next is a 429 in the budget of the event", async () => {
     const slug = nextSlug("pw-event");
-    const eventId = await addPasswordEvent(slug);
-    const store = new SelectiveStore();
-    const h = harness({ prisma, store });
-    for (let i = 0; i < 20; i += 1) await store.inner.hit(`registration:password-event-unchecked:${eventId}`, 60_000, 20); // NOSONAR - counts requests in order
-
-    const refused = await h.post(slug, h.body(slug, { password: PASSWORD }));
-
-    expect(refused.status).toBe(429);
-    expect(querySystemLogs({ search: "registration_password_tries_refused" })[0]).toMatchObject({ fields: { event_id: eventId, budget: "event" } });
-    expect(store.keys.some((key) => key === `registration:password-event:${eventId}`)).toBe(false);
-  });
-
-  it("does not let the usual budgets of the check stand in: they are other keys", async () => {
-    const slug = nextSlug("pw-keys");
     const eventId = await addPasswordEvent(slug);
     const store = new SelectiveStore();
     const h = harness({ prisma, store });
     for (let i = 0; i < 120; i += 1) await store.inner.hit(`registration:password-event:${eventId}`, 60_000, 120); // NOSONAR - counts requests in order
 
-    expect((await h.post(slug, h.body(slug, { password: PASSWORD }))).status).toBe(200);
-    expect(store.keys.filter((key) => key.startsWith("registration:password"))).toEqual([
-      "registration:password-unchecked:ip:203.0.113.10",
-      `registration:password-event-unchecked:${eventId}`,
-    ]);
+    const refused = await h.post(slug, h.body(slug, { password: PASSWORD }));
+
+    expect(refused.status).toBe(429);
+    expect(querySystemLogs({ search: "registration_password_tries_refused" })[0]).toMatchObject({ fields: { event_id: eventId, budget: "event" } });
   });
 
-  it("is spent by a stranger who has no token, which is what the stricter budgets are for: a wrong try costs a try", async () => {
+  it("uses the very keys it uses with the check, in the same order, and no key of its own", async () => {
+    const slug = nextSlug("pw-keys");
+    const eventId = await addPasswordEvent(slug);
+    const keysOf = async () => {
+      const store = new SelectiveStore();
+      const h = harness({ prisma, store });
+      await h.post(slug, h.body(slug, { password: PASSWORD }));
+      // The mail budget of the address is the same too, but it is not what is asked here.
+      return store.keys.filter((key) => !key.startsWith("registration:mail-")).map((key) => key.replace(eventId, "<event>"));
+    };
+
+    const withoutCheck = await keysOf();
+    await setBotProtectionMode(prisma, "required");
+    peer.address = "198.51.100.88";
+    const withCheck = await keysOf();
+
+    expect(withoutCheck).toEqual([
+      "registration:submit:ip:203.0.113.10",
+      "registration:event:<event>",
+      "registration:password:ip:203.0.113.10",
+      "registration:password-event:<event>",
+    ]);
+    expect(withCheck.map((key) => key.replace("198.51.100.88", "203.0.113.10"))).toEqual(withoutCheck);
+  });
+
+  it("is spent by a stranger who has no token: a wrong try costs a try, and there is nothing to hold it back", async () => {
     const slug = nextSlug("pw-stranger");
     await addPasswordEvent(slug);
     const store = new SelectiveStore();
@@ -264,6 +262,6 @@ describe("the password without the check", () => {
 
     await h.post(slug, h.body(slug, { challenge: undefined, password: WRONG, email: nextEmail("stranger") }));
 
-    expect(store.keys.filter((key) => key.startsWith("registration:password-unchecked:"))).toHaveLength(1);
+    expect(store.keys.filter((key) => key.startsWith("registration:password:"))).toHaveLength(1);
   });
 });

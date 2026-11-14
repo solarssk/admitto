@@ -95,7 +95,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 | **Password** | Anyone who has the link and types the event password |
 | **Company sign-in** | Anyone who has the link and signs in with the identity provider of your organisation |
 
-- The link and the password are protected by a bot check, unless a Superadmin set the bot check to **Not used** for your organisation. Then the checklist shows **Bot protection** in grey, as information, and Admitto limits the tries more strictly. The company sign-in needs no bot check, because the form opens only after the sign-in.
+- The link and the password are protected by a bot check, unless a Superadmin set the bot check to **Not used** for your organisation. Then the checklist shows **Bot protection** in grey, as information, and a script can send the form or guess an event password within the usual limits. Use the company sign-in or a strong password for an event that matters. The company sign-in needs no bot check, because the form opens only after the sign-in.
 - You cannot read the password again after you save it. Keep a copy where you share it with guests.
 - A new password does not change the requests that guests already sent.
 - Choosing another way in and saving removes the password.

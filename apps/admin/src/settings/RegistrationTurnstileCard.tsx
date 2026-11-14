@@ -17,13 +17,13 @@ const CARD_INTRO =
 const MODE_HINT =
   "Choose Not used for a form that runs inside your own network or for an organisation without Cloudflare. The company sign-in never has a bot check.";
 const MODE_RISK =
-  "Without the check, anyone who can open the form can send it by script and try an event password as fast as the stricter limits allow.";
+  "Without the check, a script can send the form and guess an event password as often as the usual limits allow, so use the company sign-in or a strong password for events that matter.";
 const MODE_OPTIONS: ReadonlyArray<SegmentedOption<RegistrationBotProtection>> = [
   { value: "required", label: "Required" },
   { value: "not_used", label: "Not used" },
 ];
 const CONFIRM_MESSAGE =
-  "After you save, guests are no longer checked by Cloudflare Turnstile. An event with a public link can then be filled in by a script, and the password of an event can be guessed, with only the stricter limits in the way. For a strong barrier, use the company sign-in.";
+  "After you save, guests are no longer checked by Cloudflare Turnstile. A script can then fill in the form of an event with a public link, and guess the password of an event, as often as the usual limits allow. An event password is often weak. For an event that needs a firm barrier, use the company sign-in or a strong password.";
 const SITE_KEY_HINT = "The public key of your Turnstile widget in the Cloudflare dashboard. Guests' browsers receive it.";
 const SECRET_KEY_HINT = "Stays on the server. It is stored encrypted and is never shown again.";
 const CLOUDFLARE_NOTE =

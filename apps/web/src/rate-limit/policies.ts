@@ -5,7 +5,6 @@ import { routePath } from "hono/route";
 import { logRateLimitExceeded, type RateLimitScope } from "@admitto/auth";
 import { getEncryptionKey } from "@admitto/crypto";
 import { CHECKIN_STREAM_LIMITS, type CheckinStreamLimits } from "../checkin-stream-config.js";
-import type { BotProtectionMode } from "../registration/bot-protection-mode.js";
 import { rateLimitIpKey, resolveClientIp } from "./client-ip.js";
 import { applyRateLimitOverrides } from "./overrides.js";
 import { MAX_REQUESTS, WINDOW_MS } from "./constants.js";
@@ -105,18 +104,11 @@ export const INLINE_RATE_LIMITS = {
    * found (so the key is a real event id, never a caller-chosen slug) and after the bot
    * challenge has passed, so a bot without a valid token cannot spend it. */
   "registration:event": { windowMs: 60_000, max: 600 },
-  /** `registration:event` for an event whose guests are not asked for a bot check (the superadmin set bot protection to "not
-   * used"): a tenth of the ceiling, because without the check nothing but the counts stands between a script and the list of
-   * requests. Its own key, so switching the setting does not carry the count of one mode into the other. */
-  "registration:event-unchecked": { windowMs: 60_000, max: 60 },
   /** Tries at the shared password of one event, from every address together. Each try is a hash (argon2id: memory and
    * CPU), so this is the brake on the work a stranger can make the server do for one event. Checked by the handler like
    * `registration:event`: after the bot challenge, with the id of the event, and for an event whose way in is the
    * password only. Silent here; the handler writes its own line (without any address). */
   "registration:password-event": { windowMs: 60_000, max: 120 },
-  /** `registration:password-event` while the bot check is not used: the password of an event is often a word and a year, so the
-   * count of tries is then the only barrier against guessing it. A sixth of the budget; same key shape, own prefix. */
-  "registration:password-event-unchecked": { windowMs: 60_000, max: 20 },
   /** Mails to one address (HMAC of the lowercased address), instance-wide, across all events.
    * Gates only the queueing of a registration mail; the response to the registrant is unchanged. */
   "registration:mail-recipient": { windowMs: 24 * 3_600_000, max: 3 },
@@ -931,10 +923,6 @@ export const RATE_POLICIES = {
    * bot that has no token spends nothing of the budget of somebody else's office. Silent here: the handler writes its
    * own line, because a line of the limiter would carry the address of the client. */
   "registration:password": ipScopedPolicy("registration:password", "registration", 30, 15 * 60_000, false),
-  /** `registration:password` while the bot check is not used: a third of the tries per client address, for the reason given at
-   * `registration:password-event-unchecked`. A department behind one address can still register (10 in 15 minutes is 40 an
-   * hour); `RATE_LIMIT_OVERRIDES` retunes it. */
-  "registration:password-unchecked": ipScopedPolicy("registration:password-unchecked", "registration", 10, 15 * 60_000, false),
   /** The company sign-in of a guest (D-C4): `GET /r/:slug/sso/start` and `GET /sso/callback`, one budget per client
    * address (IPv6 as its /64) for both. A start writes a row of state and a callback calls the provider, so this is what keeps
    * a stranger from filling the table or using the instance as a way to call the provider; the worker deletes the rows that
@@ -1155,11 +1143,9 @@ export async function checkMailTestRecipientRateLimit(
 export async function checkRegistrationEventRateLimit(
   store: RateLimitStore,
   eventId: string,
-  botProtection: BotProtectionMode = "required",
 ): Promise<boolean> {
-  const name = botProtection === "required" ? "registration:event" : "registration:event-unchecked";
-  const { windowMs, max } = INLINE_RATE_LIMITS[name];
-  return (await store.hit(`${name}:${eventId}`, windowMs, max)).allowed;
+  const { windowMs, max } = INLINE_RATE_LIMITS["registration:event"];
+  return (await store.hit(`registration:event:${eventId}`, windowMs, max)).allowed;
 }
 
 /** Budget of confirmation links an event sends again within the window (inline, not middleware). A resend puts the row of
@@ -1179,27 +1165,17 @@ export async function checkRegistrationEventResendRateLimit(
 /** Tries at the password of an event from one client address (inline, not middleware): see the policy
  * `registration:password`. Call it only after the bot challenge has passed. False when the budget of that address is
  * spent. Silent: the caller writes the line for the operator. */
-export async function checkRegistrationPasswordRateLimit(
-  store: RateLimitStore,
-  c: Context,
-  botProtection: BotProtectionMode = "required",
-): Promise<boolean> {
-  const policy = botProtection === "required" ? RATE_POLICIES["registration:password"] : RATE_POLICIES["registration:password-unchecked"];
-  const check = policy.checks[0]!;
+export async function checkRegistrationPasswordRateLimit(store: RateLimitStore, c: Context): Promise<boolean> {
+  const check = RATE_POLICIES["registration:password"].checks[0]!;
   return (await store.hit(check.keyOf(c), check.windowMs, check.max)).allowed;
 }
 
 /** Tries at the password of one event from every address (inline, not middleware). Keyed by the id of the event, never by
  * the slug of the address, and call it only after the bot challenge has passed and after the budget of the client
  * address, so one client who is out of tries cannot spend the budget the others share. False when it is spent. */
-export async function checkRegistrationPasswordEventRateLimit(
-  store: RateLimitStore,
-  eventId: string,
-  botProtection: BotProtectionMode = "required",
-): Promise<boolean> {
-  const name = botProtection === "required" ? "registration:password-event" : "registration:password-event-unchecked";
-  const { windowMs, max } = INLINE_RATE_LIMITS[name];
-  return (await store.hit(`${name}:${eventId}`, windowMs, max)).allowed;
+export async function checkRegistrationPasswordEventRateLimit(store: RateLimitStore, eventId: string): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["registration:password-event"];
+  return (await store.hit(`registration:password-event:${eventId}`, windowMs, max)).allowed;
 }
 
 /** Instance-wide budget of registration mails to one address (inline, not middleware). The
