@@ -59,6 +59,7 @@ function createRedisClient(options: RedisClientOptions) {
  */
 export class RedisRateLimitStore implements RateLimitStore {
   private readonly client: ReturnType<typeof createRedisClient>;
+  private readonly connectTimeoutMs: number;
   private readonly commandTimeoutMs: number;
   private readonly outageCooldownMs: number;
   private readonly fallbackStore = new InMemoryRateLimitStore();
@@ -68,7 +69,7 @@ export class RedisRateLimitStore implements RateLimitStore {
 
   /** @param url Redis connection URL from `REDIS_URL`. */
   constructor(url: string, options: RedisRateLimitStoreOptions = {}) {
-    const connectTimeoutMs = positiveMs(
+    this.connectTimeoutMs = positiveMs(
       options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
       "connectTimeoutMs",
     );
@@ -80,12 +81,15 @@ export class RedisRateLimitStore implements RateLimitStore {
       options.outageCooldownMs ?? DEFAULT_OUTAGE_COOLDOWN_MS,
       "outageCooldownMs",
     );
-    this.client = createRedisClient({ url, connectTimeoutMs });
+    this.client = createRedisClient({ url, connectTimeoutMs: this.connectTimeoutMs });
   }
 
   /**
    * Wait until the client can accept commands (`isReady`).
    * Always joins an in-flight `connect()` so concurrent hits do not race the handshake.
+   * `connectTimeout` covers only the TCP connect, so a server that accepts the socket and then
+   * stays silent would hang the handshake forever: give up after `connectTimeoutMs` and destroy
+   * the socket so the next attempt starts from a fresh connection.
    */
   private async ensureConnected(): Promise<void> {
     if (this.client.isReady) return;
@@ -96,7 +100,20 @@ export class RedisRateLimitStore implements RateLimitStore {
       .finally(() => {
         this.connectPromise = null;
       });
-    await this.connectPromise;
+    const pending = this.connectPromise;
+    pending.catch(() => {});
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        this.client.destroy();
+        reject(new Error("Redis handshake timed out"));
+      }, this.connectTimeoutMs);
+    });
+    try {
+      await Promise.race([pending, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!this.client.isReady) {
       throw new Error("Redis client not ready");
