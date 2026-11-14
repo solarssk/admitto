@@ -58,6 +58,9 @@ async function renderPanel(saved: RegistrationSettingsDto, { archived = false, w
 }
 
 async function save() {
+  // The address card keeps Save busy while its request is out, and the page lifts that a render or two after the settings were read
+  // again. A click before that is dropped, as it is for a person, so wait for Save to be on (on a loaded machine the click came first).
+  await waitFor(() => expect(isOff(saveButton())).toBe(false));
   fireEvent.click(saveButton());
   await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalled());
 }
