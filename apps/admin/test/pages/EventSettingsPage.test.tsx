@@ -3171,14 +3171,24 @@ describe("EventSettingsPage Registration tab (superadmin-only)", () => {
     });
   });
 
-  it("is in the row between Wallet and Integrations for a superadmin", async () => {
+  it("is the fourth tab for a superadmin, after Ticket types", async () => {
     mockAssignments = superadminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await screen.findByRole("tab", { name: "Registration" });
 
-    const names = screen.getAllByRole("tab").map((tab) => tab.textContent);
-    expect(names.slice(names.indexOf("Wallet"), names.indexOf("Danger zone"))).toEqual(["Wallet", "Registration", "Integrations"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "General",
+      "Location",
+      "Ticket types",
+      "Registration",
+      "Mailing",
+      "Wallet",
+      "Images",
+      "Check-in",
+      "Integrations",
+      "Danger zone",
+    ]);
   });
 
   it("opens with the Company SSO card and the address card, and reads nothing before it is opened", async () => {

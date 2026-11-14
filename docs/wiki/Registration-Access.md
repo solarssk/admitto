@@ -55,7 +55,7 @@ A Superadmin does this. By default guests get links on the address of the instan
 
 1. Open **Event settings → Registration**. Under **Address for guests**, type the address in **Own address**. Type the host name only: no `https://`, port or path.
 2. Select **Save address**. The card says the address is not checked yet. Guests still get links on the main address.
-3. Ask your IT department to set it up. Under **Setup for your IT team** the card shows the DNS record (type, name and target, each with a copy button) and the steps: a CNAME record that points the address to the instance, HTTPS with a valid certificate, the `Host` header passed on to Admitto, and no sign-in gateway in front of the pages guests open. If the form uses the bot check (Turnstile), the address also has to be added to the hostnames of its widget, or guests on the address fail the check. Admitto does not issue certificates.
+3. Ask your IT department to set it up. Under **Setup for your IT team** the card shows the DNS record (type, name and target; name and target have a copy button) and the steps. **Copy instructions** puts them all on the clipboard as text for a mail. The steps are: a CNAME record that points the address to the instance, HTTPS with a valid certificate, the `Host` header passed on to Admitto, and no sign-in gateway in front of the pages guests open. If the form uses the bot check (Turnstile), the address also has to be added to the hostnames of its widget, or guests on the address fail the check. Admitto does not issue certificates.
 4. When IT says it is ready, select **Check now**. The card says what the check found.
 5. When the card says **Working**, guests get links on the address.
 

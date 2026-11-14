@@ -33,11 +33,24 @@ describe("inPageTabFromSearch", () => {
     expect(inPageTabFromSearch(paramsWithTab("mail"), true)).toBe("mail");
   });
 
-  it("keeps the registration tab for a superadmin only, between wallet and integrations", () => {
+  it("keeps the registration tab for a superadmin only", () => {
     expect(inPageTabFromSearch(paramsWithTab("registration"), true)).toBe("registration");
     expect(inPageTabFromSearch(paramsWithTab("registration"), false)).toBe("general");
     expect(SUPERADMIN_ONLY_TABS.has("registration")).toBe(true);
-    const ids = EVENT_SETTINGS_TABS.map((tab) => tab.id);
-    expect(ids.slice(ids.indexOf("wallet"), ids.indexOf("danger-zone"))).toEqual(["wallet", "registration", "integrations"]);
+  });
+
+  it("lists the tabs in the order an event is set up", () => {
+    expect(EVENT_SETTINGS_TABS.map((tab) => tab.id)).toEqual([
+      "general",
+      "location",
+      "ticket-types",
+      "registration",
+      "mail",
+      "wallet",
+      "images",
+      "checkin-behaviour",
+      "integrations",
+      "danger-zone",
+    ]);
   });
 });

@@ -81,7 +81,6 @@ afterEach(() => {
 describe("the address card", () => {
   const stepsToggle = () => within(addressCard()).getByRole("button", { name: "Setup for your IT team" });
   const stepsBody = () => document.getElementById(stepsToggle().getAttribute("aria-controls") ?? "none") as HTMLElement;
-  const record = (label: string) => within(addressCard()).getByLabelText(label) as HTMLInputElement;
 
   it("has the field, and no status, check or remove while the event has no address", async () => {
     await renderPanel(settings());
@@ -122,12 +121,80 @@ describe("the address card", () => {
     expect(stepsBody().hidden).toBe(true);
   });
 
-  it("shows the DNS record as three read only fields: CNAME, the address and the host of the instance", async () => {
+  const cellOf = (label: string) => addressCard().querySelector(`.access-dns__cell[data-label="${label}"]`) as HTMLElement;
+
+  it("shows the DNS record as one row of three boxes: CNAME, the address and the host of the instance", async () => {
     await renderPanel(settings({ own_address: own() }));
 
-    expect([record("Type").value, record("Name").value, record("Target").value]).toEqual(["CNAME", DOMAIN, "admitto.example.com"]);
-    for (const label of ["Type", "Name", "Target"]) expect(record(label).readOnly).toBe(true);
+    expect(["Type", "Name", "Target"].map((label) => cellOf(label).textContent)).toEqual(["CNAME", DOMAIN, "admitto.example.com"]);
+    expect(within(addressCard()).getAllByRole("columnheader").map((head) => head.textContent)).toEqual(["Type", "Name", "Target"]);
+    expect(addressCard().querySelectorAll(".access-dns__row:not(.access-dns__row--head)")).toHaveLength(1);
     expect(within(addressCard()).getByText("Create a CNAME record that points the address to admitto.example.com.")).toBeTruthy();
+  });
+
+  it("never shows an empty box: a grey example for the name until there is an address, and for the target when the instance has no host", async () => {
+    await renderPanel(settings({ instance_host: null }));
+
+    expect(cellOf("Name").textContent).toBe("events.example.com");
+    expect(cellOf("Name").querySelector(".access-dns__value--placeholder")).not.toBeNull();
+    expect(cellOf("Target").textContent).toBe("the address of this instance");
+    expect(cellOf("Target").querySelector(".access-dns__value--placeholder")).not.toBeNull();
+    expect(addressCard().querySelectorAll(".access-dns__copy")).toHaveLength(0);
+    expect(within(addressCard()).getByText("Create a CNAME record that points the address to the address of this instance.")).toBeTruthy();
+  });
+
+  it("follows what is typed when the server would take it, falls back to the saved address when it would not, and to the example when there is none", async () => {
+    await renderPanel(settings());
+    expect(cellOf("Name").textContent).toBe("events.example.com");
+
+    type("  Summit.ACME.example ");
+    expect(cellOf("Name").textContent).toBe(DOMAIN);
+    expect(cellOf("Name").querySelector(".access-dns__value--placeholder")).toBeNull();
+
+    type("https://nope");
+    expect(cellOf("Name").textContent).toBe("events.example.com");
+  });
+
+  it("keeps the saved address in the record while a mistyped one is in the field", async () => {
+    await renderPanel(settings({ own_address: own() }));
+
+    type("not an address");
+
+    expect(cellOf("Name").textContent).toBe(DOMAIN);
+  });
+
+  it("copies all the instructions as plain text for a mail, with the typed address and the host of the instance", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    await renderPanel(settings());
+    type(DOMAIN);
+
+    fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy instructions" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(writeText).toHaveBeenCalledWith(
+      [
+        "Please set up an address for guest registration:",
+        "",
+        `1. Create a CNAME record: ${DOMAIN} -> admitto.example.com`,
+        "2. Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.",
+        "3. Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.",
+        "",
+        "Tell us when it is ready.",
+      ].join("\n"),
+    );
+    expect(addToast).toHaveBeenCalledWith("Instructions copied.", "success");
+  });
+
+  it("uses the example and the instance in general in the copied text when there is no address and no host, and says when it cannot copy", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("no"));
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    await renderPanel(settings({ instance_host: null }));
+
+    fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy instructions" }));
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not copy.", "error"));
+    expect(writeText.mock.calls[0]?.[0]).toContain("1. Create a CNAME record: events.example.com -> the address of this instance");
   });
 
   it("copies the name and the target, and not the type, and says so", async () => {
@@ -153,15 +220,6 @@ describe("the address card", () => {
     await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not copy.", "error"));
   });
 
-  it("has nothing to copy for the name before an address is saved, and names the instance in general when it has no host", async () => {
-    await renderPanel(settings({ instance_host: null }));
-
-    expect(record("Name").value).toBe("");
-    expect(within(addressCard()).queryByRole("button", { name: "Copy the name" })).toBeNull();
-    expect(within(addressCard()).queryByRole("button", { name: "Copy the target" })).toBeNull();
-    expect(within(addressCard()).getByText("Create a CNAME record that points the address to the address of this instance.")).toBeTruthy();
-  });
-
   it("lists the four steps in one numbered list, the record first", async () => {
     await renderPanel(settings({ own_address: own() }));
 
@@ -174,11 +232,40 @@ describe("the address card", () => {
     ]);
   });
 
-  it("puts the record in a grid that falls to one column on a narrow screen", () => {
-    const css = readFileSync(join(__dirname, "../../src/registration/registration-access.css"), "utf8");
+  const css = () => readFileSync(join(__dirname, "../../src/registration/registration-access.css"), "utf8");
 
-    expect(css).toMatch(/\.access-dns \{[^}]*display: grid;[^}]*minmax\(0, 7rem\) minmax\(0, 1fr\) minmax\(0, 1fr\)/);
-    expect(css).toMatch(/@media \(max-width: 640px\) \{\s*\.access-dns \{\s*grid-template-columns: minmax\(0, 1fr\);/);
+  it("makes each box of the record as high as a field, in one row with equal gaps, and falls to one column on a narrow screen", () => {
+    expect(css()).toMatch(/\.access-dns__cell \{[^}]*box-sizing: border-box;[^}]*height: var\(--control-h\);/);
+    expect(css()).toMatch(/\.access-dns__row \{[^}]*grid-template-columns: minmax\(0, 7rem\) minmax\(0, 1fr\) minmax\(0, 1fr\);[^}]*gap: var\(--space-3\);/);
+    expect(css()).toMatch(/@media \(max-width: 640px\) \{\s*\.access-dns__row \{\s*grid-template-columns: minmax\(0, 1fr\);/);
+    // The copy button sits inside the box and is smaller than it, so it cannot make it taller.
+    expect(css()).toMatch(/\.access-dns__copy \{[^}]*width: 1\.5rem;[^}]*height: 1\.5rem;/);
+  });
+
+  it("puts Save address, Check now and Remove in one row with the field, which takes half of the card", async () => {
+    await renderPanel(settings({ own_address: own() }));
+
+    const row = field().closest(".access-address__row") as HTMLElement;
+    expect(within(row).getAllByRole("button").map((control) => control.textContent)).toEqual(["Save address", "Check now", "Remove"]);
+    expect(field().closest(".access-address__input")?.parentElement).toBe(row);
+    expect(css()).toMatch(/\.access-address__input \{[^}]*flex: 0 1 calc\(\(100% - var\(--space-4\)\) \/ 2\);/);
+    expect(css()).toMatch(/@media \(max-width: 640px\) \{\s*\.access-address__input \{\s*flex-basis: 100%;/);
+  });
+
+  it("has only Save address beside the field until an address is saved", async () => {
+    await renderPanel(settings());
+
+    const row = field().closest(".access-address__row") as HTMLElement;
+    expect(within(row).getAllByRole("button").map((control) => control.textContent)).toEqual(["Save address"]);
+  });
+
+  it("puts the setup for IT in a panel of its own with Copy instructions at the right of its heading", async () => {
+    await renderPanel(settings());
+
+    const panel = addressCard().querySelector("section.access-it") as HTMLElement;
+    const head = panel.querySelector(".access-it__head") as HTMLElement;
+    expect(within(head).getAllByRole("button").map((control) => control.textContent)).toEqual(["Setup for your IT team", "Copy instructions"]);
+    expect(panel.querySelector("ul")).toBeNull();
   });
 
   it.each([

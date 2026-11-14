@@ -134,19 +134,48 @@
   gap: var(--space-3);
 }
 
-/* The setup for IT: a heading that opens and closes it, set like a field label, and under it numbered steps. The steps and the record wrap
- * instead of widening the card. */
-.access-address__it {
+/* The field of the address and its buttons in one row: the box takes half of the card (as Provider does beside Test connection on the
+ * other cards), the buttons follow it at its height. On a narrow screen the box takes the row and the buttons wrap under it. */
+.access-address__row {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
 }
 
-.access-address__it-toggle {
-  align-self: flex-start;
+.access-address__input {
+  flex: 0 1 calc((100% - var(--space-4)) / 2);
+  min-width: 14rem;
+}
+
+@media (max-width: 640px) {
+  .access-address__input {
+    flex-basis: 100%;
+  }
+}
+
+/* The setup for IT: a panel in the card's own background colour, as the other sub-panels, with a heading that opens and closes it and a
+ * button that copies all of it as text. The steps and the record wrap instead of widening the card. */
+.access-it {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-page);
+}
+
+.access-it__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+.access-it__toggle {
   padding-left: 0;
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
@@ -187,24 +216,112 @@
   width: 1.25rem;
   height: 1.25rem;
   border-radius: 50%;
-  background: var(--surface-page);
+  background: var(--surface-card, #fff);
   border: 1px solid var(--border-strong);
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   color: var(--text-secondary);
 }
 
-/* The record: its three fields side by side, and one under the other on a narrow screen. */
+/* The record: one row of three boxes, each the height of a field (--control-h), the same gaps, a copy button inside the box that does not
+ * make it taller. On a narrow screen the boxes fall under one another, each with its label. */
 .access-dns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.access-dns__row {
   display: grid;
   grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3);
 }
 
+.access-dns__row--head {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.access-dns__cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  height: var(--control-h);
+  min-width: 0;
+  padding: 0 var(--pad-control-x);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-card, #fff);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+}
+
+.access-dns__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-dns__value--placeholder {
+  color: var(--text-disabled);
+}
+
+.access-dns__arrow {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.access-dns__copy {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.access-dns__copy:hover {
+  color: var(--text-primary);
+}
+
+.access-dns__copy:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
 @media (max-width: 640px) {
-  .access-dns {
+  .access-dns__row {
     grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
   }
+
+  .access-dns__row--head {
+    display: none;
+  }
+
+  .access-dns__cell::before {
+    content: attr(data-label);
+    flex: none;
+    width: 4rem;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
+    color: var(--text-muted);
+  }
+}
+
+.access-claim__values {
+  grid-column: 1 / -1;
 }
 
 .access-address__status .overview-check__body,

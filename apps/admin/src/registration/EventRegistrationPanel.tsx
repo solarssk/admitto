@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, HintLabel, Input, Notice, useToast } from "@admitto/ui";
+import { Button, Card, HintLabel, Notice, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchRegistrationSettings,
@@ -22,7 +22,8 @@ import { ownAddressOf } from "./ownAddress.js";
 import "./registration-access.css";
 
 const PANEL_HINT = "The parts of guest registration that a superadmin sets for this event.";
-const PROVIDER_HINT = "Chosen for the organisation, in Organisation settings, Identity.";
+
+const NOT_USED_NOTE = "Choose Company SSO as the way guests open the form, on the Access tab of Registration.";
 
 const SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
@@ -150,37 +151,32 @@ function SsoClaimCard({
   return (
     <Card title="Company SSO">
       <div className="settings-card-stack">
-        {providerName !== null && <Input label="Identity provider" value={providerName} readOnly hint={PROVIDER_HINT} />}
-        {usesSso ? (
-          <AccessSsoClaim
-            name={draft.sso_claim_name}
-            values={draft.sso_claim_values}
-            errors={errors}
-            disabled={archived || saving}
-            onChange={(change) => {
-              setDraft((current) => ({ ...current, ...change }));
-              setError(null);
-            }}
-          />
-        ) : (
-          <p className="settings-card-intro">This event does not use the company SSO. Choose it as the way guests open the form, on the Access tab of Registration.</p>
-        )}
+        <AccessSsoClaim
+          name={draft.sso_claim_name}
+          values={draft.sso_claim_values}
+          errors={errors}
+          disabled={!usesSso || archived || saving}
+          providerName={providerName}
+          note={usesSso ? undefined : NOT_USED_NOTE}
+          onChange={(change) => {
+            setDraft((current) => ({ ...current, ...change }));
+            setError(null);
+          }}
+        />
         {error !== null && (
           <Notice variant="error" role="alert">
             {error}
           </Notice>
         )}
-        {usesSso && (
-          <div className="access-address__buttons">
-            <ArchivedGuard event={{ archived_at: archived ? "archived" : null }} reasonId={`sso-claim-${eventId}`} disabled={!dirty || Object.keys(errors).length > 0}>
-              {(guard) => (
-                <Button type="button" variant="primary" {...guard} loading={saving} onClick={() => void save()}>
-                  Save
-                </Button>
-              )}
-            </ArchivedGuard>
-          </div>
-        )}
+        <div className="access-address__buttons">
+          <ArchivedGuard event={{ archived_at: archived ? "archived" : null }} reasonId={`sso-claim-${eventId}`} disabled={!dirty || Object.keys(errors).length > 0}>
+            {(guard) => (
+              <Button type="button" variant="primary" {...guard} loading={saving} onClick={() => void save()}>
+                Save
+              </Button>
+            )}
+          </ArchivedGuard>
+        </div>
       </div>
     </Card>
   );

@@ -104,13 +104,26 @@ describe("the Company SSO card", () => {
     expect(text).not.toMatch(/[–—]/);
   });
 
-  it("has the fields only for an event whose way is the company SSO, and says so for another", async () => {
+  it("shows the same fields, grey and with Save off, for an event whose way is not the company SSO, with the sentence that says where to choose it", async () => {
     await renderPanel(settings({ access_methods: ["link"] }));
 
-    expect(claimName()).toBeNull();
-    expect(claimValues()).toBeNull();
-    expect(within(ssoCard()).queryByRole("button", { name: "Save" })).toBeNull();
-    expect(within(ssoCard()).getByText(/This event does not use the company SSO\./)).toBeTruthy();
+    expect(claimName()?.disabled).toBe(true);
+    expect(claimValues()?.disabled).toBe(true);
+    expect((within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement).disabled).toBe(true);
+    expect(isOff(saveButton())).toBe(true);
+    expect(within(ssoCard()).getByText("Choose Company SSO as the way guests open the form, on the Access tab of Registration.")).toBeTruthy();
+  });
+
+  it("does not react to typing in the grey fields, and says nothing of the way for an event that uses the company SSO", async () => {
+    await renderPanel(settings({ access_methods: ["link"] }));
+    type(claimName(), "tid");
+    type(claimValues(), "aaa-111");
+    expect(isOff(saveButton())).toBe(true);
+    cleanup();
+
+    await renderPanel(ssoSettings());
+    expect(within(ssoCard()).queryByText(/Choose Company SSO as the way/)).toBeNull();
+    expect(claimName()?.disabled).toBe(false);
   });
 
   it("shows the restriction that is saved, the name and one value on each line, with Save off", async () => {

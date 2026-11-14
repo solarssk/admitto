@@ -7,6 +7,7 @@ import "./registration-access.css";
 
 const INTRO =
   "Optionally let only the people of one company register: the identity provider (OpenID Connect, such as Microsoft Entra ID) vouches for them with a claim in the sign-in. Name the claim and list the values that may register; with Entra ID the claim is usually tid and the value the tenant ID of the company. Leave both empty for no restriction.";
+const PROVIDER_HINT = "Chosen for the organisation, in Organisation settings, Identity.";
 const MATCH_HINT =
   "A value must match exactly, with capital letters as they are. Never use the end of an email address here: it says where mail goes, not who the person is. A change counts at once, also for guests who have already signed in.";
 
@@ -19,8 +20,14 @@ export function AccessSsoClaim({
   values,
   errors,
   disabled,
+  providerName,
+  note,
   onChange,
 }: Readonly<{
+  /** The identity provider chosen for the organisation, read only above the claim; none leaves the row out. */
+  providerName: string | null;
+  /** One short sentence under the intro, such as why the fields are off. */
+  note?: string;
   name: string;
   values: string;
   errors: ClaimErrors;
@@ -32,37 +39,41 @@ export function AccessSsoClaim({
   return (
     <div className="access-claim">
       <p className="settings-card-intro">{INTRO}</p>
-      <Input
-        label="Claim name"
-        value={name}
-        disabled={disabled}
-        maxLength={SSO_CLAIM_NAME_MAX}
-        placeholder="tid"
-        error={errors.name}
-        {...NO_AUTOFILL_PROPS}
-        onChange={(event) => onChange({ sso_claim_name: event.target.value })}
-      />
-      <div className="at-field">
-        <label className="at-label" htmlFor={valuesId}>
-          Allowed values
-        </label>
-        <textarea
-          id={valuesId}
-          className={`at-textarea${errors.values ? " at-textarea--invalid" : ""}`}
-          rows={4}
-          // One value on each line stays on its line: a long GUID scrolls sideways and never looks like two values.
-          wrap="off"
-          value={values}
+      {note !== undefined && <span className="at-hint">{note}</span>}
+      <div className="mail-transport-section">
+        {providerName !== null && <Input label="Identity provider" value={providerName} readOnly disabled={disabled} hint={PROVIDER_HINT} />}
+        <Input
+          label="Claim name"
+          value={name}
           disabled={disabled}
-          spellCheck={false}
-          aria-invalid={errors.values ? true : undefined}
-          aria-describedby={`${valuesId}-note`}
+          maxLength={SSO_CLAIM_NAME_MAX}
+          placeholder="tid"
+          error={errors.name}
           {...NO_AUTOFILL_PROPS}
-          onChange={(event) => onChange({ sso_claim_values: event.target.value })}
+          onChange={(event) => onChange({ sso_claim_name: event.target.value })}
         />
-        <span id={`${valuesId}-note`} className={`settings-card-intro${errors.values ? " at-hint--error" : ""}`}>
-          {errors.values ?? `One value on each line, up to ${SSO_CLAIM_VALUES_MAX}, each up to ${SSO_CLAIM_VALUE_MAX} characters. ${MATCH_HINT}`}
-        </span>
+        <div className="at-field access-claim__values">
+          <label className="at-label" htmlFor={valuesId}>
+            Allowed values
+          </label>
+          <textarea
+            id={valuesId}
+            className={`at-textarea${errors.values ? " at-textarea--invalid" : ""}`}
+            rows={4}
+            // One value on each line stays on its line: a long GUID scrolls sideways and never looks like two values.
+            wrap="off"
+            value={values}
+            disabled={disabled}
+            spellCheck={false}
+            aria-invalid={errors.values ? true : undefined}
+            aria-describedby={`${valuesId}-note`}
+            {...NO_AUTOFILL_PROPS}
+            onChange={(event) => onChange({ sso_claim_values: event.target.value })}
+          />
+          <span id={`${valuesId}-note`} className={`at-hint${errors.values ? " at-hint--error" : ""}`}>
+            {errors.values ?? `One value on each line, up to ${SSO_CLAIM_VALUES_MAX}, each up to ${SSO_CLAIM_VALUE_MAX} characters. ${MATCH_HINT}`}
+          </span>
+        </div>
       </div>
     </div>
   );
