@@ -68,24 +68,19 @@ describe("turnstileDirty", () => {
 
 describe("while the check is not used", () => {
   const saved = draft();
-
-  it("does not count an edit to the hidden keys as a change when the mode is as saved", () => {
-    const savedOff = draft({ botProtection: "not_used" });
-    const edited = draft({ botProtection: "not_used", siteKey: "other", secret: { mode: "replace", value: "x" } });
-    expect(turnstileDirty(edited, savedOff)).toBe(false);
-    expect(buildTurnstileSaveBody(edited, savedOff)).toBeNull();
-  });
   const off = (overrides: Partial<TurnstileDraft> = {}) => draft({ botProtection: "not_used", ...overrides });
 
-  it("finds nothing to refuse in keys that cannot be seen", () => {
-    expect(turnstileValidationErrors(off({ siteKey: "has space", secret: { mode: "replace", value: "two words" } }))).toEqual([]);
-  });
-
-  it("sends the mode alone, whatever was typed into the keys, and nothing when the mode is as saved", () => {
-    expect(buildTurnstileSaveBody(off({ siteKey: "0x4AAAAAAAother", secret: { mode: "replace", value: "x" } }), saved)).toEqual({
+  it("treats the keys like any other field: an edit is a change, is checked, and is saved with the mode", () => {
+    const savedOff = off();
+    const edited = off({ siteKey: "0x4AAAAAAAother", secret: { mode: "replace", value: "x" } });
+    expect(turnstileDirty(edited, savedOff)).toBe(true);
+    expect(buildTurnstileSaveBody(edited, savedOff)).toEqual({ site_key: "0x4AAAAAAAother", secret_key: "x" });
+    expect(turnstileValidationErrors(off({ siteKey: "has space" }))).toEqual([TURNSTILE_SITE_KEY_ERROR]);
+    expect(buildTurnstileSaveBody(off({ siteKey: "0x4AAAAAAAother" }), saved)).toEqual({
       bot_protection: "not_used",
+      site_key: "0x4AAAAAAAother",
     });
-    expect(buildTurnstileSaveBody(off({ siteKey: "0x4AAAAAAAother" }), off())).toBeNull();
+    expect(buildTurnstileSaveBody(off(), off())).toBeNull();
   });
 
   it("sends the mode with the keys when the check is turned back on in the same save", () => {

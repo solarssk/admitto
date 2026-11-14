@@ -24,16 +24,13 @@ export function turnstileDraftFrom(dto: RegistrationTurnstileDto): TurnstileDraf
 }
 
 export function turnstileDirty(draft: TurnstileDraft, saved: TurnstileDraft): boolean {
-  if (draft.botProtection !== saved.botProtection) return true;
-  // While the check is not used the keys are hidden and not saved, so an edit to them is not a change.
-  if (draft.botProtection === "not_used") return false;
-  return draft.siteKey.trim() !== saved.siteKey.trim() || draft.secret.mode !== "idle";
+  return (
+    draft.botProtection !== saved.botProtection || draft.siteKey.trim() !== saved.siteKey.trim() || draft.secret.mode !== "idle"
+  );
 }
 
 /** Messages for what would be refused. Empty when the draft can be saved (or has nothing to save). */
 export function turnstileValidationErrors(draft: TurnstileDraft): string[] {
-  // The keys are not on the screen while the check is not used, so a problem with them would be one nobody can see.
-  if (draft.botProtection === "not_used") return [];
   const errors: string[] = [];
   const siteKey = draft.siteKey.trim();
   if (siteKey !== "" && !SITE_KEY_PATTERN.test(siteKey)) errors.push(TURNSTILE_SITE_KEY_ERROR);
@@ -52,8 +49,6 @@ export function buildTurnstileSaveBody(
 ): SaveRegistrationTurnstileBody | null {
   const body: SaveRegistrationTurnstileBody = {};
   if (draft.botProtection !== saved.botProtection) body.bot_protection = draft.botProtection;
-  // While the check is not used the keys are hidden, so what was typed into them is not sent.
-  if (draft.botProtection === "not_used") return Object.keys(body).length > 0 ? body : null;
   const siteKey = draft.siteKey.trim();
   if (siteKey !== saved.siteKey.trim()) body.site_key = siteKey === "" ? null : siteKey;
   if (draft.secret.mode === "replace") body.secret_key = draft.secret.value.trim();

@@ -1150,14 +1150,12 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
   const toggle = () => el<HTMLInputElement>("external-bot-protection-enabled");
   const dialog = () => screen.queryByRole("dialog");
   const save = () => screen.getByRole("button", { name: "Save" });
-  const risk = () => within(card()).queryByText(/Without the check, a script can send the form and guess an event password as often as the usual limits allow/);
 
   it("is required by default: the keys are there, and so is the choice, with no risk sentence", async () => {
     await renderLoaded();
 
     expect(toggle().checked).toBe(true);
     expect(document.getElementById("external-turnstile-site-key")).not.toBeNull();
-    expect(risk()).toBeNull();
   });
 
   it("asks before it turns the check off, and says what follows, in plain words", async () => {
@@ -1167,8 +1165,7 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
 
     expect(dialog()).not.toBeNull();
     expect(within(dialog()!).getByText("Turn the bot check off?")).toBeTruthy();
-    expect(dialog()!.textContent).toMatch(/A script can then fill in the form of an event with a public link, and guess the password of an event, as often as the usual limits allow/);
-    expect(dialog()!.textContent).toMatch(/An event password is often weak/);
+    expect(dialog()!.textContent).toMatch(/guests are no longer checked for bots/);
     expect(dialog()!.textContent).toMatch(/use the company sign-in or a strong password/);
     expect(dialog()!.textContent).not.toMatch(/stricter/);
     // Nothing changed yet: the choice, the keys and the Save button are as they were.
@@ -1188,7 +1185,7 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
     expect(mockSaveTurnstile).not.toHaveBeenCalled();
   });
 
-  it("turns the check off once confirmed: the risk sentence shows, the keys and the provider go, the switch says Off, and Save is on", async () => {
+  it("turns the check off once confirmed: the switch says Off, the provider and the keys stay on the screen, and Save is on", async () => {
     await renderLoaded();
     fireEvent.click(toggle());
 
@@ -1196,10 +1193,9 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
 
     expect(dialog()).toBeNull();
     expect(toggle().checked).toBe(false);
-    expect(risk()).not.toBeNull();
     expect(within(card()).getByText("Off")).toBeTruthy();
-    expect(document.getElementById("external-bot-protection-provider")).toBeNull();
-    expect(document.getElementById("external-turnstile-site-key")).toBeNull();
+    expect(document.getElementById("external-bot-protection-provider")).not.toBeNull();
+    expect(document.getElementById("external-turnstile-site-key")).not.toBeNull();
     expect(isOff(save())).toBe(false);
   });
 

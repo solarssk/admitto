@@ -73,7 +73,7 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - A way that is off cannot be chosen. Turning one off closes the form of every event that uses it, at once: guests see a page that is not found.
 - Nothing is deleted when you turn a way off. Turn it on again and those forms open again.
 - While the bot check is **On**, a link or a password opens a form only while the Turnstile keys are ready. The card warns you when they are not. The company sign-in needs no Turnstile keys.
-- While the bot check is **Off**, the link and the password need no keys, and the card says there is no bot check.
+- While the bot check is **Off**, the link and the password need no keys. The Provider and the keys stay on the card, so you can keep them ready.
 - Save once for the whole tab. The change is recorded in **Logs**, on the **Audit** view, as "Guest registration access methods updated".
 
 **Company sign-in**

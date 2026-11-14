@@ -12,10 +12,8 @@ const CARD_HINT =
   "Keeps bots out of the public registration form that guests fill in. Cloudflare sees each guest's IP address and browser details, so name it in your privacy notice.";
 const CARD_INTRO =
   "Cloudflare Turnstile checks that a guest on the registration form is not a bot. Without both keys, a public link or password form stays closed.";
-const MODE_RISK =
-  "Without the check, a script can send the form and guess an event password as often as the usual limits allow, so use the company sign-in or a strong password for events that matter.";
 const CONFIRM_MESSAGE =
-  "After you save, guests are no longer checked by Cloudflare Turnstile. A script can then fill in the form of an event with a public link, and guess the password of an event, as often as the usual limits allow. An event password is often weak. For an event that needs a firm barrier, use the company sign-in or a strong password.";
+  "After you save, guests are no longer checked for bots. For an event that needs a firm barrier, use the company sign-in or a strong password.";
 const PROVIDER_HINT = "The service that checks a guest is not a bot. Cloudflare Turnstile is the only one for now.";
 const PROVIDERS = [{ id: "turnstile", label: "Cloudflare Turnstile" }];
 const SITE_KEY_HINT = "The public key of your Turnstile widget. Add the address of this instance to its hostnames in Cloudflare.";
@@ -80,74 +78,66 @@ export function RegistrationTurnstileCard({
           label={required ? "On" : "Off"}
           checked={required}
           disabled={disabled}
-          aria-describedby={required ? undefined : "external-bot-protection-risk"}
           onChange={(e) => chooseOn(e.target.checked)}
         />
       }
     >
       <div className="settings-card-stack">
         <p className="settings-card-intro">{CARD_INTRO}</p>
-        {!required && (
-          <p id="external-bot-protection-risk" className="at-hint">
-            {MODE_RISK}
-          </p>
-        )}
-        {required && dto.status === "unreadable" && <Notice variant="warning">{UNREADABLE_NOTICE}</Notice>}
-        {required && (
-          <div className="mail-transport-section">
-            <div className="mail-field-row">
-              <div className="at-field">
-                <span className="at-label">
-                  <HintLabel hint={PROVIDER_HINT}>Provider</HintLabel>
-                </span>
-                <div className="external-provider-and-test">
-                  <SearchableSelect
-                    id="external-bot-protection-provider"
-                    label="Provider"
-                    placeholder="Select provider…"
-                    searchPlaceholder="Search providers…"
-                    emptyLabel="No providers found"
-                    showLabel={false}
-                    value="turnstile"
-                    options={PROVIDERS}
-                    disabled
-                    onChange={() => undefined}
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    loading={testing}
-                    loadingLabel="Testing…"
-                    onClick={() => void handleTest()}
-                    icon={<i className="ti ti-plug" aria-hidden="true" />}
-                  >
-                    Test connection
-                  </Button>
-                </div>
+        {dto.status === "unreadable" && <Notice variant="warning">{UNREADABLE_NOTICE}</Notice>}
+        <div className="mail-transport-section">
+          <div className="mail-field-row">
+            <div className="at-field">
+              <span className="at-label">
+                <HintLabel hint={PROVIDER_HINT}>Provider</HintLabel>
+              </span>
+              <div className="external-provider-and-test">
+                <SearchableSelect
+                  id="external-bot-protection-provider"
+                  label="Provider"
+                  placeholder="Select provider…"
+                  searchPlaceholder="Search providers…"
+                  emptyLabel="No providers found"
+                  showLabel={false}
+                  value="turnstile"
+                  options={PROVIDERS}
+                  disabled
+                  onChange={() => undefined}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={testing}
+                  loadingLabel="Testing…"
+                  onClick={() => void handleTest()}
+                  icon={<i className="ti ti-plug" aria-hidden="true" />}
+                >
+                  Test connection
+                </Button>
               </div>
             </div>
-            <Input
-              id="external-turnstile-site-key"
-              name="turnstile-site-key"
-              label="Site key"
-              hint={SITE_KEY_HINT}
-              value={draft.siteKey}
-              {...NO_AUTOFILL_PROPS}
-              onChange={(e) => onChange({ ...draft, siteKey: e.target.value })}
-            />
-            <SecretFieldRow
-              id="external-turnstile-secret-key"
-              label="Secret key"
-              hint={SECRET_KEY_HINT}
-              field={secretField}
-              edit={draft.secret}
-              onReplace={() => setSecret("replace", "")}
-              onClear={() => setSecret("clear", "")}
-              onValueChange={(value) => setSecret("replace", value)}
-              onCancel={() => setSecret("idle", "")}
-            />
           </div>
-        )}
+          <Input
+            id="external-turnstile-site-key"
+            name="turnstile-site-key"
+            label="Site key"
+            hint={SITE_KEY_HINT}
+            value={draft.siteKey}
+            {...NO_AUTOFILL_PROPS}
+            onChange={(e) => onChange({ ...draft, siteKey: e.target.value })}
+          />
+          <SecretFieldRow
+            id="external-turnstile-secret-key"
+            label="Secret key"
+            hint={SECRET_KEY_HINT}
+            field={secretField}
+            edit={draft.secret}
+            onReplace={() => setSecret("replace", "")}
+            onClear={() => setSecret("clear", "")}
+            onValueChange={(value) => setSecret("replace", value)}
+            onCancel={() => setSecret("idle", "")}
+          />
+        </div>
       </div>
       <ConfirmDialog
         open={confirming}
