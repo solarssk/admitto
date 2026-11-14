@@ -57,7 +57,7 @@ Shared outbound connections. They are configured in this tab, not through deploy
 
 - The **On/Off** switch says whether your organisation uses a bot check on guest registration at all. Only a Superadmin can change it. It is **On** by default.
 - Turn it **Off** for a form that runs inside your own network, or if your organisation does not use Cloudflare. Admitto asks you to confirm. The link and the password then work without keys, Admitto does not contact Cloudflare, and the provider and key fields are hidden.
-- Without the check, a script can send the form and guess an event password. The usual limits still apply, with no tightening: 30 password tries in 15 minutes from one address, 120 a minute for one event, and 600 registrations a minute for one event. You can retune them with `RATE_LIMIT_OVERRIDES`. An event password is often weak, so for an event with a public link or a weak password, use the company sign-in or a strong password.
+- Without the check, a script can send the form and guess an event password. The usual limits still apply, with no tightening: 30 password tries in 15 minutes from one address, 120 a minute for one event, and 600 registrations a minute for one event. You can retune them with `RATE_LIMIT_OVERRIDES`. An event password is often weak, so for an event with a public link or a weak password, use the company SSO or a strong password.
 - The saved keys are kept while the check is **Off**. Turn it **On** again and they apply.
 - The change is recorded in **Logs**, on the **Audit** view, as "Guest registration bot protection updated".
 - While it is **On**, choose the provider (Cloudflare Turnstile is the only one for now) and use **Test connection** to ask Cloudflare whether it accepts the secret key you typed, or the saved one when you typed none. Nothing is saved by the test.
@@ -69,19 +69,19 @@ Shared outbound connections. They are configured in this tab, not through deploy
 
 **Ways in**
 
-- Turn **Link**, **Password** or **Company sign-in** on to let organisers choose it for their events. An organiser picks one way in for each event, on the **Access** tab of its **Registration** page.
+- Turn **Link**, **Password** or **Company SSO** on to let organisers choose it for their events. An organiser picks one way in for each event, on the **Access** tab of its **Registration** page.
 - A way that is off cannot be chosen. Turning one off closes the form of every event that uses it, at once: guests see a page that is not found.
 - Nothing is deleted when you turn a way off. Turn it on again and those forms open again.
-- While the bot check is **On**, a link or a password opens a form only while the Turnstile keys are ready. The card warns you when they are not. The company sign-in needs no Turnstile keys.
+- While the bot check is **On**, a link or a password opens a form only while the Turnstile keys are ready. The card warns you when they are not. The company SSO needs no Turnstile keys.
 - While the bot check is **Off**, the link and the password need no keys. The Provider and the keys stay on the card, so you can keep them ready.
 - Save once for the whole tab. The change is recorded in **Logs**, on the **Audit** view, as "Guest registration access methods updated".
 
-**Company sign-in**
+**Company SSO**
 
-- With **Company sign-in** on, pick the **Identity provider** guests sign in with. The list holds the OIDC providers that are turned on, by the name you gave them under **Identity**. A guest who signs in this way does not get an Admitto account.
-- The sentence under the picker says where the choice stands: no provider chosen yet, the chosen provider was deleted, the chosen provider is turned off, or ready. Unless it is ready, the forms of events that use the company sign-in stay closed. Nothing is deleted.
+- With **Company SSO** on, pick the **Identity provider** guests sign in with. The list holds the OIDC providers that are turned on, by the name you gave them under **Identity**. A guest who signs in this way does not get an Admitto account.
+- The sentence under the picker says where the choice stands: no provider chosen yet, the chosen provider was deleted, the chosen provider is turned off, or ready. Unless it is ready, the forms of events that use the company SSO stay closed. Nothing is deleted.
 - The choice is saved with the one **Save** of the tab, and recorded in **Logs**, on the **Audit** view, as "Guest registration company sign-in provider updated". If the choice is refused, the switch is still saved and the provider stays as you left it.
-- **Return address** is the address to enter at the identity provider, as an allowed redirect (callback) address. It is the same for every event that uses the company sign-in on the address of the instance, so you enter it once. It comes from the Instance URL under **General**. Without that address the card says so.
+- **Return address** is the address to enter at the identity provider, as an allowed redirect (callback) address. It is the same for every event that uses the company SSO on the address of the instance, so you enter it once. It comes from the Instance URL under **General**. Without that address the card says so.
 - An event with an address of its own for guests has one more **Return address for** the name of that address, in the form `https://<address>/sso/callback`. It is the same for all events that share that address, so you enter it once for each address. It is listed before the address passes its check, so that the sign-in works as soon as it does. See [Registration Access](Registration-Access).
 - If a gateway such as Cloudflare Access stands in front of Admitto, it must let `/sso/callback` through without a sign-in, together with `/r/*`.
 - The organiser limits the sign-in to one company per event, on the **Access** tab. See [Registration Access](Registration-Access).

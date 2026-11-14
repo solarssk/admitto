@@ -2646,7 +2646,7 @@ export async function fetchRegistrationSsoProvider(signal?: AbortSignal): Promis
   return parseJson<RegistrationSsoProviderDto>(res);
 }
 
-/** Chooses the identity provider for the company sign-in (`null` removes the choice) and answers like the read. */
+/** Chooses the identity provider for the company SSO (`null` removes the choice) and answers like the read. */
 export async function saveRegistrationSsoProvider(body: SaveRegistrationSsoProviderBody): Promise<RegistrationSsoProviderDto> {
   const res = await fetch("/api/admin/registration/sso-provider", jsonPutInit(body));
   return parseJson<RegistrationSsoProviderDto>(res);

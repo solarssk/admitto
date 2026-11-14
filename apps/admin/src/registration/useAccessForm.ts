@@ -127,7 +127,7 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     // The fields of the restriction say what is wrong with them; this says why nothing was saved. A save that turns registration off
     // does not wait for it: that save leaves the restriction out (settingsPatch), and the form shows the saved one afterwards.
     if (patch.mode !== null && Object.keys(claimErrors(draft)).length > 0) {
-      setProblem({ kind: "message", text: "Fix the restriction of the company sign-in before you save." });
+      setProblem({ kind: "message", text: "Fix the restriction of the company SSO before you save." });
       return;
     }
     // Turning registration off closes the form for every guest at once: say what it does first.

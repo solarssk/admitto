@@ -49,7 +49,7 @@ describe("draftFromSettings", () => {
     });
   });
 
-  it("holds the restriction of the company sign-in as it is typed: the name, and the values one on each line", () => {
+  it("holds the restriction of the company SSO as it is typed: the name, and the values one on each line", () => {
     const draft = draftFromSettings(settings({ access_methods: ["sso"], sso_claim_name: "tid", sso_claim_values: ["aaa", "bbb"] }));
 
     expect(draft.method).toBe("sso");
@@ -138,7 +138,7 @@ describe("parseClaim", () => {
   });
 });
 
-describe("the restriction of the company sign-in in a save", () => {
+describe("the restriction of the company SSO in a save", () => {
   const sso = (overrides: Partial<AccessDraft> = {}) => base({ method: "sso", ...overrides });
 
   it("sends the name and the values together when either changed, with no empty and no repeated value", () => {
@@ -162,7 +162,7 @@ describe("the restriction of the company sign-in in a save", () => {
     expect(settingsPatch(sso({ sso_claim_name: " tid ", sso_claim_values: "bbb\n\naaa \n" }), saved)).toEqual({});
   });
 
-  it("sends the way in and the restriction in one save when the event moves to the company sign-in", () => {
+  it("sends the way in and the restriction in one save when the event moves to the company SSO", () => {
     expect(settingsPatch(sso({ sso_claim_name: "tid", sso_claim_values: "aaa" }), base({ method: "link" }))).toEqual({
       access_methods: ["sso"],
       sso_claim_name: "tid",

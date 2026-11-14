@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { Button, Input, ModalBackdrop, Notice } from "@admitto/ui";
+import { Button, ModalBackdrop, Notice } from "@admitto/ui";
 import { REGISTRATION_PASSWORD_MAX, REGISTRATION_PASSWORD_MIN, registrationPasswordLength } from "@admitto/shared";
 import { ApiError, setRegistrationPassword } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -7,6 +7,7 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
 import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
 import "../attendees/add-attendee-modal.css";
+import "./event-password-dialog.css";
 
 const LENGTH_MESSAGE = `The password needs ${REGISTRATION_PASSWORD_MIN} to ${REGISTRATION_PASSWORD_MAX} characters.`;
 
@@ -37,6 +38,8 @@ export function EventPasswordDialog({
   onArchived: (message: string) => void;
 }>) {
   const titleId = useId();
+  const fieldId = useId();
+  const hintId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState("");
@@ -89,7 +92,7 @@ export function EventPasswordDialog({
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop />
-      <div className="add-attendee-modal__panel add-attendee-modal__panel--w420" ref={panelRef}>
+      <div className="add-attendee-modal__panel add-attendee-modal__panel--w560" ref={panelRef}>
         <form className="add-attendee-modal__scroll at-scroll" onSubmit={(event) => void submit(event)}>
           <h2 className="add-attendee-modal__title" id={titleId}>
             {hasPassword ? "Change the event password" : "Set the event password"}
@@ -97,23 +100,39 @@ export function EventPasswordDialog({
           <p className="add-attendee-modal__hint">
             Guests enter this password before they see the form. You cannot read it again after you save it, so keep a copy to share with them.
           </p>
-          <Input
-            ref={fieldRef}
-            label="Password"
-            type={shown ? "text" : "password"}
-            {...NO_AUTOFILL_PROPS}
-            value={value}
-            readOnly={saving}
-            invalid={error !== null}
-            hint={`${REGISTRATION_PASSWORD_MIN} to ${REGISTRATION_PASSWORD_MAX} characters. Guests type it exactly as you do, spaces included.`}
-            icon={<i className={`ti ti-${shown ? "eye-off" : "eye"}`} />}
-            iconLabel={shown ? "Hide the password" : "Show the password"}
-            onIconClick={() => setShown((current) => !current)}
-            onChange={(event) => {
-              setValue(event.target.value);
-              setError(null);
-            }}
-          />
+          <div className="at-field">
+            <label className="at-label" htmlFor={fieldId}>
+              Password
+            </label>
+            <div className="at-control event-password__control">
+              <input
+                ref={fieldRef}
+                id={fieldId}
+                className={`at-input${error === null ? "" : " at-input--invalid"}`}
+                type={shown ? "text" : "password"}
+                {...NO_AUTOFILL_PROPS}
+                value={value}
+                readOnly={saving}
+                aria-invalid={error === null ? undefined : true}
+                aria-describedby={hintId}
+                onChange={(event) => {
+                  setValue(event.target.value);
+                  setError(null);
+                }}
+              />
+              <button
+                type="button"
+                className="event-password__eye"
+                aria-label={shown ? "Hide the password" : "Show the password"}
+                onClick={() => setShown((current) => !current)}
+              >
+                <i className={`ti ti-${shown ? "eye-off" : "eye"}`} aria-hidden="true" />
+              </button>
+            </div>
+            <span id={hintId} className="at-hint">
+              {`${REGISTRATION_PASSWORD_MIN} to ${REGISTRATION_PASSWORD_MAX} characters. Guests type it exactly as you do, spaces included.`}
+            </span>
+          </div>
           {error && (
             <Notice variant="error" role="alert">
               {error}
@@ -124,7 +143,7 @@ export function EventPasswordDialog({
               Cancel
             </Button>
             <Button type="submit" variant="primary" loading={saving}>
-              Save password
+              Save
             </Button>
           </div>
         </form>

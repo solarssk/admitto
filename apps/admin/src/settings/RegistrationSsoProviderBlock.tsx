@@ -7,9 +7,9 @@ import { ssoProviderNote, ssoProviderOptions } from "./registrationAccessMethods
 import "./registration-ways-in.css";
 
 const REDIRECT_HINT =
-  "Enter this address once at the identity provider, as an allowed redirect (callback) address. It is the same for every event that uses the company sign-in on the address of this instance.";
+  "Enter this address once at the identity provider, as an allowed redirect (callback) address. It is the same for every event that uses the company SSO on the address of this instance.";
 const EVENT_ADDRESS_HINT =
-  "Also enter this address at the identity provider. It belongs to the event that uses the company sign-in on its own address. Every event address needs its own entry at the identity provider.";
+  "Also enter this address at the identity provider. It belongs to the event that uses the company SSO on its own address. Every event address needs its own entry at the identity provider.";
 const UNVERIFIED_NOTE = " This address has not passed its check yet. Enter it now so that the sign-in works as soon as it does.";
 const GATEWAY_NOTE = "If a gateway such as Cloudflare Access stands in front of Admitto, it must let /sso/callback through without a sign-in, together with /r/*.";
 
@@ -46,7 +46,7 @@ function hostOf(uri: string): string {
 }
 
 /**
- * Every address to list at the provider: the instance's, and one for each own address of an event that uses the company sign-in
+ * Every address to list at the provider: the instance's, and one for each own address of an event that uses the company SSO
  * (D-C6), verified or not. While the instance has no address there is none to give for it.
  */
 function RedirectAddresses({ uris }: Readonly<{ uris: RegistrationRedirectUriDto[] }>) {
@@ -77,7 +77,7 @@ function RedirectAddresses({ uris }: Readonly<{ uris: RegistrationRedirectUriDto
 }
 
 /**
- * Under the switch of the company sign-in: the identity provider guests sign in with, where that choice stands, and the return
+ * Under the switch of the company SSO: the identity provider guests sign in with, where that choice stands, and the return
  * addresses to list at the provider. `sso` is the saved state of the server; `providerId` is the choice in the form.
  */
 export function RegistrationSsoProviderBlock({

@@ -16,6 +16,7 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { REGISTRATION_MODE, type PrismaClient } from "@admitto/db";
+import { canManageInstance } from "@admitto/auth";
 import { SSO_CLAIM_VALUES_MAX, ssoClaimNameProblem, ssoClaimValueProblem } from "@admitto/shared";
 import { MAX_COMPANION_SLOTS } from "@admitto/tickets";
 import { LEGAL_CONSENT_KEY_PATTERN, MAX_CONSENT_DOCUMENTS_PER_EVENT } from "../legal/legal-documents.js";
@@ -38,6 +39,8 @@ export const MAX_REGISTRATION_SETTINGS_BODY_BYTES = 4_096;
  * - `sso_claim_name` and `sso_claim_values` (D-C4): the restriction of the company sign-in to the people whose token holds one
  *   of the values in one claim, sent together. `null` and `[]` remove it. A restriction sent for an event whose way in is
  *   not the company sign-in is a 422 `sso_claim_needs_sso`; moving an event away from that way in removes the restriction.
+ *   Only a superadmin may change it: from anyone else a change is a 403 `sso_claim_superadmin_only` (a restriction sent as it
+ *   already is, and a move away from the company sign-in, are no change).
  */
 const putBodySchema = z
   .object({
@@ -98,7 +101,9 @@ export async function handlePutEventRegistrationSettings(c: Context, db: PrismaC
   const parsed = putBodySchema.safeParse(raw);
   if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
 
-  const result = await updateEventRegistrationSettings(db, { eventId, patch: parsed.data, actor });
+  // The restriction to one company is a superadmin's to change: checked here on the server, whatever the screen shows.
+  const canChangeSsoClaim = await canManageInstance(db, c.get("auth").userId);
+  const result = await updateEventRegistrationSettings(db, { eventId, patch: parsed.data, actor, canChangeSsoClaim });
   switch (result.kind) {
     case "saved":
       return c.json(result.settings);
@@ -110,6 +115,8 @@ export async function handlePutEventRegistrationSettings(c: Context, db: PrismaC
       return c.json({ error: "consent_not_published" }, 422);
     case "sso_claim_needs_sso":
       return c.json({ error: "sso_claim_needs_sso" }, 422);
+    case "sso_claim_superadmin_only":
+      return c.json({ error: "sso_claim_superadmin_only" }, 403);
     case "not_ready":
       // The keys of the checks that are not met, and nothing else: no text, no value, no name of anybody.
       return c.json({ error: "registration_not_ready", blockers: result.blockers }, 409);

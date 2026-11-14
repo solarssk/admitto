@@ -27,6 +27,7 @@ import { loadRegistrantFormFields, writeAdminAuditLog, type RegistrantFormField,
 import { normalizeHostname } from "../guest-host/guest-host.js";
 import { lockAndLoadLegalGateRows, loadLegalGateRows, publishedConsentKeys } from "../legal/registration-gate.js";
 import type { SelectableAccessMethod } from "../registration/access-methods.js";
+import type { BotProtectionMode } from "../registration/bot-protection-mode.js";
 import { isOver } from "../registration/form-model.js";
 import {
   evaluateRegistrationReadiness,
@@ -95,6 +96,10 @@ export type OwnAddressDto = {
 };
 
 export type RegistrationSettingsDto = SettingsValues & {
+  /** The ways in a superadmin has turned on for the organisation: the ones an event may choose. An event that already has another one keeps it. */
+  enabled_access_methods: RegistrationAccessMethod[];
+  /** Whether the organisation checks guests for bots on the link and password forms: `not_used` when a superadmin switched it off. */
+  bot_protection: BotProtectionMode;
   /** Whether a password is stored for the event. Only that: never the hash, never its length. */
   password_set: boolean;
   /** The address guests use: `/r/<slug>` on the event's own address once it is verified (D-C6), else on the instance's. Null while the
@@ -121,11 +126,12 @@ export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_met
  * - `consent_not_published`: a consent key is not one of the event's published extra consents;
  * - `sso_claim_needs_sso`: the save sets a restriction of the company sign-in, and the way in it leaves the event with is
  *   another;
+ * - `sso_claim_superadmin_only`: the save changes the restriction of the company sign-in, and the caller is not a superadmin;
  * - `not_ready`: the change needs the event to be ready, and these checks are not met.
  */
 export type SettingsUpdate =
   | { kind: "saved"; settings: RegistrationSettingsDto }
-  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" }
+  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" }
   | { kind: "not_ready"; blockers: RegistrationReadinessKey[] };
 
 export interface SettingsOptions {
@@ -286,6 +292,15 @@ function needsReadiness(before: SettingsValues, after: SettingsValues): boolean 
   return !sameMembers(before.access_methods, after.access_methods) || !sameMembers(before.consent_keys, after.consent_keys);
 }
 
+/**
+ * Whether a save changes the restriction of the company sign-in that is in force afterwards. The restriction goes with the way in
+ * (`claimAfter`), so moving an event away from the company sign-in is no change of it, and a list of the same values is the same.
+ */
+function changesSsoClaim(before: SettingsValues, after: SettingsValues): boolean {
+  if (!after.access_methods.includes("sso")) return false;
+  return before.sso_claim_name !== after.sso_claim_name || !sameMembers(before.sso_claim_values, after.sso_claim_values);
+}
+
 /** A password that waits for the way in must not come back by itself: it is cleared with the move away from it. */
 function leavesPassword(before: SettingsValues, after: SettingsValues): boolean {
   return before.access_methods.includes("password") && !after.access_methods.includes("password");
@@ -337,6 +352,8 @@ function toDto(args: {
   const { values, passwordSet, domain, slug, environment, checks, fields } = args;
   return {
     ...values,
+    enabled_access_methods: environment.availability.filter((entry) => entry.enabled).map((entry) => entry.method),
+    bot_protection: environment.botProtectionMode,
     password_set: passwordSet,
     guest_url:
       environment.instanceBaseUrl === null
@@ -378,6 +395,7 @@ type SaveRequest = {
   actor: StaffActor;
   environment: ReadinessEnvironment;
   now: Date | undefined;
+  canChangeSsoClaim: boolean;
 };
 
 async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest): Promise<SettingsUpdate> {
@@ -397,6 +415,9 @@ async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest):
   // A restriction is sent for the company sign-in only: one sent with another way in is refused, not dropped without a word.
   const sendsRestriction = patch.sso_claim_name !== undefined && patch.sso_claim_name !== null;
   if (sendsRestriction && !after.access_methods.includes("sso")) return { kind: "sso_claim_needs_sso" };
+
+  // Who may let in the people of one company is a superadmin's to say (the administrator of the event only keeps what is there).
+  if (!request.canChangeSsoClaim && changesSsoClaim(stored.values, after)) return { kind: "sso_claim_superadmin_only" };
 
   const fields = await loadRegistrantFormFields(tx, eventId);
   // The clock is read here, with the locks held, and not when the request came in.
@@ -434,11 +455,17 @@ async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest):
  */
 export async function updateEventRegistrationSettings(
   db: PrismaClient,
-  { eventId, patch, actor, ...options }: { eventId: string; patch: RegistrationSettingsPatch; actor: StaffActor } & SettingsOptions,
+  { eventId, patch, actor, canChangeSsoClaim = false, ...options }: {
+    eventId: string;
+    patch: RegistrationSettingsPatch;
+    actor: StaffActor;
+    /** The caller is a superadmin. Left out, the restriction of the company sign-in cannot be changed. */
+    canChangeSsoClaim?: boolean;
+  } & SettingsOptions,
 ): Promise<SettingsUpdate> {
   const environment = await loadReadinessEnvironment(db, eventId, options.env);
   try {
-    return await db.$transaction((tx) => saveSettings(tx, { eventId, patch, actor, environment, now: options.now }));
+    return await db.$transaction((tx) => saveSettings(tx, { eventId, patch, actor, environment, now: options.now, canChangeSsoClaim }));
   } catch (err) {
     // The event was deleted after the transaction found it, and the settings row has no event to belong to.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") return { kind: "not_found" };

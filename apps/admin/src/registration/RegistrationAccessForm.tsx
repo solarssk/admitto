@@ -74,8 +74,8 @@ export function RegistrationAccessForm({
   const missing = missingChecks(server.readiness);
   // A move between the two modes that are on is never refused, so only an event that has registration off needs to be ready.
   const canTurnOn = server.mode !== null || missing.length === 0;
-  // The address of the event is a superadmin's to set; every administrator of the event is told when it stops working.
-  const canEditAddress = isSuperadmin(useOptionalAuth()?.assignments ?? []);
+  // The address of the event, and the restriction of the company SSO, are a superadmin's to set; every administrator of the event is told when it stops working.
+  const superadmin = isSuperadmin(useOptionalAuth()?.assignments ?? []);
 
   // A change of the path or of `?tab=` leaves the form: with changes in it, the person is asked first.
   const blocker = useBlocker(
@@ -107,6 +107,9 @@ export function RegistrationAccessForm({
         claim={draft}
         claimErrors={errors}
         passwordSet={server.password_set}
+        enabledMethods={server.enabled_access_methods}
+        botCheck={server.bot_protection !== "not_used"}
+        isSuperadmin={superadmin}
         disabled={archived || saving}
         onMethodChange={(method) => form.edit({ method })}
         onClaimChange={form.edit}
@@ -120,7 +123,7 @@ export function RegistrationAccessForm({
         event={event}
         address={server.own_address}
         instanceHost={server.instance_host}
-        canEdit={canEditAddress}
+        canEdit={superadmin}
         disabled={archived || saving}
         onChanged={form.addressChanged}
         onArchived={form.eventArchived}

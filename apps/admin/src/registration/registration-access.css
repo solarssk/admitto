@@ -102,7 +102,7 @@
   overflow-wrap: anywhere;
 }
 
-/* The restriction of the company sign-in sits in the Way in card, under the choice: its fields are spaced by the card's gap, and a
+/* The restriction of the company SSO sits in the Way in card, under the choice: its fields are spaced by the card's gap, and a
  * long GUID or an explanation wraps instead of widening the card. */
 .access-claim {
   display: flex;
@@ -113,8 +113,7 @@
   border-top: 1px solid var(--border);
 }
 
-.access-claim .settings-card-intro,
-.access-claim .at-hint {
+.access-claim .settings-card-intro {
   overflow-wrap: anywhere;
 }
 

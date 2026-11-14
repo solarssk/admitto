@@ -18,7 +18,7 @@ const ACCESS_HINT = "Whether guests can register for this event, how they get in
 const ACCESS_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "mode", title: "Guest registration", intro: 1, rows: 2, rowHeight: 60 },
   { id: "checklist", title: "Setup checklist", rows: 10, rowHeight: 46 },
-  { id: "way-in", title: "Way in", intro: 1, rows: 1, rowHeight: 40 },
+  { id: "way-in", title: "How guests open the form", intro: 1, rows: 1, rowHeight: 40 },
   { id: "form", title: "Form", rows: 6, rowHeight: 64 },
   { id: "questions", title: "Your questions on the form", rows: 2, rowHeight: 40 },
 ];

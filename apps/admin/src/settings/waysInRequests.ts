@@ -7,7 +7,7 @@ import {
   type WaysInSaved,
 } from "./registrationAccessMethods.js";
 
-/** The ways in of the instance and the provider of the company sign-in, read together: the card shows both. */
+/** The ways in of the instance and the provider of the company SSO, read together: the card shows both. */
 export async function fetchWaysIn(signal?: AbortSignal): Promise<WaysIn> {
   const [methods, sso] = await Promise.all([fetchRegistrationAccessMethods(signal), fetchRegistrationSsoProvider(signal)]);
   return { methods, sso };

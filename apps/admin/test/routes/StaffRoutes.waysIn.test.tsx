@@ -104,7 +104,7 @@ describe("the Ways in card, which sits on the superadmin-only settings route", (
 
     expect(await screen.findByRole("switch", { name: "Link" })).toBeTruthy();
     expect(screen.getByRole("switch", { name: "Password" })).toBeTruthy();
-    expect(screen.getByRole("switch", { name: "Company sign-in" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Company SSO" })).toBeTruthy();
     expect(fetchRegistrationAccessMethods).toHaveBeenCalledTimes(1);
     expect(fetchRegistrationSsoProvider).toHaveBeenCalledTimes(1);
   });

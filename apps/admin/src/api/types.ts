@@ -1509,7 +1509,7 @@ export interface SaveRegistrationAccessMethodsBody {
   methods: RegistrationAccessMethod[];
 }
 
-/** Where the choice of the identity provider for the company sign-in stands: `ready` (it exists and is on), `not_selected`,
+/** Where the choice of the identity provider for the company SSO stands: `ready` (it exists and is on), `not_selected`,
  * `missing` (the chosen one was deleted) or `disabled` (the chosen one is turned off). */
 export type RegistrationSsoProviderState = "ready" | "not_selected" | "missing" | "disabled";
 
@@ -1522,11 +1522,11 @@ export interface RegistrationSsoProviderDto {
   providers: Array<{ id: string; display_name: string }>;
   redirect_uri: string | null;
   /** Every return address to list at the provider: the instance's first, then one for each event with an own address of its own that
-   * uses the company sign-in, verified or not (`verified` says which). */
+   * uses the company SSO, verified or not (`verified` says which). */
   redirect_uris: RegistrationRedirectUriDto[];
 }
 
-/** One return address of the company sign-in. */
+/** One return address of the company SSO. */
 export interface RegistrationRedirectUriDto {
   uri: string;
   host: "instance" | "event_domain";
@@ -1679,6 +1679,10 @@ export interface RegistrationSettingsDto {
   mode: RegistrationMode | null;
   /** None or one way in. The server may hold a way this screen does not offer; it counts as no choice. */
   access_methods: RegistrationAccessMethod[];
+  /** The ways in a superadmin has turned on for the organisation, the only ones an event can choose. */
+  enabled_access_methods: RegistrationAccessMethod[];
+  /** `not_used` when a superadmin switched the bot check off for the organisation, so the link and password forms have none. */
+  bot_protection: "required" | "not_used";
   waitlist_enabled: boolean;
   verify_email: boolean;
   max_companions: number;
@@ -1687,7 +1691,7 @@ export interface RegistrationSettingsDto {
   consent_keys: string[];
   /** The guest form draws its date, time and phone boxes in the product's style, not the browser's. */
   styled_form_controls: boolean;
-  /** The company sign-in only: the one claim of the identity provider's token that a guest must hold (for example `tid`), or
+  /** The company SSO only: the one claim of the identity provider's token that a guest must hold (for example `tid`), or
    * null for no restriction. Sent and saved together with `sso_claim_values`. */
   sso_claim_name: string | null;
   /** The values of that claim that may register, exactly as the provider sends them. Empty for no restriction. */
@@ -1736,7 +1740,8 @@ export interface SaveRegistrationSettingsBody {
   consent_keys?: string[];
   styled_form_controls?: boolean;
   /** Sent together with `sso_claim_values`: both set, or `null` and `[]` to remove the restriction. A restriction for an event
-   * whose way in is not the company sign-in is refused (422 `sso_claim_needs_sso`). */
+   * whose way in is not the company SSO is refused (422 `sso_claim_needs_sso`). Only a superadmin may change it (403
+   * `sso_claim_superadmin_only`). */
   sso_claim_name?: string | null;
   sso_claim_values?: string[];
 }

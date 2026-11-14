@@ -68,7 +68,7 @@ describe("RegistrationAccessTab: the first read", () => {
 
     const held = placeholder() as HTMLElement;
     expect(held.classList.contains("at-loading-hold")).toBe(true);
-    for (const title of ["Guest registration", "Setup checklist", "Way in", "Form", "Your questions on the form"]) expect(within(held).getByText(title)).toBeTruthy();
+    for (const title of ["Guest registration", "Setup checklist", "How guests open the form", "Form", "Your questions on the form"]) expect(within(held).getByText(title)).toBeTruthy();
     // The shapes are decoration; nothing claims that there is nothing yet.
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("radiogroup")).toBeNull();
@@ -242,18 +242,18 @@ describe("RegistrationAccessTab: the settings", () => {
 
     expect(radio("Link").getAttribute("aria-checked")).toBe("false");
     expect(radio("Password").getAttribute("aria-checked")).toBe("false");
-    expect(radio("Company sign-in").getAttribute("aria-checked")).toBe("false");
-    expect(screen.getByText("Choose how guests open the form. You can use one way in at a time.")).toBeTruthy();
+    expect(radio("Company SSO").getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText("Choose how guests open the registration form.")).toBeTruthy();
     expect(isOff(saveButton())).toBe(true);
   });
 
-  it("says what each way in does, and shows the password row only for the password", async () => {
+  it("says what each way does in a notice, and shows the password row only for the password", async () => {
     await renderLoaded(settings({ access_methods: ["link"] }));
     expect(screen.getByText("Anyone who has the link can ask to join. A bot check protects the form.")).toBeTruthy();
     expect(screen.queryByText("Event password")).toBeNull();
 
     fireEvent.click(radio("Password"));
-    expect(screen.getByText("Guests must type the event password to open the form. A bot check protects it too.")).toBeTruthy();
+    expect(screen.getByText("Guests need the link and the event password to open the form. A bot check protects the form.")).toBeTruthy();
     expect(screen.getByText("Event password")).toBeTruthy();
   });
 
@@ -335,7 +335,7 @@ describe("RegistrationAccessTab: the checklist", () => {
     expect(rows[0]?.textContent).toContain("Publish the privacy notice, the terms and every consent you chose.");
     expect(rows[1]?.textContent).toContain("Email sending");
     expect(rows[1]?.textContent).toContain("Email sending is not set up for this event, so guests would get no email.");
-    expect(rows[2]?.textContent).toContain("A way in is chosen.");
+    expect(rows[2]?.textContent).toContain("A way for guests to open the form is chosen.");
     expect(within(card("Setup checklist")).getByText("8 of 10 done")).toBeTruthy();
   });
 
@@ -389,7 +389,7 @@ describe("RegistrationAccessTab: the checklist", () => {
     await renderLoaded(settings({ access_methods: [], readiness: checks("access_method") }));
 
     const row = checklistRows()[0] as HTMLElement;
-    expect(row.textContent).toContain("Choose how guests get in: with a link, with a password or with the company sign-in.");
+    expect(row.textContent).toContain("Choose how guests open the form: with a link, with a password or with company SSO.");
     expect(within(row).queryByRole("link")).toBeNull();
   });
 
@@ -559,7 +559,7 @@ describe("RegistrationAccessTab: an archived event", () => {
   });
 
   it("turns the password buttons off with the reason, which is the one reason an archived event gives", () => {
-    for (const name of ["Change password", "Remove"]) {
+    for (const name of ["Change", "Remove"]) {
       const button = screen.getByRole("button", { name });
       expect(isOff(button), name).toBe(true);
       expect(getTooltipText(button)).toBe("This event is archived. Editing is disabled.");

@@ -23,6 +23,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 });
 vi.mock("../../src/connection/ConnectionStateProvider.js");
 vi.mock("../../src/auth/login-navigation.js", () => ({ goToLogin: vi.fn() }));
+// The restriction is a superadmin's to change (RegistrationAccessTab.wayin.test.tsx holds what anybody else sees).
+vi.mock("../../src/auth/AuthProvider.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/auth/AuthProvider.js")>()),
+  useOptionalAuth: () => ({ assignments: [{ role: "superadmin", scope_type: "instance", scope_id: null }] }),
+}));
 vi.mock("@admitto/ui", async (importOriginal) => {
   const { addToast: toast } = await import("./accessApiMocks.js");
   return { ...(await importOriginal<typeof import("@admitto/ui")>()), useToast: () => ({ addToast: toast }) };
@@ -47,24 +52,24 @@ afterEach(() => {
   cleanup();
 });
 
-describe("the company sign-in as the way in of an event", () => {
+describe("the company SSO as the way in of an event", () => {
   it("is a third way in beside the link and the password, and says what it does", async () => {
     await renderLoaded(ssoSettings());
 
-    expect(radio("Company sign-in").getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByText(/Guests sign in with the company's identity provider to open the form\. The email address comes from that sign-in and cannot be changed on the form\./)).toBeTruthy();
+    expect(radio("Company SSO").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("Guests sign in with the company account. Their email comes from that sign-in.")).toBeTruthy();
     expect(screen.queryByText("Event password")).toBeNull();
     expect(screen.queryByText("Choosing another way in later removes the password.")).toBeNull();
   });
 
-  it("greys out the confirmation of the address for the company sign-in and says why, and gives the switch back, unchanged, with the other ways in", async () => {
+  it("greys out the confirmation of the address for the company SSO and says why, and gives the switch back, unchanged, with the other ways in", async () => {
     await renderLoaded(settings({ verify_email: true }));
     expect(isOff(toggle("Confirm email addresses"))).toBe(false);
 
-    fireEvent.click(radio("Company sign-in"));
+    fireEvent.click(radio("Company SSO"));
 
     expect(isOff(toggle("Confirm email addresses"))).toBe(true);
-    expect(screen.getByText(/Not used with the company sign-in: the identity provider has already verified the address, so guests are sent no confirmation link\./)).toBeTruthy();
+    expect(screen.getByText(/Not used with the company SSO: the identity provider has already verified the address, so guests are sent no confirmation link\./)).toBeTruthy();
     expect(screen.queryByText(/Guests confirm their address with a link/)).toBeNull();
     fireEvent.click(radio("Link"));
     expect(isOff(toggle("Confirm email addresses"))).toBe(false);
@@ -72,22 +77,22 @@ describe("the company sign-in as the way in of an event", () => {
     expect(screen.getByText(/Guests confirm their address with a link/)).toBeTruthy();
   });
 
-  it("does not send the confirmation of the address when the way in is the company sign-in, though it is on", async () => {
+  it("does not send the confirmation of the address when the way in is the company SSO, though it is on", async () => {
     await renderLoaded(settings({ verify_email: true }));
     api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ verify_email: true }));
 
-    fireEvent.click(radio("Company sign-in"));
+    fireEvent.click(radio("Company SSO"));
     await save();
 
     expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["sso"] });
   });
 
-  it("shows the fields of the restriction for the company sign-in only", async () => {
+  it("shows the fields of the restriction for the company SSO only", async () => {
     await renderLoaded(settings());
     expect(claimName()).toBeNull();
     expect(claimValues()).toBeNull();
 
-    fireEvent.click(radio("Company sign-in"));
+    fireEvent.click(radio("Company SSO"));
     expect(claimName()).toBeTruthy();
     expect(claimValues()).toBeTruthy();
 
@@ -100,7 +105,7 @@ describe("the company sign-in as the way in of an event", () => {
 
   it("explains the restriction: the claim and its values, tid and the tenant ID of Microsoft Entra ID, exact matching, never an address, and empty for none", async () => {
     await renderLoaded(ssoSettings());
-    const text = card("Way in").textContent ?? "";
+    const text = card("How guests open the form").textContent ?? "";
 
     expect(text).toMatch(/With Microsoft Entra ID, the claim is usually tid and the value is the tenant ID of the company \(a GUID\)\./);
     expect(text).toMatch(/Leave both empty for no restriction\./);
@@ -122,7 +127,7 @@ describe("the company sign-in as the way in of an event", () => {
     await renderLoaded(settings());
     api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111", "bbb-222"] }));
 
-    fireEvent.click(radio("Company sign-in"));
+    fireEvent.click(radio("Company SSO"));
     type(claimName(), "tid");
     type(claimValues(), "aaa-111\n\nbbb-222\n");
     await save();
@@ -168,7 +173,7 @@ describe("the company sign-in as the way in of an event", () => {
     expect(screen.queryByText("Unsaved changes")).toBeNull();
   });
 
-  it("sends only the way in when the event moves away from the company sign-in, whatever is typed", async () => {
+  it("sends only the way in when the event moves away from the company SSO, whatever is typed", async () => {
     await renderLoaded(ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
     api.saveRegistrationSettings.mockResolvedValue(settings());
 
@@ -207,7 +212,7 @@ describe("what is wrong with the restriction", () => {
 
     expect(screen.getByText("Enter at least one value, or clear the name.")).toBeTruthy();
     expect(claimValues()?.getAttribute("aria-invalid")).toBe("true");
-    expect(alertText()).toBe("Fix the restriction of the company sign-in before you save.");
+    expect(alertText()).toBe("Fix the restriction of the company SSO before you save.");
     expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
   });
 
@@ -249,7 +254,7 @@ describe("what is wrong with the restriction", () => {
     fireEvent.click(radio("With approval"));
     fireEvent.click(saveButton());
 
-    expect(alertText()).toBe("Fix the restriction of the company sign-in before you save.");
+    expect(alertText()).toBe("Fix the restriction of the company SSO before you save.");
     expect(screen.queryByRole("dialog", { name: "Turn off registration?" })).toBeNull();
     expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
   });
@@ -307,7 +312,7 @@ describe("what is wrong with the restriction", () => {
     expect(screen.queryByText("The name has letters, digits and signs only, with no spaces.")).toBeNull();
   });
 
-  it("says in its own words when the server refuses a restriction for a way in that is not the company sign-in", async () => {
+  it("says in its own words when the server refuses a restriction for a way in that is not the company SSO", async () => {
     await renderLoaded(ssoSettings());
     api.saveRegistrationSettings.mockRejectedValue(new ApiError(422, "sso_claim_needs_sso", "sso_claim_needs_sso"));
 
@@ -315,19 +320,19 @@ describe("what is wrong with the restriction", () => {
     type(claimValues(), "aaa-111");
     await save();
 
-    await waitFor(() => expect(alertText()).toContain("The restriction to one company works with the company sign-in only."));
+    await waitFor(() => expect(alertText()).toContain("The restriction to one company works with the company SSO only."));
     expect(alertText()).not.toContain("sso_claim_needs_sso");
   });
 });
 
-describe("the setup checklist of an event with the company sign-in", () => {
+describe("the setup checklist of an event with the company SSO", () => {
   const rows = () => Array.from(card("Setup checklist").querySelectorAll("li.access-check"));
 
-  it("has no bot protection among its checks, and the company sign-in as one", async () => {
+  it("has no bot protection among its checks, and the company SSO as one", async () => {
     await renderLoaded(ssoSettings());
 
     expect(screen.queryByText("Bot protection")).toBeNull();
-    expect(within(card("Setup checklist")).getByText("Company sign-in")).toBeTruthy();
+    expect(within(card("Setup checklist")).getByText("Company SSO")).toBeTruthy();
     expect(rows()).toHaveLength(10);
   });
 
@@ -335,7 +340,7 @@ describe("the setup checklist of an event with the company sign-in", () => {
     await renderLoaded(ssoSettings({ readiness: ssoChecks("identity_provider") }));
 
     const row = rows()[0] as HTMLElement;
-    expect(row.textContent).toContain("The company sign-in is not set up, so the form stays closed.");
+    expect(row.textContent).toContain("The company SSO is not set up, so the form stays closed.");
     expect(row.textContent).toContain("Ask a superadmin to choose the identity provider in Organisation settings, External services, Ways in.");
   });
 });
@@ -343,7 +348,7 @@ describe("the setup checklist of an event with the company sign-in", () => {
 describe("the restriction fields, for a screen reader", () => {
   async function violations(): Promise<string[]> {
     // The colours are drawn by the stylesheet that jsdom does not load, so contrast is left to the check in a real browser.
-    const result = await axe.run(card("Way in"), { rules: { "color-contrast": { enabled: false } } });
+    const result = await axe.run(card("How guests open the form"), { rules: { "color-contrast": { enabled: false } } });
     return result.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(" ")).join(", ")}`);
   }
 
