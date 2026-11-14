@@ -41,7 +41,13 @@ export function AccessSsoClaim({
       <p className="settings-card-intro">{INTRO}</p>
       {note !== undefined && <Notice variant="info">{note}</Notice>}
       <div className="mail-transport-section">
-        {providerName !== null && <Input label="Identity provider" value={providerName} readOnly disabled={disabled} hint={PROVIDER_HINT} />}
+        {providerName !== null && (
+          <div className="at-field access-static">
+            <span className="at-label">Identity provider</span>
+            <span className="access-static__value">{providerName}</span>
+            <span className="at-hint">{PROVIDER_HINT}</span>
+          </div>
+        )}
         <Input
           label="Claim name"
           value={name}

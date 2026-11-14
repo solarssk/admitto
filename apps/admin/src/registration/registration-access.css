@@ -310,6 +310,32 @@
   }
 }
 
+/* A value that is only read: the label, the value as plain text and a hint, with no box, no focus and no cursor of a field. */
+.access-static {
+  min-width: 0;
+}
+
+.access-static__value {
+  overflow-wrap: anywhere;
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+}
+
+/* One return address in the style of the DNS record: a single box, as high as a field, under its label. */
+.access-dns--single .access-dns__row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 640px) {
+  .access-dns--single .access-dns__row--head {
+    display: flex;
+  }
+
+  .access-dns--single .access-dns__cell::before {
+    display: none;
+  }
+}
+
 .access-claim__values {
   grid-column: 1 / -1;
 }

@@ -40,6 +40,7 @@ A Superadmin does this, in **Event settings → Registration**, on the **Company
 2. Open **Event settings → Registration**. In **Claim name**, type the name of the claim that the identity provider puts in the sign-in. With Microsoft Entra ID it is usually `tid`.
 3. In **Allowed values**, type one value on each line. With `tid`, the value is the tenant ID of the company, a GUID.
 4. Select **Save** at the bottom of the tab. Leave both fields empty for no limit.
+5. Under **Setup for your IT team** on the same card, give IT the return addresses to enter at the identity provider (the instance's, and the event's own address when it has one), the note about a gateway such as Cloudflare Access, and the claim you set. **Copy instructions for an AI agent** puts all of it on the clipboard as plain text.
 
 **Choose what the form asks**
 

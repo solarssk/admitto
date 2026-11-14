@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Card, HintLabel, Notice, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -7,7 +7,7 @@ import {
   saveRegistrationSettings,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { CustomDomainDto, RegistrationSettingsDto } from "../api/types.js";
+import type { CustomDomainDto, RegistrationRedirectUriDto, RegistrationSettingsDto } from "../api/types.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
@@ -18,8 +18,9 @@ import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "../settings/Se
 import { assertPresent } from "../utils/assert-present.js";
 import { AccessAddressCard } from "./AccessAddressCard.js";
 import { AccessSsoClaim } from "./AccessSsoClaim.js";
-import { claimErrors, draftFromSettings, settingsPatch, type AccessDraft } from "./accessSettings.js";
+import { claimErrors, draftFromSettings, parseClaim, settingsPatch, type AccessDraft } from "./accessSettings.js";
 import { ownAddressOf } from "./ownAddress.js";
+import { eventReturnAddress, SsoItSetup } from "./SsoItSetup.js";
 import "./registration-access.css";
 
 const PANEL_HINT = "The parts of guest registration that a superadmin sets for this event.";
@@ -33,7 +34,14 @@ const SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
 
 /** The first read: the settings of the event (the address and the restriction come from them) and the name of the identity provider, which a
  * superadmin may read. The name is a nicety: a read of it that fails leaves the row out, and the panel still works. */
-async function readBoth(eventId: string, signal: AbortSignal): Promise<{ settings: RegistrationSettingsDto; providerName: string | null }> {
+interface Loaded {
+  settings: RegistrationSettingsDto;
+  providerName: string | null;
+  /** Every return address of the company SSO that the instance lists, for the setup for IT. */
+  redirectUris: RegistrationRedirectUriDto[];
+}
+
+async function readBoth(eventId: string, signal: AbortSignal): Promise<Loaded> {
   const settings = await fetchRegistrationSettings(eventId, signal);
   let provider: Awaited<ReturnType<typeof fetchRegistrationSsoProvider>> | null = null;
   try {
@@ -42,7 +50,7 @@ async function readBoth(eventId: string, signal: AbortSignal): Promise<{ setting
     if (err instanceof ApiError && err.status === 401) throw err;
   }
   const chosen = provider?.providers.find((candidate) => candidate.id === provider?.provider_id);
-  return { settings, providerName: chosen?.display_name ?? null };
+  return { settings, providerName: chosen?.display_name ?? null, redirectUris: provider?.redirect_uris ?? [] };
 }
 
 /**
@@ -65,7 +73,7 @@ interface PanelProps {
 
 function EventRegistrationBody({ eventId, archived, refreshEvent, onDirtyChange, onSavingChange }: Readonly<PanelProps>) {
   const { reportApiError } = useConnectionState();
-  const [loaded, setLoaded] = useState<{ settings: RegistrationSettingsDto; providerName: string | null } | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
   const fetchAll = useMemo(
     () =>
       orLoginRedirect(async (signal: AbortSignal) => {
@@ -101,6 +109,7 @@ function EventRegistrationBody({ eventId, archived, refreshEvent, onDirtyChange,
       archived={archived}
       initial={loaded.settings}
       providerName={loaded.providerName}
+      redirectUris={loaded.redirectUris}
       refreshEvent={refreshEvent}
       onDirtyChange={onDirtyChange}
       onSavingChange={onSavingChange}
@@ -115,6 +124,7 @@ function SsoClaimCard({
   saving,
   providerName,
   draft,
+  setup,
   onChange,
 }: Readonly<{
   /** The event's way in is the company SSO: the restriction belongs to that way alone, and the server refuses it for another. */
@@ -123,6 +133,8 @@ function SsoClaimCard({
   saving: boolean;
   providerName: string | null;
   draft: AccessDraft;
+  /** The setup for IT, under the fields. */
+  setup: ReactNode;
   onChange: (change: Partial<Pick<AccessDraft, "sso_claim_name" | "sso_claim_values">>) => void;
 }>) {
   return (
@@ -137,6 +149,7 @@ function SsoClaimCard({
           note={usesSso ? undefined : NOT_USED_NOTE}
           onChange={onChange}
         />
+        {setup}
       </div>
     </Card>
   );
@@ -153,6 +166,7 @@ function EventRegistrationCards({
   archived,
   initial,
   providerName,
+  redirectUris,
   refreshEvent,
   onDirtyChange,
   onSavingChange,
@@ -161,6 +175,7 @@ function EventRegistrationCards({
   archived: boolean;
   initial: RegistrationSettingsDto;
   providerName: string | null;
+  redirectUris: readonly RegistrationRedirectUriDto[];
   refreshEvent?: () => Promise<unknown>;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
@@ -235,6 +250,14 @@ function EventRegistrationCards({
         saving={saving}
         providerName={providerName}
         draft={draft}
+        setup={
+          <SsoItSetup
+            instanceUri={redirectUris.find((entry) => entry.host === "instance")?.uri ?? null}
+            eventUri={eventReturnAddress(redirectUris, settings.own_address?.domain ?? null)}
+            claim={{ name: base.sso_claim_name === "" ? null : base.sso_claim_name, values: parseClaim(base).values }}
+            defaultOpen={base.method === "sso"}
+          />
+        }
         onChange={(change) => {
           setTyped((current) => ({ ...current, ...change }));
           setError(null);

@@ -84,10 +84,12 @@ describe("the Company SSO card", () => {
   it("shows the identity provider of the organisation, read only, with where it is chosen", async () => {
     await renderPanel(ssoSettings());
 
-    const provider = within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement;
-    expect(provider.value).toBe("Acme Entra ID");
-    expect(provider.readOnly).toBe(true);
-    expect(within(ssoCard()).getByText("Chosen for the organisation, in Organisation settings, Identity.")).toBeTruthy();
+    const row = within(ssoCard()).getByText("Identity provider", { selector: ".access-static .at-label" }).closest(".access-static") as HTMLElement;
+    expect(row.querySelector(".access-static__value")?.textContent).toBe("Acme Entra ID");
+    expect(row.querySelector(".at-hint")?.textContent).toBe("Chosen for the organisation, in Organisation settings, Identity.");
+    // Plain text: nothing in the row can take the focus or looks like a box to type in.
+    expect(row.querySelector("input, button, [tabindex]")).toBeNull();
+    expect(within(ssoCard()).queryByLabelText("Identity provider")).toBeNull();
   });
 
   it.each([
@@ -125,7 +127,6 @@ describe("the Company SSO card", () => {
 
     expect(claimName()?.disabled).toBe(true);
     expect(claimValues()?.disabled).toBe(true);
-    expect((within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement).disabled).toBe(true);
     expect(isOff(saveButton())).toBe(true);
     const notice = ssoCard().querySelector(".at-notice--info") as HTMLElement;
     expect(notice.textContent).toBe("Company SSO is not chosen for this event. Choose it as the way guests open the form, on the Access tab of Registration.");

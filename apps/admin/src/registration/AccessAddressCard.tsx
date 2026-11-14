@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { ItPanel, RecordCell } from "./ItSetup.js";
 import { Button, Card, Notice, useToast } from "@admitto/ui";
 import type { CustomDomainDto, RegistrationOwnAddressDto } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
@@ -39,34 +40,6 @@ function recordName(own: OwnAddress, address: RegistrationOwnAddressDto | null, 
 
 const NAME_PLACEHOLDER = "events.example.com";
 
-/** One value of the DNS record, or a grey example while there is none, with a button that copies it. */
-function RecordCell({ label, value, placeholder, copyLabel, arrow }: Readonly<{ label: string; value: string; placeholder: string; copyLabel?: string; arrow?: boolean }>) {
-  const { addToast } = useToast();
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(value);
-      addToast("Copied.", "success");
-    } catch {
-      addToast("Could not copy.", "error");
-    }
-  }
-  return (
-    <div className="access-dns__cell" data-label={label}>
-      {arrow === true && (
-        <span className="access-dns__arrow" aria-hidden="true">
-          <i className="ti ti-arrow-right" />
-        </span>
-      )}
-      <span className={value === "" ? "access-dns__value access-dns__value--placeholder" : "access-dns__value"} title={value === "" ? undefined : value}>{value === "" ? placeholder : value}</span>
-      {copyLabel !== undefined && value !== "" && (
-        <button type="button" className="access-dns__copy" aria-label={copyLabel} onClick={() => void copy()}>
-          <i className="ti ti-copy" aria-hidden="true" />
-        </button>
-      )}
-    </div>
-  );
-}
-
 /** The instructions for IT as plain text, whole in itself: a person can read them and so can an agent that has access to the DNS. */
 function instructionsText(name: string, target: string): string {
   const address = name === "" ? NAME_PLACEHOLDER : name;
@@ -87,63 +60,29 @@ function instructionsText(name: string, target: string): string {
  * has not passed, and stays shut for a working one.
  */
 function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; address: RegistrationOwnAddressDto | null; instanceHost: string | null }>) {
-  const bodyId = useId();
-  const { addToast } = useToast();
-  const [open, setOpen] = useState(address?.status !== "ok");
   const target = instanceHost ?? "the address of this instance";
   const name = recordName(own, address, instanceHost);
-  const text = instructionsText(name, target);
-
-  async function copyAll() {
-    try {
-      await navigator.clipboard.writeText(text);
-      addToast("Instructions copied.", "success");
-    } catch {
-      addToast("Could not copy.", "error");
-    }
-  }
-
   return (
-    <section className="access-it" aria-label="Setup for your IT team">
-      <div className="access-it__head">
-        <Button
-          type="button"
-          variant="ghost"
-          className="access-it__toggle"
-          icon={<i className={`ti ti-chevron-${open ? "down" : "right"}`} aria-hidden="true" />}
-          aria-expanded={open}
-          aria-controls={bodyId}
-          onClick={() => setOpen((current) => !current)}
-        >
-          Setup for your IT team
-        </Button>
-        <Button type="button" variant="secondary" size="sm" icon={<i className="ti ti-copy" aria-hidden="true" />} onClick={() => void copyAll()}>
-          Copy instructions for an AI agent
-        </Button>
-      </div>
-      <div id={bodyId} className="access-it__body" hidden={!open}>
-        <ol className="access-steps">
-          <li>
-            <span>Create a CNAME record that points the address to {target}.</span>
-            <div className="access-dns">
-              <div className="access-dns__row access-dns__row--head">
-                <span>Type</span>
-                <span>Name</span>
-                <span>Target</span>
-              </div>
-              <div className="access-dns__row">
-                <RecordCell label="Type" value="CNAME" placeholder="" />
-                <RecordCell label="Name" value={name} placeholder={NAME_PLACEHOLDER} copyLabel="Copy the name" />
-                <RecordCell label="Target" value={instanceHost ?? ""} placeholder="the address of this instance" copyLabel="Copy the target" arrow />
-              </div>
-            </div>
-          </li>
-          <li>Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.</li>
-          <li>Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.</li>
-          <li>Select Check now. Guests get links on the address once the check passes. Until then they keep the main address.</li>
-        </ol>
-      </div>
-    </section>
+    <ItPanel defaultOpen={address?.status !== "ok"} text={instructionsText(name, target)}>
+      <li>
+        <span>Create a CNAME record that points the address to {target}.</span>
+        <div className="access-dns">
+          <div className="access-dns__row access-dns__row--head">
+            <span>Type</span>
+            <span>Name</span>
+            <span>Target</span>
+          </div>
+          <div className="access-dns__row">
+            <RecordCell label="Type" value="CNAME" placeholder="" />
+            <RecordCell label="Name" value={name} placeholder={NAME_PLACEHOLDER} copyLabel="Copy the name" />
+            <RecordCell label="Target" value={instanceHost ?? ""} placeholder="the address of this instance" copyLabel="Copy the target" arrow />
+          </div>
+        </div>
+      </li>
+      <li>Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.</li>
+      <li>Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.</li>
+      <li>Select Check now. Guests get links on the address once the check passes. Until then they keep the main address.</li>
+    </ItPanel>
   );
 }
 

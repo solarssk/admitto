@@ -4,14 +4,8 @@ import type { RegistrationRedirectUriDto, RegistrationSsoProviderDto } from "../
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "../identity/routes.js";
 import { ssoProviderNote, ssoProviderOptions } from "./registrationAccessMethods.js";
+import { EVENT_ADDRESS_HINT, GATEWAY_NOTE, REDIRECT_HINT, UNVERIFIED_NOTE } from "./registrationSsoTexts.js";
 import "./registration-ways-in.css";
-
-const REDIRECT_HINT =
-  "Enter this address once at the identity provider, as an allowed redirect (callback) address. It is the same for every event that uses the company SSO on the address of this instance.";
-const EVENT_ADDRESS_HINT =
-  "Also enter this address at the identity provider. It belongs to the event that uses the company SSO on its own address. Every event address needs its own entry at the identity provider.";
-const UNVERIFIED_NOTE = " This address has not passed its check yet. Enter it now so that the sign-in works as soon as it does.";
-const GATEWAY_NOTE = "If a gateway such as Cloudflare Access stands in front of Admitto, it must let /sso/callback through without a sign-in, together with /r/*.";
 
 /** One address to list at the provider, with a button that copies it. */
 function RedirectAddress({ id, label, uri, hint }: Readonly<{ id: string; label: string; uri: string; hint: string }>) {
