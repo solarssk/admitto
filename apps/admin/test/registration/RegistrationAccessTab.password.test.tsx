@@ -585,4 +585,3 @@ describe("RegistrationAccessTab: leaving the password as the way in", () => {
     expect(radio(chosen).getAttribute("aria-checked")).toBe("true");
   });
 });
-});
