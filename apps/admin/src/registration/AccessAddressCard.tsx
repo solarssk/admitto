@@ -88,7 +88,6 @@ function instructionsText(name: string, target: string): string {
  */
 function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; address: RegistrationOwnAddressDto | null; instanceHost: string | null }>) {
   const bodyId = useId();
-  const textId = useId();
   const { addToast } = useToast();
   const [open, setOpen] = useState(address?.status !== "ok");
   const target = instanceHost ?? "the address of this instance";
@@ -118,6 +117,9 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
         >
           Setup for your IT team
         </Button>
+        <Button type="button" variant="secondary" size="sm" icon={<i className="ti ti-copy" aria-hidden="true" />} onClick={() => void copyAll()}>
+          Copy instructions for an AI agent
+        </Button>
       </div>
       <div id={bodyId} className="access-it__body" hidden={!open}>
         <ol className="access-steps">
@@ -140,17 +142,6 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
           <li>Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.</li>
           <li>Select Check now. Guests get links on the address once the check passes. Until then they keep the main address.</li>
         </ol>
-        <div className="at-field">
-          <label className="at-label" htmlFor={textId}>
-            Instructions as text
-          </label>
-          <div className="access-it__text">
-            <textarea id={textId} className="at-textarea" rows={9} readOnly value={text} spellCheck={false} />
-            <Button type="button" variant="secondary" icon={<i className="ti ti-copy" aria-hidden="true" />} aria-label="Copy the instructions" onClick={() => void copyAll()}>
-              Copy
-            </Button>
-          </div>
-        </div>
       </div>
     </section>
   );

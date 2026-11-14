@@ -24,7 +24,7 @@ import "./registration-access.css";
 
 const PANEL_HINT = "The parts of guest registration that a superadmin sets for this event.";
 
-const NOT_USED_NOTE = "Choose Company SSO as the way guests open the form, on the Access tab of Registration.";
+const NOT_USED_NOTE = "Company SSO is not chosen for this event. Choose it as the way guests open the form, on the Access tab of Registration.";
 
 const SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
@@ -128,13 +128,13 @@ function SsoClaimCard({
   return (
     <Card title="Company SSO">
       <div className="settings-card-stack">
-        {!usesSso && <Notice variant="info">{NOT_USED_NOTE}</Notice>}
         <AccessSsoClaim
           name={draft.sso_claim_name}
           values={draft.sso_claim_values}
           errors={claimErrors(draft)}
           disabled={!usesSso || archived || saving}
           providerName={providerName}
+          note={usesSso ? undefined : NOT_USED_NOTE}
           onChange={onChange}
         />
       </div>

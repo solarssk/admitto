@@ -125,9 +125,11 @@ describe("the Company SSO card", () => {
     expect(claimValues()?.disabled).toBe(true);
     expect((within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement).disabled).toBe(true);
     expect(isOff(saveButton())).toBe(true);
-    const notice = ssoCard().querySelector(".at-notice--info");
-    expect(notice?.textContent).toBe("Choose Company SSO as the way guests open the form, on the Access tab of Registration.");
-    expect(notice?.nextElementSibling?.classList.contains("access-claim")).toBe(true);
+    const notice = ssoCard().querySelector(".at-notice--info") as HTMLElement;
+    expect(notice.textContent).toBe("Company SSO is not chosen for this event. Choose it as the way guests open the form, on the Access tab of Registration.");
+    // The explanation comes first, then the notice, then the fields.
+    const parts = [...(ssoCard().querySelector(".access-claim") as HTMLElement).children];
+    expect(parts.map((part) => part.className.split(" ")[0])).toEqual(["settings-card-intro", "at-notice", "mail-transport-section"]);
   });
 
   it("does not react to typing in the grey fields, and says nothing of the way for an event that uses the company SSO", async () => {

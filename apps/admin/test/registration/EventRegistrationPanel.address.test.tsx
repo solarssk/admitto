@@ -163,7 +163,6 @@ describe("the address card", () => {
     expect(cellOf("Name").textContent).toBe(DOMAIN);
   });
 
-  const instructions = () => within(addressCard()).getByLabelText("Instructions as text") as HTMLTextAreaElement;
   const text = (name: string, target: string) =>
     [
       "Set up an own address for the guest registration of an event in Admitto.",
@@ -175,21 +174,32 @@ describe("the address card", () => {
       "Report back when the address is ready.",
     ].join("\n");
 
-  it("gives the instructions as a read only text box that follows the typed address, and copies them with the button beside it", async () => {
+  const copyButton = () => within(addressCard()).getByRole("button", { name: "Copy instructions for an AI agent" });
+
+  it("copies the instructions as plain text, whole in themselves, with the typed address and the host of the instance", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     await renderPanel(settings());
-    expect(instructions().readOnly).toBe(true);
-    expect(instructions().value).toBe(text("events.example.com", "admitto.example.com"));
+    fireEvent.click(copyButton());
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(text("events.example.com", "admitto.example.com")));
     type(DOMAIN);
-    expect(instructions().value).toBe(text(DOMAIN, "admitto.example.com"));
 
-    fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy the instructions" }));
+    fireEvent.click(copyButton());
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(text(DOMAIN, "admitto.example.com")));
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(text(DOMAIN, "admitto.example.com")));
     expect(addToast).toHaveBeenCalledWith("Instructions copied.", "success");
-    expect(instructions().closest(".access-it__text")?.querySelector("button")?.textContent).toBe("Copy");
-    expect(instructions().value).not.toMatch(/\bus\b/);
+    expect(writeText.mock.calls.map((call) => String(call[0])).join("\n")).not.toMatch(/\bus\b/);
+  });
+
+  it("shows the steps and the record but not the whole text, and puts the button at the right of the heading", async () => {
+    await renderPanel(settings());
+
+    expect(addressCard().querySelector("textarea")).toBeNull();
+    expect(within(addressCard()).queryByText("Instructions as text")).toBeNull();
+    expect(within(addressCard()).queryByRole("button", { name: "Copy" })).toBeNull();
+    const head = addressCard().querySelector(".access-it__head") as HTMLElement;
+    expect(within(head).getAllByRole("button").map((control) => control.textContent)).toEqual(["Setup for your IT team", "Copy instructions for an AI agent"]);
+    expect(css()).toMatch(/\.access-it__head \{[^}]*justify-content: space-between;/);
   });
 
   it("uses the instance in general in the text when there is no host, and says when it cannot copy", async () => {
@@ -197,7 +207,7 @@ describe("the address card", () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     await renderPanel(settings({ instance_host: null }));
 
-    fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy the instructions" }));
+    fireEvent.click(copyButton());
 
     await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not copy.", "error"));
     expect(writeText.mock.calls[0]?.[0]).toContain("from events.example.com to the address of this instance.");
@@ -266,14 +276,12 @@ describe("the address card", () => {
     expect(within(addressCard()).getAllByRole("button", { name: /Save address/ })).toHaveLength(1);
   });
 
-  it("puts the setup for IT in a panel of its own with the toggle in its heading and the instructions as text under the steps", async () => {
+  it("puts the setup for IT in a panel of its own, the steps under its heading", async () => {
     await renderPanel(settings());
 
     const panel = addressCard().querySelector("section.access-it") as HTMLElement;
-    const head = panel.querySelector(".access-it__head") as HTMLElement;
-    expect(within(head).getAllByRole("button").map((control) => control.textContent)).toEqual(["Setup for your IT team"]);
     expect(panel.querySelector("ul")).toBeNull();
-    expect(panel.querySelector("ol.access-steps + .at-field textarea")).not.toBeNull();
+    expect(panel.querySelectorAll("ol.access-steps > li")).toHaveLength(4);
   });
 
   it.each([

@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { SSO_CLAIM_NAME_MAX, SSO_CLAIM_VALUE_MAX, SSO_CLAIM_VALUES_MAX } from "@admitto/shared";
-import { Input } from "@admitto/ui";
+import { Input, Notice } from "@admitto/ui";
 import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
 import type { AccessDraft, ClaimErrors } from "./accessSettings.js";
 import "./registration-access.css";
@@ -26,7 +26,7 @@ export function AccessSsoClaim({
 }: Readonly<{
   /** The identity provider chosen for the organisation, read only above the claim; none leaves the row out. */
   providerName: string | null;
-  /** One short sentence under the intro, such as why the fields are off. */
+  /** One short info notice under the intro, such as why the fields are off. */
   note?: string;
   name: string;
   values: string;
@@ -39,7 +39,7 @@ export function AccessSsoClaim({
   return (
     <div className="access-claim">
       <p className="settings-card-intro">{INTRO}</p>
-      {note !== undefined && <span className="at-hint">{note}</span>}
+      {note !== undefined && <Notice variant="info">{note}</Notice>}
       <div className="mail-transport-section">
         {providerName !== null && <Input label="Identity provider" value={providerName} readOnly disabled={disabled} hint={PROVIDER_HINT} />}
         <Input

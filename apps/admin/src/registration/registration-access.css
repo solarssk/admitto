@@ -166,35 +166,10 @@
 
 .access-it__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-}
-
-/* The instructions as text, in a box of a fixed height that scrolls, with the button that copies it beside it; under it on a narrow screen. */
-.access-it__text {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-
-.access-it__text .at-textarea {
-  flex: 1 1 auto;
-  min-width: 0;
-  resize: none;
-  overflow: auto;
-}
-
-@media (max-width: 640px) {
-  .access-it__text {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-
-.access-it__toggle {
-  padding-left: 0;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--text-secondary);
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
 }
 
 .access-steps {
