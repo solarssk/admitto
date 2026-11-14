@@ -68,6 +68,13 @@ describe("turnstileDirty", () => {
 
 describe("while the check is not used", () => {
   const saved = draft();
+
+  it("does not count an edit to the hidden keys as a change when the mode is as saved", () => {
+    const savedOff = draft({ botProtection: "not_used" });
+    const edited = draft({ botProtection: "not_used", siteKey: "other", secret: { mode: "replace", value: "x" } });
+    expect(turnstileDirty(edited, savedOff)).toBe(false);
+    expect(buildTurnstileSaveBody(edited, savedOff)).toBeNull();
+  });
   const off = (overrides: Partial<TurnstileDraft> = {}) => draft({ botProtection: "not_used", ...overrides });
 
   it("finds nothing to refuse in keys that cannot be seen", () => {

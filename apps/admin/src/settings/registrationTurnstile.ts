@@ -24,9 +24,10 @@ export function turnstileDraftFrom(dto: RegistrationTurnstileDto): TurnstileDraf
 }
 
 export function turnstileDirty(draft: TurnstileDraft, saved: TurnstileDraft): boolean {
-  return (
-    draft.botProtection !== saved.botProtection || draft.siteKey.trim() !== saved.siteKey.trim() || draft.secret.mode !== "idle"
-  );
+  if (draft.botProtection !== saved.botProtection) return true;
+  // While the check is not used the keys are hidden and not saved, so an edit to them is not a change.
+  if (draft.botProtection === "not_used") return false;
+  return draft.siteKey.trim() !== saved.siteKey.trim() || draft.secret.mode !== "idle";
 }
 
 /** Messages for what would be refused. Empty when the draft can be saved (or has nothing to save). */
