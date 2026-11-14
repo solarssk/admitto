@@ -211,9 +211,8 @@ export function AccessWayInCard({
       <ConfirmDialog
         open={leaving !== null}
         title="Remove the event password?"
-        message="Choosing another way removes the password. You cannot read it again."
+        message="Choosing another way removes the password when you save. You cannot read it again."
         confirmLabel="Remove"
-        confirmVariant="danger"
         onConfirm={() => {
           if (leaving !== null) onMethodChange(leaving);
           setLeaving(null);
