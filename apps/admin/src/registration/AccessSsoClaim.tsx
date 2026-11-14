@@ -6,6 +6,14 @@ import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
 import type { AccessDraft, ClaimErrors } from "./accessSettings.js";
 import "./registration-access.css";
 
+/** The identity provider the organisation chose for the company SSO, as the event page shows it. */
+export type SsoProviderKind = "entra" | "google" | "generic";
+
+export interface SsoProviderSummary {
+  name: string;
+  kind: SsoProviderKind;
+}
+
 const INTRO =
   "Optionally let only the people of one company register: the identity provider (OpenID Connect, such as Microsoft Entra ID) vouches for them with a claim in the sign-in. Name the claim and list the values that may register; with Entra ID the claim is usually tid and the value the tenant ID of the company. Leave both empty for no restriction.";
 const PROVIDER_HINT = "Chosen for the organisation, in Organisation settings, Identity.";
@@ -26,7 +34,7 @@ export function AccessSsoClaim({
   onChange,
 }: Readonly<{
   /** The identity provider chosen for the organisation, read only above the claim; none leaves the row out. */
-  provider: { name: string; kind: "entra" | "google" | "generic" } | null;
+  provider: SsoProviderSummary | null;
   /** One short info notice under the intro, such as why the fields are off. */
   note?: string;
   name: string;

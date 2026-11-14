@@ -17,7 +17,7 @@ import { PanelLoadError } from "../settings/PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "../settings/SettingsPanelSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
 import { AccessAddressCard } from "./AccessAddressCard.js";
-import { AccessSsoClaim } from "./AccessSsoClaim.js";
+import { AccessSsoClaim, type SsoProviderSummary } from "./AccessSsoClaim.js";
 import { claimErrors, draftFromSettings, parseClaim, settingsPatch, type AccessDraft } from "./accessSettings.js";
 import { ownAddressOf } from "./ownAddress.js";
 import { eventReturnAddress, SsoItSetup } from "./SsoItSetup.js";
@@ -36,7 +36,7 @@ const SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
  * superadmin may read. The name is a nicety: a read of it that fails leaves the row out, and the panel still works. */
 interface Loaded {
   settings: RegistrationSettingsDto;
-  provider: { name: string; kind: "entra" | "google" | "generic" } | null;
+  provider: SsoProviderSummary | null;
   /** Every return address of the company SSO that the instance lists, for the setup for IT. */
   redirectUris: RegistrationRedirectUriDto[];
 }
@@ -131,7 +131,7 @@ function SsoClaimCard({
   usesSso: boolean;
   archived: boolean;
   saving: boolean;
-  provider: { name: string; kind: "entra" | "google" | "generic" } | null;
+  provider: SsoProviderSummary | null;
   draft: AccessDraft;
   /** The setup for IT, under the fields. */
   setup: ReactNode;
@@ -174,7 +174,7 @@ function EventRegistrationCards({
   eventId: string;
   archived: boolean;
   initial: RegistrationSettingsDto;
-  provider: { name: string; kind: "entra" | "google" | "generic" } | null;
+  provider: SsoProviderSummary | null;
   redirectUris: readonly RegistrationRedirectUriDto[];
   refreshEvent?: () => Promise<unknown>;
   onDirtyChange?: (dirty: boolean) => void;
