@@ -63,7 +63,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add the Legal tab to the Registration page, where an administrator writes, publishes and withdraws an event's privacy notice, event terms and extra consents with a visual editor ([#1779](https://github.com/solarssk/admitto/pull/1779))
 - Add a Bot protection card to Organisation settings with an On/Off switch (Off needs no Turnstile keys; the usual limits stay), the provider and a Test connection button for the secret key ([#1926](https://github.com/solarssk/admitto/pull/1926))
 - Rename "Way in" to "How guests open the form" and "company sign-in" to "company SSO" in the admin; grey out a way a superadmin has not turned on (reason on hover); only a superadmin changes the company limit ([#1927](https://github.com/solarssk/admitto/pull/1927))
-- Add a Registration tab to Event settings for superadmins, with a Company SSO card (the limit to one company) and a redesigned Address for guests card with copy-ready DNS record; both leave the Registration page ([#NNNN](https://github.com/solarssk/admitto/pull/NNNN))
+- Add a Registration tab to Event settings for superadmins, with a Company SSO card (the limit to one company) and a redesigned Address for guests card with copy-ready DNS record; both leave the Registration page ([#1928](https://github.com/solarssk/admitto/pull/1928))
 
 ### Changed
 
