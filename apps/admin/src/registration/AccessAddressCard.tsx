@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { ItPanel, RecordCell } from "./ItSetup.js";
-import { Button, Card, Notice, useToast } from "@admitto/ui";
+import { Button, Card, Notice } from "@admitto/ui";
 import type { CustomDomainDto, RegistrationOwnAddressDto } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
