@@ -774,7 +774,7 @@ export function ExternalServicesPanel() {
                     showLabel={false}
                     value={normalizeMapsProvider(mapsDraft.geocodingProvider)}
                     options={[{ id: "nominatim", label: "OpenStreetMap (Nominatim)" }]}
-                    disabled={mapsTesting}
+                    disabled
                     onChange={(id) =>
                       patchDraft(setMapsDraft, (d) => ({
                         ...d,

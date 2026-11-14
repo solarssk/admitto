@@ -803,13 +803,13 @@ describe("ExternalServicesPanel", () => {
     });
   });
 
-  it("keeps Nominatim when the maps provider select is changed", async () => {
+  it("greys out the maps provider select, because Nominatim is the only one", async () => {
     await renderLoaded();
-    fireEvent.click(el<HTMLButtonElement>("external-maps-provider"));
-    fireEvent.click(screen.getByRole("button", { name: "OpenStreetMap (Nominatim)" }));
-    expect(el<HTMLButtonElement>("external-maps-provider").textContent).toContain(
-      "OpenStreetMap (Nominatim)",
-    );
+    const select = el<HTMLButtonElement>("external-maps-provider");
+    expect(isOff(select)).toBe(true);
+    fireEvent.click(select);
+    expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
+    expect(select.textContent).toContain("OpenStreetMap (Nominatim)");
   });
 
   it("allows Open-Meteo save with an invalid base URL (commercial host gate stays off)", async () => {
@@ -976,7 +976,7 @@ describe("ExternalServicesPanel, bot protection card", () => {
     expect(el<HTMLInputElement>("external-turnstile-site-key").value).toBe("");
     expect(within(card()).getByText("Not set")).toBeTruthy();
     expect(card().textContent).toMatch(/public link or password form stays closed/);
-    expect(card().textContent).toMatch(/privacy notice/);
+    expect(card().textContent).toMatch(/hostnames/);
   });
 
   it("lays the provider out like the wallet: one option, greyed out, with Test connection beside it", async () => {

@@ -7,15 +7,14 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow } from "./mailTransportFormParts.js";
 import type { TurnstileDraft } from "./registrationTurnstile.js";
 
-const CARD_HINT = "Keeps bots out of the public registration form that guests fill in.";
+const CARD_HINT =
+  "Keeps bots out of the public registration form that guests fill in. Cloudflare sees each guest's IP address and browser details, so name it in your privacy notice.";
 const CARD_INTRO =
   "Cloudflare Turnstile checks that a guest on the registration form is not a bot. Without both keys, a public link or password form stays closed.";
 const PROVIDER_HINT = "The service that checks a guest is not a bot. Cloudflare Turnstile is the only one for now.";
 const PROVIDERS = [{ id: "turnstile", label: "Cloudflare Turnstile" }];
-const SITE_KEY_HINT = "The public key of your Turnstile widget in the Cloudflare dashboard. Guests' browsers receive it.";
+const SITE_KEY_HINT = "The public key of your Turnstile widget. Add the address of this instance to its hostnames in Cloudflare.";
 const SECRET_KEY_HINT = "Stays on the server. It is stored encrypted and is never shown again.";
-const CLOUDFLARE_NOTE =
-  "In Cloudflare, add the address of this instance to the widget's hostnames. Cloudflare sees each guest's IP address and browser details, so name it in your privacy notice.";
 const TEST_FAILED = "Could not test the connection.";
 const UNREADABLE_NOTICE =
   "The saved secret key cannot be read, probably because ENCRYPTION_KEY changed. Enter the secret key again.";
@@ -123,7 +122,6 @@ export function RegistrationTurnstileCard({
             onCancel={() => setSecret("idle", "")}
           />
         </div>
-        <p className="at-hint">{CLOUDFLARE_NOTE}</p>
       </div>
     </Card>
   );
