@@ -51,10 +51,8 @@ export function RegistrationTurnstileCard({
     onChange({ ...draft, secret: { mode, value } });
 
   // Turning the check on needs no question; turning it off does.
-  const chooseOn = (on: boolean) => {
-    if (on) onChange({ ...draft, botProtection: "required" });
-    else setConfirming(true);
-  };
+  const turnOn = () => onChange({ ...draft, botProtection: "required" });
+  const askToTurnOff = () => setConfirming(true);
 
   async function handleTest() {
     const typed = draft.secret.mode === "replace" ? draft.secret.value.trim() : "";
@@ -78,7 +76,7 @@ export function RegistrationTurnstileCard({
           label={required ? "On" : "Off"}
           checked={required}
           disabled={disabled}
-          onChange={(e) => chooseOn(e.target.checked)}
+          onChange={(e) => (e.target.checked ? turnOn() : askToTurnOff())}
         />
       }
     >
