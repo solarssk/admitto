@@ -15,8 +15,16 @@ describe("the words of the checks", () => {
   it("are there for every check the server reports, in its order, and for no other", () => {
     const keys = serverKeys();
 
-    expect(keys).toHaveLength(12);
+    expect(keys).toHaveLength(13);
     expect(Object.keys(READINESS_COPY)).toEqual(keys);
+  });
+
+  it("mark the row for bot protection that is not used as information, and no other row", () => {
+    const info = Object.entries(READINESS_COPY).filter(([, copy]) => copy.info === true);
+
+    expect(info.map(([key]) => key)).toEqual(["bot_protection_not_used"]);
+    expect(READINESS_COPY.bot_protection_not_used.met).toBe("Not used for this organisation.");
+    expect(READINESS_COPY.bot_protection_not_used.remedy).toBeUndefined();
   });
 
   it("give every check a title, a sentence for when it is met and another for when it is not", () => {

@@ -420,6 +420,7 @@ import {
   handlePutRegistrationAccessMethods,
   handlePutRegistrationSsoProvider,
   handlePutRegistrationTurnstile,
+  handlePostRegistrationTurnstileTest,
 } from "./admin/registration-settings-routes.js";
 import {
   handleGetNotificationSettings,
@@ -2053,6 +2054,13 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     (c) => handlePutRegistrationTurnstile(c, db),
+  );
+  app.post(
+    "/api/admin/registration/turnstile/test",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePostRegistrationTurnstileTest(c, db),
   );
   app.delete("/api/admin/registration/turnstile", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteRegistrationTurnstile(c, db),

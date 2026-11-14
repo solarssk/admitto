@@ -7,6 +7,7 @@ import {
   TURNSTILE_SITEVERIFY_URL,
   botChallengeCData,
   botChallengeFailureStatus,
+  checkTurnstileSecret,
   resolveChallengeHosts,
   verifyBotChallenge,
   verifyTurnstileToken,
@@ -563,5 +564,42 @@ describe("verifyBotChallenge", () => {
     expect(result).toEqual(refusal("unavailable"));
     expect(JSON.stringify(result)).not.toContain("hunter2");
     expect(fn).not.toHaveBeenCalled();
+  });
+});
+
+describe("checkTurnstileSecret", () => {
+  it("accepts a secret that Cloudflare knows: it refuses only the made-up token", async () => {
+    const { fetch, calls } = fakeFetch(() => json({ success: false, "error-codes": ["invalid-input-response"] }));
+    expect(await checkTurnstileSecret(SECRET, { fetch })).toBe("accepted");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe(TURNSTILE_SITEVERIFY_URL);
+    expect(calls[0]!.init.redirect).toBe("error");
+    const sent = new URLSearchParams(String(calls[0]!.init.body));
+    expect(sent.get("secret")).toBe(SECRET);
+    expect(sent.get("response")).toBeTruthy();
+    expect(sent.has("remoteip")).toBe(false);
+  });
+
+  it.each(["invalid-input-secret", "missing-input-secret"])("rejects a secret that Cloudflare answers with %s", async (code) => {
+    const { fetch } = fakeFetch(() => json({ success: false, "error-codes": [code] }));
+    expect(await checkTurnstileSecret(SECRET, { fetch })).toBe("rejected");
+  });
+
+  it("names the secret first when an answer carries both codes", async () => {
+    const { fetch } = fakeFetch(() => json({ success: false, "error-codes": ["invalid-input-response", "invalid-input-secret"] }));
+    expect(await checkTurnstileSecret(SECRET, { fetch })).toBe("rejected");
+  });
+
+  it.each([
+    ["a network error", () => Promise.reject(new TypeError("fetch failed"))],
+    ["a body that is not an object", () => json("nope")],
+    ["a null body", () => json(null)],
+    ["a list", () => json([])],
+    ["no error codes", () => json({ success: false })],
+    ["an unknown code", () => json({ success: false, "error-codes": ["internal-error"] })],
+    ["a body that is not JSON", () => new Response("<html>", { status: 502 })],
+  ])("is unavailable on %s", async (_name, respond) => {
+    const { fetch } = fakeFetch(respond);
+    expect(await checkTurnstileSecret(SECRET, { fetch })).toBe("unavailable");
   });
 });

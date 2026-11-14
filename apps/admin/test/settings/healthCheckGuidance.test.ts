@@ -329,7 +329,7 @@ describe("healthCheckGuidance", () => {
     ).toEqual({
       cause: "Registration by public link or password is switched on for at least one event, but the Turnstile site key or secret key is not saved.",
       impact: "That registration form stays closed, so guests cannot sign up.",
-      nextStep: "Save both Turnstile keys under Guest registration in External services.",
+      nextStep: "Save both Turnstile keys under Bot protection in External services.",
       link: { label: "Open External services", to: "/admin/settings?tab=external" },
     });
   });

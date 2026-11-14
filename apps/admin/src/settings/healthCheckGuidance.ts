@@ -246,7 +246,7 @@ function registrationCaptchaGuidance(check: HealthCheckRowDto): HealthCheckGuida
     return {
       cause: "Registration by public link or password is switched on for at least one event, but the Turnstile site key or secret key is not saved.",
       impact: "That registration form stays closed, so guests cannot sign up.",
-      nextStep: "Save both Turnstile keys under Guest registration in External services.",
+      nextStep: "Save both Turnstile keys under Bot protection in External services.",
       link,
     };
   }
@@ -254,7 +254,7 @@ function registrationCaptchaGuidance(check: HealthCheckRowDto): HealthCheckGuida
     return {
       cause: "The saved Turnstile secret key was probably encrypted with a different ENCRYPTION_KEY.",
       impact: "Registration forms that use a public link or a password stay closed, so guests cannot sign up.",
-      nextStep: "Enter the secret key again under Guest registration in External services, or restore the previous ENCRYPTION_KEY.",
+      nextStep: "Enter the secret key again under Bot protection in External services, or restore the previous ENCRYPTION_KEY.",
       link,
     };
   }

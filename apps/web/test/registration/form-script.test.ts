@@ -729,3 +729,40 @@ describe("the security check", () => {
     expect(slotText(page, "challenge")).toBe("");
   });
 });
+
+describe("a form whose bot protection is not used", () => {
+  const withoutCheck = { needsChallenge: false, turnstileSiteKey: "", questions: [] };
+
+  it("sends once the names, the address and the terms are there, with no check to solve", async () => {
+    const page = boot({ model: withoutCheck });
+    type(page, "f-first_name", "Anna");
+    type(page, "f-last_name", "Kowalska");
+    type(page, "f-email", "anna.kowalska@contoso.example");
+    tick(page, "f-terms");
+
+    send(page);
+
+    await until(() => expect(page.fetchMock).toHaveBeenCalledTimes(1));
+    expect(invalidFields(page)).toEqual([]);
+    // The body keeps the shape of the contract; the token is empty and the server does not read it.
+    expect(body(page)).toMatchObject({ first_name: "Anna", terms: true, challenge: "" });
+  });
+
+  it("still marks what is missing, and does not mark a check that is not there", () => {
+    const page = boot({ model: withoutCheck });
+
+    send(page);
+
+    expect(page.fetchMock).not.toHaveBeenCalled();
+    expect(invalidFields(page)).toEqual(["first_name", "last_name", "email", "terms"]);
+  });
+
+  it("does not warn that the security check did not load", async () => {
+    const page = boot({
+      model: withoutCheck,
+      script: REGISTRATION_FORM_SCRIPT.replace("var WIDGET_WAIT_MS = 10000;", "var WIDGET_WAIT_MS = 20;"),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(page.doc.querySelector('[data-field="challenge"]')).toBeNull();
+  });
+});

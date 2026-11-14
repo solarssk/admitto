@@ -262,3 +262,23 @@ export async function verifyBotChallenge(
   if (keys.state !== "ready") return { ok: false, reason: "not_configured" };
   return verifyTurnstileToken(keys.secret, input, deps);
 }
+
+/** A made-up token for the key check. Cloudflare refuses it as a token (`invalid-input-response`) only after it accepted the secret. */
+const KEY_CHECK_TOKEN = "admitto-key-check";
+
+/**
+ * What Cloudflare says about a secret key, asked with a token that cannot be genuine.
+ * - `accepted`: the secret is known (the token was refused, as expected).
+ * - `rejected`: Cloudflare does not know the secret.
+ * - `unavailable`: no usable answer (network error, timeout, a body that says neither).
+ */
+export type TurnstileSecretCheck = "accepted" | "rejected" | "unavailable";
+
+export async function checkTurnstileSecret(secret: string, deps: BotChallengeDeps = {}): Promise<TurnstileSecretCheck> {
+  const answer = await postSiteverify(secret, KEY_CHECK_TOKEN, deps);
+  const data = answer?.body;
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return "unavailable";
+  const codes = errorCodes(data as Record<string, unknown>);
+  if (codes.some((code) => SECRET_ERROR_CODES.has(code))) return "rejected";
+  return codes.includes("invalid-input-response") ? "accepted" : "unavailable";
+}
