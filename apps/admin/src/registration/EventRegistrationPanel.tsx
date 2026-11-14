@@ -198,7 +198,7 @@ function EventRegistrationCards({
   const [returnAddressesFailed, setReturnAddressesFailed] = useState(redirectUrisFailed);
   const [retryingAddresses, setRetryingAddresses] = useState(false);
   const [addressBusy, setAddressBusy] = useState(false);
-  // The newest read of the settings: a read that was started before a save, or before a newer read, never replaces what is newer.
+  // The newest read of the settings: a read that was started before a newer read never replaces what is newer.
   const newestRead = useRef(0);
   const base = useMemo(() => ({ ...draftFromSettings(settings), ...savedClaim }), [settings, savedClaim]);
   const draft = useMemo(() => ({ ...base, ...typed }), [base, typed]);
@@ -259,12 +259,10 @@ function EventRegistrationCards({
     }
     setSaving(true);
     setError(null);
-    // A read that is out now would come back with the restriction as it was: it is made old by this save.
-    newestRead.current += 1;
     try {
       const answer = await saveRegistrationSettings(eventId, patch);
-      newestRead.current += 1;
-      setSettings(answer);
+      // The answer says what the restriction is now, and nothing else is the save's to say: the address, and what was read of it, stay as they are.
+      setSettings((current) => ({ ...current, sso_claim_name: answer.sso_claim_name, sso_claim_values: answer.sso_claim_values }));
       setSavedClaim(claimOf(draftFromSettings(answer)));
       setTyped(claimOf(draftFromSettings(answer)));
       addToast("Registration settings saved.", "success");
@@ -308,7 +306,7 @@ function EventRegistrationCards({
         event={guardEvent}
         address={settings.own_address}
         instanceHost={settings.instance_host}
-        disabled={archived}
+        disabled={archived || saving}
         onChanged={addressChanged}
         onArchived={archivedMeanwhile}
         onBusyChange={setAddressBusy}
@@ -321,7 +319,7 @@ function EventRegistrationCards({
       {!archived && (
         <SettingsFooter
           hasUnsavedChanges={dirty}
-          saving={saving}
+          saving={saving || addressBusy}
           onReset={() => {
             setTyped(savedClaim);
             setError(null);
