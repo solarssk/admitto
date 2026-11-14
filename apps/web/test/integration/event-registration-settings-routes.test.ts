@@ -283,9 +283,7 @@ describe("reading the settings", () => {
     expect(await settingsRow(event.id)).toBeNull();
     expect(body).toMatchObject({ ...defaultSettings(), password_set: false, guest_url: `https://tickets.example.com/r/${event.slug}` });
     expect(body.readiness.map((check) => check.key)).toEqual(
-      READINESS_KEYS.filter(
-        (key) => key !== "password" && key !== "identity_provider" && key !== "access_method_enabled" && key !== "bot_protection_not_used",
-      ),
+      READINESS_KEYS.filter((key) => key !== "password" && key !== "identity_provider" && key !== "access_method_enabled"),
     );
     expect(body.readiness.find((check) => check.key === "access_method")).toEqual({ key: "access_method", ok: false });
     expect(body.public_fields).toEqual([]);
@@ -352,7 +350,7 @@ describe("reading the settings", () => {
       guest_url: `https://tickets.example.com/r/${event.slug}`,
       instance_host: "tickets.example.com",
       own_address: null,
-      readiness: READINESS_KEYS.filter((key) => key !== "password" && key !== "identity_provider" && key !== "bot_protection_not_used").map((key) => ({ key, ok: true })),
+      readiness: READINESS_KEYS.filter((key) => key !== "password" && key !== "identity_provider").map((key) => ({ key, ok: true })),
       public_fields: [
         { key: "parking", label: "Parking", type: "boolean", required: false },
         { key: "diet", label: "Diet", type: "select", required: true },
@@ -1162,7 +1160,7 @@ describe("the company sign-in as the way in, and its restriction to one company 
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ mode: "automatic", access_methods: ["sso"] });
     expect(body.readiness.map((check) => check.key)).toEqual(
-      READINESS_KEYS.filter((key) => key !== "password" && key !== "bot_protection" && key !== "bot_protection_not_used"),
+      READINESS_KEYS.filter((key) => key !== "password" && key !== "bot_protection"),
     );
     expect(body.readiness.every((check) => check.ok)).toBe(true);
     expect((await settingsRow(event.id))?.access_methods).toEqual(["sso"]);

@@ -490,28 +490,6 @@ describe("the Turnstile widget", () => {
   });
 });
 
-describe("a form whose bot protection is not used", () => {
-  const withoutCheck = { needsChallenge: false, turnstileSiteKey: "" };
-  const doc = documentOf(render(withoutCheck));
-
-  it("has no widget, no field for the check and no Cloudflare script or frame", () => {
-    expect(doc.querySelector(".cf-turnstile")).toBeNull();
-    expect(doc.querySelector("[data-kind=challenge]")).toBeNull();
-    expect(doc.querySelector("iframe")).toBeNull();
-    expect(doc.querySelector("script[src]")).toBeNull();
-  });
-
-  it("carries only the script of the form, under the nonce, and the fixed fields in their order without the check", () => {
-    const scripts = [...doc.querySelectorAll("script")] as Dom[];
-    expect(scripts).toHaveLength(1);
-    expect(scripts[0]!.hasAttribute("src")).toBe(false);
-    expect(scripts[0]!.getAttribute("nonce")).toBe(NONCE);
-    const keys = [...doc.querySelectorAll("[data-field]")].map((el: Dom) => el.getAttribute("data-field"));
-    expect(keys).not.toContain("challenge");
-    expect(keys).toContain("terms");
-  });
-});
-
 describe("scripts, nonce and what the page loads", () => {
   it("has one inline script, under the nonce of the response, and Cloudflare's widget script", () => {
     const scripts = [...documentOf(render()).querySelectorAll("script")] as Dom[];

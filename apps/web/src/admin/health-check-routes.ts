@@ -40,7 +40,6 @@ import {
 } from "../weather/weather-org-settings.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { getEnabledAccessMethods } from "../registration/access-methods.js";
-import { getBotProtectionMode } from "../registration/bot-protection-mode.js";
 import { describeTurnstileSettings } from "../registration/turnstile-settings.js";
 
 export type { HealthOverallStatus, HealthRowStatus };
@@ -1593,8 +1592,8 @@ function buildGroup(
 
 /**
  * Cloudflare Turnstile keys for the public registration form (D-C2). Passive, like Wallet: it says
- * what is saved, not whether Cloudflare accepts it. With bot protection set to "not used" (A2) the row says so and warns of
- * nothing. The warning is for the case that otherwise stays silent: an event has registration on by public link or password, no usable keys are saved,
+ * what is saved, not whether Cloudflare accepts it. The warning is for the case that otherwise
+ * stays silent: an event has registration on by public link or password, no usable keys are saved,
  * and so the form is closed. Archived events are not counted. Replaces a log line per request, which anonymous traffic could
  * use to flush the system log (SEC-18).
  */
@@ -1612,10 +1611,6 @@ async function registrationCaptchaRow(db: PrismaClient, checkedAt: string): Prom
     details: detailsFromEntries([["status", status], ...entries, ["last_checked", checkedAt]]),
   });
 
-  // The superadmin chose to run the form without a bot check: nothing is waiting for keys, so nothing is wrong without them.
-  if ((await getBotProtectionMode(db)) === "not_used") {
-    return row("not_configured", "Not used for this organisation", [["bot_protection", "not_used"]]);
-  }
   const settings = await describeTurnstileSettings(db);
   if (settings.state === "ready") return row("ok", "Configured", [["configured", "yes"]]);
   if (settings.state === "unreadable") {

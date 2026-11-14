@@ -116,7 +116,6 @@ import { canManageInstance } from "@admitto/auth";
 import type { Context } from "hono";
 import { readAdminBuildMeta } from "../../src/admin/admin-build-meta.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
-import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
 import {
   canCreateUploadDir,
   collectAdminHealth,
@@ -1660,27 +1659,6 @@ describe("collectAdminHealth", () => {
       const off = await captchaRow({ ...keys(null, ["sso"]), eventRegistrationSettings: { count } });
       expect(off.row.status).toBe("not_configured");
       expect(off.row.summary).toBe("Not configured");
-      expect(count).not.toHaveBeenCalled();
-    });
-
-    it("says it is not used, and warns of nothing, when the superadmin set bot protection to not used, keys or no keys", async () => {
-      const count = vi.fn().mockResolvedValue(2);
-      const notUsed = (value: string | null) => ({
-        systemSettings: {
-          findUnique: vi.fn(async ({ where }: { where: { key: string } }) => {
-            if (where.key === BOT_PROTECTION_SETTINGS_KEY) return { key: where.key, value_json: '"not_used"' };
-            if (where.key === ACCESS_METHODS_SETTINGS_KEY) return { key: where.key, value_json: '["link","password"]' };
-            return value === null ? null : { key: where.key, value_json: value };
-          }),
-        },
-      });
-      for (const saved of [null, READY_KEYS]) {
-        const { row, report } = await captchaRow({ ...notUsed(saved), eventRegistrationSettings: { count } });
-        expect(row.status).toBe("not_configured");
-        expect(row.summary).toBe("Not used for this organisation");
-        expect(row.details).toEqual(expect.arrayContaining([{ key: "bot_protection", value: "not_used" }]));
-        expect(report.overall).toBe("ok");
-      }
       expect(count).not.toHaveBeenCalled();
     });
 

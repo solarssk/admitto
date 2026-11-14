@@ -24,7 +24,6 @@ const PUBLISHED = new Date("2026-10-20T10:00:00Z");
 const environment = (overrides: Partial<ReadinessEnvironment> = {}): ReadinessEnvironment => ({
   availability: computeAccessMethodAvailability({ enabled: ["link", "password"], botProtectionReady: true, identityProviderEnabled: false }),
   botProtectionReady: true,
-  botProtectionMode: "required",
   identityProviderReady: true,
   mailConfigured: true,
   instanceBaseUrl: "https://events.example.com",
@@ -67,48 +66,14 @@ describe("a ready event", () => {
     expect(checks.every((check) => check.ok)).toBe(true);
     expect(readinessBlockers(checks)).toEqual([]);
     // The checks that do not apply to the link (the password, the identity provider) are not in the list; the rest keep the order.
-    expect(keysOf(ready())).toEqual(
-      READINESS_KEYS.filter((key) => key !== "password" && key !== "identity_provider" && key !== "bot_protection_not_used"),
-    );
+    expect(keysOf(ready())).toEqual(READINESS_KEYS.filter((key) => key !== "password" && key !== "identity_provider"));
   });
 
   it("lists the password check, and only that one more, when the way in is the password", () => {
     const input = ready({ settings: { access_methods: ["password"], consent_keys: [], password_set: true } });
 
-    expect(keysOf(input)).toEqual(READINESS_KEYS.filter((key) => key !== "identity_provider" && key !== "bot_protection_not_used"));
+    expect(keysOf(input)).toEqual(READINESS_KEYS.filter((key) => key !== "identity_provider"));
     expect(blockersOf(input)).toEqual([]);
-  });
-});
-
-describe("bot protection set to not used (A2)", () => {
-  const notUsed = (overrides: Partial<ReadinessInput> = {}) =>
-    ready({
-      environment: environment({ botProtectionMode: "not_used", botProtectionReady: false }),
-      ...overrides,
-    });
-
-  it("lists the information row in the place of the bot check, and it is met", () => {
-    const checks = evaluateRegistrationReadiness(notUsed());
-
-    expect(checks.map((check) => check.key)).toContain("bot_protection_not_used");
-    expect(checks.map((check) => check.key)).not.toContain("bot_protection");
-    expect(checks.find((check) => check.key === "bot_protection_not_used")?.ok).toBe(true);
-  });
-
-  it("is not held up by missing Turnstile keys, for the link and for the password", () => {
-    expect(blockersOf(notUsed())).toEqual([]);
-    expect(blockersOf(notUsed({ settings: { access_methods: ["password"], consent_keys: [], password_set: true } }))).toEqual([]);
-  });
-
-  it("keeps the other checks: a password that is not set still blocks", () => {
-    expect(blockersOf(notUsed({ settings: { access_methods: ["password"], consent_keys: [], password_set: false } }))).toEqual(["password"]);
-  });
-
-  it("says nothing about bot protection for the company sign-in", () => {
-    const input = notUsed({ settings: { access_methods: ["sso"], consent_keys: [], password_set: false } });
-
-    expect(keysOf(input)).not.toContain("bot_protection_not_used");
-    expect(keysOf(input)).toContain("identity_provider");
   });
 });
 
@@ -125,9 +90,7 @@ describe("the company sign-in (D-C4)", () => {
   it("asks for the identity provider in the place of the bot check, and for neither the password nor anything else", () => {
     const input = sso();
 
-    expect(keysOf(input)).toEqual(
-      READINESS_KEYS.filter((key) => key !== "password" && key !== "bot_protection" && key !== "bot_protection_not_used"),
-    );
+    expect(keysOf(input)).toEqual(READINESS_KEYS.filter((key) => key !== "password" && key !== "bot_protection"));
     expect(keysOf(input)).toContain("identity_provider");
     expect(blockersOf(input)).toEqual([]);
   });

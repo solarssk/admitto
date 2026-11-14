@@ -15,12 +15,10 @@ const dto = (overrides: Partial<RegistrationTurnstileDto> = {}): RegistrationTur
   site_key: "0x4AAAAAAAsite",
   secret_set: true,
   status: "ready",
-  bot_protection: "required",
   ...overrides,
 });
 
 const draft = (overrides: Partial<TurnstileDraft> = {}): TurnstileDraft => ({
-  botProtection: "required",
   siteKey: "0x4AAAAAAAsite",
   secret: { mode: "idle", value: "" },
   ...overrides,
@@ -28,13 +26,11 @@ const draft = (overrides: Partial<TurnstileDraft> = {}): TurnstileDraft => ({
 
 describe("turnstileDraftFrom", () => {
   it("holds the site key and never a secret", () => {
-    expect(turnstileDraftFrom(dto())).toEqual({ botProtection: "required", siteKey: "0x4AAAAAAAsite", secret: { mode: "idle", value: "" } });
-    expect(turnstileDraftFrom(dto({ bot_protection: "not_used" })).botProtection).toBe("not_used");
+    expect(turnstileDraftFrom(dto())).toEqual({ siteKey: "0x4AAAAAAAsite", secret: { mode: "idle", value: "" } });
   });
 
   it("starts empty when nothing is saved", () => {
     expect(turnstileDraftFrom(dto({ site_key: null, secret_set: false, status: "incomplete" }))).toEqual({
-      botProtection: "required",
       siteKey: "",
       secret: { mode: "idle", value: "" },
     });
@@ -54,46 +50,10 @@ describe("turnstileDirty", () => {
     expect(turnstileDirty(draft({ siteKey: "" }), saved)).toBe(true);
   });
 
-  it("is true for a changed mode, and false again once it is as saved", () => {
-    expect(turnstileDirty(draft({ botProtection: "not_used" }), saved)).toBe(true);
-    expect(turnstileDirty(draft({ botProtection: "required" }), saved)).toBe(false);
-  });
-
   it("is true while a secret is being replaced or cleared, and false again once cancelled", () => {
     expect(turnstileDirty(draft({ secret: { mode: "replace", value: "" } }), saved)).toBe(true);
     expect(turnstileDirty(draft({ secret: { mode: "clear", value: "" } }), saved)).toBe(true);
     expect(turnstileDirty(draft({ secret: { mode: "idle", value: "" } }), saved)).toBe(false);
-  });
-});
-
-describe("while the check is not used", () => {
-  const saved = draft();
-
-  it("does not count an edit to the hidden keys as a change when the mode is as saved", () => {
-    const savedOff = draft({ botProtection: "not_used" });
-    const edited = draft({ botProtection: "not_used", siteKey: "other", secret: { mode: "replace", value: "x" } });
-    expect(turnstileDirty(edited, savedOff)).toBe(false);
-    expect(buildTurnstileSaveBody(edited, savedOff)).toBeNull();
-  });
-  const off = (overrides: Partial<TurnstileDraft> = {}) => draft({ botProtection: "not_used", ...overrides });
-
-  it("finds nothing to refuse in keys that cannot be seen", () => {
-    expect(turnstileValidationErrors(off({ siteKey: "has space", secret: { mode: "replace", value: "two words" } }))).toEqual([]);
-  });
-
-  it("sends the mode alone, whatever was typed into the keys, and nothing when the mode is as saved", () => {
-    expect(buildTurnstileSaveBody(off({ siteKey: "0x4AAAAAAAother", secret: { mode: "replace", value: "x" } }), saved)).toEqual({
-      bot_protection: "not_used",
-    });
-    expect(buildTurnstileSaveBody(off({ siteKey: "0x4AAAAAAAother" }), off())).toBeNull();
-  });
-
-  it("sends the mode with the keys when the check is turned back on in the same save", () => {
-    const savedOff = off();
-    expect(buildTurnstileSaveBody(draft({ siteKey: "0x4AAAAAAAother" }), savedOff)).toEqual({
-      bot_protection: "required",
-      site_key: "0x4AAAAAAAother",
-    });
   });
 });
 

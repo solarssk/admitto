@@ -193,13 +193,6 @@ function renderSignInPage(model: RegistrationFormModel, notice: SsoNotice | null
   return renderDocument(`Registration - ${model.event.title}`, content, "", options.theme, null, true);
 }
 
-/** The script that follows the form's own: the widget's for a page that has the bot check, the small one of the company sign-in,
- * and none for a form whose bot protection is "not used". */
-function extraScriptOf(model: RegistrationFormModel, nonce: string): string {
-  if (model.needsSso) return `\n  ${renderSsoScript(nonce)}`;
-  return model.needsChallenge ? `\n  <script src="${TURNSTILE_SCRIPT_URL}" async defer></script>` : "";
-}
-
 /** The form page, for the nonce of one response. */
 export function renderRegistrationFormPage(model: RegistrationFormModel, options: RegistrationPageOptions): string {
   const sso = options.sso;
@@ -230,7 +223,9 @@ export function renderRegistrationFormPage(model: RegistrationFormModel, options
     .join("\n    ");
   const styled = styledNeedsOf(model);
   // The widget's script only where there is a widget; the company sign-in has none, and has a small script of its own.
-  const extra = extraScriptOf(model, options.nonce);
+  const extra = model.needsSso
+    ? `\n  ${renderSsoScript(options.nonce)}`
+    : `\n  <script src="${TURNSTILE_SCRIPT_URL}" async defer></script>`;
   const scripts = `${renderFormScript(options.nonce, styled)}${extra}`;
   return renderDocument(`Registration - ${model.event.title}`, content, scripts, options.theme, styled, model.needsSso);
 }

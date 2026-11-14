@@ -3,7 +3,6 @@ import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { getEventRegistrationSettings } from "../../src/admin/event-registration-settings.js";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
-import { setBotProtectionMode } from "../../src/registration/bot-protection-mode.js";
 import { SSO_PROVIDER_SETTINGS_KEY, setSsoProviderId } from "../../src/registration/sso-provider.js";
 import { resolveRegistration } from "../../src/registration/form-model.js";
 import { READINESS_KEYS, readinessBlockers, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
@@ -112,34 +111,6 @@ const ROWS: Row[] = [
     blockers: ["bot_protection"],
   },
   {
-    name: "bot protection not used, and no Turnstile keys: the form opens, and the row is information",
-    system: async () => {
-      await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
-      await setBotProtectionMode(prisma, "not_used");
-    },
-    page: "open",
-    blockers: [],
-  },
-  {
-    name: "bot protection not used for a password nobody set: only the password blocks",
-    seed: { settings: { access_methods: ["password"] } },
-    system: async () => {
-      await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
-      await setBotProtectionMode(prisma, "not_used");
-    },
-    page: "not_found",
-    blockers: ["password"],
-  },
-  {
-    name: "bot protection not used, and a link the system administrator has not enabled: still closed",
-    system: async () => {
-      await setBotProtectionMode(prisma, "not_used");
-      await setEnabledAccessMethods(prisma, []);
-    },
-    page: "not_found",
-    blockers: ["access_method_enabled"],
-  },
-  {
     name: "a password that the system administrator has not enabled, and nobody set",
     seed: { settings: { access_methods: ["password"] } },
     system: () => setEnabledAccessMethods(prisma, ["link"]),
@@ -227,17 +198,6 @@ describe("the readiness of an event and the page it is about", () => {
     const modeOn = row.seed?.settings?.mode !== null;
     if (modeOn && formBlockers.length === 0) expect(page.kind).toBe("open");
     if (formBlockers.length > 0) expect(page.kind).not.toBe("open");
-  });
-
-  it("lists the information row in the place of the bot check while bot protection is not used, and the other way round", async () => {
-    const eventId = await seeder.addEvent(`reg-a2-ready-row-${(counter += 1)}`, { settings: { mode: "automatic", access_methods: ["link"] } });
-
-    const keysOf = async () => (await getEventRegistrationSettings(prisma, eventId))!.readiness;
-    expect(await keysOf()).toContainEqual({ key: "bot_protection", ok: true });
-    await setBotProtectionMode(prisma, "not_used");
-    const notUsed = await keysOf();
-    expect(notUsed).toContainEqual({ key: "bot_protection_not_used", ok: true });
-    expect(notUsed.map((check) => check.key)).not.toContain("bot_protection");
   });
 
   it("names its checks with the keys of the vocabulary, and no other", async () => {

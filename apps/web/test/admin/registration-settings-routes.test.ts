@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { decryptFromString, SECRET_CONTEXTS } from "@admitto/crypto";
 import type { PrismaClient } from "@admitto/db";
@@ -24,13 +24,13 @@ import {
   handleGetRegistrationAccessMethods,
   handleGetRegistrationSsoProvider,
   handleGetRegistrationTurnstile,
+  handlePostRegistrationTurnstileTest,
   handlePutRegistrationAccessMethods,
   handlePutRegistrationSsoProvider,
   handlePutRegistrationTurnstile,
 } from "../../src/admin/registration-settings-routes.js";
 import { readRedirectUris } from "../../src/admin/registration-settings-routes.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
-import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
 import { SSO_PROVIDER_SETTINGS_KEY } from "../../src/registration/sso-provider.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { memorySystemSettings } from "../helpers/memory-system-settings.js";
@@ -82,6 +82,7 @@ function makeApp(db: PrismaClient, baseUrl: () => Promise<string> = async () => 
   });
   app.get("/turnstile", (c) => handleGetRegistrationTurnstile(c, db));
   app.put("/turnstile", (c) => handlePutRegistrationTurnstile(c, db));
+  app.post("/turnstile/test", (c) => handlePostRegistrationTurnstileTest(c, db));
   app.delete("/turnstile", (c) => handleDeleteRegistrationTurnstile(c, db));
   app.get("/access-methods", (c) => handleGetRegistrationAccessMethods(c, db));
   app.put("/access-methods", (c) => handlePutRegistrationAccessMethods(c, db));
@@ -103,7 +104,7 @@ describe("who may call the registration settings routes", () => {
   const requests: Array<[string, string, unknown]> = [
     ["GET", "/turnstile", undefined],
     ["PUT", "/turnstile", { site_key: SITE_KEY }],
-    ["PUT", "/turnstile", { bot_protection: "not_used" }],
+    ["POST", "/turnstile/test", {}],
     ["DELETE", "/turnstile", undefined],
     ["GET", "/access-methods", undefined],
     ["PUT", "/access-methods", { methods: ["link"] }],
@@ -132,7 +133,7 @@ describe("Turnstile keys", () => {
   it("starts empty", async () => {
     const res = await makeApp(memoryDb().db).request("/turnstile");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete", bot_protection: "required" });
+    expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete" });
   });
 
   it("saves both keys, answers without the secret and keeps the secret only as ciphertext", async () => {
@@ -140,7 +141,7 @@ describe("Turnstile keys", () => {
     const res = await sendJson(makeApp(db), "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(JSON.parse(text)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready", bot_protection: "required" });
+    expect(JSON.parse(text)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready" });
     expect(text).not.toContain(SECRET);
 
     const stored = rows().get(TURNSTILE_SETTINGS_KEY)!;
@@ -150,7 +151,7 @@ describe("Turnstile keys", () => {
 
     const get = await makeApp(db).request("/turnstile");
     const getText = await get.text();
-    expect(JSON.parse(getText)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready", bot_protection: "required" });
+    expect(JSON.parse(getText)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready" });
     expect(getText).not.toContain(SECRET);
   });
 
@@ -175,7 +176,7 @@ describe("Turnstile keys", () => {
     const app = makeApp(db);
     await sendJson(app, "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
     const res = await sendJson(app, "PUT", "/turnstile", { site_key: "0x4AAAAAAAnewSite" });
-    expect(await res.json()).toEqual({ site_key: "0x4AAAAAAAnewSite", secret_set: true, status: "ready", bot_protection: "required" });
+    expect(await res.json()).toEqual({ site_key: "0x4AAAAAAAnewSite", secret_set: true, status: "ready" });
     expect(writeAdminAuditLog.mock.calls[1]![1]).toMatchObject({ metadata: { site_key: "set", secret_key: "unchanged" } });
   });
 
@@ -184,14 +185,14 @@ describe("Turnstile keys", () => {
     const app = makeApp(db);
     await sendJson(app, "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
     const res = await sendJson(app, "PUT", "/turnstile", { secret_key: null });
-    expect(await res.json()).toEqual({ site_key: SITE_KEY, secret_set: false, status: "incomplete", bot_protection: "required" });
+    expect(await res.json()).toEqual({ site_key: SITE_KEY, secret_set: false, status: "incomplete" });
     expect(writeAdminAuditLog.mock.calls[1]![1]).toMatchObject({ metadata: { site_key: "unchanged", secret_key: "cleared" } });
   });
 
   it("trims a pasted key", async () => {
     const { db } = memoryDb();
     const res = await sendJson(makeApp(db), "PUT", "/turnstile", { site_key: `  ${SITE_KEY}\n`, secret_key: ` ${SECRET} ` });
-    expect(await res.json()).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready", bot_protection: "required" });
+    expect(await res.json()).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready" });
   });
 
   it("takes the settings lock before it writes the keys, and before it removes them", async () => {
@@ -220,98 +221,14 @@ describe("Turnstile keys", () => {
     await sendJson(app, "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
     const res = await app.request("/turnstile", { method: "DELETE" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete", bot_protection: "required" });
+    expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete" });
     expect(rows().has(TURNSTILE_SETTINGS_KEY)).toBe(false);
     expect(writeAdminAuditLog.mock.calls.at(-1)![1]).toMatchObject({ actionType: "registration_turnstile_cleared" });
-  });
-
-  describe("the mode of the bot check (A2)", () => {
-    const modeAudits = () => writeAdminAuditLog.mock.calls.filter((call) => call[1]["actionType"] === "registration_bot_protection_updated");
-
-    it("is required until a superadmin decides, and the answer says so", async () => {
-      const res = await makeApp(memoryDb().db).request("/turnstile");
-      expect(await res.json()).toMatchObject({ bot_protection: "required" });
-    });
-
-    it("is changed alone, with no key in the request, and audited as its own entry with the two modes and nothing else", async () => {
-      const { db, rows } = memoryDb();
-      const res = await sendJson(makeApp(db), "PUT", "/turnstile", { bot_protection: "not_used" });
-
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete", bot_protection: "not_used" });
-      expect(rows().get(BOT_PROTECTION_SETTINGS_KEY)).toBe('"not_used"');
-      // The keys were not touched: no row of theirs, and no entry about them.
-      expect(rows().has(TURNSTILE_SETTINGS_KEY)).toBe(false);
-      expect(writeAdminAuditLog).toHaveBeenCalledTimes(1);
-      expect(writeAdminAuditLog.mock.calls[0]![1]).toMatchObject({
-        organizationId: "org-instance",
-        actionType: "registration_bot_protection_updated",
-        metadata: { mode: "not_used", previous_mode: "required" },
-      });
-    });
-
-    it("is changed back the same way, and the entry names where it came from", async () => {
-      const { db } = memoryDb();
-      const app = makeApp(db);
-      await sendJson(app, "PUT", "/turnstile", { bot_protection: "not_used" });
-      const res = await sendJson(app, "PUT", "/turnstile", { bot_protection: "required" });
-
-      expect(await res.json()).toMatchObject({ bot_protection: "required" });
-      expect(modeAudits().map((call) => call[1]["metadata"])).toEqual([
-        { mode: "not_used", previous_mode: "required" },
-        { mode: "required", previous_mode: "not_used" },
-      ]);
-    });
-
-    it("writes nothing and audits nothing when the mode is the one it is", async () => {
-      const { db, rows, systemSettings } = memoryDb();
-      const res = await sendJson(makeApp(db), "PUT", "/turnstile", { bot_protection: "required" });
-
-      expect(res.status).toBe(200);
-      expect(systemSettings.upsert).not.toHaveBeenCalled();
-      expect(rows().size).toBe(0);
-      expect(writeAdminAuditLog).not.toHaveBeenCalled();
-    });
-
-    it("is saved with the keys in one request, as two entries, the keys' first", async () => {
-      const { db } = memoryDb();
-      const res = await sendJson(makeApp(db), "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET, bot_protection: "not_used" });
-
-      expect(await res.json()).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready", bot_protection: "not_used" });
-      expect(writeAdminAuditLog.mock.calls.map((call) => call[1]["actionType"])).toEqual([
-        "registration_turnstile_updated",
-        "registration_bot_protection_updated",
-      ]);
-    });
-
-    it("is kept when the keys are removed: the two settings are separate", async () => {
-      const { db, rows } = memoryDb();
-      const app = makeApp(db);
-      await sendJson(app, "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET, bot_protection: "not_used" });
-      const res = await app.request("/turnstile", { method: "DELETE" });
-
-      expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete", bot_protection: "not_used" });
-      expect(rows().get(BOT_PROTECTION_SETTINGS_KEY)).toBe('"not_used"');
-    });
-
-    it("rolls back with the keys' audit entry when the entry of the mode cannot be written", async () => {
-      const { db, rows } = memoryDb();
-      writeAdminAuditLog.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("audit down"));
-      const res = await sendJson(makeApp(db), "PUT", "/turnstile", { site_key: SITE_KEY, bot_protection: "not_used" });
-
-      expect(res.status).toBe(500);
-      expect(rows().has(BOT_PROTECTION_SETTINGS_KEY)).toBe(false);
-      expect(rows().has(TURNSTILE_SETTINGS_KEY)).toBe(false);
-    });
   });
 
   describe("refuses a bad request without writing or auditing anything", () => {
     const bad: Array<[string, unknown, string[]]> = [
       ["no field at all", {}, []],
-      ["a mode that is not one", { bot_protection: "off" }, ["bot_protection"]],
-      ["a mode with other letters", { bot_protection: "Not_Used" }, ["bot_protection"]],
-      ["a mode that is a boolean", { bot_protection: false }, ["bot_protection"]],
-      ["a mode that is null", { bot_protection: null }, ["bot_protection"]],
       ["an unknown field", { site_key: SITE_KEY, remote_ip: "1.2.3.4" }, []],
       ["a site key with markup", { site_key: '"><script>alert(1)</script>' }, ["site_key"]],
       ["an empty site key", { site_key: "" }, ["site_key"]],
@@ -363,6 +280,100 @@ describe("Turnstile keys", () => {
     const res = await app.request("/turnstile", { method: "DELETE" });
     expect(res.status).toBe(500);
     expect(rows().has(TURNSTILE_SETTINGS_KEY)).toBe(true);
+  });
+});
+
+describe("testing the Turnstile secret key", () => {
+  const cloudflare = (body: unknown) => vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response(JSON.stringify(body)));
+  const KNOWN = { success: false, "error-codes": ["invalid-input-response"] };
+  const UNKNOWN = { success: false, "error-codes": ["invalid-input-secret"] };
+  const sentSecret = (fetchFn: ReturnType<typeof cloudflare>) => new URLSearchParams(String(fetchFn.mock.calls[0]![1]!.body)).get("secret");
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function saved() {
+    const memory = memoryDb();
+    await sendJson(makeApp(memory.db), "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
+    return memory;
+  }
+
+  it("checks the saved secret when none is typed, and says Cloudflare accepted it", async () => {
+    const fetchFn = cloudflare(KNOWN);
+    vi.stubGlobal("fetch", fetchFn);
+    const { db } = await saved();
+    const res = await sendJson(makeApp(db), "POST", "/turnstile/test", {});
+    expect(await res.json()).toEqual({ ok: true, message: "Cloudflare accepted the secret key." });
+    expect(sentSecret(fetchFn)).toBe(SECRET);
+  });
+
+  it("checks the typed secret instead of the saved one, trimmed, and saves nothing", async () => {
+    const fetchFn = cloudflare(KNOWN);
+    vi.stubGlobal("fetch", fetchFn);
+    const { db, rows } = await saved();
+    const before = rows().get(TURNSTILE_SETTINGS_KEY);
+    writeAdminAuditLog.mockClear();
+    const res = await sendJson(makeApp(db), "POST", "/turnstile/test", { secret_key: " typedSecret " });
+    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+    expect(sentSecret(fetchFn)).toBe("typedSecret");
+    expect(rows().get(TURNSTILE_SETTINGS_KEY)).toBe(before);
+    expect(writeAdminAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("works with a typed secret before anything is saved", async () => {
+    vi.stubGlobal("fetch", cloudflare(KNOWN));
+    const res = await sendJson(makeApp(memoryDb().db), "POST", "/turnstile/test", { secret_key: SECRET });
+    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+  });
+
+  it("says the key is wrong without echoing it", async () => {
+    vi.stubGlobal("fetch", cloudflare(UNKNOWN));
+    const { db } = await saved();
+    const text = await (await sendJson(makeApp(db), "POST", "/turnstile/test", {})).text();
+    expect(JSON.parse(text)).toEqual({ ok: false, error: "Cloudflare did not accept the secret key. Check it in the Cloudflare dashboard." });
+    expect(text).not.toContain(SECRET);
+  });
+
+  it("says Cloudflare could not be reached when there is no usable answer", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("boom"))));
+    const { db } = await saved();
+    const body = await (await sendJson(makeApp(db), "POST", "/turnstile/test", {})).json();
+    expect(body).toEqual({ ok: false, error: "Could not reach Cloudflare. Try again in a moment." });
+  });
+
+  it("asks for a secret when none is saved or typed, without calling Cloudflare", async () => {
+    const fetchFn = cloudflare(KNOWN);
+    vi.stubGlobal("fetch", fetchFn);
+    const body = await (await sendJson(makeApp(memoryDb().db), "POST", "/turnstile/test", {})).json();
+    expect(body).toEqual({ ok: false, error: "Enter the secret key first." });
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("says a saved secret that cannot be read must be entered again, without calling Cloudflare", async () => {
+    const fetchFn = cloudflare(KNOWN);
+    vi.stubGlobal("fetch", fetchFn);
+    const { db } = memoryDb({ values: { [TURNSTILE_SETTINGS_KEY]: JSON.stringify({ siteKey: SITE_KEY, secretEnc: "not-a-ciphertext" }) } });
+    const body = await (await sendJson(makeApp(db), "POST", "/turnstile/test", {})).json();
+    expect(body).toEqual({ ok: false, error: "The saved secret key cannot be read. Enter the secret key again." });
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a secret with a space", { secret_key: "two words" }],
+    ["a null secret", { secret_key: null }],
+    ["an unknown field", { site_key: SITE_KEY }],
+  ])("refuses %s without calling Cloudflare", async (_name, body) => {
+    const fetchFn = cloudflare(KNOWN);
+    vi.stubGlobal("fetch", fetchFn);
+    const res = await sendJson(makeApp(memoryDb().db), "POST", "/turnstile/test", body);
+    expect(res.status).toBe(400);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("refuses a body that is not JSON", async () => {
+    const res = await makeApp(memoryDb().db).request("/turnstile/test", { method: "POST", body: "{" });
+    expect(res.status).toBe(400);
   });
 });
 

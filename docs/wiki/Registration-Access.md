@@ -95,7 +95,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 | **Password** | Anyone who has the link and types the event password |
 | **Company sign-in** | Anyone who has the link and signs in with the identity provider of your organisation |
 
-- The link and the password are protected by a bot check, unless a Superadmin set the bot check to **Not used** for your organisation. Then the checklist shows **Bot protection** in grey, as information, and a script can send the form or guess an event password within the usual limits. Use the company sign-in or a strong password for an event that matters. The company sign-in needs no bot check, because the form opens only after the sign-in.
+- The link and the password are protected by a bot check. The company sign-in needs none, because the form opens only after the sign-in.
 - You cannot read the password again after you save it. Keep a copy where you share it with guests.
 - A new password does not change the requests that guests already sent.
 - Choosing another way in and saving removes the password.
@@ -132,7 +132,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 |---|---|
 | **Way in** | Choose **Link**, **Password** or **Company sign-in** on this tab |
 | **Way in allowed** | Ask a Superadmin to turn that way in on: Organisation settings > External services > Ways in |
-| **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company sign-in does not have this row. If your organisation does not use a bot check, the row is grey, says "Not used for this organisation" and does not block anything |
+| **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company sign-in does not have this row |
 | **Company sign-in** | Ask a Superadmin to choose the identity provider: Organisation settings > External services > Ways in. Only a form with the company sign-in has this row |
 | **Event password** | Set the password on this tab |
 | **Legal texts** | Publish the privacy notice, the terms and the consents you chose on the **Legal** tab |

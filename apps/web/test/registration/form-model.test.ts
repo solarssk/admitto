@@ -3,12 +3,10 @@ import { loadRegistrantFormFields, type RegistrantFormField } from "@admitto/tic
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadRegistrationPage, resolveConfirmation, resolveRegistration } from "../../src/registration/form-model.js";
 import { resolveAccessMethodAvailability } from "../../src/registration/access-methods.js";
-import { getBotProtectionMode } from "../../src/registration/bot-protection-mode.js";
 import { getSsoProviderId } from "../../src/registration/sso-provider.js";
 import { resolveTurnstileKeys } from "../../src/registration/turnstile-settings.js";
 
 vi.mock("../../src/registration/access-methods.js", () => ({ resolveAccessMethodAvailability: vi.fn() }));
-vi.mock("../../src/registration/bot-protection-mode.js", () => ({ getBotProtectionMode: vi.fn(async () => "required") }));
 vi.mock("../../src/registration/sso-provider.js", () => ({ getSsoProviderId: vi.fn(async () => null) }));
 vi.mock("../../src/registration/turnstile-settings.js", () => ({ resolveTurnstileKeys: vi.fn() }));
 vi.mock("../../src/legal/registration-gate.js", () => ({
@@ -66,7 +64,6 @@ beforeEach(() => {
   vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(true));
   vi.mocked(resolveTurnstileKeys).mockResolvedValue({ state: "ready", siteKey: "site-key", secret: "secret" });
   vi.mocked(getSsoProviderId).mockResolvedValue(null);
-  vi.mocked(getBotProtectionMode).mockResolvedValue("required");
 });
 
 describe("loadRegistrationPage, when the answers of its dependencies do not agree", () => {
@@ -80,34 +77,6 @@ describe("loadRegistrationPage, when the answers of its dependencies do not agre
     vi.mocked(resolveTurnstileKeys).mockResolvedValue({ state: "incomplete" });
     expect(await loadRegistrationPage(db, "northwind-summit", NOW)).toEqual({ kind: "not_found" });
     vi.mocked(resolveTurnstileKeys).mockResolvedValue({ state: "unreadable" });
-    expect(await loadRegistrationPage(db, "northwind-summit", NOW)).toEqual({ kind: "not_found" });
-  });
-
-  it("has the widget and asks for the token while bot protection is required", async () => {
-    const state = await loadRegistrationPage(db, "northwind-summit", NOW);
-    expect(state.kind === "open" ? state.form.needsChallenge : null).toBe(true);
-  });
-
-  it("opens without the keys, with no widget and no site key, when bot protection is not used", async () => {
-    vi.mocked(getBotProtectionMode).mockResolvedValue("not_used");
-    vi.mocked(resolveTurnstileKeys).mockResolvedValue({ state: "incomplete" });
-    const state = await loadRegistrationPage(db, "northwind-summit", NOW);
-    expect(state.kind).toBe("open");
-    if (state.kind === "open") {
-      expect(state.form.needsChallenge).toBe(false);
-      expect(state.form.turnstileSiteKey).toBe("");
-    }
-  });
-
-  it("does not send the site key when bot protection is not used, even though keys are saved", async () => {
-    vi.mocked(getBotProtectionMode).mockResolvedValue("not_used");
-    const state = await loadRegistrationPage(db, "northwind-summit", NOW);
-    expect(state.kind === "open" ? [state.form.needsChallenge, state.form.turnstileSiteKey] : null).toEqual([false, ""]);
-  });
-
-  it("still closes the form of a way in that is not available, whatever the mode", async () => {
-    vi.mocked(getBotProtectionMode).mockResolvedValue("not_used");
-    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(false));
     expect(await loadRegistrationPage(db, "northwind-summit", NOW)).toEqual({ kind: "not_found" });
   });
 

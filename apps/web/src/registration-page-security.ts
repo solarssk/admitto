@@ -7,9 +7,8 @@ import { buildTicketFontSrc, buildTicketImgSrc, getTicketPageSecurityHeaders, re
 export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
 export interface RegistrationPageSecurityOptions {
-  /** True only when the page has the Turnstile widget (the link and the password while bot protection is required). Without keys
-   *  that form is closed (D-C2), and a form whose bot protection is "not used" has no widget, so Cloudflare is never added to the
-   *  policy "just in case". */
+  /** True only when the instance has Turnstile keys configured. Without keys the form is closed
+   *  (D-C2), so Cloudflare is never added to the policy "just in case". */
   turnstile: boolean;
   theme?: BrandingTheme | null;
   logoUrl?: string | null;

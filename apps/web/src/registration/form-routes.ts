@@ -69,11 +69,10 @@ function respondForm(c: Context, open: OpenRegistration, theme: BrandingTheme | 
   // run in another.
   const nonce = createAuthPageScriptNonce();
   const sso = ssoStateOf(c, open);
-  // The Turnstile widget, its script and its frame only where the page has the widget: the company sign-in has none, nor has a form
-  // whose bot protection is "not used".
+  // The Turnstile widget, its script and its frame only where the page has the widget: the company sign-in has none.
   applyHeaders(
     c,
-    getRegistrationPageSecurityHeaders(nonce, { turnstile: form.needsChallenge, theme, logoUrl: form.event.logoUrl, secure: isSecureRequest(c) }),
+    getRegistrationPageSecurityHeaders(nonce, { turnstile: !form.needsSso, theme, logoUrl: form.event.logoUrl, secure: isSecureRequest(c) }),
   );
   return c.html(renderRegistrationFormPage(form, { nonce, theme, ...(sso ? { sso } : {}) }), 200);
 }

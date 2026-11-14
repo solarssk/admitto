@@ -19,7 +19,7 @@ const NONCE = "bm9uY2U=";
 const URL = "https://tickets.example.com/r/northwind-summit";
 
 /** The model of an event with the company sign-in: no site key, and no link to confirm. */
-const ssoModel = (overrides = {}) => formModel({ needsSso: true, needsChallenge: false, verifyEmail: false, turnstileSiteKey: "", ...overrides });
+const ssoModel = (overrides = {}) => formModel({ needsSso: true, verifyEmail: false, turnstileSiteKey: "", ...overrides });
 
 const signedOut = (notice: (typeof SSO_NOTICES)[number] | null = null) =>
   renderRegistrationFormPage(ssoModel(), { nonce: NONCE, sso: { signedInAs: null, notice } });

@@ -37,38 +37,6 @@ export function MissingChecks({ eventId, keys }: Readonly<{ eventId: string; key
   );
 }
 
-/** How a row looks: a tick for a check that is met, a warning for one that is not, a grey dash for information such as "Not used". */
-const ROW_LOOK = {
-  done: { tone: "ok", icon: "check", prefix: "Done: " },
-  todo: { tone: "warn", icon: "alert-triangle", prefix: "To do: " },
-  info: { tone: "neutral", icon: "minus", prefix: "Not used: " },
-} as const;
-
-function rowLook(check: RegistrationReadinessCheckDto, copy: ReadinessCopy) {
-  if (copy.info) return ROW_LOOK.info;
-  return check.ok ? ROW_LOOK.done : ROW_LOOK.todo;
-}
-
-function ReadinessRow({ eventId, check }: Readonly<{ eventId: string; check: RegistrationReadinessCheckDto }>) {
-  const copy = readinessCopy(check.key);
-  const look = rowLook(check, copy);
-  return (
-    <li className="access-check">
-      <span className={`overview-check__icon overview-check__icon--${look.tone}`} aria-hidden="true">
-        <i className={`ti ti-${look.icon}`} />
-      </span>
-      <span className="overview-check__body">
-        <strong>
-          <span className="sr-only">{look.prefix}</span>
-          {copy.title}
-        </strong>
-        <span className="overview-check__detail">{check.ok ? copy.met : copy.missing}</span>
-        {!check.ok && <ReadinessRemedy eventId={eventId} remedy={copy.remedy} />}
-      </span>
-    </li>
-  );
-}
-
 /**
  * What registration needs before it can be on, one row for each check the server reports: met or not, in a sentence, with what to
  * do about it when it is not. What is missing comes first. The list is of the settings that are saved, so it says so while the form
@@ -87,19 +55,31 @@ export function AccessReadinessCard({
   unsaved: boolean;
 }>) {
   const shown = checks.filter((check) => !(hideArchived && check.key === "event_not_archived"));
-  // A row that is information (bot protection "not used") is listed last and is not a task, so it is not counted.
-  const tasks = shown.filter((check) => !readinessCopy(check.key).info);
-  const info = shown.filter((check) => readinessCopy(check.key).info);
-  const missing = tasks.filter((check) => !check.ok);
-  const ordered = [...missing, ...tasks.filter((check) => check.ok), ...info];
+  const missing = shown.filter((check) => !check.ok);
+  const ordered = [...missing, ...shown.filter((check) => check.ok)];
   return (
-    <Card title="Setup checklist" actions={<span className="overview-readiness-score">{tasks.length - missing.length} of {tasks.length} done</span>}>
+    <Card title="Setup checklist" actions={<span className="overview-readiness-score">{shown.length - missing.length} of {shown.length} done</span>}>
       <div className="settings-card-stack">
         {unsaved && <p className="settings-card-intro">The checklist shows what is saved. Save your changes to update it.</p>}
         <ul className="access-checklist">
-          {ordered.map((check) => (
-            <ReadinessRow key={check.key} eventId={eventId} check={check} />
-          ))}
+          {ordered.map((check) => {
+            const copy = readinessCopy(check.key);
+            return (
+              <li key={check.key} className="access-check">
+                <span className={`overview-check__icon overview-check__icon--${check.ok ? "ok" : "warn"}`} aria-hidden="true">
+                  <i className={`ti ti-${check.ok ? "check" : "alert-triangle"}`} />
+                </span>
+                <span className="overview-check__body">
+                  <strong>
+                    <span className="sr-only">{check.ok ? "Done: " : "To do: "}</span>
+                    {copy.title}
+                  </strong>
+                  <span className="overview-check__detail">{check.ok ? copy.met : copy.missing}</span>
+                  {!check.ok && <ReadinessRemedy eventId={eventId} remedy={copy.remedy} />}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </Card>

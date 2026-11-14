@@ -12,8 +12,6 @@ export interface ReadinessCopy {
   missing: string;
   /** What to do about it, when the sentence of a missing check does not say it already (it does for a check that is put right on this tab). */
   remedy?: { text: string; link?: ReadinessLink };
-  /** The row is information, not a task: it is shown grey, with a dash instead of a tick, and is not counted in "x of y done". */
-  info?: boolean;
 }
 
 const ASK_A_SUPERADMIN = { text: "Ask a superadmin to set it up." } as const;
@@ -44,12 +42,6 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     met: "Bot protection is set up.",
     missing: "Bot protection is not set up, so the form stays closed.",
     remedy: ASK_A_SUPERADMIN,
-  },
-  bot_protection_not_used: {
-    title: "Bot protection",
-    met: "Not used for this organisation.",
-    missing: "Bot protection is switched off for this organisation.",
-    info: true,
   },
   identity_provider: {
     title: "Company sign-in",

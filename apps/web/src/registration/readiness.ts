@@ -12,8 +12,7 @@
  * What it promises, pinned to the public page by registration-readiness.test.ts:
  *  - An event that is ready opens its form: `resolveRegistration` (./form-model.ts) finds it `open`.
  *  - Each key that closes the form is a condition of the page itself: the way in (`access_method`,
- *    `access_method_enabled`, `bot_protection` for the link and the password (`bot_protection_not_used`, which is always met, when
- *    the superadmin set bot protection to "not used"), `identity_provider` for the company sign-in,
+ *    `access_method_enabled`, `bot_protection` for the link and the password, `identity_provider` for the company sign-in,
  *    `password`), the texts (`legal_documents`), the questions (`form_questions`)
  *    and the event (`event_not_archived`, `event_not_ended`). The rules behind them are the page's own functions, not
  *    copies: `resolveAccessMethodAvailability`, `evaluateLegalGate`, `drawQuestions`, `isOver`.
@@ -37,7 +36,6 @@ import {
 } from "./access-methods.js";
 import { isRequiredFieldOffForm } from "./field-on-form.js";
 import type { FormQuestionType } from "./form-fields.js";
-import { getBotProtectionMode, type BotProtectionMode } from "./bot-protection-mode.js";
 import { drawQuestions } from "./form-model.js";
 import { resolveGuestSsoProvider } from "./sso-provider.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
@@ -47,7 +45,6 @@ export const READINESS_KEYS = [
   "access_method",
   "access_method_enabled",
   "bot_protection",
-  "bot_protection_not_used",
   "identity_provider",
   "password",
   "legal_documents",
@@ -72,8 +69,6 @@ export interface ReadinessEnvironment {
   availability: readonly AccessMethodAvailability[];
   /** The Turnstile keys are saved and the secret reads back. */
   botProtectionReady: boolean;
-  /** What the superadmin set (./bot-protection-mode.ts): with `not_used` the link and the password need no keys. */
-  botProtectionMode: BotProtectionMode;
   /** The identity provider chosen for guests (./sso-provider.ts) exists and is enabled. */
   identityProviderReady: boolean;
   /** A mail provider resolves for the event, as it does for the worker. */
@@ -114,10 +109,8 @@ export function evaluateRegistrationReadiness({ settings, environment, event }: 
     const entry = environment.availability.find((candidate) => candidate.method === method);
     checks.push({ key: "access_method_enabled", ok: entry?.enabled === true });
   }
-  // A form behind the company sign-in needs no bot check: it stands behind a sign-in of the provider. The others do, unless the
-  // superadmin set bot protection to "not used": that is information for the organiser, never a blocker.
+  // A form behind the company sign-in needs no bot check: it stands behind a sign-in of the provider. The others do.
   if (method === "sso") checks.push({ key: "identity_provider", ok: environment.identityProviderReady });
-  else if (environment.botProtectionMode === "not_used") checks.push({ key: "bot_protection_not_used", ok: true });
   else checks.push({ key: "bot_protection", ok: environment.botProtectionReady });
   if (method === "password") checks.push({ key: "password", ok: settings.password_set });
   checks.push(
@@ -189,10 +182,9 @@ export async function loadReadinessEnvironment(
   eventId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ReadinessEnvironment> {
-  const [availability, keys, botProtectionMode, provider, mailConfigured, instanceBaseUrl] = await Promise.all([
+  const [availability, keys, provider, mailConfigured, instanceBaseUrl] = await Promise.all([
     resolveAccessMethodAvailability(db),
     resolveTurnstileKeys(db),
-    getBotProtectionMode(db),
     resolveGuestSsoProvider(db),
     succeeds(() => resolveMailConfig(eventId, db, env)),
     instanceBaseUrlOrNull(db, env),
@@ -200,7 +192,6 @@ export async function loadReadinessEnvironment(
   return {
     availability,
     botProtectionReady: keys.state === "ready",
-    botProtectionMode,
     identityProviderReady: provider.state === "ready",
     mailConfigured,
     instanceBaseUrl,

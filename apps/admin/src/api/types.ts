@@ -1471,18 +1471,12 @@ export interface RegistrationTurnstileDto {
   site_key: string | null;
   secret_set: boolean;
   status: RegistrationTurnstileStatus;
-  bot_protection: RegistrationBotProtection;
 }
 
-/** Whether the guest form has a bot check at all: `required` (the default; the link and the password need the keys) or `not_used`
- * (for an organisation that runs the form inside its own network or without Cloudflare). Only a superadmin sets it. */
-export type RegistrationBotProtection = "required" | "not_used";
-
-/** `null` clears a key, a string sets it, leaving a key out keeps it; `bot_protection` changes the mode. */
+/** `null` clears a key, a string sets it, leaving a key out keeps it. */
 export interface SaveRegistrationTurnstileBody {
   site_key?: string | null;
   secret_key?: string | null;
-  bot_protection?: RegistrationBotProtection;
 }
 
 /** What a way in waits for when it is on but cannot be used: the Turnstile keys (`link`, `password`) or an enabled sign-in
@@ -1644,7 +1638,6 @@ export type RegistrationReadinessKey =
   | "access_method"
   | "access_method_enabled"
   | "bot_protection"
-  | "bot_protection_not_used"
   | "identity_provider"
   | "password"
   | "legal_documents"

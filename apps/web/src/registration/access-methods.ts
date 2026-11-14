@@ -5,14 +5,13 @@
  *
  * "Available" is stricter than "enabled". A method the administrator enabled is available only when
  * what it needs is there: link and password need the Turnstile keys (the password form mails
- * addresses too, D-C2) unless the superadmin set bot protection to "not used" (./bot-protection-mode.ts), SSO needs the identity provider chosen for guests to exist and be enabled
+ * addresses too, D-C2), SSO needs the identity provider chosen for guests to exist and be enabled
  * (./sso-provider.ts); it needs no Turnstile, because the form stands behind a sign-in. Turning a method off, or losing what
  * it needs, closes the form of every event that uses it; nothing is deleted. Callers decide
  * availability from `resolveAccessMethodAvailability` at request time, never from a cached copy.
  */
 
 import { REGISTRATION_ACCESS_METHOD, type Prisma, type PrismaClient, type RegistrationAccessMethod } from "@admitto/db";
-import { getBotProtectionMode } from "./bot-protection-mode.js";
 import { resolveGuestSsoProvider } from "./sso-provider.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
 
@@ -86,16 +85,14 @@ export function computeAccessMethodAvailability(input: {
 /** Every method, in the canonical order, with whether the administrator enabled it and whether it
  * can be used right now. */
 export async function resolveAccessMethodAvailability(db: AccessMethodsDb): Promise<AccessMethodAvailability[]> {
-  const [enabled, keys, mode, provider] = await Promise.all([
+  const [enabled, keys, provider] = await Promise.all([
     getEnabledAccessMethods(db),
     resolveTurnstileKeys(db),
-    getBotProtectionMode(db),
     resolveGuestSsoProvider(db),
   ]);
   return computeAccessMethodAvailability({
     enabled,
-    // With the check not used there is nothing to wait for.
-    botProtectionReady: mode === "not_used" || keys.state === "ready",
+    botProtectionReady: keys.state === "ready",
     identityProviderEnabled: provider.state === "ready",
   });
 }
