@@ -43,6 +43,7 @@ const loadAttendeeDetailPage = () => import("./pages/AttendeeDetailPage.js").the
 const loadEventSettingsPage = () => import("./pages/EventSettingsPage.js").then((m) => ({ default: m.EventSettingsPage }));
 const loadImportPage = () => import("./pages/ImportPage.js").then((m) => ({ default: m.ImportPage }));
 const loadRequirementsPage = () => import("./pages/RequirementsPage.js").then((m) => ({ default: m.RequirementsPage }));
+const loadRegistrationPage = () => import("./pages/RegistrationPage.js").then((m) => ({ default: m.RegistrationPage }));
 const loadCommunicationPage = () => import("./pages/CommunicationPage.js").then((m) => ({ default: m.CommunicationPage }));
 const loadEventOverviewPage = () => import("./pages/EventOverviewPage.js").then((m) => ({ default: m.EventOverviewPage }));
 const loadReportsPage = () => import("./pages/ReportsPage.js").then((m) => ({ default: m.ReportsPage }));
@@ -60,6 +61,7 @@ const AttendeeDetailPage = lazyRoute(loadAttendeeDetailPage);
 const EventSettingsPage = lazyRoute(loadEventSettingsPage);
 const ImportPage = lazyRoute(loadImportPage);
 const RequirementsPage = lazyRoute(loadRequirementsPage);
+const RegistrationPage = lazyRoute(loadRegistrationPage);
 const CommunicationPage = lazyRoute(loadCommunicationPage);
 const EventOverviewPage = lazyRoute(loadEventOverviewPage);
 const ReportsPage = lazyRoute(loadReportsPage);
@@ -69,7 +71,7 @@ const PLACEHOLDER_ROUTES = [
   { path: "overview", title: "Overview" },
   { path: "attendees", title: "Attendees" },
   { path: "requirements", title: "Requirements" },
-  { path: "approval", title: "Approval & waitlist" },
+  { path: "registration", title: "Registration" },
   { path: "communication", title: "Communication" },
   { path: "wallet", title: "Wallet passes" },
   { path: "checkin", title: "Check-in" },
@@ -79,13 +81,14 @@ const PLACEHOLDER_ROUTES = [
 ] as const;
 
 /** Maps a subset of PLACEHOLDER_ROUTES paths to their real page component.
- * Paths absent here (approval, wallet, fulfilment, thank-you) fall back to
+ * Paths absent here (wallet, fulfilment, thank-you) fall back to
  * PlaceholderPage in the route map below. */
 const EVENT_ROUTE_COMPONENTS: Partial<Record<(typeof PLACEHOLDER_ROUTES)[number]["path"], ComponentType>> = {
   overview: EventOverviewPage,
   checkin: AdminCheckInRoute,
   attendees: AttendeesPage,
   requirements: RequirementsPage,
+  registration: RegistrationPage,
   communication: CommunicationPage,
   reports: ReportsPage,
 };
@@ -99,6 +102,7 @@ const EVENT_ROUTE_LOADERS: Partial<Record<string, () => Promise<unknown>>> = {
   "attendees/import": loadImportPage,
   checkin: loadAdminCheckInRoute,
   communication: loadCommunicationPage,
+  registration: loadRegistrationPage,
   reports: loadReportsPage,
   requirements: loadRequirementsPage,
   settings: loadEventSettingsPage,

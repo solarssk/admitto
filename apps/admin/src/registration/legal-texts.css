@@ -1,0 +1,197 @@
+/* Registration > Legal: the list of an event's texts, the card around the editor, and the copy dialog. */
+
+.legal-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* The title and two buttons do not fit one line on a phone, and the header has a fixed height: it grows, with the title first
+   and the buttons under it, instead of the buttons hanging out of the card. */
+@media (max-width: 640px) {
+  .legal-texts-card .at-card__header {
+    flex-wrap: wrap;
+    height: auto;
+    padding-block: var(--space-3);
+  }
+
+  .legal-texts-card .at-card__actions {
+    flex: 1 1 100%;
+  }
+
+  .legal-card-actions {
+    justify-content: flex-start;
+  }
+}
+
+/* The two buttons are each a line of their own at this width, so they are as wide as the card instead of two different widths. */
+@media (max-width: 480px) {
+  .legal-card-actions > * {
+    flex: 1 1 100%;
+  }
+
+  .legal-card-actions .at-btn {
+    width: 100%;
+  }
+}
+
+.legal-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.legal-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.legal-row:last-child {
+  border-bottom: 0;
+}
+
+.legal-row__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h);
+  height: var(--control-h);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: 1.125rem;
+}
+
+/* The text takes what the badge and the button leave; its words wrap, never cut. */
+.legal-row__text {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.legal-row__title {
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.legal-row__meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.legal-row__link,
+.legal-editor__public-link {
+  align-self: flex-start;
+  font-size: var(--fs-xs);
+  color: var(--text-link);
+}
+
+.legal-editor__public-link {
+  font-size: var(--fs-sm);
+}
+
+.legal-row__side {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Under 560px the row is a block: the icon and the words on one line, the badge and the button under them. */
+@media (max-width: 560px) {
+  .legal-row {
+    flex-wrap: wrap;
+  }
+
+  .legal-row__text {
+    flex: 1 1 0;
+  }
+
+  .legal-row__side {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+}
+
+/* The editor of one text: the way back, the card, then the footer with what can be done with the text. */
+.legal-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.legal-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.legal-editor__footer .settings-footer__status {
+  min-width: 0;
+}
+
+.legal-editor__buttons {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* The copy dialog: the event to copy from, then what would happen to each text. */
+.legal-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: left;
+}
+
+.legal-copy-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.legal-copy-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.legal-copy-list__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.legal-copy-list__row:last-child {
+  border-bottom: 0;
+}
+
+.legal-copy-list__title {
+  flex: 1 1 10rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Proves runWorkerTick signals "keep draining immediately" whenever a backlog is bigger than
 // one tick's per-type capacity - mail_delivery's batch limit, or import/export claiming a job
@@ -38,7 +38,8 @@ vi.mock("@admitto/auth", () => ({
   resolveSecurityAuditLogRetentionDays: vi.fn(() => 30),
 }));
 
-vi.mock("@admitto/mail-delivery", () => ({
+vi.mock("@admitto/mail-delivery", async () => ({
+  ...(await import("./registration-mail-mock.js")).registrationMailMock,
   DEFAULT_MAIL_DRAIN_LIMIT,
   assertValidBounceIngestTickSecondsEnv: vi.fn(),
   drainPendingDeliveries,
@@ -70,8 +71,11 @@ vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }))
 vi.mock("../src/commands/wallet-expire.js", () => ({ runWalletExpiry }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn() }));
 
-const { runWorkerTick } = await import("../src/commands/worker.js");
+const { logLevel, runWorkerTick } = await import("../src/commands/worker.js");
 const { createRetentionSchedule } = await import("../src/commands/worker-retention-schedule.js");
+const { registrationMailMock } = await import("./registration-mail-mock.js");
+const { publishActivityChanged } = await import("../src/lib/sse-publish.js");
+const { InstanceUrlRequiredError, resolveInstanceBaseUrl } = await import("@admitto/auth");
 
 function fakeLocks() {
   return {
@@ -212,5 +216,387 @@ describe("runWorkerTick — signalling a backlog beyond one tick's capacity", ()
 
   it("signals nothing pending when every drain is idle", async () => {
     await expect(tick()).resolves.toBe(false);
+  });
+});
+
+describe("runWorkerTick - the registration mail job", () => {
+  const { drainRegistrationMails, sweepExpiredRegistrations, sweepRegistrationSsoStates, refreshEventDomains } = registrationMailMock;
+  const idleDrain = { claimed: 0, sent: 0, failed: 0, cancelled: 0, skipped: 0, eventIds: [] as string[] };
+  const idleSweep = { deleted: 0, eventIds: [] as string[], more: false };
+  let logLines: string[];
+
+  beforeEach(() => {
+    drainPendingDeliveries.mockReset();
+    drainPendingDeliveries.mockResolvedValue({ claimed: 0, sent: 0, failed: 0, skipped: 0, eventIds: [] });
+    for (const drain of [drainImportJobs, drainExportJobs, drainWalletPushJobs, drainWalletRefreshStatusJobs, drainWalletCleanupJobs, drainWalletMessageJobs]) {
+      drain.mockReset();
+      drain.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0, healed: 0, eventIds: [] });
+    }
+    drainRegistrationMails.mockReset();
+    drainRegistrationMails.mockResolvedValue(idleDrain);
+    sweepExpiredRegistrations.mockReset();
+    sweepExpiredRegistrations.mockResolvedValue(idleSweep);
+    sweepRegistrationSsoStates.mockReset();
+    sweepRegistrationSsoStates.mockResolvedValue({ deleted: 0, more: false });
+    refreshEventDomains.mockReset();
+    refreshEventDomains.mockResolvedValue({ checked: 0, verified: 0, failing: 0, errors: 0, more: false });
+    vi.mocked(publishActivityChanged).mockClear();
+    vi.mocked(resolveInstanceBaseUrl).mockReset();
+    vi.mocked(resolveInstanceBaseUrl).mockResolvedValue("https://example.test");
+    logLines = [];
+    vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+      logLines.push(String(line));
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const registrationLines = () => logLines.filter((line) => line.includes("[worker:registration_mail]"));
+
+  it("runs after the ticket drain has finished, so that only one mailer sends at a time", async () => {
+    const order: string[] = [];
+    drainPendingDeliveries.mockImplementation(async () => {
+      order.push("tickets start");
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      order.push("tickets end");
+      return { claimed: 0, sent: 0, failed: 0, skipped: 0, eventIds: [] };
+    });
+    drainRegistrationMails.mockImplementation(async () => {
+      order.push("registrations");
+      return idleDrain;
+    });
+
+    await tick();
+
+    expect(order).toEqual(["tickets start", "tickets end", "registrations"]);
+  });
+
+  it("is not skipped for a backlog of tickets: it runs after a ticket drain that filled its batch", async () => {
+    drainPendingDeliveries.mockResolvedValue({
+      claimed: DEFAULT_MAIL_DRAIN_LIMIT,
+      sent: DEFAULT_MAIL_DRAIN_LIMIT,
+      failed: 0,
+      skipped: 0,
+      eventIds: ["evt1"],
+    });
+
+    await expect(tick()).resolves.toBe(true);
+
+    expect(drainRegistrationMails).toHaveBeenCalledOnce();
+  });
+
+  it("is given the instance URL, the limit of 20 a tick and the worker's own lock", async () => {
+    const locks = fakeLocks();
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    expect(locks.tryAcquire).toHaveBeenCalledWith("registration_mail");
+    expect(drainRegistrationMails).toHaveBeenCalledWith({}, process.env, {}, { baseUrl: "https://example.test", limit: 20 });
+    expect(locks.release).toHaveBeenCalledWith("registration_mail");
+  });
+
+  it("sends only while no other worker sends ticket mail: it holds the ticket mail lock for the drain and lets go of it", async () => {
+    const held: string[] = [];
+    const locks = {
+      ...fakeLocks(),
+      tryAcquire: vi.fn(async (job: string) => {
+        held.push(`+${job}`);
+        return true;
+      }),
+      release: vi.fn(async (job: string) => {
+        held.push(`-${job}`);
+      }),
+    };
+    drainRegistrationMails.mockImplementation(async () => {
+      held.push("drain");
+      return idleDrain;
+    });
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    // The registration job takes its own lock, then the ticket mail lock for the drain only, and lets both go.
+    const registration = held.slice(held.indexOf("+registration_mail"), held.indexOf("-registration_mail") + 1);
+    expect(registration).toEqual(["+registration_mail", "+mail_delivery", "drain", "-mail_delivery", "-registration_mail"]);
+  });
+
+  it("does not send, and cleans up all the same, while another worker holds the ticket mail lock", async () => {
+    const locks = {
+      ...fakeLocks(),
+      // The ticket job and the registration job both ask for it; another worker has it for the whole tick.
+      tryAcquire: vi.fn(async (job: string) => job !== "mail_delivery"),
+    };
+    sweepExpiredRegistrations.mockResolvedValue({ deleted: 2, eventIds: ["evt1"], more: false });
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    expect(drainRegistrationMails).not.toHaveBeenCalled();
+    expect(sweepExpiredRegistrations).toHaveBeenCalledOnce();
+    expect(registrationLines().some((line) => line.includes("skipped (lock held)"))).toBe(true);
+    expect(registrationLines().some((line) => line.includes("ok claimed=0") && line.includes("expired=2"))).toBe(true);
+    // A lock it never got is not released, and its own lock is.
+    expect(locks.release).not.toHaveBeenCalledWith("mail_delivery");
+    expect(locks.release).toHaveBeenCalledWith("registration_mail");
+  });
+
+  it("is skipped, with nothing read or deleted, while another worker holds its lock, and never releases a lock it did not get", async () => {
+    const locks = { ...fakeLocks(), tryAcquire: vi.fn(async (job: string) => job !== "registration_mail") };
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    expect(drainRegistrationMails).not.toHaveBeenCalled();
+    expect(sweepExpiredRegistrations).not.toHaveBeenCalled();
+    expect(locks.release).not.toHaveBeenCalledWith("registration_mail");
+    expect(registrationLines().some((line) => line.includes("skipped (lock held)"))).toBe(true);
+  });
+
+  it("logs only counts, and says nothing when there was nothing to do", async () => {
+    await tick();
+    expect(registrationLines()).toEqual([expect.stringMatching(/idle$/)]);
+
+    logLines = [];
+    drainRegistrationMails.mockResolvedValue({ claimed: 3, sent: 1, failed: 1, cancelled: 1, skipped: 0, eventIds: ["evt1"] });
+    sweepExpiredRegistrations.mockResolvedValue({ deleted: 4, eventIds: ["evt2"], more: false });
+
+    await tick();
+
+    expect(registrationLines()).toEqual([
+      expect.stringMatching(/ok claimed=3 sent=1 failed=1 cancelled=1 skipped=0 expired=4$/),
+    ]);
+    expect(vi.mocked(publishActivityChanged)).toHaveBeenCalledWith(["evt1", "evt2"]);
+  });
+
+  it("still deletes the registrations that expired when the instance URL is not set, and sends nothing", async () => {
+    vi.mocked(resolveInstanceBaseUrl).mockRejectedValue(new InstanceUrlRequiredError());
+    sweepExpiredRegistrations.mockResolvedValue({ deleted: 2, eventIds: ["evt1"], more: false });
+
+    await tick();
+
+    expect(sweepExpiredRegistrations).toHaveBeenCalledOnce();
+    expect(drainRegistrationMails).not.toHaveBeenCalled();
+    expect(registrationLines().some((line) => line.includes("skip drain: instance URL not configured"))).toBe(true);
+    expect(registrationLines().some((line) => line.includes("expired=2"))).toBe(true);
+  });
+
+  it.each([
+    ["the drain filled its batch", { claimed: 20 }, idleSweep],
+    ["the clean-up stopped at its limit", {}, { deleted: 1, eventIds: ["evt1"], more: true }],
+  ])("signals more to do when %s", async (_what, drained, swept) => {
+    drainRegistrationMails.mockResolvedValue({ ...idleDrain, ...drained });
+    sweepExpiredRegistrations.mockResolvedValue(swept);
+
+    await expect(tick()).resolves.toBe(true);
+  });
+
+  it("signals nothing more to do for a part of a batch", async () => {
+    drainRegistrationMails.mockResolvedValue({ ...idleDrain, claimed: 19, sent: 19 });
+
+    await expect(tick()).resolves.toBe(false);
+  });
+
+  it("logs a failure as its class alone, never the text that can hold a guest's address, and still lets the tick finish", async () => {
+    drainRegistrationMails.mockRejectedValue(Object.assign(new Error("could not connect for gina@example.com"), { name: "ConnectionError" }));
+    const locks = fakeLocks();
+
+    await expect(runWorkerTick({} as never, locks as never, createRetentionSchedule())).resolves.toBe(false);
+
+    expect(registrationLines()).toEqual([expect.stringMatching(/FAILED error_class=ConnectionError$/)]);
+    expect(logLines.join("\n")).not.toContain("example.com");
+    expect(locks.release).toHaveBeenCalledWith("registration_mail");
+  });
+
+  it("logs an error that is no Error as unknown", async () => {
+    drainRegistrationMails.mockRejectedValue("gina@example.com");
+
+    await tick();
+
+    expect(registrationLines()).toEqual([expect.stringMatching(/FAILED error_class=unknown$/)]);
+  });
+
+  it("does not let a failed clean-up stop the mail: it logs the class of the failure and the drain still runs", async () => {
+    sweepExpiredRegistrations.mockRejectedValue(Object.assign(new Error("lock wait for gina@example.com"), { name: "TransactionTimeout" }));
+    drainRegistrationMails.mockResolvedValue({ claimed: 2, sent: 2, failed: 0, cancelled: 0, skipped: 0, eventIds: ["evt1"] });
+
+    await expect(tick()).resolves.toBe(false);
+
+    expect(drainRegistrationMails).toHaveBeenCalledOnce();
+    expect(registrationLines()).toEqual([
+      expect.stringMatching(/FAILED sweep error_class=TransactionTimeout$/),
+      expect.stringMatching(/ok claimed=2 sent=2 failed=0 cancelled=0 skipped=0 expired=0$/),
+    ]);
+    expect(logLines.join("\n")).not.toContain("example.com");
+    expect(vi.mocked(publishActivityChanged)).toHaveBeenCalledWith(["evt1"]);
+    // A clean-up that keeps failing leaves personal data undeleted: the System logs must show an error, not an info line.
+    expect(logLevel("FAILED sweep error_class=TransactionTimeout")).toBe("error");
+  });
+
+  it("logs a clean-up failure that is no Error as unknown, and goes on", async () => {
+    sweepExpiredRegistrations.mockRejectedValue("gina@example.com");
+
+    await tick();
+
+    expect(drainRegistrationMails).toHaveBeenCalledOnce();
+    expect(registrationLines()).toEqual([expect.stringMatching(/FAILED sweep error_class=unknown$/), expect.stringMatching(/idle$/)]);
+    expect(logLines.join("\n")).not.toContain("example.com");
+  });
+
+  it("cleans up the state of unfinished company sign-ins once a tick, and logs a count only when it deleted some", async () => {
+    await tick();
+    expect(sweepRegistrationSsoStates).toHaveBeenCalledOnce();
+    expect(registrationLines()).toEqual([expect.stringMatching(/idle$/)]);
+
+    logLines = [];
+    sweepRegistrationSsoStates.mockResolvedValue({ deleted: 7, more: false });
+    await tick();
+    expect(registrationLines()).toEqual([expect.stringMatching(/sso_states deleted=7$/), expect.stringMatching(/idle$/)]);
+  });
+
+  it("signals more to do when the clean-up of sign-in states stopped at its limit", async () => {
+    sweepRegistrationSsoStates.mockResolvedValue({ deleted: 10_000, more: true });
+
+    await expect(tick()).resolves.toBe(true);
+  });
+
+  it("signals more to do when one mail was taken and the clean-up of sign-in states stopped at its limit", async () => {
+    drainRegistrationMails.mockResolvedValue({ ...idleDrain, claimed: 1, sent: 1, eventIds: ["evt1"] });
+    sweepRegistrationSsoStates.mockResolvedValue({ deleted: 10_000, more: true });
+
+    await expect(tick()).resolves.toBe(true);
+  });
+
+  it("does not let a failed clean-up of sign-in states stop the mail, and logs the class of the failure alone", async () => {
+    sweepRegistrationSsoStates.mockRejectedValue(Object.assign(new Error("could not connect"), { name: "ConnectionError" }));
+    drainRegistrationMails.mockResolvedValue({ claimed: 1, sent: 1, failed: 0, cancelled: 0, skipped: 0, eventIds: ["evt1"] });
+
+    await expect(tick()).resolves.toBe(false);
+
+    expect(drainRegistrationMails).toHaveBeenCalledOnce();
+    expect(registrationLines()).toEqual([
+      expect.stringMatching(/FAILED sso_state_sweep error_class=ConnectionError$/),
+      expect.stringMatching(/ok claimed=1 sent=1/),
+    ]);
+    expect(logLevel("FAILED sso_state_sweep error_class=ConnectionError")).toBe("error");
+  });
+
+  it("checks the events' own addresses once a tick with the host of the instance, and logs nothing when none was due", async () => {
+    await tick();
+
+    expect(refreshEventDomains).toHaveBeenCalledOnce();
+    expect(refreshEventDomains).toHaveBeenCalledWith(expect.anything(), { instanceHostname: "example.test" });
+    expect(registrationLines()).toEqual([expect.stringMatching(/idle$/)]);
+  });
+
+  it("checks the addresses after the mail went out, so a host that does not answer holds nothing up", async () => {
+    const order: string[] = [];
+    drainRegistrationMails.mockImplementation(async () => {
+      order.push("mail");
+      return idleDrain;
+    });
+    refreshEventDomains.mockImplementation(async () => {
+      order.push("addresses");
+      return { checked: 0, verified: 0, failing: 0, errors: 0, more: false };
+    });
+
+    await tick();
+
+    expect(order).toEqual(["mail", "addresses"]);
+  });
+
+  it("logs the counts of the addresses it checked, and no address", async () => {
+    refreshEventDomains.mockResolvedValue({ checked: 3, verified: 1, failing: 1, errors: 0, more: false });
+
+    await tick();
+
+    expect(registrationLines()).toEqual([expect.stringMatching(/event_domains checked=3 verified=1 failing=1 errors=0$/), expect.stringMatching(/idle$/)]);
+  });
+
+  it("logs an address that could not be checked, as an error count", async () => {
+    refreshEventDomains.mockResolvedValue({ checked: 0, verified: 0, failing: 0, errors: 1, more: false });
+
+    await tick();
+
+    expect(registrationLines()).toEqual([expect.stringMatching(/event_domains checked=0 verified=0 failing=0 errors=1$/), expect.stringMatching(/idle$/)]);
+  });
+
+  it("signals more to do when more addresses are due than one run checks", async () => {
+    refreshEventDomains.mockResolvedValue({ checked: 5, verified: 0, failing: 0, errors: 0, more: true });
+
+    await expect(tick()).resolves.toBe(true);
+  });
+
+  it("signals more to do when one mail was taken and more addresses are due", async () => {
+    drainRegistrationMails.mockResolvedValue({ ...idleDrain, claimed: 1, sent: 1, eventIds: ["evt1"] });
+    refreshEventDomains.mockResolvedValue({ checked: 5, verified: 0, failing: 0, errors: 0, more: true });
+
+    await expect(tick()).resolves.toBe(true);
+  });
+
+  it("does not let a failed check of the addresses stop the mail, and logs the class of the failure alone", async () => {
+    refreshEventDomains.mockRejectedValue(Object.assign(new Error("db down at summit.acme.example"), { name: "ConnectionError" }));
+    drainRegistrationMails.mockResolvedValue({ claimed: 1, sent: 1, failed: 0, cancelled: 0, skipped: 0, eventIds: ["evt1"] });
+
+    await expect(tick()).resolves.toBe(false);
+
+    expect(drainRegistrationMails).toHaveBeenCalledOnce();
+    expect(registrationLines()).toEqual([
+      expect.stringMatching(/FAILED event_domain_refresh error_class=ConnectionError$/),
+      expect.stringMatching(/ok claimed=1 sent=1/),
+    ]);
+    expect(logLevel("FAILED event_domain_refresh error_class=ConnectionError")).toBe("error");
+    expect(logLines.join("\n")).not.toContain("summit.acme.example");
+  });
+
+  it("logs a failure that is no Error as unknown", async () => {
+    refreshEventDomains.mockRejectedValue("summit.acme.example");
+
+    await tick();
+
+    expect(registrationLines()).toEqual([expect.stringMatching(/FAILED event_domain_refresh error_class=unknown$/), expect.stringMatching(/idle$/)]);
+  });
+
+  it("checks the addresses with no host of the instance while the instance has no address", async () => {
+    vi.mocked(resolveInstanceBaseUrl).mockRejectedValue(new InstanceUrlRequiredError());
+
+    await tick();
+
+    expect(refreshEventDomains).toHaveBeenCalledWith(expect.anything(), { instanceHostname: null });
+  });
+
+  it("drops the root dot of the host of the instance", async () => {
+    vi.mocked(resolveInstanceBaseUrl).mockResolvedValue("https://Tickets.Example.Test./");
+
+    await tick();
+
+    expect(refreshEventDomains).toHaveBeenCalledWith(expect.anything(), { instanceHostname: "tickets.example.test" });
+  });
+
+  it("logs a failure to read the address of the instance as a failure of the check, and goes on", async () => {
+    // The ticket drain and the mail drain each read it first; the third read, for the check, is the one that fails.
+    vi.mocked(resolveInstanceBaseUrl)
+      .mockResolvedValueOnce("https://example.test")
+      .mockResolvedValueOnce("https://example.test")
+      .mockRejectedValueOnce(Object.assign(new Error("boom"), { name: "ReadError" }));
+
+    await tick();
+
+    expect(refreshEventDomains).not.toHaveBeenCalled();
+    expect(registrationLines()).toEqual([expect.stringMatching(/FAILED event_domain_refresh error_class=ReadError$/), expect.stringMatching(/idle$/)]);
+  });
+
+  it("does not check the addresses while another worker holds the job", async () => {
+    const locks = { ...fakeLocks(), tryAcquire: vi.fn(async (job: string) => job !== "registration_mail") };
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    expect(refreshEventDomains).not.toHaveBeenCalled();
+  });
+
+  it("does not clean up the state of sign-ins while another worker holds the job", async () => {
+    const locks = { ...fakeLocks(), tryAcquire: vi.fn(async (job: string) => job !== "registration_mail") };
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    expect(sweepRegistrationSsoStates).not.toHaveBeenCalled();
   });
 });

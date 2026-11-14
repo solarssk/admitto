@@ -75,7 +75,8 @@ export function Tabs({ tabs = [], value, defaultValue, onChange }: Readonly<Tabs
           )}
           {t.label}
           {t.count != null && (
-            <span style={{ marginLeft: 6, color: "var(--text-muted)", fontWeight: 400 }}>{t.count}</span>
+            // The secondary text colour, not the muted one: the muted grey is 4.3:1 on the page background, under the 4.5:1 that text of this size needs.
+            <span style={{ marginLeft: 6, color: "var(--text-secondary)", fontWeight: 400 }}>{t.count}</span>
           )}
         </button>
       ))}

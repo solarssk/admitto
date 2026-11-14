@@ -110,8 +110,8 @@ afterEach(() => {
 });
 
 describe("AttendeesPage capacity lockdown", () => {
-  it("disables Add attendee with a capacity tooltip once active_attendee_count reaches capacity", async () => {
-    mockEvent = baseEvent({ capacity: 400, active_attendee_count: 400 });
+  it("disables Add attendee with a capacity tooltip once seats_in_use reaches capacity", async () => {
+    mockEvent = baseEvent({ capacity: 400, seats_in_use: 400 });
     renderPage();
 
     await waitFor(() => {
@@ -126,7 +126,7 @@ describe("AttendeesPage capacity lockdown", () => {
   });
 
   it("leaves Add attendee enabled below capacity", async () => {
-    mockEvent = baseEvent({ capacity: 400, active_attendee_count: 399 });
+    mockEvent = baseEvent({ capacity: 400, seats_in_use: 399 });
     renderPage();
 
     await waitFor(() => {
@@ -138,7 +138,7 @@ describe("AttendeesPage capacity lockdown", () => {
   });
 
   it("leaves Add attendee enabled when the event has no capacity limit", async () => {
-    mockEvent = baseEvent({ capacity: null, active_attendee_count: 10_000 });
+    mockEvent = baseEvent({ capacity: null, seats_in_use: 10_000 });
     renderPage();
 
     await waitFor(() => {
@@ -150,7 +150,7 @@ describe("AttendeesPage capacity lockdown", () => {
   });
 
   it("does not refresh the event on mount when the event has no capacity limit", async () => {
-    mockEvent = baseEvent({ capacity: null, active_attendee_count: 10_000 });
+    mockEvent = baseEvent({ capacity: null, seats_in_use: 10_000 });
     mockRefreshEvent = vi.fn().mockResolvedValue(undefined);
     renderPage();
 
@@ -167,12 +167,12 @@ describe("AttendeesPage capacity lockdown", () => {
   // population) without refreshing the layout's cached event. Skipping the mount refresh just
   // because a number was already present would leave Add attendee's disabled state wrong until
   // another mutation or a full reload.
-  it("refreshes the event on mount even when active_attendee_count already looks known, to pick up a stale count from a sibling route's mutation", async () => {
-    mockEvent = baseEvent({ capacity: 400, active_attendee_count: 400 });
+  it("refreshes the event on mount even when seats_in_use already looks known, to pick up a stale count from a sibling route's mutation", async () => {
+    mockEvent = baseEvent({ capacity: 400, seats_in_use: 400 });
     mockRefreshEvent = vi.fn().mockImplementation(async () => {
       // Simulates a sibling AttendeeDetailPage delete that happened before this mount, which the
       // layout's cached event never picked up.
-      mockEvent = baseEvent({ capacity: 400, active_attendee_count: 399 });
+      mockEvent = baseEvent({ capacity: 400, seats_in_use: 399 });
     });
     renderPage();
 
@@ -183,17 +183,17 @@ describe("AttendeesPage capacity lockdown", () => {
 
   // Bug: EventsPickerPage navigates to an event with router state carrying that EventCard's own
   // DTO (from GET /api/admin/events, the picker list), which EventLayout renders immediately
-  // instead of re-fetching - but that list endpoint never computes active_attendee_count (only
+  // instead of re-fetching - but that list endpoint never computes seats_in_use (only
   // the single-event fetch does). Left unfixed, a capacity-full event reached via the picker
-  // read active_attendee_count as undefined forever on this page, and "?? 0" left Add attendee
+  // read seats_in_use as undefined forever on this page, and "?? 0" left Add attendee
   // enabled even though the event was actually full.
   it("fetches the missing active count on mount when the event arrived without one (picker navigation-state snapshot), and disables Add attendee once it comes back full", async () => {
-    mockEvent = baseEvent({ capacity: 400, active_attendee_count: undefined });
+    mockEvent = baseEvent({ capacity: 400, seats_in_use: undefined });
     mockRefreshEvent = vi.fn().mockImplementation(async () => {
       // Mirrors what a real refreshEvent() does: fetch the single-event endpoint (which does
-      // compute active_attendee_count) and update EventLayout's state, re-rendering this page's
+      // compute seats_in_use) and update EventLayout's state, re-rendering this page's
       // outlet context with the fuller event.
-      mockEvent = baseEvent({ capacity: 400, active_attendee_count: 400 });
+      mockEvent = baseEvent({ capacity: 400, seats_in_use: 400 });
     });
     renderPage();
 

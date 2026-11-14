@@ -24,6 +24,10 @@ export const ALLOWED_PLACEHOLDERS = new Set([
   "download_page_url",
   "ticket_type",
   "event_hours",
+  "confirm_url",
+  "contact_name",
+  "contact_email",
+  "contact_line",
 ]);
 
 /** Placeholders validated as http(s) URLs at render time. */
@@ -38,9 +42,11 @@ export const URL_PLACEHOLDERS = new Set([
   "apple_wallet_url",
   "google_wallet_url",
   "download_page_url",
+  "confirm_url",
 ]);
 
-/** Required ticket URLs — empty/missing values fail render (not silently stripped). */
+/** Required ticket URLs — empty/missing values fail render (not silently stripped). `confirm_url`
+ * is deliberately not here: it is a URL placeholder, but only registration mails carry a value. */
 export const REQUIRED_URL_PLACEHOLDERS = new Set(["ticket_url", "qr_image_url"]);
 
 /** Wallet-related placeholders (`apple_wallet_url`/`google_wallet_url` resolve to a real

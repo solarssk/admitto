@@ -40,7 +40,8 @@ function mailFilterStatuses(filter: Exclude<AttendeeMailStatusFilter, "not_sent"
  * `EventCustomField` registry (never trust a client-supplied `source_field`/`type` pairing
  * directly - see parseCustomFieldFilters in attendees-api-routes.ts). `select`/`boolean` match
  * any of `values` (an IN clause, same OR-within-one-field convention as ticket_type/rsvp_status);
- * `text` is a contains (ILIKE) match on `text`. */
+ * `text` is a contains (ILIKE) match on `text`, and is the filter of every free-input field type
+ * (text, long text, date, date and time, phone). */
 export type AttendeeCustomFieldFilter = {
   source_field: string;
   type: "text" | "select" | "boolean";

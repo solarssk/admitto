@@ -46,6 +46,7 @@ vi.mock("@admitto/mail-delivery", async (importActual) => {
   const actual = await importActual<typeof import("@admitto/mail-delivery")>();
   nullifyDeliverySnapshots.mockImplementation(actual.nullifyDeliverySnapshots);
   return {
+    ...(await import("./registration-mail-mock.js")).registrationMailMock,
     DEFAULT_MAIL_DRAIN_LIMIT,
     assertValidBounceIngestTickSecondsEnv: vi.fn(),
     drainPendingDeliveries: vi.fn(async () => ({ claimed: 0, sent: 0, failed: 0, skipped: 0, eventIds: [] })),

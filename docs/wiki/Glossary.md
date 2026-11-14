@@ -29,7 +29,7 @@ The terms are grouped by topic.
 |---|---|
 | Attendee | A person invited to one event. |
 | Ticket type | A configured event category stored on an attendee. |
-| Custom attendee field | Extra event-specific attendee information defined in **Requirements**. |
+| Custom attendee field | Extra event-specific attendee information defined on the **Fields** tab of the **Registration** page. |
 | Pass | The attendee's right to use an event ticket. It can be active, revoked, or cancelled. |
 | Ticket | The link and QR information sent to an attendee. |
 | Wallet pass | An Apple or Google Wallet version of an attendee's ticket, created through PassCreator when Wallet is turned on for the event. It mirrors the pass status automatically: revoking or restoring the attendee's pass does the same to the wallet pass. See [Wallet Passes Overview](Wallet-Passes-Overview). |

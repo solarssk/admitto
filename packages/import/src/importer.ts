@@ -6,6 +6,7 @@ import {
   runEventCapacityTransaction,
   acquireEventTicketTypesLock,
   filterCustomDataAttributeFields,
+  keepShownAnswers,
   type EventItemContent,
 } from "@admitto/tickets";
 import type { AttendeeRow, ImportOptions, ImportSummary, ImportTicketType, SkippedRow } from "./types.js";
@@ -72,6 +73,19 @@ function resolveAttributeFields(
   options: ImportOptions,
 ): EventItemContent[] {
   return filterCustomDataAttributeFields(options.attributeFields ?? []);
+}
+
+/** The answers of a row that are kept: those to questions that are asked, judged on the row laid over what the
+ * attendee holds (`existing`, null for a new one). An answer to a question with a condition that the other
+ * answers do not meet is left out, so an import never stores one. Undefined when nothing is left. */
+function shownRowAnswers(
+  fields: EventItemContent[],
+  existing: unknown,
+  answers: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!answers) return undefined;
+  const kept = keepShownAnswers(fields, existing, answers);
+  return Object.keys(kept).length > 0 ? kept : undefined;
 }
 
 function validateImportCustomData(
@@ -264,8 +278,9 @@ function classifyExistingRow(
   }
   const pendingUpdate = updatesById.get(found.id);
   const priorCustomData = pendingUpdate?.data.custom_data ?? found.custom_data;
+  const incomingCustomData = shownRowAnswers(attributeFields, priorCustomData, row.custom_data);
   const mergedCustomData =
-    row.custom_data !== undefined ? mergeCustomData(priorCustomData, row.custom_data) : priorCustomData;
+    incomingCustomData === undefined ? priorCustomData : mergeCustomData(priorCustomData, incomingCustomData);
   const customDataError = validateImportCustomData(attributeFields, mergedCustomData);
   if (customDataError) {
     return { type: "skip", email: row.email, reason: customDataError };
@@ -274,7 +289,7 @@ function classifyExistingRow(
   if (ticketTypeResult.skipReason) {
     return { type: "skip", email: row.email, reason: ticketTypeResult.skipReason };
   }
-  const customDataTouched = row.custom_data !== undefined || pendingUpdate?.data.custom_data !== undefined;
+  const customDataTouched = incomingCustomData !== undefined || pendingUpdate?.data.custom_data !== undefined;
   return {
     type: "update",
     id: found.id,
@@ -301,7 +316,8 @@ function classifyNewRow(
   options: ImportOptions,
   attributeFields: EventItemContent[],
 ): RowClassification {
-  const customDataError = validateImportCustomData(attributeFields, row.custom_data ?? {});
+  const customData = shownRowAnswers(attributeFields, null, row.custom_data);
+  const customDataError = validateImportCustomData(attributeFields, customData ?? {});
   if (customDataError) {
     return { type: "skip", email: row.email, reason: customDataError };
   }
@@ -325,9 +341,7 @@ function classifyNewRow(
       ...(isAgency && { public_ref: generateToken() }),
       ...(row.company !== undefined && { company: row.company }),
       ...(row.department !== undefined && { department: row.department }),
-      ...(row.custom_data !== undefined && {
-        custom_data: row.custom_data,
-      }),
+      ...(customData !== undefined && { custom_data: customData }),
       client_timezone: options.timezone ?? null,
     },
   };

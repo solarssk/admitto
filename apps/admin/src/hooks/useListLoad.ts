@@ -70,8 +70,12 @@ export interface ListLoad<T> {
    * waits for starts (that one is the newer, and a tick that hangs must not hold the next ones back), and when `until`
    * aborts, with its request cancelled and its answer dropped: a Live that is switched off abandons the tick that is on its
    * way, so a list that says it is paused is not changed by it.
+   *
+   * `supersede` is for a tick that follows a change the caller has just made to what the list reads (an action that went through):
+   * a tick that is on its way was started before the change, and its answer would undo what `update` has just shown. That tick is
+   * dropped, with its request cancelled, and this one starts in its place, so the list ends up as the server has it after the change.
    */
-  poll: (until?: AbortSignal) => Promise<void>;
+  poll: (until?: AbortSignal, options?: { supersede?: boolean }) => Promise<void>;
 }
 
 const REFRESH_FAILED = "Could not refresh this list, so it may show older details.";
@@ -162,10 +166,15 @@ async function runListLoad<T>(ctx: RunContext<T>, kind: "query" | "reload", sign
  * One tick of a live list (see `ListLoad.poll`). It must not take over from a request somebody waits for, so it does
  * nothing while one is on its way, nor while the previous tick is (the requests would pile up behind a slow server); a
  * failure is ignored. It has no time limit (a slow server that does answer is waited for) and is abandoned when the query
- * changes, when the page is left, when the caller's own `until` aborts and when a read somebody waits for starts.
+ * changes, when the page is left, when the caller's own `until` aborts and when a read somebody waits for starts. With `supersede`
+ * it takes over from the tick that is on its way instead of waiting for it.
  */
-async function runListPoll<T>(ctx: RunContext<T>, life?: AbortSignal, until?: AbortSignal): Promise<void> {
-  if (!ctx.enabled || ctx.pendingRef.current > 0 || ctx.tickRef.current) return;
+async function runListPoll<T>(ctx: RunContext<T>, life?: AbortSignal, until?: AbortSignal, supersede = false): Promise<void> {
+  if (!ctx.enabled || ctx.pendingRef.current > 0) return;
+  if (ctx.tickRef.current) {
+    if (!supersede) return;
+    ctx.tickRef.current.abort();
+  }
   const superseded = new AbortController();
   ctx.tickRef.current = superseded;
   const ends = anyAbort([life, until, superseded.signal]);
@@ -181,7 +190,8 @@ async function runListPoll<T>(ctx: RunContext<T>, life?: AbortSignal, until?: Ab
   } catch {
     // A tick that fails changes nothing: the rows on screen stay, and the next tick asks again.
   } finally {
-    ctx.tickRef.current = null;
+    // The tick that took over from this one is registered now: it is not this one's to clear.
+    if (ctx.tickRef.current === superseded) ctx.tickRef.current = null;
     ends.release();
   }
 }
@@ -221,7 +231,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData, onEr
   }, []);
 
   const run = useCallback(
-    (kind: "query" | "reload" | "poll", signal?: AbortSignal, keepRows?: boolean, until?: AbortSignal) => {
+    (kind: "query" | "reload" | "poll", signal?: AbortSignal, keepRows?: boolean, until?: AbortSignal, supersede?: boolean) => {
       const ctx: RunContext<T> = {
         enabled,
         fetcher,
@@ -239,7 +249,7 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData, onEr
         setError,
         setRefreshError,
       };
-      return kind === "poll" ? runListPoll(ctx, signal, until) : runListLoad(ctx, kind, signal, keepRows);
+      return kind === "poll" ? runListPoll(ctx, signal, until, supersede) : runListLoad(ctx, kind, signal, keepRows);
     },
     [enabled, fetcher, fallback, setAnswer],
   );
@@ -273,7 +283,10 @@ export function useListLoad<T>({ fetcher, fallback, enabled = true, onData, onEr
     [setAnswer],
   );
 
-  const poll = useCallback((until?: AbortSignal) => runRef.current("poll", lifeRef.current?.signal, undefined, until), []);
+  const poll = useCallback(
+    (until?: AbortSignal, options?: { supersede?: boolean }) => runRef.current("poll", lifeRef.current?.signal, undefined, until, options?.supersede),
+    [],
+  );
 
   return { data, loading, refreshing, error, refreshError, enabled, reload, update, poll };
 }

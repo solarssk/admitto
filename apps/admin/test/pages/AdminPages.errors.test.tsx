@@ -138,6 +138,7 @@ const emptyReport = {
     admission_rate_pct: 0,
     peak_hour: null,
     peak_hour_count: 0,
+    companions_admitted: 0,
   },
   by_hour: [],
   by_ticket_type: [],
@@ -923,6 +924,7 @@ describe("ReportsPage stat tiles", () => {
         admission_rate_pct: 70,
         peak_hour: "14:00",
         peak_hour_count: 4,
+        companions_admitted: 0,
       },
     });
     const { container } = renderWithToast(
@@ -963,6 +965,7 @@ describe("ReportsPage stat tiles", () => {
         admission_rate_pct: 66.7,
         peak_hour: null,
         peak_hour_count: 0,
+        companions_admitted: 0,
       },
     });
     renderWithToast(

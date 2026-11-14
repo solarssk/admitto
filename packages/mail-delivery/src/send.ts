@@ -22,12 +22,14 @@ import {
   type MailMessage,
 } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
+import { resolveGuestOrigin } from "@admitto/shared";
 import { formatDate, formatEventHoursRangeText } from "@admitto/shared/region-date-format";
 import { issueTicket, loadEventTicketTypes, parseTicketAddressComponents } from "@admitto/tickets";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { claimInitialDelivery, createResendDelivery, type ClaimInitialInput } from "./claim.js";
 import { snapshotUnusableUpdate, tryMaterializeStoredMessage } from "./snapshot-unusable.js";
 import {
+  GUEST_DOMAIN_SELECT,
   buildAttendeeMailLinks,
   type AttendeeLinkInput,
   type AttendeeMailLinks,
@@ -46,6 +48,12 @@ export interface SendTicketEmailsOptions {
   /** MailTemplate row id; falls back to event/org ticket template when omitted. */
   templateId?: string;
   purpose?: "initial" | "resend";
+  /**
+   * A send that nobody asked for by hand (the registration mail drain handing a ticket over). An initial send to an
+   * attendee whose ticket is out already is skipped (`already_sent`), never turned into a resend: that fallback is for an
+   * explicit action of staff only.
+   */
+  automated?: boolean;
   /** Override delivery recipient for a single-attendee resend (does not mutate Attendee.email). */
   recipientEmail?: string;
   /** Resolved public instance URL (env BASE_URL or DB instance_url). */
@@ -265,10 +273,13 @@ async function processAttendeeForSend({
     attendee.first_name !== null || attendee.last_name !== null
       ? { first_name: attendee.first_name ?? "", last_name: attendee.last_name ?? "" }
       : splitDisplayName(attendee.name);
+  // The map image and the branding images are fetched by the guest's mail client from the address the guest is sent to
+  // (the event's own, once verified; `/m`, `/uploads` and `/assets` are served there), so the panel's address does not reach the mail.
+  const guestOrigin = resolveGuestOrigin(event, baseUrl);
   const locationVars = buildEventLocationTemplateVars(
     event.id,
     event.location_details,
-    baseUrl,
+    guestOrigin,
     env,
   );
   const country =
@@ -303,7 +314,7 @@ async function processAttendeeForSend({
       download_page_url: "",
       ...customAssets.vars,
     },
-    { baseUrl, customAssetPlaceholders: customAssets.names },
+    { baseUrl: guestOrigin, customAssetPlaceholders: customAssets.names },
   );
 
   const claimInput: ClaimInitialInput = {
@@ -516,7 +527,8 @@ export async function deliverPendingBatch(mailer: MailerAdapter, pending: Pendin
  * Skips individual attendees on not_issuable, token/link build errors, or an in-flight duplicate
  * — does not abort the batch. purpose:"initial" against an attendee who already had a successful
  * ticket when the request began falls back to a resend rather than skipping, since that only
- * happens on an explicit send action (e.g. checkbox selection), not an automated sweep. A ticket
+ * happens on an explicit send action (e.g. checkbox selection), not an automated send (`automated`
+ * skips such an attendee instead). A ticket
  * that another request completes after this one began is a concurrent duplicate and is skipped.
  */
 export async function sendTicketEmails(
@@ -535,15 +547,15 @@ export async function sendTicketEmails(
     throw new Error("recipientEmail requires exactly one attendeeId");
   }
 
-  // The first await on purpose (see loadAttendeesWithCompletedInitial); only an initial send needs it.
+  // The first await on purpose (see loadAttendeesWithCompletedInitial); only an explicit initial send needs it.
   const completedBeforeRequest =
-    purpose === "initial"
+    purpose === "initial" && options.automated !== true
       ? await loadAttendeesWithCompletedInitial(prisma, eventId, options.attendeeIds)
       : new Set<string>();
 
   const event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
-    include: { organization: true, location_details: true },
+    include: { organization: true, location_details: true, registration_settings: { select: GUEST_DOMAIN_SELECT } },
   });
 
   const mailConfig = await resolveMailConfig(eventId, prisma, env);

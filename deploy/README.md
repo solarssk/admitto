@@ -347,6 +347,7 @@ Migrations apply in the one-shot `migrate` service. `docker compose up -d` block
 
 - `migrate` exits once done and its container shows as stopped, which some UIs (e.g. Portainer) collapse or hide by default - easy to miss unless you look.
 - There is **no** automatic pre-migration dump anymore; the nightly `db-backup` service is the automated baseline only, not a substitute for the manual backup above.
+- **Guest registration and a rollback.** The quick way to stop taking registrations is to turn the registration mode of each event off: the guest form then answers the one 404 and nothing is lost. A roll back to an older image is Case A of the [Rollback runbook](#rollback-runbook): the old app runs on the newer schema, but it has no guest form and does not read the registrations already taken. Going back to a backup (Case B) loses the registrations taken after it. Backups hold registrations, also of guests who were never accepted, like any other attendee data.
 - If the log says `failed migrations detected`, a migration stopped halfway. See [After a P3009 error](#after-a-p3009-error).
 
 `validate-env.sh` checks:
@@ -603,7 +604,7 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational - no PI
 |-----------|--------------------|
 | `migrate` | Entrypoint boot steps (migration status, backfills) - a one-shot container, exits after logging `migrate: startup tasks complete` |
 | `app` | `Admitto web running at …`, then the JSON access log (see below), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
-| `worker` | `[worker:<job>] <timestamp> …` lines for heartbeat, mail drain, import/export jobs, bounce ingest, and retention (boot + ~24h) |
+| `worker` | `[worker:<job>] <timestamp> …` lines for heartbeat, mail drain, registration mail (`registration_mail`, counts only), import/export jobs, bounce ingest, and retention (boot + ~24h) |
 | `proxy` | Nginx access/error log (image default) - includes client IPs; rotate/limit via Docker logging options if kept long-term |
 | `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
 | `db` / `redis` | Image defaults (Postgres startup/checkpoints, Redis notices) |
@@ -615,6 +616,7 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational - no PI
 - **Excludes** user agents, cookies, and query strings.
 - **Includes** the client IP on every request, staff or anonymous, since the app already reads it to key its rate limiter on the same routes (see [DATA-PROTECTION.md](../DATA-PROTECTION.md) for the exact rule and retention).
 - **Redacts** ticket/QR paths as `/t/[redacted]` and `/q/[redacted]` so tokens never reach stdout, alongside a short one-way `ref` hash so repeated hits on the same participant's link are recognizable across lines.
+- **Leaves** the event slug in `/r/<slug>` as it is: a slug is public (it is in the link a guest gets). The confirmation link `/r/<slug>/confirm/<id>.<signature>` is redacted to `[redacted]` and carries a short `ref` hash.
 - **Skips** successful `/healthz`/`/readyz` probes (Docker healthcheck fires every 10s); failing probes are logged.
 - **Omits** attribution: request-level *attribution* (who did what) stays in the DB audit log, not here.
 
@@ -757,7 +759,60 @@ Key points for this deployment model:
 - Origin invariant: reachable only via Cloudflare or WireGuard tunnel
 - Pre-linking staff identities and selecting the direct OIDC source before enabling `CF_ACCESS_ENABLED`
 
-Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
+Public attendee and guest paths must stay bypassed at Cloudflare: `/t/*`, `/q/*`, `/legal/*`, the guest registration pages `/r/*`, and, when guests sign in with the company's identity provider, `/sso/callback`. That last one is the single return address of the instance, outside `/r/`: the provider sends the guest's browser there, so an Access policy on it stops the sign-in.
+
+**Upgrading to 0.8 behind Cloudflare Access:** add `/r/*`, `/legal/*` and `/sso/callback` to the bypass before you turn registration on. Without it a guest is sent to the identity provider's sign-in and the form is unreachable, and Admitto shows no error.
+
+Every path an anonymous caller reaches, in one table (everything else stays behind Access):
+
+| Path | Why it is public |
+|------|------------------|
+| `/t/*`, `/q/*`, `/m/*` | Ticket page, QR image, images in mail |
+| `/r/*` (GET and POST) | The guest form, its confirmation link and its company sign-in start |
+| `/sso/callback` | The return address of the company sign-in |
+| `/legal/*` | The legal texts of an event |
+| `/assets/*`, `/uploads/*`, `/vendor/*`, `/favicon*`, `/apple-touch-icon*` | Files the public pages load |
+| `/api/wallet/webhook/passcreator/*` | Callbacks of the wallet provider (signature checked by Admitto) |
+| `/healthz` | Liveness probe (`/readyz` is token-gated and may be bypassed too) |
+
+**The visitor's address.** Admitto keys its limits on the client IP and sends it to Turnstile. It takes the rightmost `X-Forwarded-For` hop that is not in `TRUSTED_PROXY_CIDRS`, and it does not read Cloudflare's `CF-Connecting-IP`. With Cloudflare in front, the proxy next to Admitto must put the visitor's address into `X-Forwarded-For` (not the address of a Cloudflare edge), or every guest behind one edge shares one limit. Check it in the access log (`ip`) from a known address.
+
+## An event's own address for guests (checklist for IT)
+
+A superadmin can give an event an address on the organisation's own domain, such as `summit.example.com`. Guests then get every link on that name, and the panel is not reachable there. Admitto does not issue the certificate, change DNS or send traffic to the name before it is checked. These steps are yours.
+
+**Start only when the superadmin has saved the address** (Access tab, card **Address for guests**). Then do the steps in order and ask the superadmin to select **Check now**.
+
+1. **DNS.** Create a CNAME from the event address to the address of the instance (`instance_host` in the registration settings answer, the same host the panel uses).
+2. **HTTPS.** Serve a valid certificate for exactly this name on your edge or proxy. The proxy passes the original host on: `Host`, or `X-Forwarded-Host` when `TRUST_PROXY=true` and the proxy is listed in `TRUSTED_PROXY_CIDRS`. The nginx of the compose stack already sets `X-Forwarded-Host`.
+3. **Gateway or Cloudflare Access.** The guest address needs a bypass (no sign-in) for these paths:
+
+   | Path | What it is |
+   |------|------------|
+   | `/` (the root, exactly) | The address on its own: it sends the guest on to the form of the event |
+   | `/r/*` | The form, its company sign-in and the confirmation link |
+   | `/sso/callback` | The return address of the company sign-in |
+   | `/legal/*` | The legal texts of the event |
+   | `/t/*`, `/q/*`, `/m/*` | The ticket page, the QR image, the images in mail |
+   | `/assets/*`, `/uploads/*`, `/vendor/*` | Page files and uploaded branding |
+   | `/favicon*`, `/apple-touch-icon*` | Icon files |
+   | `/.well-known/admitto-domain-check` | The proof the check asks for |
+
+   Everything else on the guest address, apart from the paths above, answers the same public 404: the panel, `/login` and `/api/*` are not served there. On the main address of the instance, `/r/*` and `/sso/callback` must be public too, because older links and the sign-in of events without an own address use them.
+4. **Company sign-in (identity provider).** List `https://<instance host>/sso/callback` and one `https://<event address>/sso/callback` for each event address that uses the company sign-in among the provider's allowed redirects. It is one entry per address, never one per event, and never `/r/<slug>/sso/callback`. The superadmin's sign-in settings screen shows the full list (`redirect_uris`), addresses that are not verified yet included. A sign-in begun before the change fails closed and the guest starts again (state lives 10 minutes).
+5. **Turnstile.** Add the event address to the hostnames of the Turnstile widget. Without it guests on that address fail the challenge. This applies to events whose way in is the link or the password. The `app` container also needs outbound HTTPS to `challenges.cloudflare.com` (the server-side check of every submit): where a firewall filters egress, allow that host, or the form answers 503.
+6. **Check.** The check reaches `https://<event address>/.well-known/admitto-domain-check` from the server. Its result is one of `ok`, `dns_failed`, `tls_failed`, `wrong_target`, `unreachable` or `not_verifiable_from_server`; what each means and what to do is in [Registration access](../docs/wiki/Registration-Access.md). Admitto repeats the check every day. The first `ok` turns guest links on the address on. A later failure only warns (a banner on the Access tab and the Health row **Event addresses**); guests are not sent back to the main address.
+7. **HSTS.** The application is the only owner of `Strict-Transport-Security`: the nginx of the compose stack adds none. On the instance's address the application sends `max-age=31536000; includeSubDomains`; on a guest address it sends `max-age=31536000` without `includeSubDomains`, because the name belongs to your domain tree and a page of ours must not pin HTTPS for all of it. Do not add an HSTS header with `includeSubDomains` in a proxy or CDN for guest addresses. An answer the proxy makes itself (for example a 502 while the app restarts) carries no HSTS. Before you turn a verified address on, read the response headers (an error too) of the guest address and of the instance: `curl -sI https://<event address>/r/<slug>` and `curl -sI https://<event address>/nothing-here` must show `Strict-Transport-Security: max-age=31536000` once, and the same on the instance's address must end in `; includeSubDomains`.
+
+8. **Place the address on a domain you control end to end.** Guest cookies are host-only, but a taken-over sibling subdomain can set a cookie for the parent domain ("cookie tossing") and so get around the login CSRF protection of the company sign-in. Put the event address on a domain whose sibling subdomains you trust.
+9. **Company sign-in: map `claim_email` to an attribute the directory administrator controls.** If it maps to an attribute users can edit themselves (not verified), someone can give another person's address as their contact address, take that address's place in the event and receive the ticket. Admitto refuses `email_verified: false` and accepts a missing `email_verified` claim (Microsoft Entra ID does not send it). Map the claim to a managed attribute and limit who may sign in to an event with an event claim, for example `tid` or a group.
+10. **Sensitive answers are not encrypted by the application.** Answers to sensitive questions (for example health) are stored in the database as they are. Require disk and database encryption and restrict access to backups.
+11. **Path rules and backslashes.** Admitto 0.8 with `@hono/node-server` 2.1.6 or newer answers 400 to a request with a raw backslash in the path. Older versions read `\` as `/`, so a path rule on a proxy that passes the backslash on unchanged (nginx does) could be bypassed. Do not downgrade this version.
+12. **Let the proxy accept only your own host names.** Admitto does not reject an unknown `Host`: a request for a name it does not know is answered like a request for the instance's own address. Nothing in the answer repeats the host and links in mail never take it from the request, but the panel's sign-in page would then be reachable under any name that points at your proxy. List the instance host and the event addresses in the `server_name` of the edge or proxy (or in its allow list) and refuse the rest.
+13. **Raise the sign-up limits if many guests share one address.** One internet address may send 120 sign-ups a minute, and one event takes 600 a minute in all (`registration:submit` and `registration:event`). A company that sends its people out through one address, or an event that opens at a fixed minute, can reach them. Retune them with `RATE_LIMIT_OVERRIDES` (see [ENV.md](ENV.md)) and recreate the container.
+14. **Keep the database close to the application.** An event takes sign-ups one at a time, and each one holds the event for several database round trips. With the database on the same machine, 500 guests in a minute are all accepted. At a round trip of about 10 ms, the same minute can answer about half of the guests "try again" (nothing is saved for them and nobody is registered twice). Place the database in the same network as the application, not across a slow link.
+
+Do not attach a certificate, DNS change or bypass to an address the superadmin has not entered: only a superadmin sets or changes it.
 
 ## Admitto worker (mail, import/export, bounce, retention)
 

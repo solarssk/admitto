@@ -174,30 +174,6 @@
   text-align: center;
 }
 
-/* Labeled break between the four fixed filters and the event's own custom-field filter rows -
-   the label sits inline with a rule filling the rest of the row (design mockup), not a border
-   sitting above a block of text: a bare `<p>`'s UA-stylesheet margin-bottom stacking on top of
-   the panel's own flex `gap` was one bug already (PO report); a border-top read as a divider
-   above the *next* row instead of one belonging to this label. */
-.attendees-filters-menu__section-label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--primary-active);
-}
-
-.attendees-filters-menu__section-label::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
 /* Mobile-only "Sort by" select + direction toggle (AttendeesTable has no column headers to
    click below 768px) — sits at the top of the same filters panel. */
 .attendees-toolbar__sort {
@@ -1061,7 +1037,7 @@
   background: var(--surface-card);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
-  width: min(480px, 100%);
+  width: min(720px, 100%);
   /* dvh follows iOS Safari's dynamic toolbar; vh is the fallback for browsers without dvh
      support. See add-attendee-modal.css for the same fix on the other modal shell. */
   max-height: calc(100vh - 2 * var(--space-4));
@@ -1221,6 +1197,19 @@
   opacity: 1;
 }
 
+/* The name of the attendee with the avatar before it: the initials for now, the photo of the person when there is one (Avatar takes
+   a `src`). Long names wrap inside their own box instead of pushing the avatar or the buttons out. */
+.attendee-detail-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.attendee-detail-title > :last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Mirrors .attendees-pageheader's mobile treatment above (row restored beside the title,
    compact buttons, decorative icons dropped except the More menu's own) - was left at the
    shared PageHeader's default (stack below, full desktop button size) until a PO review found
@@ -1246,6 +1235,13 @@
   .attendee-detail-pageheader .at-pageheader__title {
     grid-column: 1;
     grid-row: 1;
+  }
+
+  /* Beside the two buttons the name has about 120px: no room for an avatar before it (the name broke inside a word), so the
+     avatar, and the skeleton's circle in its place, wait for a screen that has the room. */
+  .attendee-detail-title > .at-avatar,
+  .attendee-detail-title > .at-skeleton {
+    display: none;
   }
 
   .attendee-detail-pageheader .at-pageheader__subtitle {
@@ -1349,6 +1345,19 @@
   min-width: 0;
   overflow-wrap: anywhere;
   text-align: right;
+}
+
+/* A long answer, or one with line breaks (a long text field), is read under its label, from the left, with its line breaks kept:
+   in the right-hand column beside the label it would be a ragged block. */
+.attendee-detail-row--long {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.attendee-detail-row--long > :last-child {
+  text-align: left;
+  white-space: pre-wrap;
 }
 
 /* Event items list - matches the design mockup's .att-item-row exactly (values pulled

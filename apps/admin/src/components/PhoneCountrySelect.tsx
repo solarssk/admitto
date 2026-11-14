@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
+import { findPhoneCountryByDialCode, PHONE_COUNTRIES, type PhoneCountry } from "@admitto/shared/phone-countries";
 import { useDropdownMenu } from "./useDropdownMenu.js";
-import { findPhoneCountryByDialCode, PHONE_COUNTRIES, type PhoneCountry } from "../utils/phoneCountries.js";
 import "./phone-country-select.css";
 
 interface PhoneCountrySelectProps {

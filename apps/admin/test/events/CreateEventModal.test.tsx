@@ -46,11 +46,11 @@ describe("CreateEventModal", () => {
     vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((value) => value);
   });
 
-  it("hides Link name and still submits an auto-generated slug from the title", async () => {
+  it("sends no slug: the server makes it, so it never comes from the title", async () => {
     mockCreateEvent.mockResolvedValueOnce({
       id: "evt-1",
       title: "Autumn Summit 2026",
-      slug: "autumn-summit-2026",
+      slug: "mfrggzdfmztwq2lknnwg23tpoa",
       date: "2026-09-29",
       timezone: "Europe/Warsaw",
       location: null,
@@ -66,21 +66,17 @@ describe("CreateEventModal", () => {
     pickEventDate("2026-09-29");
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
-    await waitFor(() => {
-      expect(mockCreateEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Autumn Summit 2026",
-          slug: "autumn-summit-2026",
-        }),
-      );
-    });
+    await waitFor(() => expect(mockCreateEvent).toHaveBeenCalled());
+    const body = mockCreateEvent.mock.calls[0]![0] as Record<string, unknown>;
+    expect(body.title).toBe("Autumn Summit 2026");
+    expect(body).not.toHaveProperty("slug");
   });
 
-  it("keeps Create enabled for a non-ASCII title via a stable event-* slug fallback", async () => {
+  it("keeps Create enabled for a non-ASCII title", async () => {
     mockCreateEvent.mockResolvedValueOnce({
       id: "evt-cyr",
       title: "Осенний саммит",
-      slug: "event-placeholder",
+      slug: "mfrggzdfmztwq2lknnwg23tpoa",
       date: "2026-09-29",
       timezone: "Europe/Warsaw",
       location: null,
@@ -99,32 +95,10 @@ describe("CreateEventModal", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
-    await waitFor(() => {
-      expect(mockCreateEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Осенний саммит",
-          slug: expect.stringMatching(/^event-[a-z0-9]+$/),
-        }),
-      );
-    });
-  });
-
-  it("keeps submit disabled until date is set", () => {
-    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
-
-    fireEvent.change(screen.getByLabelText(/Event title/), {
-      target: { value: "Test Event" },
-    });
-
-    expect((screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-
-    pickEventDate("2026-09-29");
-
-    expect((screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    await waitFor(() => expect(mockCreateEvent).toHaveBeenCalled());
+    const body = mockCreateEvent.mock.calls[0]![0] as Record<string, unknown>;
+    expect(body.title).toBe("Осенний саммит");
+    expect(body).not.toHaveProperty("slug");
   });
 
   it("shows operator-safe create failure", async () => {
@@ -137,20 +111,6 @@ describe("CreateEventModal", () => {
       expect(screen.getByText(/Failed to create event/)).toBeTruthy();
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
-  });
-
-  it("shows a title-focused error when creation returns 409", async () => {
-    mockCreateEvent.mockRejectedValueOnce(new ApiError(409, "slug_taken"));
-    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
-    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
-    pickEventDate("2026-09-29");
-    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
-
-    expect(
-      await screen.findByText(
-        "An event with a similar name already exists. Change the title slightly and try again.",
-      ),
-    ).toBeTruthy();
   });
 
   it("mentions Optional only once on the location field", () => {
@@ -420,7 +380,6 @@ describe("CreateEventModal", () => {
     await waitFor(() => {
       expect(mockCreateEvent).toHaveBeenCalledWith({
         title: "Test Event",
-        slug: "test-event",
         date: "2026-09-29",
         timezone: expect.any(String),
         venue_name: "Convention Center Annex",

@@ -61,13 +61,25 @@ export async function countAttendeesByCustomFieldValue(
   db: PrismaClient,
   eventId: string,
   sourceField: string,
+  recipient: "guest" | "companion" = "guest",
 ): Promise<Map<string, number>> {
-  const rows = await db.$queryRaw<{ value: string; count: number }[]>(Prisma.sql`
-    SELECT custom_data->>${sourceField} AS value, COUNT(*)::int AS count
-    FROM "Attendee"
-    WHERE event_id = ${eventId} AND custom_data->>${sourceField} IS NOT NULL
-    GROUP BY value
-  `);
+  // A question about the companion is answered in the companion's own record, so its answers are counted there (one per companion).
+  const rows = await db.$queryRaw<{ value: string; count: number }[]>(
+    recipient === "companion"
+      ? Prisma.sql`
+          SELECT companion.custom_data->>${sourceField} AS value, COUNT(*)::int AS count
+          FROM "AttendeeCompanion" AS companion
+          JOIN "Attendee" AS attendee ON attendee.id = companion.attendee_id
+          WHERE attendee.event_id = ${eventId} AND companion.custom_data->>${sourceField} IS NOT NULL
+          GROUP BY value
+        `
+      : Prisma.sql`
+          SELECT custom_data->>${sourceField} AS value, COUNT(*)::int AS count
+          FROM "Attendee"
+          WHERE event_id = ${eventId} AND custom_data->>${sourceField} IS NOT NULL
+          GROUP BY value
+        `,
+  );
   return new Map(rows.map((row) => [row.value, row.count]));
 }
 

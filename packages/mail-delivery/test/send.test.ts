@@ -552,6 +552,34 @@ describe("sendTicketEmails", () => {
     expect(await prisma.emailDelivery.count({ where: { attendee_id: "att-race-late" } })).toBe(1);
   });
 
+  it("an explicit initial send to an attendee whose ticket is out is a resend, an automated one is skipped", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { attendee_id: "att-automated" } });
+    await prisma.attendee.create({
+      data: {
+        id: "att-automated",
+        event_id: EVENT_ID,
+        email: "automated@example.com",
+        name: "Automated Test",
+      },
+    });
+    exported.length = 0;
+    const options = { deliverImmediately: true, attendeeIds: ["att-automated"] };
+    const first = await sendTicketEmails(EVENT_ID, options, prisma, TEST_ENV, TEST_DEPS);
+    expect(first.sent).toBe(1);
+
+    // Nobody asked for this one by hand: the ticket is out, so there is nothing to send.
+    const automated = await sendTicketEmails(EVENT_ID, { ...options, automated: true }, prisma, TEST_ENV, TEST_DEPS);
+    expect(automated.sent).toBe(0);
+    expect(automated.skipped).toEqual([{ attendeeId: "att-automated", reason: "already_sent" }]);
+    expect(exported).toHaveLength(1);
+    expect(await prisma.emailDelivery.count({ where: { attendee_id: "att-automated" } })).toBe(1);
+
+    // The same request from staff is a repeat on purpose.
+    const explicit = await sendTicketEmails(EVENT_ID, options, prisma, TEST_ENV, TEST_DEPS);
+    expect(explicit.sent).toBe(1);
+    expect(await prisma.emailDelivery.count({ where: { attendee_id: "att-automated", purpose: "resend" } })).toBe(1);
+  });
+
   it("skips agency attendee missing public_ref without aborting the batch", async () => {
     await prisma.emailDelivery.deleteMany({
       where: { attendee_id: { in: ["att-no-ref", "att-batch-ok"] } },

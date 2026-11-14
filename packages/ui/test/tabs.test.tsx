@@ -42,4 +42,30 @@ describe("Tabs", () => {
 
     expect(screen.queryByRole("tab")).toBeNull();
   });
+
+  it("shows the count after the label, and none for a tab that has none", () => {
+    render(
+      <Tabs
+        tabs={[
+          { id: "a", label: "Tab A", count: 3 },
+          { id: "b", label: "Tab B", count: 0 },
+          { id: "c", label: "Tab C" },
+        ]}
+        defaultValue="a"
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "Tab A3" }).textContent).toBe("Tab A3");
+    expect(screen.getByRole("tab", { name: "Tab B0" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Tab C" }).textContent).toBe("Tab C");
+  });
+
+  it("draws the count in the secondary text colour: the muted one is 4.3:1 on the page background, under the 4.5:1 that text of its size needs", () => {
+    render(<Tabs tabs={[{ id: "a", label: "Tab A", count: 3 }]} defaultValue="a" />);
+
+    const count = screen.getByText("3");
+
+    expect(count.getAttribute("style")).toContain("var(--text-secondary)");
+    expect(count.getAttribute("style")).not.toContain("var(--text-muted)");
+  });
 });

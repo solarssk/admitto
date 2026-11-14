@@ -1,6 +1,7 @@
 import { Prisma } from "@admitto/db/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { collectAttendeeAddresses, scrubAttendeeTraces } from "./attendee-traces.js";
+import { lockRegistrationQueue } from "./registration-lock.js";
 import { attendeeJobIdsWithFiles, lockOpenAttendeeJobs } from "./stop-open-jobs.js";
 
 /** Written to `Attendee.name` of an erased attendee. Mirrored by the CHECK constraint in migration
@@ -8,6 +9,9 @@ import { attendeeJobIdsWithFiles, lockOpenAttendeeJobs } from "./stop-open-jobs.
 export const ERASED_ATTENDEE_NAME = "Erased attendee";
 
 export const ERASED_EMAIL_DOMAIN = "erased.invalid";
+
+/** Written to `AttendeeCompanion.name` of the companion of an erased attendee. The row stays (see eraseAttendees). */
+export const ERASED_COMPANION_NAME = "Erased companion";
 
 /** True for an address in the namespace reserved for erased attendees. No attendee can be given
  * one: it would collide with the placeholder of the attendee it is named after and make that
@@ -48,16 +52,19 @@ export type EraseAttendeesResult = {
     emailDeliveries: number;
     checkIns: number;
     walletPasses: number;
+    /** Guest registrations deleted (see scrubAttendeeTraces), with their queued mail. */
+    registrations: number;
   };
   /** Provider passes of the erased attendees that are not deleted at the provider yet: the ones that hold the provider's id
    * only. Not the question "what is still to delete" (an unrecorded pass has only its reserved id): the follow-up reads
    * the rows itself, with `erasedPassToDeleteWhere` (erase-wallet-passes.ts), which is what the callers go by. */
   walletTargets: EraseWalletTarget[];
   /**
-   * The addresses the erased attendees had, lower-cased: the current one and the one their first
-   * ticket mail went to (see collectAttendeeAddresses), for scrubbing event-level copies of them
-   * that are not keyed by attendee (see scrubImportJobResults). They are personal data: used in
-   * memory by the caller within the same request, never logged, audited or stored.
+   * The addresses the erased attendees had, lower-cased: the current one, the one their first
+   * ticket mail went to and the ones their activity log records an edit from or to (see
+   * collectAttendeeAddresses), for scrubbing event-level copies of them that are not keyed by
+   * attendee (see scrubImportJobResults). They are personal data: used in memory by the caller
+   * within the same request, never logged, audited or stored.
    */
   previousEmails: string[];
   /**
@@ -93,6 +100,9 @@ export const ERASE_TRANSACTION_TIMEOUT_MS = 60_000;
  *   cut to the hour. A person not admitted yet on a live event is cancelled, so their place is
  *   free again; on an archived event, or once admitted, the status is left alone because the
  *   numbers there are final.
+ * - The companions (AttendeeCompanion) keep their rows: the name becomes a placeholder and the answers are cleared. The
+ *   seat of a companion goes with the attendee, so an attendee cancelled here frees both seats and one who stays
+ *   active (admitted, or on an archived event) keeps both.
  * - Notes and the per-attendee activity log are deleted.
  * - Check-ins stay (the hourly chart and the device breakdown read them) without notes, time cut
  *   to the hour.
@@ -102,6 +112,8 @@ export const ERASE_TRANSACTION_TIMEOUT_MS = 60_000;
  * - The wallet pass keeps its provider ids (to delete it at the provider, retryably) and loses
  *   every link, device and token.
  * - The "created manually" entry in the central audit log loses the name and email it recorded.
+ * - The guest registrations of the person are deleted with their queued mail: the one they were accepted from, and
+ *   any of the event with one of their addresses that no attendee was accepted from (scrubAttendeeTraces).
  *
  * The transaction an erasure runs in is aborted after {@link ERASE_TRANSACTION_TIMEOUT_MS}. `erased_at` is Postgres's
  * NOW(), the moment that transaction started, so the commit can come that long after it: the window of
@@ -121,7 +133,7 @@ export async function eraseAttendees(
     erasedIds: [],
     alreadyErasedIds: [],
     notFoundIds: requestedIds,
-    counts: { notes: 0, actionLogs: 0, emailDeliveries: 0, checkIns: 0, walletPasses: 0 },
+    counts: { notes: 0, actionLogs: 0, emailDeliveries: 0, checkIns: 0, walletPasses: 0, registrations: 0 },
     walletTargets: [],
     previousEmails: [],
     jobIdsWithFiles: [],
@@ -135,6 +147,10 @@ export async function eraseAttendees(
   // person had before would otherwise finish unseen). Taken later, this transaction could already hold rows that
   // another erasure or an import needs while it waits for these locks, and they would deadlock.
   await lockOpenAttendeeJobs(tx, eventId);
+  // Then the registration queue, still before any attendee (the order is in lockRegistrationQueue): a transaction
+  // that admits, confirms or deletes a registration of the event finishes first, and none starts until this one has
+  // committed, so a registration with the person's address can neither be missed nor turned into an attendee again.
+  await lockRegistrationQueue(tx, eventId);
 
   const event = await tx.event.findUnique({
     where: { id: eventId },
@@ -194,6 +210,14 @@ export async function eraseAttendees(
   const erasedIds = erased.map((row) => row.id);
   const erasedList = Prisma.join(erasedIds);
 
+  // The companions lose the person, not the row: an attendee who was admitted keeps their seat, and their companion's,
+  // in the count of the seats and in Reports. One who was not admitted is cancelled above, which takes both seats out
+  // of the count (a companion counts only while the attendee is active), so there is nothing to keep for them but the row.
+  await tx.attendeeCompanion.updateMany({
+    where: { attendee_id: { in: erasedIds } },
+    data: { name: ERASED_COMPANION_NAME, custom_data: Prisma.DbNull },
+  });
+
   const [notes, actionLogs] = await Promise.all([
     tx.attendeeNote.deleteMany({ where: { event_id: eventId, attendee_id: { in: erasedIds } } }),
     tx.attendeeActionLog.deleteMany({ where: { event_id: eventId, attendee_id: { in: erasedIds } } }),
@@ -247,7 +271,7 @@ export async function eraseAttendees(
     },
   });
 
-  await scrubAttendeeTraces(tx, { eventId, attendeeIds: erasedIds, emails: previousEmails });
+  const traces = await scrubAttendeeTraces(tx, { eventId, attendeeIds: erasedIds, emails: previousEmails });
 
   return {
     erasedIds,
@@ -259,6 +283,7 @@ export async function eraseAttendees(
       emailDeliveries: emailDeliveries.count,
       checkIns,
       walletPasses: walletPasses.length,
+      registrations: traces.registrations,
     },
     walletTargets: walletPasses.flatMap((pass) =>
       pass.provider_pass_id && !pass.provider_removed_at

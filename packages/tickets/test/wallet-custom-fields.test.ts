@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../src/event-custom-fields.js", () => ({ loadEventCustomDataFields: vi.fn() }));
 
 import { loadEventCustomDataFields } from "../src/event-custom-fields.js";
-import { resolveWalletCustomFieldPlaceholders, WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX } from "../src/wallet-custom-fields.js";
+import { resolveWalletCustomFieldPlaceholders, walletMappingNamesField, WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX } from "../src/wallet-custom-fields.js";
 
 const db = {} as never;
 
@@ -61,6 +61,17 @@ describe("resolveWalletCustomFieldPlaceholders", () => {
     expect(result).toEqual({});
   });
 
+  it.each(["long_text", "date", "datetime", "phone"] as const)(
+    "excludes a %s field as well: only select and boolean can be mapped onto a pass",
+    async (type) => {
+      vi.mocked(loadEventCustomDataFields).mockResolvedValueOnce([{ label: "Answer", source_field: "answer", type }]);
+
+      const result = await resolveWalletCustomFieldPlaceholders(db, "evt-1", { answer: "+48600100200" }, { slot: "custom:answer" });
+
+      expect(result).toEqual({});
+    },
+  );
+
   it("skips a mappable field the attendee left unanswered", async () => {
     vi.mocked(loadEventCustomDataFields).mockResolvedValueOnce([
       { label: "T-Shirt size", source_field: "t_shirt_size", type: "select", options: ["S", "M", "L"] },
@@ -115,5 +126,20 @@ describe("resolveWalletCustomFieldPlaceholders", () => {
       expect(result).toEqual({});
       expect(loadEventCustomDataFields).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("walletMappingNamesField", () => {
+  it("is true when any property of the pass is mapped onto the question, whatever the property is called", () => {
+    expect(walletMappingNamesField(SHIRT_MAPPING, "t_shirt_size")).toBe(true);
+    expect(walletMappingNamesField({ first: "first_name", ...SHIRT_AND_VIP_MAPPING }, "vip_access")).toBe(true);
+  });
+
+  it("is false for another question, a key that only looks alike, a fixed placeholder and no mapping", () => {
+    expect(walletMappingNamesField(SHIRT_MAPPING, "vip_access")).toBe(false);
+    expect(walletMappingNamesField({ t_shirt_size: "first_name" }, "t_shirt_size")).toBe(false);
+    expect(walletMappingNamesField({ shirt: "t_shirt_size" }, "t_shirt_size")).toBe(false);
+    expect(walletMappingNamesField({ shirt: "custom:t_shirt_size_xl" }, "t_shirt_size")).toBe(false);
+    expect(walletMappingNamesField(null, "t_shirt_size")).toBe(false);
   });
 });

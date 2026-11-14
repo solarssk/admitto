@@ -136,13 +136,13 @@ See [Identity and SSO](Identity-and-SSO) and [Cloudflare Access - Identity Linki
 | Field | Requirement |
 |---|---|
 | First name, last name | Required, up to 100 characters each |
-| Email | Required, a real-looking address, up to 254 characters |
+| Email | Required, a real-looking address, up to 254 characters. It is saved in lower case: `Jan@Example.com` becomes `jan@example.com` |
 | Company, department | Optional, up to 200 characters each |
 | Ticket type | Must exist in the event's current ticket-type catalog. This is checked again at the moment you save, in case the type was deleted in the meantime |
 
 | Rule | What you'll see |
 |---|---|
-| An attendee's email must be unique within the event | "This email is already registered for this event." |
+| An attendee's email must be unique within the event. Capital letters do not make a different address | "This email is already registered for this event." |
 | Adding a new attendee also checks the event's capacity limit. Once the event is full, the Attendees page's **Add attendee** button is disabled with a tooltip that shows the same count, so you normally see this before you open the form | "Event is at capacity ({current}/{capacity}). Free a slot or increase capacity before adding this attendee." |
 | If two staff members edit the same attendee at once, the second save is rejected instead of silently overwriting the first change | "Someone else changed this record. Reload and try again." |
 
@@ -159,27 +159,32 @@ Restoring a revoked attendee checks the event's capacity limit again, the same a
 | Up to 50,000 data rows per file | "File exceeds the row limit. Split the file and import in parts." |
 | A row needs a first name, a last name and a valid, non-empty email | "Both first_name and last_name are required." / "Missing email." / "Invalid email: ..." |
 | The same email, agency ID or QR payload can't appear twice **within one file** | "Duplicate email in file: ..." (and similarly for the others) |
-| An unrecognised ticket type or custom-field value fails that row, not the whole import | "Unknown ticket type: ..." / "Invalid value for {field} (expected one of: ...)" |
+| An unrecognised ticket type, or a custom-field answer that does not fit its field's type or format rules, fails that row, not the whole import | "Unknown ticket type: ..." / "Invalid value for {field} (expected one of: ...)" / "Invalid value for {field} (expected a date as YYYY-MM-DD)" |
+| In an XLSX file, a date or date and time cell is read as the date it shows. In a CSV file, write a date as `YYYY-MM-DD` and a date and time as `YYYY-MM-DDTHH:mm` | No message. This is by design |
+| In a CSV file, a date written as `YYYY-MM-DDT00:00:00.000Z` and a date and time written as `YYYY-MM-DDTHH:mm:00.000Z` are read as the day or the time shown, not converted from UTC | No message. This is the form in which an XLSX date cell arrives |
 | A row that matches an existing attendee is skipped, unless "Overwrite existing attendees" is on | "Attendee already exists. Turn on 'Overwrite existing attendees' to update it instead of skipping." |
 | Overwriting updates only name, ticket type, company, department and custom fields. It never touches status, QR code or token | No message. This is by design |
 | The whole import is capped by the event's capacity, the same as adding attendees one at a time. A Superadmin can override the cap | "Import would exceed capacity. {current} existing + {incoming} new = {projected} &gt; {capacity}." |
 
 Every row gets its own pass or fail reason in the preview before you commit. Nothing is guessed or silently dropped. See [Import File Reference](Import-File-Reference) for the full column reference.
 
-### Custom attendee fields (Requirements page)
+### Custom attendee fields (Registration page)
 
 | Field | Requirement |
 |---|---|
 | Field key | Derived automatically. Lowercase letters, numbers and underscore only |
 | Label | Required, up to 60 characters |
 | Description | Optional, up to 500 characters |
-| Type | Text, select, or yes/no |
+| Type | Text, long text, date, date and time, phone, select (shown as Single choice), or yes/no. The field editor offers all seven |
 | Select options | At least one for a select field. Up to 20 options, each up to 60 characters |
+| Format rules | Optional, for text, long text and phone fields only. Set in the field editor. See "Format rules" below |
+| Icon, suggestions, condition | Optional, for the registration form. Set in the field editor, under **Registration form**. An icon fits every type, suggestions fit text fields only, and a condition fits every type. See "Icons and suggestions" and "Questions that depend on another answer" below |
 
 **Limits and protections**
 
 - An event can have up to 20 custom fields.
 - A field that is currently used as a hint on an Event item can't be deleted until you remove it there first.
+- A field that other fields are shown by can't be deleted, changed to another type, or lose the option they are shown for, until you change or remove their condition. See "Questions that depend on another answer" below.
 - Renaming or removing a select option that attendees have already chosen asks you to confirm and tells you how many attendees are affected. It does not change what they see without asking, and it does not block you outright.
 
 **What an answer must look like**
@@ -187,6 +192,116 @@ Every row gets its own pass or fail reason in the preview before you commit. Not
 - An answer to a required field can't be left blank.
 - A select answer must be one of the configured options.
 - A yes/no answer accepts Yes, No, true or false, in any letter case.
+- An answer that does not fit its type or format rules is refused when you add an attendee, when you save one and when you import a file. Nothing is guessed. The one thing that is cut is a text answer in an import, which is cut to 100 characters.
+- The Add attendee dialog and the attendee page check an answer with the same limits before they send it, and say which field is wrong.
+
+| Type | An answer is |
+|---|---|
+| Text | Up to 100 characters. Adding or saving an attendee refuses more than 100. An import cuts it to 100 |
+| Long text | Up to 1000 characters, line breaks included. Longer text is refused, never cut |
+| Date | Written `YYYY-MM-DD`, and a day that exists. `2026-02-30` is refused |
+| Date and time | Written `YYYY-MM-DDTHH:mm`, for example `2026-11-04T10:30`. It is the time on the clock at the event, so it has no time zone. A zone, seconds, or a space in place of the `T` are refused |
+| Phone | 3 to 15 digits, written with digits, spaces, dashes, dots and brackets, and an optional `+` at the start. It is saved as the `+` and the digits: `+48 600-100-200` becomes `+48600100200` |
+| Select | One of the field's options |
+| Yes/No | Yes, No, true or false |
+
+**Format rules**
+
+Text, long text and phone fields can carry rules about what an answer looks like. A rule is a plain setting that Admitto reads as written. You never type a pattern.
+
+| Rule | What it asks |
+|---|---|
+| Minimum length | At least this many characters, from 1 to 1000 |
+| Maximum length | At most this many characters. It can't be more than the type holds: 100 for text, 1000 for long text, 16 for a phone number |
+| Digits only | Only the digits 0 to 9. No spaces, dashes or letters |
+| Example | A hint for the person answering. It is never checked |
+
+- A length counts characters as a person sees them: an emoji is one character.
+- A phone number is checked in its saved form, so its length counts the `+`, and "digits only" refuses a number that starts with `+`.
+- A date, date and time, select or yes/no field takes no format rules (lengths, digits only, example). Saving one with such a rule is refused. The field editor shows no format rules for these types, and removes the format rules of a field that becomes one of them. An icon and a condition stay.
+- The field editor refuses a length that is not a whole number from 1 to what the type holds, a shortest answer longer than the longest, and phone lengths that no number can meet (a saved number has 3 to 16 characters, or 3 to 15 with digits only). It also refuses an example of more than 100 characters, or one with an invisible character.
+- A rule applies to every answer entered after it is set, and to the answers already saved. An attendee whose older answer breaks a new rule can't be saved until that answer is fixed.
+- An export writes a phone number as saved, with its `+`, so an exported file can be imported again.
+
+**Icons and suggestions**
+
+These two rules shape the registration form. They are set in the field editor, under **Registration form**.
+
+| Rule | What it asks |
+|---|---|
+| Icon | One name from a fixed list of 16 (see the table below). A field of any type can have one. Any other name is refused |
+| Suggestions | Text fields only. A list of 1 to 30 texts, each 1 to 100 characters on one plain line, with no control, invisible or formatting characters. The same text twice is refused, in any letter case. They only suggest: a guest can still type any text, and Admitto never checks an answer against the list |
+
+| In the field editor | Name in the API |
+|---|---|
+| Parking | `parking` |
+| Car | `car` |
+| Food | `food` |
+| Accessibility | `accessible` |
+| Accommodation | `bed` |
+| Extra guest | `user-plus` |
+| Group | `users` |
+| Company | `building` |
+| Calendar | `calendar` |
+| Clock | `clock` |
+| Telephone | `phone` |
+| Email | `mail` |
+| Location | `pin` |
+| Flight | `plane` |
+| Train | `train` |
+| T-shirt | `shirt` |
+
+- The registration form draws an icon only next to an optional yes/no question and next to a text, date, date and time or phone answer. For a select, a long text or a required yes/no question the icon is saved and is not drawn. On the form, the list of suggestions shows the ones that contain what the guest has typed.
+- Saving suggestions on a field that is not a text field is refused. So is changing a text field that has suggestions to another type, unless the same save leaves the suggestions out.
+- A save with rules replaces all the rules of the field. Send every rule you want to keep, the format rules too.
+
+**Questions that depend on another answer**
+
+A question can be shown only when another question has a certain answer. For example, the question "Car registration number" can be shown only when the yes/no question "Do you need parking?" is answered Yes. This is the rule `show_when` of the field. It is set in the field editor, under **Registration form**: choose the other question in **Show only when**, then the answer.
+
+| Rule | What you'll see when you break it |
+|---|---|
+| The condition names another field of the same event. It can't name the field itself | "This condition cannot be kept. It must point at another yes/no or select field of this event that has no condition of its own, and name an answer that field can have. A field that other fields depend on cannot have a condition itself." |
+| The other field is a yes/no field (the answer is Yes) or a select field (the answer is one of its options, written exactly) | The same message |
+| The other field has no condition of its own. So there are no chains of conditions and no cycles | The same message |
+| A field with a condition is on the registration form only if the field it depends on is on the form too. Taking that field off the form while a question that depends on it is on the form is refused as well | "A field with a condition can be on the registration form only when the field it depends on is on the form too." |
+| A field that other fields depend on can't be deleted, changed to another type, or lose or rename the option a condition names | "Other fields are shown only for an answer to this one. Change or remove their condition first." |
+
+These checks run when you save the field, in one step with every other change to the event's fields, so two people saving at the same time can't break them. An event that does not accept registrations is held to the same rules.
+
+**What the field editor says before you save**
+
+The field editor makes the same checks first, so you see what is wrong where the controls are. **Save** stays off until it is fixed, and no request is sent.
+
+| What you did | What you'll see |
+|---|---|
+| Changed the type of a field that other fields are shown for, or removed or renamed an option that one of them is shown for | "“Registration number of your car” (for Yes) is shown only for an answer to this field, so this change can't be saved. Remove its condition first, or undo the change." With two or more fields: "…are shown only for an answer to this field… Remove their conditions first…" |
+| Opened the condition of a field that other fields are shown for | "“Registration number of your car” is shown only for an answer to this field, so it can't have a condition itself." The control is off |
+| Chose a question that is not on the registration form for a field that is | "“Parking” is not on the registration form. A question with a condition can be on the form only when the question it depends on is too. Put “Parking” on the form first, or choose another question." |
+| Chose an icon for a Single choice, a Long text or a Required Yes / No question | "A Single choice question shows no icon on the registration form. The icon stays saved." It names the kind of question ("A Long text question", "A required Yes / No question"), and **Save** stays on |
+| Chose a Single choice question and no answer | "Choose the answer that shows this question." |
+| The event has no Yes / No or Single choice question without a condition | "This event has no yes/no or single choice question without a condition yet. Add one first." The control is off |
+| Deleted a field that other fields are shown for | "“Parking” can't be deleted yet: “Registration number of your car” (for Yes) is shown only for an answer to it. Remove its condition first." **Delete** is off |
+| Typed a suggestion with a line break or an invisible character | "A suggestion has an invisible or control character. Use plain text on one line." With several: "2 suggestions have…" |
+| Typed a suggestion of more than 100 characters | "A suggestion is longer than 100 characters." With several: "2 suggestions are…" |
+| Listed the same suggestion twice, whatever its capital letters | "“Vegan” is there more than once. Capital letters do not make a suggestion different." |
+| Added more than 30 suggestions | **+ Add suggestion** is off at 30. A longer list is refused with "Use at most 30 suggestions." |
+
+The rows that are wrong are marked in the list of suggestions. A row left empty is no suggestion, and spaces around a text are dropped.
+
+**What happens to an answer to a question that is not shown**
+
+| Where | What happens |
+|---|---|
+| A required question | "Required" means "required when shown". A question that is not shown is never required |
+| The registration form | A guest's answer to a question that is not shown is ignored. It is never saved, even when a changed form sends it, and it causes no error. Admitto decides from the answers it received, not from what the page claims |
+| Adding an attendee | The same: the answer is ignored and not saved, with no error |
+| Editing an attendee | The same for an answer set in the edit. Clearing an answer is always saved |
+| Import | A cell is still checked against the field's type and rules, as for every field. The value of a question that is not shown is then not saved. Whether it is shown is judged on the file row together with the attendee's saved answers |
+
+- An answer saved while its question was shown stays when the question stops being shown, for example when staff change "Do you need parking?" from Yes to No. Admitto never deletes it by itself. Staff can clear it on the attendee.
+- A question is shown only when the answer it depends on is saved as Yes (yes/no field) or as the option (select field). No answer at all does not show it.
+- The Add attendee dialog and an attendee's edit form apply the same condition. They hide a question that is not shown, do not ask for it, even when it is Required, and do not send it. A text typed for it stays in the form while you work, so it is back when the answer shows the question again, but it is never saved while the question is hidden. A question that is shown for an answer is drawn right after the question it depends on.
 
 ### Event items (Requirements page)
 

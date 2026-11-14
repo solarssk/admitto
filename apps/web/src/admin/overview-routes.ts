@@ -3,7 +3,13 @@ import type { PrismaClient } from "@admitto/db";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { enabledWalletPlatforms } from "@admitto/shared";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
-import { countActiveAdmittedAttendees, countActiveAttendees, CAPACITY_EXCLUDED_STATUSES } from "./event-capacity.js";
+import { activeAttendeeWhere, countCompanionsIssued } from "@admitto/tickets";
+import {
+  countActiveAdmittedAttendees,
+  countActiveAttendees,
+  countSeatsInUse,
+  CAPACITY_EXCLUDED_STATUSES,
+} from "./event-capacity.js";
 import { loadRecentImportBatches } from "./import-api-routes.js";
 import { buildEverInstalledWalletFilter } from "./wallet-lifecycle-filter.js";
 
@@ -40,7 +46,11 @@ export interface EventOverviewResponse {
     pinned_note: string | null;
   };
   attendee_count: number;
+  /** Seats the event holds, which is what its limit is compared with; `attendee_count` stays the number of heads. */
+  seats_in_use: number;
   admitted_count: number;
+  /** Companions let in with their guests (countCompanionsIssued); the people on site are `admitted_count` plus this. */
+  companions_admitted: number;
   email_sent: number;
   email_failed: number;
   email_bounced: number;
@@ -187,8 +197,7 @@ async function loadWalletInstalledCount(
   if (configured === 0) return null;
   return db.attendee.count({
     where: {
-      event_id: eventId,
-      status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
+      ...activeAttendeeWhere(eventId),
       AND: [buildEverInstalledWalletFilter()],
     },
   });
@@ -411,7 +420,9 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
 
   const [
     activeAttendeeCount,
+    seatsInUse,
     activeAdmittedCount,
+    companionsAdmitted,
     deliveryStats,
     bouncedAttendeeCount,
     requirementsCount,
@@ -424,7 +435,9 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     recentActivity,
   ] = await Promise.all([
     countActiveAttendees(db, eventId),
+    countSeatsInUse(db, eventId),
     countActiveAdmittedAttendees(db, eventId),
+    countCompanionsIssued(db, eventId),
     db.emailDelivery.groupBy({
       by: ["status"],
       where: { event_id: eventId },
@@ -512,7 +525,9 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       pinned_note: event.pinned_note,
     },
     attendee_count: activeAttendeeCount,
+    seats_in_use: seatsInUse,
     admitted_count: activeAdmittedCount,
+    companions_admitted: companionsAdmitted,
     email_sent: emailSent,
     email_failed: emailFailed,
     email_bounced: emailBounced,

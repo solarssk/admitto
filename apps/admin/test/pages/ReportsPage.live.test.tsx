@@ -40,6 +40,7 @@ const { MockApiError } = vi.hoisted(() => {
 });
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
+let activityChangedHandler: (() => void) | null = null;
 // The event id the page last subscribed to the live stream with (undefined = it did not subscribe).
 let streamEventId: string | undefined;
 let mockArchivedAt: string | null = null;
@@ -82,9 +83,10 @@ vi.mock("react-router", async (importOriginal) => {
 });
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: (eventId: string | undefined, onCheckin: (event: StreamCheckinEvent) => void) => {
+  useEventStream: (eventId: string | undefined, onCheckin: (event: StreamCheckinEvent) => void, onActivityChanged?: () => void) => {
     streamEventId = eventId;
     streamHandler = onCheckin;
+    activityChangedHandler = onActivityChanged ?? null;
     return { connected: true, status: "connected" };
   },
 }));
@@ -130,6 +132,7 @@ function reportFixture(
       admission_rate_pct: Math.round((admitted / 10) * 1000) / 10,
       peak_hour: "14:00",
       peak_hour_count: admitted,
+      companions_admitted: 0,
     },
     by_hour: [],
     by_ticket_type: [],
@@ -228,6 +231,7 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   streamHandler = null;
+  activityChangedHandler = null;
 });
 
 describe("ReportsPage — live SSE updates (ADR 0014)", () => {
@@ -298,6 +302,166 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
         expect(fetchEventReports).toHaveBeenCalledTimes(2);
         expect(admittedValue()).toBe("7");
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reconciles from the server when an item is issued, returned or revoked: the companions on site change with no check-in to bump anything", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventReports
+        .mockResolvedValueOnce(reportFixture(5))
+        .mockResolvedValue(reportFixture(5, { summary: { ...reportFixture(5).summary, companions_admitted: 1 } }));
+      renderPage();
+
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+      expect(screen.queryByText(/People on site/)).toBeNull();
+      expect(activityChangedHandler).not.toBeNull();
+
+      act(() => {
+        activityChangedHandler?.();
+      });
+      // Nothing is bumped on the spot: an item is no check-in. The numbers are the server's once the debounce is over.
+      expect(admittedValue()).toBe("5");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      await waitFor(() => {
+        expect(fetchEventReports).toHaveBeenCalledTimes(2);
+        expect(screen.getByText(/People on site: 6 \(5 guests and 1 companion\)\./)).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reconciles within 3 seconds of the first signal while more keep coming: a steady stream of items does not postpone it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventReports
+        .mockResolvedValueOnce(reportFixture(5))
+        .mockResolvedValue(reportFixture(5, { summary: { ...reportFixture(5).summary, companions_admitted: 1 } }));
+      renderPage();
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      act(() => {
+        activityChangedHandler?.();
+      });
+      // One second is left to reach 3 seconds from the first signal. A timer restarted by every signal would still have two to go.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+
+      // Checked at once, not inside `waitFor`, which waits longer than the two seconds the restarted timer would still need.
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      await waitFor(() => {
+        expect(screen.getByText(/People on site: 6 \(5 guests and 1 companion\)\./)).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a reconcile that is on its way finish while more signals fall due, and reads once more after it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const withCompanions = (companions: number) => reportFixture(5, { summary: { ...reportFixture(5).summary, companions_admitted: companions } });
+      const slow = deferred<EventReportsResponse>();
+      fetchEventReports.mockResolvedValueOnce(reportFixture(5)).mockReturnValueOnce(slow.promise).mockResolvedValue(withCompanions(2));
+      renderPage();
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      // The read is on its way and the server is slow.
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      const onItsWay = fetchEventReports.mock.calls[1]?.[1] as AbortSignal;
+
+      // More activity, and its timer falls due while that read has still not answered: it neither starts another nor cancels this one.
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      expect(onItsWay.aborted).toBe(false);
+
+      await act(async () => slow.resolve(withCompanions(1)));
+      await waitFor(() => {
+        expect(screen.getByText(/People on site: 6 \(5 guests and 1 companion\)\./)).toBeTruthy();
+      });
+
+      // The signal that had to wait gets its read, after the timer.
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      expect(fetchEventReports).toHaveBeenCalledTimes(3);
+      await waitFor(() => {
+        expect(screen.getByText(/People on site: 7 \(5 guests and 2 companions\)\./)).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels the reconcile that is on its way when the page is left, and starts no other after it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const slow = deferred<EventReportsResponse>();
+      fetchEventReports.mockResolvedValueOnce(reportFixture(5)).mockReturnValueOnce(slow.promise).mockResolvedValue(reportFixture(5));
+      renderPage();
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      const onItsWay = fetchEventReports.mock.calls[1]?.[1] as AbortSignal;
+      // A signal waits for that read, and the page is left before the read answers.
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      cleanup();
+      expect(onItsWay.aborted).toBe(true);
+      await act(async () => slow.resolve(reportFixture(5)));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6_000);
+      });
+
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
@@ -605,6 +769,53 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
 
     expect(await screen.findByText("No matches")).toBeTruthy();
     expect(screen.queryByText("Vip Guest")).toBeNull();
+  });
+});
+
+describe("ReportsPage: people on site (the companions let in with their guests)", () => {
+  const withCompanions = (admitted: number, companions: number) =>
+    reportFixture(admitted, { summary: { ...reportFixture(admitted).summary, companions_admitted: companions } });
+  const sentence = () => document.querySelector(".reports-people-on-site")?.textContent ?? null;
+
+  it("says nothing of companions while none has been let in: the figures look as they always did", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+
+    renderPage();
+
+    await waitFor(() => expect(admittedValue()).toBe("5"));
+    expect(sentence()).toBeNull();
+    expect(screen.queryByText(/People on site/)).toBeNull();
+  });
+
+  it("adds one sentence under the figures: the guests and the companions, and how many of each", async () => {
+    fetchEventReports.mockResolvedValue(withCompanions(5, 2));
+
+    renderPage();
+
+    await waitFor(() => expect(sentence()).toBe("People on site: 7 (5 guests and 2 companions)."));
+    // The figures stay on the guests.
+    expect(admittedValue()).toBe("5");
+    expect(noShowsValue()).toBe("5");
+  });
+
+  it("says 'guest' and 'companion' for one of each", async () => {
+    fetchEventReports.mockResolvedValue(withCompanions(1, 1));
+
+    renderPage();
+
+    await waitFor(() => expect(sentence()).toBe("People on site: 2 (1 guest and 1 companion)."));
+  });
+
+  it("counts a guest who has just checked in, before the report is read again", async () => {
+    fetchEventReports.mockResolvedValue(withCompanions(5, 2));
+    renderPage();
+    await waitFor(() => expect(sentence()).toBe("People on site: 7 (5 guests and 2 companions)."));
+
+    act(() => {
+      streamHandler?.(liveEvent);
+    });
+
+    await waitFor(() => expect(sentence()).toBe("People on site: 8 (6 guests and 2 companions)."));
   });
 });
 

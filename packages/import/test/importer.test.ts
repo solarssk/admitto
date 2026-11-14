@@ -9,7 +9,8 @@ import {
   createAttendeesBatch,
   IMPORT_CONFLICT_SKIP_REASON,
 } from "../src/importer.js";
-import type { AttendeeRow } from "../src/types.js";
+import { parseAttendees } from "../src/parser.js";
+import type { AttendeeRow, ImportAttributeField } from "../src/types.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -752,5 +753,180 @@ describe("createAttendeesBatch — skipDuplicates", () => {
       where: { event_id: EVENT_ID, email: { in: ["tx-conflict@example.com", "tx-new@example.com"] } },
     });
     expect(count).toBe(2);
+  });
+});
+
+describe("commitImport: a question with a condition", () => {
+  const fields = (plateRequired: boolean): ImportAttributeField[] => [
+    { label: "Parking", source_field: "parking", type: "boolean" },
+    {
+      label: "Plate",
+      source_field: "plate",
+      type: "text",
+      ...(plateRequired ? { required: true } : {}),
+      rules: { show_when: { field: "parking", value: true } },
+    },
+  ];
+  const row = (email: string, customData?: Record<string, string>): AttendeeRow => ({
+    rowIndex: 1,
+    first_name: "Cond",
+    last_name: "Guest",
+    email,
+    ...(customData ? { custom_data: customData } : {}),
+  });
+  const stored = async (email: string) =>
+    (await prisma.attendee.findUniqueOrThrow({ where: { event_id_email: { event_id: EVENT_ID, email } } })).custom_data;
+
+  it("stores the answer to a question that is asked, and drops the one to a question that is not", async () => {
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        row("cond-yes@example.com", { parking: "true", plate: "WA 1" }),
+        row("cond-no@example.com", { parking: "false", plate: "WA 2" }),
+        row("cond-blank@example.com", { plate: "WA 3" }),
+      ],
+      { attributeFields: fields(false) },
+      prisma,
+    );
+    expect(summary).toMatchObject({ toCreate: 3, created: 3, toSkip: 0 });
+    expect(await stored("cond-yes@example.com")).toEqual({ parking: "true", plate: "WA 1" });
+    expect(await stored("cond-no@example.com")).toEqual({ parking: "false" });
+    expect(await stored("cond-blank@example.com")).toBeNull();
+  });
+
+  it("does not require an answer to a question that is not asked, and requires one to a question that is", async () => {
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        row("cond-req-no@example.com", { parking: "false" }),
+        row("cond-req-none@example.com"),
+        row("cond-req-ok@example.com", { parking: "true", plate: "WA 4" }),
+        row("cond-req-missing@example.com", { parking: "true" }),
+      ],
+      { attributeFields: fields(true) },
+      prisma,
+    );
+    expect(summary).toMatchObject({ toCreate: 3, created: 3, toSkip: 1 });
+    expect(summary.skipped).toEqual([{ email: "cond-req-missing@example.com", reason: "Missing required attribute: Plate" }]);
+    expect(await stored("cond-req-no@example.com")).toEqual({ parking: "false" });
+    expect(await stored("cond-req-none@example.com")).toBeNull();
+    expect(await stored("cond-req-ok@example.com")).toEqual({ parking: "true", plate: "WA 4" });
+  });
+
+  it("reads a file the way a person writes it: Yes and No in any case, and a cell in a question that is not asked", async () => {
+    const csv = [
+      "first_name,last_name,email,parking,plate",
+      "Cond,One,cond-csv-yes@example.com, YES ,WA 10",
+      "Cond,Two,cond-csv-no@example.com,No,WA 11",
+      "Cond,Three,cond-csv-blank@example.com,,WA 12",
+    ].join("\n");
+    const parsed = parseAttendees(csv, { attributeFields: fields(false) });
+    expect(parsed.invalidRows).toEqual([]);
+    const summary = await commitImport(EVENT_ID, parsed.validRows, { attributeFields: fields(false) }, prisma);
+    expect(summary).toMatchObject({ created: 3, toSkip: 0 });
+    expect(await stored("cond-csv-yes@example.com")).toEqual({ parking: "true", plate: "WA 10" });
+    expect(await stored("cond-csv-no@example.com")).toEqual({ parking: "false" });
+    expect(await stored("cond-csv-blank@example.com")).toBeNull();
+  });
+
+  it("still checks the format of every cell, also in a question that is not asked", () => {
+    const strict: ImportAttributeField[] = [
+      { label: "Parking", source_field: "parking", type: "boolean" },
+      { label: "Plate", source_field: "plate", type: "text", rules: { max_length: 5, show_when: { field: "parking", value: true } } },
+    ];
+    const csv = ["first_name,last_name,email,parking,plate", "Cond,Four,cond-csv-long@example.com,no,TOO LONG PLATE"].join("\n");
+    const parsed = parseAttendees(csv, { attributeFields: strict });
+    expect(parsed.validRows).toEqual([]);
+    expect(parsed.invalidRows[0]?.reason).toBe("Invalid value for Plate (expected at most 5 characters)");
+  });
+
+  it("counts the same in a dry run as it writes", async () => {
+    const rows = [row("cond-dry-a@example.com", { parking: "true" }), row("cond-dry-b@example.com", { parking: "false" })];
+    const dry = await commitImport(EVENT_ID, rows, { dryRun: true, attributeFields: fields(true) }, prisma);
+    expect(dry).toMatchObject({ toCreate: 1, toSkip: 1, created: 0 });
+    expect(dry.skipped[0]?.email).toBe("cond-dry-a@example.com");
+    const wet = await commitImport(EVENT_ID, rows, { attributeFields: fields(true) }, prisma);
+    expect(wet).toMatchObject({ toCreate: 1, created: 1, toSkip: 1 });
+  });
+
+  it("judges an overwrite on the answers the attendee holds, and drops an answer to a question that is not asked", async () => {
+    await prisma.attendee.createMany({
+      data: [
+        { event_id: EVENT_ID, email: "cond-ow-yes@example.com", name: "Ow Yes", custom_data: { parking: "true" } },
+        { event_id: EVENT_ID, email: "cond-ow-no@example.com", name: "Ow No", custom_data: { parking: "false" } },
+        { event_id: EVENT_ID, email: "cond-ow-flip@example.com", name: "Ow Flip", custom_data: { parking: "true", plate: "OLD 1" } },
+      ],
+    });
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        row("cond-ow-yes@example.com", { plate: "WA 5" }),
+        row("cond-ow-no@example.com", { plate: "WA 6" }),
+        row("cond-ow-flip@example.com", { parking: "false", plate: "WA 7" }),
+      ],
+      { overwrite: true, attributeFields: fields(false) },
+      prisma,
+    );
+    expect(summary).toMatchObject({ toUpdate: 3, updated: 3, toSkip: 0 });
+    // The attendee said yes before: the plate of the row is stored.
+    expect(await stored("cond-ow-yes@example.com")).toEqual({ parking: "true", plate: "WA 5" });
+    // The attendee said no: nothing is stored, and nothing else changes.
+    expect(await stored("cond-ow-no@example.com")).toEqual({ parking: "false" });
+    // The row says no and sends a plate: the controller changes, the plate of the row is dropped and the stored one stays.
+    expect(await stored("cond-ow-flip@example.com")).toEqual({ parking: "false", plate: "OLD 1" });
+  });
+
+  it("keeps a stored answer when an overwrite makes its question not asked, and does not require it any more", async () => {
+    await prisma.attendee.create({
+      data: { event_id: EVENT_ID, email: "cond-ow-req@example.com", name: "Ow Req", custom_data: { parking: "true", plate: "OLD 2" } },
+    });
+    const summary = await commitImport(
+      EVENT_ID,
+      [row("cond-ow-req@example.com", { parking: "false" })],
+      { overwrite: true, attributeFields: fields(true) },
+      prisma,
+    );
+    expect(summary).toMatchObject({ updated: 1, toSkip: 0 });
+    expect(await stored("cond-ow-req@example.com")).toEqual({ parking: "false", plate: "OLD 2" });
+  });
+
+  it("skips an overwrite that asks a required question the attendee has not answered", async () => {
+    await prisma.attendee.create({
+      data: { event_id: EVENT_ID, email: "cond-ow-ask@example.com", name: "Ow Ask", custom_data: { parking: "false" } },
+    });
+    const summary = await commitImport(
+      EVENT_ID,
+      [row("cond-ow-ask@example.com", { parking: "true" })],
+      { overwrite: true, attributeFields: fields(true) },
+      prisma,
+    );
+    expect(summary).toMatchObject({ updated: 0, toSkip: 1 });
+    expect(summary.skipped[0]?.reason).toBe("Missing required attribute: Plate");
+    expect(await stored("cond-ow-ask@example.com")).toEqual({ parking: "false" });
+  });
+
+  it("gives an attendee without data no data when every answer of the row is dropped", async () => {
+    await prisma.attendee.create({ data: { event_id: EVENT_ID, email: "cond-ow-empty@example.com", name: "Ow Empty" } });
+    const summary = await commitImport(
+      EVENT_ID,
+      [row("cond-ow-empty@example.com", { plate: "WA 8" })],
+      { overwrite: true, attributeFields: fields(false) },
+      prisma,
+    );
+    expect(summary).toMatchObject({ updated: 1, toSkip: 0 });
+    expect(await stored("cond-ow-empty@example.com")).toBeNull();
+  });
+
+  it("applies two rows of one file to the same attendee one after the other", async () => {
+    await prisma.attendee.create({ data: { event_id: EVENT_ID, email: "cond-two@example.com", name: "Two Rows" } });
+    const second = { ...row("cond-two@example.com", { plate: "WA 9" }), external_uuid: undefined };
+    const summary = await commitImport(
+      EVENT_ID,
+      [row("cond-two@example.com", { parking: "true" }), second],
+      { overwrite: true, attributeFields: fields(false) },
+      prisma,
+    );
+    expect(summary.toSkip).toBe(0);
+    expect(await stored("cond-two@example.com")).toEqual({ parking: "true", plate: "WA 9" });
   });
 });

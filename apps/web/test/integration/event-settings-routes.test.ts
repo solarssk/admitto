@@ -1307,6 +1307,35 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(res.status).toBe(400);
   });
 
+  it("refuses a wallet field mapping that names a sensitive field, saves one that names a plain field, and writes nothing on the refusal (D-E6)", async () => {
+    await prisma.eventCustomField.createMany({
+      data: [
+        { event_id: EVENT_SET, source_field: "t_shirt_size", label: "Shirt", type: "select", options: ["S", "M"] },
+        { event_id: EVENT_SET, source_field: "meal_allergy", label: "Allergy", type: "select", options: ["Nuts", "None"], sensitive: true },
+      ],
+    });
+    const patch = (mapping: Record<string, string> | null) =>
+      app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_field_mapping: mapping }),
+      });
+    try {
+      const refused = await patch({ shirt: "custom:t_shirt_size", allergy: "custom:meal_allergy" });
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({ error: "sensitive_wallet_field", field: "meal_allergy" });
+      const unchanged = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET }, select: { wallet_field_mapping: true } });
+      expect(unchanged.wallet_field_mapping).toBeNull();
+
+      expect((await patch({ shirt: "custom:t_shirt_size" })).status).toBe(200);
+      const saved = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET }, select: { wallet_field_mapping: true } });
+      expect(saved.wallet_field_mapping).toEqual({ shirt: "custom:t_shirt_size" });
+    } finally {
+      await patch(null);
+      await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_SET } });
+    }
+  });
+
   it("returns 403 when an organisation admin tries to patch the wallet field mapping", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",

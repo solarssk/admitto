@@ -5,6 +5,27 @@ export type {
   DrainPendingDeliveriesOptions,
   DrainPendingDeliveriesResult,
 } from "./drain.js";
+export { drainRegistrationMails, DEFAULT_REGISTRATION_MAIL_DRAIN_LIMIT } from "./registration-mail-drain.js";
+export type {
+  DrainRegistrationMailsOptions,
+  DrainRegistrationMailsResult,
+} from "./registration-mail-drain.js";
+export { sweepExpiredRegistrations, REGISTRATION_EXPIRY_BATCH_SIZE } from "./registration-mail-sweep.js";
+export { sweepRegistrationSsoStates, SSO_STATE_SWEEP_BATCH_SIZE } from "./registration-sso-sweep.js";
+export {
+  checkEventDomain,
+  probeEventDomain,
+  readDomainCheckState,
+  recordDomainCheck,
+  refreshEventDomains,
+  DOMAIN_CHECK_MAX_BODY_BYTES,
+  DOMAIN_CHECK_REFRESH_MS,
+  DOMAIN_CHECK_SWEEP_BATCH,
+  DOMAIN_CHECK_TIMEOUT_MS,
+} from "./event-domain-check.js";
+export type { DomainCheckDeps, DomainCheckState, RecordedCheck, RefreshEventDomainsResult } from "./event-domain-check.js";
+export type { SweepRegistrationSsoStatesResult } from "./registration-sso-sweep.js";
+export type { SweepExpiredRegistrationsResult } from "./registration-mail-sweep.js";
 export { cancelBulkSendBatch } from "./cancel.js";
 export type { CancelBulkSendBatchResult } from "./cancel.js";
 export {
@@ -58,7 +79,7 @@ export type { ResendTicketEmailOptions } from "./resend.js";
 export { retryDelivery } from "./retry.js";
 export { tryMaterializeStoredMessage } from "./snapshot-unusable.js";
 export { recordTicketViewed } from "./viewed.js";
-export { buildAttendeeMailLinks, resolveAttendeeMailLinks } from "./links.js";
+export { buildAttendeeMailLinks, buildConfirmUrl, resolveAttendeeMailLinks } from "./links.js";
 export type { AttendeeMailLinks, AttendeeLinkInput, EventLinkInput } from "./links.js";
 export { mapSendResultToDelivery } from "./mapSendResult.js";
 export type { DeliveryStatusUpdate } from "./mapSendResult.js";

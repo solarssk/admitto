@@ -77,7 +77,8 @@ export function buildWalletCustomFieldOptions(
   customFields: EventCustomFieldDto[] | undefined,
 ): { id: string; icon: string; label: string }[] {
   if (!customFields) return [];
-  const mappable = customFields.filter((field) => field.type === "select" || field.type === "boolean");
+  // A sensitive question is never put on a pass (D-E6): the server refuses it and leaves it off, so it is not offered.
+  const mappable = customFields.filter((field) => !field.sensitive && (field.type === "select" || field.type === "boolean"));
   const duplicateLabels = findDuplicateLabels(mappable.map((field) => field.label));
   return mappable.map((field) => ({
     id: `${WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX}${field.source_field}`,

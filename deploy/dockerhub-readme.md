@@ -70,8 +70,6 @@ The idea it's built around: **Admitto is the single source of truth** for who's 
 | 🔒 Security | Two-factor login (TOTP, passkeys, and security keys), company SSO (OIDC), optional Cloudflare Access. Secrets encrypted at rest. |
 | 🏠 Hosting | You run it yourself. Roles: Superadmin, Admin, Operator. |
 
-**Coming later:** public self-service registration is not part of Admitto. Intake from MS Forms through `/api/ingest` is planned.
-
 ## Stack
 
 | Layer | Technologies |

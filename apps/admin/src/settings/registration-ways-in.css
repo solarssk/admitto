@@ -1,0 +1,19 @@
+/* The provider block under the switch of the company sign-in: its parts are spaced by a gap, and a long name or address wraps. */
+.ways-in-sso {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.ways-in-sso .settings-card-intro,
+.ways-in-sso .at-notice {
+  overflow-wrap: anywhere;
+}
+
+/* A link inside a sentence is underlined, so that it is told from the text by more than its colour (axe: link-in-text-block). */
+.ways-in-sso .settings-card-intro a {
+  text-decoration: underline;
+}

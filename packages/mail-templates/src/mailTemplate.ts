@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { compileTemplate } from "./compile.js";
-import { getBuiltinTemplate } from "./defaultTemplate.js";
+import { defaultTemplateLabel, getBuiltinTemplate } from "./defaultTemplate.js";
+import { DEFAULT_TEMPLATE_NAME, disallowedPlaceholdersForTemplate } from "./systemTemplates.js";
 import { assertRenderableCompiledHtml, assertValidTemplate } from "./validate.js";
 import { resolveEventImageAssetVars } from "./branding.js";
 import type {
@@ -12,10 +13,7 @@ import type {
 } from "./types.js";
 export { MjmlCompileError, UnknownPlaceholdersError } from "./errors.js";
 
-/** The one template per scope that ticket delivery actually sends - the only one required to
- * carry `ticket_url`/`qr_image_url` (see REQUIRED_URL_PLACEHOLDERS). Every other event template
- * is free-form. */
-export const DEFAULT_TEMPLATE_NAME = "ticket";
+export { DEFAULT_TEMPLATE_NAME };
 
 /** Custom asset tokens are only meaningful for event-scoped templates (the image library is
  * per-event) — organization-scoped templates never get a widened placeholder whitelist. */
@@ -41,19 +39,21 @@ function scopeNameKey(scope: TemplateScope): {
 }
 
 /**
- * Resolves effective ticket template for a preloaded event row:
- * event MailTemplate (name=ticket) → org MailTemplate (name=ticket) → built-in default.
+ * Resolves the effective template for a preloaded event row, `ticket` unless a name is given:
+ * event MailTemplate (that name) → org MailTemplate (that name) → built-in default.
+ * @throws UnknownBuiltinTemplateError when neither row exists and the name has no built-in.
  */
 export async function resolveTemplateForEvent(
   event: { id: string; organization_id: string },
   prisma: PrismaClient,
+  name: string = DEFAULT_TEMPLATE_NAME,
 ): Promise<ResolvedTemplate> {
   const eventRow = await prisma.mailTemplate.findUnique({
     where: {
       scope_type_scope_id_name: {
         scope_type: "event",
         scope_id: event.id,
-        name: DEFAULT_TEMPLATE_NAME,
+        name,
       },
     },
   });
@@ -66,7 +66,7 @@ export async function resolveTemplateForEvent(
       scope_type_scope_id_name: {
         scope_type: "organization",
         scope_id: event.organization_id,
-        name: DEFAULT_TEMPLATE_NAME,
+        name,
       },
     },
   });
@@ -74,18 +74,19 @@ export async function resolveTemplateForEvent(
     return rowToResolved(orgRow, "organization");
   }
 
-  return await getBuiltinTemplate();
+  return await getBuiltinTemplate(name);
 }
 
 /**
- * Resolves effective ticket template: event → org → built-in default.
+ * Resolves the effective template (`ticket` unless a name is given): event → org → built-in default.
  */
 export async function resolveTemplate(
   eventId: string,
   prisma: PrismaClient,
+  name: string = DEFAULT_TEMPLATE_NAME,
 ): Promise<ResolvedTemplate> {
   const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
-  return resolveTemplateForEvent(event, prisma);
+  return resolveTemplateForEvent(event, prisma, name);
 }
 
 /**
@@ -169,7 +170,11 @@ export async function createMailTemplate(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<CreatedMailTemplateRow> {
   const extraAllowed = await resolveScopeCustomPlaceholders(scope, prisma);
-  assertValidTemplate({ subject: input.subject, body: input.body }, extraAllowed);
+  assertValidTemplate(
+    { subject: input.subject, body: input.body },
+    extraAllowed,
+    disallowedPlaceholdersForTemplate(scopeNameKey(scope).name),
+  );
 
   const compiledHtml = await compileTemplate(input.body, input.format);
   if (input.format === "mjml") {
@@ -183,7 +188,7 @@ export async function createMailTemplate(
       scope_type: key.scope_type,
       scope_id: key.scope_id,
       name: key.name,
-      label: input.label ?? (key.name === DEFAULT_TEMPLATE_NAME ? "Ticket email" : key.name),
+      label: input.label ?? defaultTemplateLabel(key.name),
       subject_template: input.subject,
       body_template: input.body,
       template_format: input.format,
@@ -199,7 +204,11 @@ export async function setMailTemplate(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<void> {
   const extraAllowed = await resolveScopeCustomPlaceholders(scope, prisma);
-  assertValidTemplate({ subject: input.subject, body: input.body }, extraAllowed);
+  assertValidTemplate(
+    { subject: input.subject, body: input.body },
+    extraAllowed,
+    disallowedPlaceholdersForTemplate(scopeNameKey(scope).name),
+  );
 
   const compiledHtml = await compileTemplate(input.body, input.format);
   if (input.format === "mjml") {
@@ -214,7 +223,7 @@ export async function setMailTemplate(
       scope_type: key.scope_type,
       scope_id: key.scope_id,
       name: key.name,
-      label: input.label ?? (key.name === DEFAULT_TEMPLATE_NAME ? "Ticket email" : key.name),
+      label: input.label ?? defaultTemplateLabel(key.name),
       subject_template: input.subject,
       body_template: input.body,
       template_format: input.format,

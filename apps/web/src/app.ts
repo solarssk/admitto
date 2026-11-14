@@ -190,7 +190,13 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
+import { MAX_COMPANION_BODY_BYTES, handleDeleteAttendeeCompanion, handlePatchAttendeeCompanion } from "./admin/attendee-companion-routes.js";
+import { handleRevealAttendeeAnswers, handleRevealRegistrationAnswers } from "./admin/sensitive-reveal-routes.js";
 import { handleBulkEraseEventAttendees, handleEraseEventAttendee } from "./admin/attendee-erase-routes.js";
+import {
+  handleDeleteEventRegistrations,
+  handleDeleteEventRegistrationsByFilter,
+} from "./admin/registration-delete-routes.js";
 import { handleBulkRemoveEventAttendees, handleRemoveEventAttendee } from "./admin/attendee-remove-routes.js";
 import {
   handleGetWalletPushJob,
@@ -254,10 +260,73 @@ import {
 import {
   handleListEventCustomFields,
   handleCreateEventCustomField,
+  handleAddSuggestedEventCustomFields,
   handlePatchEventCustomField,
+  handleReorderEventCustomFields,
   handleDeleteEventCustomField,
   handleGetEventCustomFieldOptionUsage,
 } from "./admin/event-custom-fields-routes.js";
+import {
+  handleListLegalDocuments,
+  handleGetLegalDocument,
+  handlePutLegalDocument,
+  handlePublishLegalDocument,
+  handleUnpublishLegalDocument,
+  handleDeleteLegalDocument,
+} from "./admin/legal-documents-routes.js";
+import {
+  handleCountEventRegistrations,
+  handleGetEventRegistration,
+  handleListEventRegistrations,
+} from "./admin/registrations-api-routes.js";
+import {
+  handleAcceptEventRegistrations,
+  handleRejectEventRegistrations,
+  handleRetryEventRegistrationMails,
+} from "./admin/registration-decisions-routes.js";
+import {
+  MAX_REGISTRATION_PASSWORD_BODY_BYTES,
+  handleDeleteRegistrationPassword,
+  handlePutRegistrationPassword,
+} from "./admin/registration-password-routes.js";
+import {
+  MAX_CUSTOM_DOMAIN_BODY_BYTES,
+  handleGetEventCustomDomain,
+  handlePutEventCustomDomain,
+} from "./admin/event-custom-domain-routes.js";
+import { handleCheckEventCustomDomain, type CustomDomainCheckDeps } from "./admin/event-custom-domain-check-routes.js";
+import {
+  MAX_REGISTRATION_SETTINGS_BODY_BYTES,
+  handleGetEventRegistrationSettings,
+  handlePutEventRegistrationSettings,
+} from "./admin/event-registration-settings-routes.js";
+import { MAX_LEGAL_BODY_BYTES } from "./legal/legal-documents.js";
+import { loadPublishedLegalPage, respondLegalPage } from "./legal/legal-page.js";
+import { respondRegistrationNotFound } from "./registration-page-security.js";
+import { handleGetRegistrationForm } from "./registration/form-routes.js";
+import {
+  handleGetConfirmation,
+  handlePostConfirmation,
+  registrationConfirmGuards,
+  type RegistrationConfirmDeps,
+} from "./registration/confirm-route.js";
+import { registrationSubmitGuards } from "./registration/submit-guards.js";
+import { handlePostRegistration, type RegistrationSubmitDeps } from "./registration/submit-route.js";
+import { handleSsoCallback, handleSsoStart } from "./registration/sso-routes.js";
+import { GUEST_SSO_CALLBACK_PATH } from "./registration/sso-session.js";
+import {
+  configuredInstanceHostname,
+  createGuestHostResolver,
+  resolveInstanceHostname,
+  type GuestHostCacheOptions,
+} from "./guest-host/guest-host.js";
+import {
+  createGuestHostMiddleware,
+  handleDomainCheck,
+  hstsForError,
+  isOtherEventOnGuestHost,
+} from "./guest-host/guest-host-middleware.js";
+import { DOMAIN_CHECK_PATH } from "./guest-host/guest-paths.js";
 import {
   handleListEventTicketTypes,
   handleCreateEventTicketType,
@@ -272,6 +341,10 @@ import {
   handlePreviewEventTemplate,
   handleTestSendEventTemplate,
   handleTestSendEventTemplateById,
+  handleGetSystemTemplate,
+  handlePutSystemTemplate,
+  handlePreviewSystemTemplate,
+  handleTestSendSystemTemplate,
   handleListEventDeliveries,
   handleGetEventDelivery,
   handleGetRenderedEventDelivery,
@@ -339,6 +412,15 @@ import {
   handlePostWeatherTest,
   handlePostMapsTest,
 } from "./admin/external-services-routes.js";
+import {
+  handleDeleteRegistrationTurnstile,
+  handleGetRegistrationAccessMethods,
+  handleGetRegistrationSsoProvider,
+  handleGetRegistrationTurnstile,
+  handlePutRegistrationAccessMethods,
+  handlePutRegistrationSsoProvider,
+  handlePutRegistrationTurnstile,
+} from "./admin/registration-settings-routes.js";
 import {
   handleGetNotificationSettings,
   handlePutNotificationSettings,
@@ -474,6 +556,15 @@ export interface CreateAppOptions {
   opsHealthToken?: string | null;
   /** JSON access log per request (defaults to `LOG_HTTP_REQUESTS` env). */
   logHttpRequests?: boolean;
+  /** Test-only injection points of `POST /r/:slug`: the transport of the bot challenge, the wait for a lock and the
+   * floor of time of an answer. */
+  registrationSubmit?: Pick<RegistrationSubmitDeps, "challenge" | "placement" | "pace">;
+  /** Test-only injection point of `POST /r/:slug/confirm/:token`: the wait for a lock and the places among the writes. */
+  registrationConfirm?: Pick<RegistrationConfirmDeps, "placement">;
+  /** Test-only injection point of the memory of the events' own addresses (clock, lifetimes, size); see guest-host/guest-host.ts. */
+  guestHosts?: GuestHostCacheOptions;
+  /** Test-only injection point of the check of an event's own address (`POST .../custom-domain/check`): the lookup and the pinned request. */
+  domainCheck?: NonNullable<CustomDomainCheckDeps["probe"]>;
 }
 
 /**
@@ -672,6 +763,10 @@ export function createApp(options: CreateAppOptions = {}) {
   // diagnostics on stderr. Live-tail gets error class/code only - never stack, Prisma detail,
   // or concrete request paths beyond the matched route template.
   app.onError((err, c) => {
+    // The application owns HSTS (D-L3, nginx adds none): an answer written here has none from a route, and a failed lookup of the host
+    // throws before the middleware can set it.
+    const hsts = hstsForError(c);
+    if (hsts !== null) c.header("Strict-Transport-Security", hsts);
     if (err instanceof HTTPException) return err.getResponse();
 
     // Hono only invokes onError for Error instances (non-Error throws bypass it).
@@ -700,6 +795,18 @@ export function createApp(options: CreateAppOptions = {}) {
   if (options.logHttpRequests ?? resolveLogHttpRequests()) {
     app.use("*", createRequestLogMiddleware());
   }
+  // Routing by host (D-C6, 119b): before every other middleware and route, so that on the verified own address of an event nothing
+  // but the guest's side of that event exists (a hidden path gets the one public 404, with none of the headers below), and the
+  // kind of host is known to the handlers that must keep one address to one event. What it lets through is guest-host/guest-paths.ts.
+  const readInstanceHostname = () => resolveInstanceHostname(() => resolveInstanceBaseUrl(db, process.env, mailInjectedBaseUrl));
+  const guestHosts = createGuestHostResolver(db, readInstanceHostname, options.guestHosts);
+  app.use(
+    "*",
+    createGuestHostMiddleware({
+      resolver: guestHosts,
+      configuredInstanceHostname: () => configuredInstanceHostname(mailInjectedBaseUrl),
+    }),
+  );
   // Applied after next() so it lands on responses handlers build via c.json()/c.body()
   // AND ones that return a bare `new Response(...)` (e.g. CSV/PDF/XLSX exports) — Hono only
   // merges pre-next() c.header() calls into responses built through its own c.json()/c.body().
@@ -772,6 +879,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminNotificationSettingsTestRateLimit = rateLimit(rateLimitStore, "admin:notification-settings-test");
   const adminEventMailDiagnosticsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-diagnostics");
   const adminHealthLiveRateLimit = rateLimit(rateLimitStore, "admin:health-live");
+  const adminDomainCheckRateLimit = rateLimit(rateLimitStore, "admin:domain-check");
   const accountNotificationsPollRateLimit = rateLimit(rateLimitStore, "account:notifications-poll");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
   const adminAttendeesSearchRateLimit = rateLimit(rateLimitStore, "admin:attendees-search");
@@ -788,6 +896,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminWalletMessageJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-job-status");
   const adminWalletMessageSendRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-send");
   const adminAttendeePatchRateLimit = rateLimit(rateLimitStore, "admin:attendee-patch");
+  const adminSensitiveRevealRateLimit = rateLimit(rateLimitStore, "admin:sensitive-reveal");
   const adminUserRevokeSessionsRateLimit = rateLimit(rateLimitStore, "admin:user-revoke-sessions");
   const adminWalletActionRateLimit = rateLimit(rateLimitStore, "admin:wallet-action");
   const adminWalletActionBulkRateLimit = rateLimit(rateLimitStore, "admin:wallet-action-bulk");
@@ -842,6 +951,26 @@ export function createApp(options: CreateAppOptions = {}) {
   const templateBodyLimit = bodyLimit({
     maxSize: MAX_TEMPLATE_BODY_BYTES,
     onError: (c) => c.json({ error: "template too large" }, 400),
+  });
+  const legalDocumentBodyLimit = bodyLimit({
+    maxSize: MAX_LEGAL_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const registrationPasswordBodyLimit = bodyLimit({
+    maxSize: MAX_REGISTRATION_PASSWORD_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const customDomainBodyLimit = bodyLimit({
+    maxSize: MAX_CUSTOM_DOMAIN_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const registrationSettingsBodyLimit = bodyLimit({
+    maxSize: MAX_REGISTRATION_SETTINGS_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const companionBodyLimit = bodyLimit({
+    maxSize: MAX_COMPANION_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const templateTestSendBodyLimit = bodyLimit({
     maxSize: MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
@@ -1720,6 +1849,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/healthz", healthzRateLimit, (c) => handleHealthz(c, db));
   app.get("/robots.txt", handleGetRobotsTxt);
   app.get("/.well-known/change-password", (c) => handleGetChangePasswordWellKnown(c, db));
+  // The proof an own address of an event gives that it reaches this instance (D-C6, 119b). Answers on any host that is an address
+  // that is set, verified or not; elsewhere it is the 404 of a path that is not there.
+  app.get(DOMAIN_CHECK_PATH, publicRateLimit, (c) => handleDomainCheck(c));
   app.get("/favicon.svg", handleGetFaviconSvg);
   app.get("/favicon-32.png", handleGetFavicon32Png);
   app.get("/favicon.ico", handleGetFaviconIco);
@@ -1910,6 +2042,41 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     (c) => handlePostMapsTest(c, db),
   );
+  // Guest registration instance settings: the Turnstile keys and the access methods. Superadmin
+  // only; the handlers check the role themselves, the gate only proves a staff session.
+  app.get("/api/admin/registration/turnstile", staffAdminGate, (c) =>
+    handleGetRegistrationTurnstile(c, db),
+  );
+  app.put(
+    "/api/admin/registration/turnstile",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutRegistrationTurnstile(c, db),
+  );
+  app.delete("/api/admin/registration/turnstile", jsonPostCsrf, staffAdminGate, (c) =>
+    handleDeleteRegistrationTurnstile(c, db),
+  );
+  app.get("/api/admin/registration/access-methods", staffAdminGate, (c) =>
+    handleGetRegistrationAccessMethods(c, db),
+  );
+  app.put(
+    "/api/admin/registration/access-methods",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutRegistrationAccessMethods(c, db),
+  );
+  app.get("/api/admin/registration/sso-provider", staffAdminGate, (c) =>
+    handleGetRegistrationSsoProvider(c, db, oidcPublicBaseUrl),
+  );
+  app.put(
+    "/api/admin/registration/sso-provider",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutRegistrationSsoProvider(c, db, oidcPublicBaseUrl),
+  );
   app.get("/api/admin/notification-settings", staffAdminGate, (c) =>
     handleGetNotificationSettings(c, db),
   );
@@ -1972,6 +2139,18 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     guardArchivedEvent((c) => handleCreateEventCustomField(c, db)),
   );
+  app.post(
+    "/api/admin/events/:eventId/custom-fields/suggested",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleAddSuggestedEventCustomFields(c, db)),
+  );
+  app.put(
+    "/api/admin/events/:eventId/custom-fields/order",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleReorderEventCustomFields(c, db)),
+  );
   app.patch(
     "/api/admin/events/:eventId/custom-fields/:fieldId",
     jsonPostCsrf,
@@ -1983,6 +2162,145 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleDeleteEventCustomField(c, db)),
+  );
+  app.get("/api/admin/events/:eventId/legal-documents", staffAdminGate, (c) => handleListLegalDocuments(c, db));
+  app.get("/api/admin/events/:eventId/legal-documents/:ref", staffAdminGate, (c) => handleGetLegalDocument(c, db));
+  app.put(
+    "/api/admin/events/:eventId/legal-documents/:ref",
+    jsonPostCsrf,
+    staffAdminGate,
+    legalDocumentBodyLimit,
+    guardArchivedEvent((c) => handlePutLegalDocument(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/legal-documents/:ref/publish",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePublishLegalDocument(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/legal-documents/:ref/unpublish",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleUnpublishLegalDocument(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/legal-documents/:ref",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteLegalDocument(c, db)),
+  );
+  // Guest registrations of an event, read only (the decisions and the deletion are other routes).
+  // The list shares the attendee search budget: it is the same kind of search over an event's people.
+  // `counts` is registered before `:id`, which would otherwise take it for an id.
+  app.get("/api/admin/events/:eventId/registrations", staffAdminGate, adminAttendeesSearchRateLimit, (c) =>
+    handleListEventRegistrations(c, db),
+  );
+  app.get("/api/admin/events/:eventId/registrations/counts", staffAdminGate, (c) =>
+    handleCountEventRegistrations(c, db),
+  );
+  app.get("/api/admin/events/:eventId/registrations/:id", staffAdminGate, (c) =>
+    handleGetEventRegistration(c, db),
+  );
+  // The deliberate "Show" of the answers to sensitive questions (D-E6): one registration or one attendee at a time, with its
+  // companion. A read that is audited, so a POST behind the cross-site check, with its own budget per user; not behind
+  // guardArchivedEvent, because reading an archived event is allowed. The route checks on its own that the caller manages
+  // the event (an administrator of its organisation or a superadmin, never an operator).
+  app.post(
+    "/api/admin/events/:eventId/registrations/:id/reveal",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminSensitiveRevealRateLimit,
+    (c) => handleRevealRegistrationAnswers(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/reveal-sensitive",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminSensitiveRevealRateLimit,
+    (c) => handleRevealAttendeeAnswers(c, db),
+  );
+  // Decisions on guest registrations: accept, reject, send a failed mail again. One registration is a list of one.
+  // The chain of the bulk attendee routes: CSRF, staff gate, body cap, the shared bulk-mutation budget, and the
+  // archived-event guard (an archived event is read-only: nothing is decided in it).
+  app.post(
+    "/api/admin/events/:eventId/registrations/accept",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    guardArchivedEvent((c) => handleAcceptEventRegistrations(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/registrations/reject",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    guardArchivedEvent((c) => handleRejectEventRegistrations(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/registrations/retry-mail",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    guardArchivedEvent((c) => handleRetryEventRegistrationMails(c, db)),
+  );
+  // The shared password of an event whose way in is the password (111): set or changed with a PUT, switched off with a
+  // DELETE. Write only: no route reads it back. The chain of the other settings of an event, and a small body cap.
+  app.put(
+    "/api/admin/events/:eventId/registration/password",
+    jsonPostCsrf,
+    staffAdminGate,
+    registrationPasswordBodyLimit,
+    guardArchivedEvent((c) => handlePutRegistrationPassword(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/registration/password",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteRegistrationPassword(c, db)),
+  );
+  // The registration settings of an event with the readiness of the event (99a): read by an admin of the event, and saved
+  // with the chain of the other settings of an event and a small body cap. Turning registration on, or changing its way in
+  // or its consents while it is on, waits for the event to be ready; turning it off never does.
+  app.get("/api/admin/events/:eventId/registration/settings", staffAdminGate, (c) =>
+    handleGetEventRegistrationSettings(c, db),
+  );
+  app.put(
+    "/api/admin/events/:eventId/registration/settings",
+    jsonPostCsrf,
+    staffAdminGate,
+    registrationSettingsBodyLimit,
+    guardArchivedEvent((c) => handlePutEventRegistrationSettings(c, db)),
+  );
+  // The event's own address for guests (D-C6, 119a): SUPERADMIN ONLY, on both routes (the handlers check the role themselves; the gate
+  // only proves a staff session). The PUT has the chain of the other settings of an event and a small body cap.
+  app.get("/api/admin/events/:eventId/registration/custom-domain", staffAdminGate, (c) =>
+    handleGetEventCustomDomain(c, db),
+  );
+  app.put(
+    "/api/admin/events/:eventId/registration/custom-domain",
+    jsonPostCsrf,
+    staffAdminGate,
+    customDomainBodyLimit,
+    guardArchivedEvent((c) => handlePutEventCustomDomain(c, db, oidcPublicBaseUrl, () => guestHosts.clear())),
+  );
+  // "Check now" for that address (PR 120): superadmin only (the handler checks), limited per user, because the server makes a real
+  // request to the host a person typed. No body is read. The first success verifies the address, so the memory of the hosts is cleared.
+  app.post(
+    "/api/admin/events/:eventId/registration/custom-domain/check",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminDomainCheckRateLimit,
+    guardArchivedEvent((c) =>
+      handleCheckEventCustomDomain(c, db, {
+        instanceHostname: readInstanceHostname,
+        onChecked: () => guestHosts.clear(),
+        probe: options.domainCheck,
+      }),
+    ),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
@@ -2130,6 +2448,24 @@ export function createApp(options: CreateAppOptions = {}) {
     adminAttendeePatchRateLimit,
     guardArchivedEvent((c) => handlePatchEventAttendee(c, db)),
   );
+  // The guest's companion (D-E5): staff correct their name and answers, or remove them (the seat is free again and the
+  // person's data goes, the copy in the registration included). Behind guardArchivedEvent, which also checks that the
+  // caller manages the event; the attendee's budget of edits is the same as for the attendee's own.
+  app.patch(
+    "/api/admin/events/:eventId/attendees/:id/companion",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminAttendeePatchRateLimit,
+    companionBodyLimit,
+    guardArchivedEvent((c) => handlePatchAttendeeCompanion(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/attendees/:id/companion",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminAttendeePatchRateLimit,
+    guardArchivedEvent((c) => handleDeleteAttendeeCompanion(c, db)),
+  );
   // Erase personal data (anonymise in place, Reports keep their numbers). Not behind
   // guardArchivedEvent: a privacy request is still valid after the event has ended.
   app.post(
@@ -2151,6 +2487,28 @@ export function createApp(options: CreateAppOptions = {}) {
     // The pass of each erased attendee is deleted at the provider after the commit.
     walletActionBulkRateLimitIfWalletConfigured,
     (c) => handleBulkEraseEventAttendees(c, db),
+  );
+  // Delete guest registrations, one by one, by selection or by filter. An accepted registration is an attendee, and
+  // deleting it erases them, so this is an erasure too: not behind guardArchivedEvent (a privacy request is still valid
+  // after the event has ended), the budgets of bulk-erase, and the pass of each erased attendee is deleted at the provider
+  // after the commit. The route checks on its own that the caller manages the event.
+  app.post(
+    "/api/admin/events/:eventId/registrations/delete",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    walletActionBulkRateLimitIfWalletConfigured,
+    (c) => handleDeleteEventRegistrations(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/registrations/delete-by-filter",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    walletActionBulkRateLimitIfWalletConfigured,
+    (c) => handleDeleteEventRegistrationsByFilter(c, db),
   );
   // Remove from event (the hard delete, for mistakes, with a reason from a fixed list). Behind
   // guardArchivedEvent: the numbers of an archived event are final. The pass of each removed attendee
@@ -2455,6 +2813,37 @@ export function createApp(options: CreateAppOptions = {}) {
     adminCommunicationRateLimit,
     guardArchivedEvent((c) =>
       handleTestSendEventTemplateById(c, db, rateLimitStore, mailDeliveryDeps, mailInjectedBaseUrl),
+    ),
+  );
+  // The four registration mails, by name: the same four actions as the ticket template's own routes above, for a mail
+  // that has no row of its own yet (the editor opens the built-in default). Once a mail has a row, the by-id routes
+  // above serve it. Same chains, limits and archive rules as their counterparts.
+  app.get("/api/admin/events/:eventId/system-templates/:name", staffAdminGate, (c) =>
+    handleGetSystemTemplate(c, db),
+  );
+  app.put(
+    "/api/admin/events/:eventId/system-templates/:name",
+    jsonPostCsrf,
+    staffAdminGate,
+    templateBodyLimit,
+    guardArchivedEvent((c) => handlePutSystemTemplate(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/system-templates/:name/preview",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminTemplatePreviewRateLimit,
+    templateBodyLimit,
+    (c) => handlePreviewSystemTemplate(c, db, mailInjectedBaseUrl),
+  );
+  app.post(
+    "/api/admin/events/:eventId/system-templates/:name/test-send",
+    jsonPostCsrf,
+    staffAdminGate,
+    templateTestSendBodyLimit,
+    adminCommunicationRateLimit,
+    guardArchivedEvent((c) =>
+      handleTestSendSystemTemplate(c, db, rateLimitStore, mailDeliveryDeps, mailInjectedBaseUrl),
     ),
   );
   app.post(
@@ -3024,12 +3413,16 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use("/t/*", publicRateLimit);
   app.use("/q/*", publicRateLimit);
   app.use("/m/*", publicRateLimit);
+  // Legal texts of an event, read by a guest before registering. The same per-IP bucket as the
+  // registration form's page: one visitor, one budget for reading.
+  app.use("/legal/*", rateLimit(rateLimitStore, "registration:page"));
 
   // Public static map PNG for tickets / mail {{event_map_url}} - event-scoped, no token
   // (venue coordinates are intended for attendees). Filename is "{eventId}.png".
   app.get("/m/:filename", async (c) => {
     const eventId = parseEventIdFromStaticMapFilename(c.req.param("filename"));
-    if (!eventId) {
+    // On the own address of an event, the map of another event is not there (one address, one event).
+    if (!eventId || isOtherEventOnGuestHost(c, eventId)) {
       return c.body(null, 404);
     }
     // Events list cards request a wider preview; tickets/mail omit the query (default +1).
@@ -3050,6 +3443,80 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.body(new Uint8Array(result.png), 200);
   });
 
+  // The guest registration form of an event (D-C2: the public link, or the password of the event, both with the
+  // Turnstile challenge). Silent until an event turns registration on: an unknown slug, registration off, an archived
+  // event, the company sign-in (118), a password that is not set and an event that is not ready all answer one 404, byte
+  // for byte. Its own budget per visitor (`registration:page`), shared with /legal. POST /r/:slug is 95c.
+  app.get("/r/:slug", rateLimit(rateLimitStore, "registration:page"), (c) =>
+    handleGetRegistrationForm(c, {
+      db,
+      loadTheme: loadOptionalBrandingTheme,
+      serverError: (ctx) => renderPublicHtmlError(ctx, 500),
+    }),
+  );
+  // The same form, sent (95c): the cross-site check, the limiter per IP and the body cap come first, then the route
+  // checks the bot challenge before it writes anything. One answer for every address (D-B14); its order and its
+  // answers are in registration/submit-route.ts. The event is looked up by the rules of the page above, so the
+  // 404 here is the one 404 of the registration routes.
+  app.post(
+    "/r/:slug",
+    ...registrationSubmitGuards(rateLimitStore),
+    (c) =>
+      handlePostRegistration(c, {
+        db,
+        store: rateLimitStore,
+        injectedBaseUrl: mailInjectedBaseUrl,
+        ...options.registrationSubmit,
+      }),
+  );
+
+  // The company sign-in of a guest (118, D-C4): start sends the guest to the identity provider chosen for guests, callback
+  // takes them back and gives them a signed cookie that lets them fill in the form. It creates no account or session of
+  // staff. Both have the budget `registration:sso` per client address; the order and the answers are in
+  // registration/sso-routes.ts. An event that is not open with the company sign-in is the one 404. The callback is ONE
+  // address for the instance, outside `/r/`, so it is entered at the provider once and can never be an event's page.
+  const registrationSso = { db, baseUrl: oidcPublicBaseUrl };
+  app.get("/r/:slug/sso/start", rateLimit(rateLimitStore, "registration:sso"), (c) => handleSsoStart(c, registrationSso));
+  app.get(GUEST_SSO_CALLBACK_PATH, rateLimit(rateLimitStore, "registration:sso"), (c) => handleSsoCallback(c, registrationSso));
+
+  // The link in the confirmation mail of a registration (110, D-C5). The token is the credential: one whose signature does
+  // not match is the one 404 before anything is read. GET shows a page with a button and changes nothing (mail scanners
+  // follow links); POST, the button, confirms. Its own budget per visitor (`registration:confirm`). The order and the
+  // answers are in registration/confirm-route.ts.
+  const registrationConfirm: RegistrationConfirmDeps = {
+    db,
+    loadTheme: loadOptionalBrandingTheme,
+    serverError: (ctx) => renderPublicHtmlError(ctx, 500),
+    ...options.registrationConfirm,
+  };
+  app.get("/r/:slug/confirm/:token", rateLimit(rateLimitStore, "registration:confirm"), (c) =>
+    handleGetConfirmation(c, registrationConfirm),
+  );
+  app.post("/r/:slug/confirm/:token", ...registrationConfirmGuards(rateLimitStore), (c) =>
+    handlePostConfirmation(c, registrationConfirm),
+  );
+
+  // A published legal text. Anything else (no such event, no such text, a draft, a ref that is not
+  // one) is the same 404, byte for byte, so the response does not say which events exist or what
+  // they have written. No cookie is read or set; the headers are the ticket page's zero-script ones.
+  app.get("/legal/:eventSlug/:ref", async (c) => {
+    let page;
+    try {
+      page = await loadPublishedLegalPage(db, c.req.param("eventSlug"), c.req.param("ref"));
+    } catch (err) {
+      console.error("loadPublishedLegalPage failed:", { reason: err instanceof Error ? err.name : "unknown" });
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "legal_page_failed",
+        fields: { route: "/legal/:eventSlug/:ref" },
+      });
+      return renderPublicHtmlError(c, 500);
+    }
+    if (!page) return respondRegistrationNotFound(c);
+    return respondLegalPage(c, page, await loadOptionalBrandingTheme());
+  });
+
   /**
    * Mode A ticket lookup shared by the ticket page and the on-demand wallet routes below - a
    * genuine database error becomes a logged 500 (Response), matching the Mode B agency route's
@@ -3062,7 +3529,9 @@ export function createApp(options: CreateAppOptions = {}) {
     route: string,
   ): Promise<Awaited<ReturnType<typeof resolveTicket>> | Response> {
     try {
-      return await resolveTicket(token, db);
+      const resolved = await resolveTicket(token, db);
+      // On the own address of an event, a ticket of another event is the same 404 as a token that is not one (one address, one event).
+      return resolved && isOtherEventOnGuestHost(c, resolved.event.id) ? null : resolved;
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientInitializationError ||
@@ -3238,7 +3707,7 @@ export function createApp(options: CreateAppOptions = {}) {
       });
       return c.body(null, 500);
     }
-    if (!attendee) {
+    if (!attendee || isOtherEventOnGuestHost(c, attendee.event_id)) {
       return c.body(null, 404);
     }
     try {

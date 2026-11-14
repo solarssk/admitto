@@ -71,7 +71,7 @@ async function attendeesWithPassToDelete(db: PrismaClient, eventId: string, atte
  * entry with ids and counts only (the person asked to be forgotten, so the record of who erased
  * whom must not name them).
  */
-async function recordErasure(
+export async function recordErasure(
   tx: Prisma.TransactionClient,
   c: Context,
   context: {
@@ -102,48 +102,30 @@ async function recordErasure(
   });
 }
 
+/** What the follow-up of an erasure needs of the event: the credentials its wallet passes were made under. */
+export type ErasedEvent = {
+  wallet_template_id: string | null;
+  wallet_api_key_enc: string | null;
+  wallet_field_mapping: Prisma.JsonValue | null;
+};
+
+/** What the follow-up found: how many erased attendees' passes are still to delete, and whose it deleted. */
+export type ErasureFollowUp = { pending: number; removedIds: string[] };
+
 /**
- * Erases the personal data of the given attendees (see eraseAttendees) and then deletes their
- * wallet passes at the provider. Repeating it for attendees that are already erased changes nothing
- * in the database and simply tries the pending wallet deletes again: that is the "try again" of a
- * failed one. Allowed on an archived event (privacy requests do not expire with the event).
- *
- * The audit trail records ids and counts only, never a name or address.
+ * What follows the commit of an erasure, whatever asked for it (the erase routes, and the deletion of an accepted
+ * registration, which erases its attendee): the files that exports and finished imports wrote before it still hold
+ * the person, so they go, and the wallet pass of each person is deleted at the provider. Best effort, and never a
+ * reason to fail an erasure that is committed: what could not be done is reported in the System logs and counted in
+ * the answer.
  */
-async function runErasure(
+export async function finishErasure(
   c: Context,
   db: PrismaClient,
   eventId: string,
-  attendeeIds: string[],
-  mode: "single" | "bulk",
-): Promise<{ body: EraseResponseBody; result: EraseAttendeesResult } | null> {
-  // Access to an event that does not exist is granted to a superadmin all the same, so the event
-  // can be missing here: null, and the caller answers like it does for any event the user cannot see.
-  const event = await db.event.findUnique({
-    where: { id: eventId },
-    select: {
-      organization_id: true,
-      title: true,
-      wallet_template_id: true,
-      wallet_api_key_enc: true,
-      wallet_field_mapping: true,
-    },
-  });
-  if (!event) return null;
-
-  const audit = adminAuditFromContext(c);
-  const actionType = mode === "single" ? "attendee_erased" : "attendees_bulk_erased";
-  const result = await db.$transaction(
-    async (tx) => {
-      const erased = await eraseAttendees(tx, { eventId, attendeeIds });
-      if (erased.erasedIds.length > 0) {
-        await recordErasure(tx, c, { eventId, event, audit, actionType, mode, erased });
-      }
-      return erased;
-    },
-    { timeout: ERASE_TRANSACTION_TIMEOUT_MS },
-  );
-
+  event: ErasedEvent,
+  result: EraseAttendeesResult,
+): Promise<ErasureFollowUp> {
   // The files that exports and finished imports wrote before the erasure still hold the person: they go too
   // (nothing for an erasure that erased nobody new).
   if (result.erasedIds.length > 0) await purgeEventJobFilesBestEffort(db, eventId, result.jobIdsWithFiles);
@@ -191,8 +173,53 @@ async function runErasure(
   // could not be deleted, no provider is configured, or the call threw.
   const toDeleteAfter = await attendeesWithPassToDelete(db, eventId, touchedIds);
   const stillToDelete = new Set(toDeleteAfter);
-  const walletRemovedIds = [...new Set(toDeleteBefore)].filter((id) => !stillToDelete.has(id));
+  const removedIds = [...new Set(toDeleteBefore)].filter((id) => !stillToDelete.has(id));
+  return { pending: toDeleteAfter.length, removedIds };
+}
 
+/**
+ * Erases the personal data of the given attendees (see eraseAttendees) and then deletes their
+ * wallet passes at the provider. Repeating it for attendees that are already erased changes nothing
+ * in the database and simply tries the pending wallet deletes again: that is the "try again" of a
+ * failed one. Allowed on an archived event (privacy requests do not expire with the event).
+ *
+ * The audit trail records ids and counts only, never a name or address.
+ */
+async function runErasure(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  attendeeIds: string[],
+  mode: "single" | "bulk",
+): Promise<{ body: EraseResponseBody; result: EraseAttendeesResult } | null> {
+  // Access to an event that does not exist is granted to a superadmin all the same, so the event
+  // can be missing here: null, and the caller answers like it does for any event the user cannot see.
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: {
+      organization_id: true,
+      title: true,
+      wallet_template_id: true,
+      wallet_api_key_enc: true,
+      wallet_field_mapping: true,
+    },
+  });
+  if (!event) return null;
+
+  const audit = adminAuditFromContext(c);
+  const actionType = mode === "single" ? "attendee_erased" : "attendees_bulk_erased";
+  const result = await db.$transaction(
+    async (tx) => {
+      const erased = await eraseAttendees(tx, { eventId, attendeeIds });
+      if (erased.erasedIds.length > 0) {
+        await recordErasure(tx, c, { eventId, event, audit, actionType, mode, erased });
+      }
+      return erased;
+    },
+    { timeout: ERASE_TRANSACTION_TIMEOUT_MS },
+  );
+
+  const followUp = await finishErasure(c, db, eventId, event, result);
   if (result.erasedIds.length > 0) publishActivityChanged(eventId);
   c.header("Cache-Control", "no-store");
   return {
@@ -201,8 +228,8 @@ async function runErasure(
       erased: result.erasedIds.length,
       already_erased: result.alreadyErasedIds.length,
       not_found: result.notFoundIds.length,
-      wallet_pending: toDeleteAfter.length,
-      wallet_removed_ids: walletRemovedIds,
+      wallet_pending: followUp.pending,
+      wallet_removed_ids: followUp.removedIds,
     },
   };
 }

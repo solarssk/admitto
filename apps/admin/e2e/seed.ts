@@ -13,8 +13,10 @@
 import { writeFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { prisma } from "@admitto/db";
+import { Prisma, prisma } from "@admitto/db";
 import { bootstrapSuperadmin, createUser, findUserByEmail, resetUserMfa } from "@admitto/auth";
+import { SECRET_CONTEXTS, encryptToString, signRegistrationConfirm } from "@admitto/crypto";
+import { SUGGESTED_EVENT_FIELDS } from "@admitto/shared";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -29,6 +31,10 @@ export const E2E_OPERATOR_PASSWORD = "E2eCheckinSmoke!2026";
 export const E2E_ADMIN_EMAIL = "e2e.admin@example.com";
 // Same disposable-database-only fixture-password convention as the operator's above.
 export const E2E_ADMIN_PASSWORD = "E2eAdminSmoke!2026";
+export const E2E_REGISTRATION_EVENT_SLUG = "e2e-registration-form-event";
+// Cloudflare's published test site key and its always-passing secret: public values, and only ever used here.
+const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
+const TURNSTILE_TEST_SECRET = "1x0000000000000000000000000000000AA";
 
 export interface SeedResult {
   organizationId: string;
@@ -41,6 +47,109 @@ export interface SeedResult {
   operatorPassword: string;
   adminEmail: string;
   adminPassword: string;
+  registrationSlug: string;
+  /** The path of the link in a confirmation mail, for a registration that waits for its address. */
+  registrationConfirmPath: string;
+}
+
+/**
+ * An event whose guest form is open (`/r/<slug>`), for the accessibility scan of the public pages: the way in is the public link,
+ * the bot protection has Cloudflare's test keys, the legal texts are published, the questions are the suggested set (a conditional
+ * question, a single choice, a date and time) and one about a companion, and one registration waits for its address (the page its
+ * confirmation link opens). Idempotent, like the rest of the seed.
+ */
+async function seedRegistrationForm(organizationId: string): Promise<{ slug: string; confirmPath: string }> {
+  const event = await prisma.event.upsert({
+    where: { slug: E2E_REGISTRATION_EVENT_SLUG },
+    update: { archived_at: null },
+    create: {
+      title: "E2E Registration Form Event",
+      slug: E2E_REGISTRATION_EVENT_SLUG,
+      date: new Date("2099-09-01T10:00:00Z"),
+      organization_id: organizationId,
+    },
+  });
+  const settings = {
+    mode: "automatic",
+    access_methods: ["link"],
+    verify_email: true,
+    max_companions: 1,
+    ask_company: true,
+    consent_keys: ["photos"],
+  };
+  await prisma.eventRegistrationSettings.upsert({
+    where: { event_id: event.id },
+    update: settings,
+    create: { event_id: event.id, ...settings },
+  });
+  const published = new Date("2026-10-20T10:00:00Z");
+  const texts = [
+    { kind: "privacy_notice", key: "", title: "Privacy notice" },
+    { kind: "event_terms", key: "", title: "Event terms" },
+    { kind: "consent", key: "photos", title: "Photos at the event" },
+  ];
+  for (const text of texts) {
+    const content_html = `<p>${text.title} of a synthetic event.</p>`;
+    await prisma.legalDocument.upsert({
+      where: { event_id_kind_key: { event_id: event.id, kind: text.kind, key: text.key } },
+      update: { published_at: published },
+      create: { event_id: event.id, ...text, content_html, published_at: published },
+    });
+  }
+  const fields = [
+    ...SUGGESTED_EVENT_FIELDS.map((field) => ({ ...field, applies_to: "guest" })),
+    { source_field: "badge", label: "Badge name", type: "text", applies_to: "companion", required: true },
+  ];
+  for (const [index, field] of fields.entries()) {
+    const data = {
+      label: field.label,
+      description: "description" in field ? (field.description ?? null) : null,
+      type: field.type,
+      options: "options" in field && field.options ? [...field.options] : Prisma.DbNull,
+      rules: "rules" in field && field.rules ? (field.rules as Prisma.InputJsonValue) : Prisma.DbNull,
+      required: "required" in field ? field.required : false,
+      sensitive: "sensitive" in field ? field.sensitive : false,
+      applies_to: field.applies_to,
+      show_on_form: true,
+      display_order: index,
+    };
+    await prisma.eventCustomField.upsert({
+      where: { event_id_source_field: { event_id: event.id, source_field: field.source_field } },
+      update: data,
+      create: { event_id: event.id, source_field: field.source_field, ...data },
+    });
+  }
+  // The keys sit in system settings, one set for the instance; the secret is encrypted as the settings screen saves it.
+  const system = [
+    { key: "registration_access_methods", value_json: JSON.stringify(["link"]) },
+    {
+      key: "registration_turnstile",
+      value_json: JSON.stringify({
+        siteKey: TURNSTILE_TEST_SITE_KEY,
+        secretEnc: encryptToString(TURNSTILE_TEST_SECRET, SECRET_CONTEXTS.turnstileSecret),
+      }),
+    },
+  ];
+  for (const row of system) {
+    await prisma.systemSettings.upsert({ where: { key: row.key }, update: row, create: row });
+  }
+  const waiting = await prisma.registration.upsert({
+    where: { event_id_email: { event_id: event.id, email: "e2e.waiting@example.com" } },
+    update: { status: "awaiting_email", confirm_expires_at: new Date(Date.now() + 86_400_000) },
+    create: {
+      event_id: event.id,
+      email: "e2e.waiting@example.com",
+      first_name: "Wanda",
+      last_name: "Waiting",
+      name: "Wanda Waiting",
+      status: "awaiting_email",
+      confirm_expires_at: new Date(Date.now() + 86_400_000),
+    },
+  });
+  return {
+    slug: event.slug,
+    confirmPath: `/r/${event.slug}/confirm/${waiting.id}.${signRegistrationConfirm(waiting.id)}`,
+  };
 }
 
 export async function seedCheckinE2eData(): Promise<SeedResult> {
@@ -146,6 +255,8 @@ export async function seedCheckinE2eData(): Promise<SeedResult> {
     await bootstrapSuperadmin(prisma, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD);
   }
 
+  const registration = await seedRegistrationForm(org.id);
+
   return {
     organizationId: org.id,
     eventId: event.id,
@@ -157,6 +268,8 @@ export async function seedCheckinE2eData(): Promise<SeedResult> {
     operatorPassword: E2E_OPERATOR_PASSWORD,
     adminEmail: E2E_ADMIN_EMAIL,
     adminPassword: E2E_ADMIN_PASSWORD,
+    registrationSlug: registration.slug,
+    registrationConfirmPath: registration.confirmPath,
   };
 }
 
