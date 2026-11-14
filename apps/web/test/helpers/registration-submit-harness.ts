@@ -9,6 +9,7 @@ import { vi } from "vitest";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { createApp, type CreateAppOptions } from "../../src/app.js";
 import { setEnabledAccessMethods, ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
+import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
 import { patchTurnstileSettings, TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import type { GuestHostCacheOptions } from "../../src/guest-host/guest-host.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
@@ -91,6 +92,8 @@ export function eventSeeder(prisma: PrismaClient, orgId: string) {
   }
 
   async function setSystemKeys(on: boolean): Promise<void> {
+    // Either way the mode of the bot check goes back to its default, "required".
+    await prisma.systemSettings.deleteMany({ where: { key: BOT_PROTECTION_SETTINGS_KEY } });
     if (on) {
       await patchTurnstileSettings(prisma, { siteKey: SITE_KEY, secretKey: "secret-key-for-tests" });
       await setEnabledAccessMethods(prisma, ["link", "password"]);

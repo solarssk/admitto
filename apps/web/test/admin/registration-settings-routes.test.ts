@@ -30,6 +30,7 @@ import {
 } from "../../src/admin/registration-settings-routes.js";
 import { readRedirectUris } from "../../src/admin/registration-settings-routes.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
+import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
 import { SSO_PROVIDER_SETTINGS_KEY } from "../../src/registration/sso-provider.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { memorySystemSettings } from "../helpers/memory-system-settings.js";
@@ -102,6 +103,7 @@ describe("who may call the registration settings routes", () => {
   const requests: Array<[string, string, unknown]> = [
     ["GET", "/turnstile", undefined],
     ["PUT", "/turnstile", { site_key: SITE_KEY }],
+    ["PUT", "/turnstile", { bot_protection: "not_used" }],
     ["DELETE", "/turnstile", undefined],
     ["GET", "/access-methods", undefined],
     ["PUT", "/access-methods", { methods: ["link"] }],
@@ -130,7 +132,7 @@ describe("Turnstile keys", () => {
   it("starts empty", async () => {
     const res = await makeApp(memoryDb().db).request("/turnstile");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete" });
+    expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete", bot_protection: "required" });
   });
 
   it("saves both keys, answers without the secret and keeps the secret only as ciphertext", async () => {
@@ -138,7 +140,7 @@ describe("Turnstile keys", () => {
     const res = await sendJson(makeApp(db), "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(JSON.parse(text)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready" });
+    expect(JSON.parse(text)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready", bot_protection: "required" });
     expect(text).not.toContain(SECRET);
 
     const stored = rows().get(TURNSTILE_SETTINGS_KEY)!;
@@ -148,7 +150,7 @@ describe("Turnstile keys", () => {
 
     const get = await makeApp(db).request("/turnstile");
     const getText = await get.text();
-    expect(JSON.parse(getText)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready" });
+    expect(JSON.parse(getText)).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready", bot_protection: "required" });
     expect(getText).not.toContain(SECRET);
   });
 
@@ -173,7 +175,7 @@ describe("Turnstile keys", () => {
     const app = makeApp(db);
     await sendJson(app, "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
     const res = await sendJson(app, "PUT", "/turnstile", { site_key: "0x4AAAAAAAnewSite" });
-    expect(await res.json()).toEqual({ site_key: "0x4AAAAAAAnewSite", secret_set: true, status: "ready" });
+    expect(await res.json()).toEqual({ site_key: "0x4AAAAAAAnewSite", secret_set: true, status: "ready", bot_protection: "required" });
     expect(writeAdminAuditLog.mock.calls[1]![1]).toMatchObject({ metadata: { site_key: "set", secret_key: "unchanged" } });
   });
 
@@ -182,14 +184,14 @@ describe("Turnstile keys", () => {
     const app = makeApp(db);
     await sendJson(app, "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
     const res = await sendJson(app, "PUT", "/turnstile", { secret_key: null });
-    expect(await res.json()).toEqual({ site_key: SITE_KEY, secret_set: false, status: "incomplete" });
+    expect(await res.json()).toEqual({ site_key: SITE_KEY, secret_set: false, status: "incomplete", bot_protection: "required" });
     expect(writeAdminAuditLog.mock.calls[1]![1]).toMatchObject({ metadata: { site_key: "unchanged", secret_key: "cleared" } });
   });
 
   it("trims a pasted key", async () => {
     const { db } = memoryDb();
     const res = await sendJson(makeApp(db), "PUT", "/turnstile", { site_key: `  ${SITE_KEY}\n`, secret_key: ` ${SECRET} ` });
-    expect(await res.json()).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready" });
+    expect(await res.json()).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready", bot_protection: "required" });
   });
 
   it("takes the settings lock before it writes the keys, and before it removes them", async () => {
@@ -218,14 +220,98 @@ describe("Turnstile keys", () => {
     await sendJson(app, "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
     const res = await app.request("/turnstile", { method: "DELETE" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete" });
+    expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete", bot_protection: "required" });
     expect(rows().has(TURNSTILE_SETTINGS_KEY)).toBe(false);
     expect(writeAdminAuditLog.mock.calls.at(-1)![1]).toMatchObject({ actionType: "registration_turnstile_cleared" });
+  });
+
+  describe("the mode of the bot check (A2)", () => {
+    const modeAudits = () => writeAdminAuditLog.mock.calls.filter((call) => call[1]["actionType"] === "registration_bot_protection_updated");
+
+    it("is required until a superadmin decides, and the answer says so", async () => {
+      const res = await makeApp(memoryDb().db).request("/turnstile");
+      expect(await res.json()).toMatchObject({ bot_protection: "required" });
+    });
+
+    it("is changed alone, with no key in the request, and audited as its own entry with the two modes and nothing else", async () => {
+      const { db, rows } = memoryDb();
+      const res = await sendJson(makeApp(db), "PUT", "/turnstile", { bot_protection: "not_used" });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete", bot_protection: "not_used" });
+      expect(rows().get(BOT_PROTECTION_SETTINGS_KEY)).toBe('"not_used"');
+      // The keys were not touched: no row of theirs, and no entry about them.
+      expect(rows().has(TURNSTILE_SETTINGS_KEY)).toBe(false);
+      expect(writeAdminAuditLog).toHaveBeenCalledTimes(1);
+      expect(writeAdminAuditLog.mock.calls[0]![1]).toMatchObject({
+        organizationId: "org-instance",
+        actionType: "registration_bot_protection_updated",
+        metadata: { mode: "not_used", previous_mode: "required" },
+      });
+    });
+
+    it("is changed back the same way, and the entry names where it came from", async () => {
+      const { db } = memoryDb();
+      const app = makeApp(db);
+      await sendJson(app, "PUT", "/turnstile", { bot_protection: "not_used" });
+      const res = await sendJson(app, "PUT", "/turnstile", { bot_protection: "required" });
+
+      expect(await res.json()).toMatchObject({ bot_protection: "required" });
+      expect(modeAudits().map((call) => call[1]["metadata"])).toEqual([
+        { mode: "not_used", previous_mode: "required" },
+        { mode: "required", previous_mode: "not_used" },
+      ]);
+    });
+
+    it("writes nothing and audits nothing when the mode is the one it is", async () => {
+      const { db, rows, systemSettings } = memoryDb();
+      const res = await sendJson(makeApp(db), "PUT", "/turnstile", { bot_protection: "required" });
+
+      expect(res.status).toBe(200);
+      expect(systemSettings.upsert).not.toHaveBeenCalled();
+      expect(rows().size).toBe(0);
+      expect(writeAdminAuditLog).not.toHaveBeenCalled();
+    });
+
+    it("is saved with the keys in one request, as two entries, the keys' first", async () => {
+      const { db } = memoryDb();
+      const res = await sendJson(makeApp(db), "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET, bot_protection: "not_used" });
+
+      expect(await res.json()).toEqual({ site_key: SITE_KEY, secret_set: true, status: "ready", bot_protection: "not_used" });
+      expect(writeAdminAuditLog.mock.calls.map((call) => call[1]["actionType"])).toEqual([
+        "registration_turnstile_updated",
+        "registration_bot_protection_updated",
+      ]);
+    });
+
+    it("is kept when the keys are removed: the two settings are separate", async () => {
+      const { db, rows } = memoryDb();
+      const app = makeApp(db);
+      await sendJson(app, "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET, bot_protection: "not_used" });
+      const res = await app.request("/turnstile", { method: "DELETE" });
+
+      expect(await res.json()).toEqual({ site_key: null, secret_set: false, status: "incomplete", bot_protection: "not_used" });
+      expect(rows().get(BOT_PROTECTION_SETTINGS_KEY)).toBe('"not_used"');
+    });
+
+    it("rolls back with the keys' audit entry when the entry of the mode cannot be written", async () => {
+      const { db, rows } = memoryDb();
+      writeAdminAuditLog.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("audit down"));
+      const res = await sendJson(makeApp(db), "PUT", "/turnstile", { site_key: SITE_KEY, bot_protection: "not_used" });
+
+      expect(res.status).toBe(500);
+      expect(rows().has(BOT_PROTECTION_SETTINGS_KEY)).toBe(false);
+      expect(rows().has(TURNSTILE_SETTINGS_KEY)).toBe(false);
+    });
   });
 
   describe("refuses a bad request without writing or auditing anything", () => {
     const bad: Array<[string, unknown, string[]]> = [
       ["no field at all", {}, []],
+      ["a mode that is not one", { bot_protection: "off" }, ["bot_protection"]],
+      ["a mode with other letters", { bot_protection: "Not_Used" }, ["bot_protection"]],
+      ["a mode that is a boolean", { bot_protection: false }, ["bot_protection"]],
+      ["a mode that is null", { bot_protection: null }, ["bot_protection"]],
       ["an unknown field", { site_key: SITE_KEY, remote_ip: "1.2.3.4" }, []],
       ["a site key with markup", { site_key: '"><script>alert(1)</script>' }, ["site_key"]],
       ["an empty site key", { site_key: "" }, ["site_key"]],

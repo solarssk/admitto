@@ -12,7 +12,8 @@
  *    an archived event, an event that is over, a form that is not ready, all answer the one 404 of the registration
  *    routes, byte for byte. The page and this route decide from one read, so a form that is not shown cannot be sent,
  *    and a request tells a stranger no more about an event than the page does.
- * 4. The Cloudflare Turnstile token is checked (it is single use: the page asks for a new one after every answer).
+ * 4. The Cloudflare Turnstile token is checked (it is single use: the page asks for a new one after every answer). With bot
+ *    protection "not used" this step is empty, the token is not read, and no call is made to Cloudflare.
  * 5. The per-event ceiling, keyed by event id: only now, so a stranger without a token cannot spend it.
  * 6. The event is looked up once more. The challenge is a call over the network, and an administrator may have closed the
  *    form meanwhile (a text unpublished, the keys removed, the way in switched off) or changed its questions: a form that
@@ -21,7 +22,9 @@
  * 7. An event whose way in is the password (D-C3): the tries at it are counted, the client address's budget first and then
  *    the event's, and the password is checked, all before anything that depends on the address or on a field. The
  *    count comes after the challenge, so a bot that has no token spends nothing of the budget of a company behind one
- *    address, and the client's budget comes first, so a client that is out of tries cannot spend the event's. A password
+ *    address, and the client's budget comes first, so a client that is out of tries cannot spend the event's. With bot protection
+ *    "not used" the budgets are the stricter `registration:password-unchecked` and `registration:password-event-unchecked`, and
+ *    a stranger can spend them, since there is no token to hold back. A password
  *    that is wrong, missing, not a text or too long is the one `403 access_denied`, and an event whose way in is the link
  *    ignores a password it is sent, with no error and no line in a log.
  * 8. The fields are judged (422 with a fixed sentence for each) and the terms must be accepted. So are the companions the guest
@@ -316,11 +319,13 @@ async function refusePassword(
   hold: () => Promise<void>,
 ): Promise<Response | null> {
   if (open.access.method !== "password") return null;
-  if (!(await checkRegistrationPasswordRateLimit(deps.store, c))) {
+  // Without the bot check the two budgets are the stricter ones: the count of tries is then the only barrier against guessing.
+  const botProtection = open.form.needsChallenge ? "required" : "not_used";
+  if (!(await checkRegistrationPasswordRateLimit(deps.store, c, botProtection))) {
     notePasswordTriesRefused(open.eventId, "client");
     return tooManyRequests(c);
   }
-  if (!(await checkRegistrationPasswordEventRateLimit(deps.store, open.eventId))) {
+  if (!(await checkRegistrationPasswordEventRateLimit(deps.store, open.eventId, botProtection))) {
     notePasswordTriesRefused(open.eventId, "event");
     return tooManyRequests(c);
   }
@@ -347,6 +352,12 @@ async function admitByChallenge(
   pace: AnswerPace,
 ): Promise<Admitted | Response> {
   const slug = target.form.event.slug;
+  // Bot protection "not used": no token, no call to Cloudflare, so no second look either; the counts are the stricter ones.
+  if (!target.form.needsChallenge) {
+    const startedAt = pace.now();
+    if (!(await checkRegistrationEventRateLimit(deps.store, target.eventId, "not_used"))) return tooManyRequests(c);
+    return { open: target, startedAt, identity: null };
+  }
   const refusal = await refuseChallenge(c, deps, slug, envelope.challenge, target.guestDomain);
   if (refusal) return refusal;
   const startedAt = pace.now();

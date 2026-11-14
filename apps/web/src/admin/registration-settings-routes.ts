@@ -1,5 +1,5 @@
 /**
- * Instance settings of guest registration: the Cloudflare Turnstile keys, the access methods
+ * Instance settings of guest registration: the Cloudflare Turnstile keys, whether the form has a bot check at all, the access methods
  * (public link, event password, SSO) the organisation makes available (D-C1, D-C2, D-A6) and the identity provider guests
  * sign in with when an event uses the company sign-in (D-C4).
  *
@@ -12,7 +12,7 @@ import type { Context } from "hono";
 import { z } from "zod";
 import { Prisma, REGISTRATION_ACCESS_METHOD, type PrismaClient } from "@admitto/db";
 import { findOidcProviderById } from "@admitto/auth";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { writeAdminAuditLog, type StaffActor } from "@admitto/tickets";
 import { requireAuditActor, requireSuperadmin } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import {
@@ -29,6 +29,12 @@ import {
   type GuestSsoProviderState,
 } from "../registration/sso-provider.js";
 import {
+  BOT_PROTECTION_MODES,
+  getBotProtectionMode,
+  setBotProtectionMode,
+  type BotProtectionMode,
+} from "../registration/bot-protection-mode.js";
+import {
   clearTurnstileSettings,
   describeTurnstileSettings,
   isValidTurnstileSecretKey,
@@ -37,21 +43,22 @@ import {
   type TurnstileSettingsPublic,
 } from "../registration/turnstile-settings.js";
 
-/** `null` clears the key, a string sets it, leaving it out keeps it. At least one must be present. */
+/** `null` clears the key, a string sets it, leaving it out keeps it; `bot_protection` is the mode of the check (A2). At least one must be present. */
 const turnstilePutSchema = z
   .object({
     site_key: z.string().trim().refine(isValidTurnstileSiteKey).nullable().optional(),
     secret_key: z.string().trim().refine(isValidTurnstileSecretKey).nullable().optional(),
+    bot_protection: z.enum(BOT_PROTECTION_MODES).optional(),
   })
   .strict()
-  .refine((body) => body.site_key !== undefined || body.secret_key !== undefined);
+  .refine((body) => body.site_key !== undefined || body.secret_key !== undefined || body.bot_protection !== undefined);
 
 const accessMethodsPutSchema = z
   .object({ methods: z.array(z.enum(REGISTRATION_ACCESS_METHOD)).max(REGISTRATION_ACCESS_METHOD.length) })
   .strict();
 
-function serializeTurnstile(settings: TurnstileSettingsPublic) {
-  return { site_key: settings.siteKey, secret_set: settings.secretSet, status: settings.state };
+function serializeTurnstile(settings: TurnstileSettingsPublic, botProtection: BotProtectionMode) {
+  return { site_key: settings.siteKey, secret_set: settings.secretSet, status: settings.state, bot_protection: botProtection };
 }
 
 const ssoProviderPutSchema = z.object({ provider_id: z.string().trim().min(1).max(128).nullable() }).strict();
@@ -166,14 +173,43 @@ function keyChange(value: string | null | undefined): KeyChange {
   return value === null ? "cleared" : "set";
 }
 
+/** The answer of the Turnstile routes: the keys as they stand and the mode of the check, read in the same place. */
+async function readTurnstileAnswer(db: PrismaClient | Prisma.TransactionClient) {
+  return serializeTurnstile(await describeTurnstileSettings(db), await getBotProtectionMode(db));
+}
+
+/** Saves the mode of the bot check and records the change, when it is one. Inside the transaction of the save. */
+async function saveBotProtectionMode(
+  tx: Prisma.TransactionClient,
+  mode: BotProtectionMode,
+  who: { organizationId: string; actor: StaffActor },
+): Promise<void> {
+  const previous = await getBotProtectionMode(tx);
+  if (previous === mode) return;
+  await setBotProtectionMode(tx, mode);
+  await writeAdminAuditLog(tx, {
+    organizationId: who.organizationId,
+    actorUserId: who.actor.operator,
+    sessionId: who.actor.sessionId,
+    ip: who.actor.ip,
+    timezone: who.actor.timezone,
+    actionType: "registration_bot_protection_updated",
+    // The two modes, nothing else: they are fixed words.
+    metadata: { mode, previous_mode: previous },
+  });
+}
+
 /** GET /api/admin/registration/turnstile */
 export async function handleGetRegistrationTurnstile(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
-  return c.json(serializeTurnstile(await describeTurnstileSettings(db)));
+  return c.json(await readTurnstileAnswer(db));
 }
 
-/** PUT /api/admin/registration/turnstile - site key and/or secret key. The answer never carries the secret. */
+/**
+ * PUT /api/admin/registration/turnstile - site key and/or secret key, and/or `bot_protection` (`required` or `not_used`: whether
+ * the form has a bot check at all). The answer never carries the secret. A change of the mode is its own audit entry.
+ */
 export async function handlePutRegistrationTurnstile(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
@@ -182,29 +218,32 @@ export async function handlePutRegistrationTurnstile(c: Context, db: PrismaClien
 
   const parsed = await parseBody(c, turnstilePutSchema);
   if (parsed.response) return parsed.response;
-  const { site_key: siteKey, secret_key: secretKey } = parsed.data;
+  const { site_key: siteKey, secret_key: secretKey, bot_protection: mode } = parsed.data;
   const organizationId = await resolveInstanceOrganizationId(db, process.env);
 
   // The write and its audit row commit together, so a changed secret never goes unrecorded.
-  const settings = await db.$transaction(async (tx) => {
+  const answer = await db.$transaction(async (tx) => {
     await lockTurnstileSettings(tx);
-    const result = await patchTurnstileSettings(tx, { siteKey, secretKey });
-    await writeAdminAuditLog(tx, {
-      organizationId,
-      actorUserId: actor.operator,
-      sessionId: actor.sessionId,
-      ip: actor.ip,
-      timezone: actor.timezone,
-      actionType: "registration_turnstile_updated",
-      // Field names and what happened to each, never a value.
-      metadata: { site_key: keyChange(siteKey), secret_key: keyChange(secretKey) },
-    });
-    return result;
+    if (siteKey !== undefined || secretKey !== undefined) {
+      await patchTurnstileSettings(tx, { siteKey, secretKey });
+      await writeAdminAuditLog(tx, {
+        organizationId,
+        actorUserId: actor.operator,
+        sessionId: actor.sessionId,
+        ip: actor.ip,
+        timezone: actor.timezone,
+        actionType: "registration_turnstile_updated",
+        // Field names and what happened to each, never a value.
+        metadata: { site_key: keyChange(siteKey), secret_key: keyChange(secretKey) },
+      });
+    }
+    if (mode !== undefined) await saveBotProtectionMode(tx, mode, { organizationId, actor });
+    return readTurnstileAnswer(tx);
   });
-  return c.json(serializeTurnstile(settings));
+  return c.json(answer);
 }
 
-/** DELETE /api/admin/registration/turnstile - removes both keys, which closes the form. */
+/** DELETE /api/admin/registration/turnstile - removes both keys, which closes the form (unless bot protection is "not used"). */
 export async function handleDeleteRegistrationTurnstile(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
@@ -212,7 +251,7 @@ export async function handleDeleteRegistrationTurnstile(c: Context, db: PrismaCl
   if (actor instanceof Response) return actor;
 
   const organizationId = await resolveInstanceOrganizationId(db, process.env);
-  const settings = await db.$transaction(async (tx) => {
+  const answer = await db.$transaction(async (tx) => {
     await lockTurnstileSettings(tx);
     await clearTurnstileSettings(tx);
     await writeAdminAuditLog(tx, {
@@ -223,9 +262,9 @@ export async function handleDeleteRegistrationTurnstile(c: Context, db: PrismaCl
       timezone: actor.timezone,
       actionType: "registration_turnstile_cleared",
     });
-    return describeTurnstileSettings(tx);
+    return readTurnstileAnswer(tx);
   });
-  return c.json(serializeTurnstile(settings));
+  return c.json(answer);
 }
 
 /** GET /api/admin/registration/access-methods */

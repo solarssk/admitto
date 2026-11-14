@@ -63,6 +63,7 @@ const EXPECTED_POLICIES: Record<
   "registration:confirm": { windowMs: [60_000], max: [120], checks: 1 },
   "registration:sso": { windowMs: [60_000], max: [240], checks: 1 },
   "registration:password": { windowMs: [900_000], max: [30], checks: 1 },
+  "registration:password-unchecked": { windowMs: [900_000], max: [10], checks: 1 },
 };
 
 /** Inline helpers — not passable to rateLimit(); limits only. */
@@ -79,7 +80,9 @@ const EXPECTED_INLINE_LIMITS: Record<keyof typeof INLINE_RATE_LIMITS, { windowMs
     "mail:test-recipient": { windowMs: 3_600_000, max: 5 },
     "wallet:webhook-event": { windowMs: 60_000, max: 120 },
     "registration:event": { windowMs: 60_000, max: 600 },
+    "registration:event-unchecked": { windowMs: 60_000, max: 60 },
     "registration:password-event": { windowMs: 60_000, max: 120 },
+    "registration:password-event-unchecked": { windowMs: 60_000, max: 20 },
     "registration:mail-recipient": { windowMs: 86_400_000, max: 3 },
     "registration:mail-event": { windowMs: 86_400_000, max: 1000 },
   };

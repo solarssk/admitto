@@ -1284,6 +1284,34 @@ describe("AuditLogPanel rendering", () => {
     expect(screen.getByRole("button", { name: "Guest registration access methods updated" })).toBeTruthy();
   });
 
+  it("names a change to bot protection, shows the two modes in Details, and offers it in the Action filter", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          id: "audit-bot-off",
+          action_type: "registration_bot_protection_updated",
+          metadata: { mode: "not_used", previous_mode: "required" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    const label = within(table).getByText("Guest registration bot protection updated");
+    expect(label.className).toContain("at-badge--neutral");
+    const row = within(table).getAllByRole("row")[1]!;
+    fireEvent.click(within(row).getByText("View"));
+    expect(within(row).getByText("not_used")).toBeTruthy();
+    expect(within(row).getByText("required")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    expect(screen.getByRole("button", { name: "Guest registration bot protection updated" })).toBeTruthy();
+  });
+
   it("names a change to the registration settings of an event, shows in Details what changed and to what, and offers it in the Action filter", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [
