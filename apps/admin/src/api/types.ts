@@ -1681,6 +1681,8 @@ export interface RegistrationSettingsDto {
   access_methods: RegistrationAccessMethod[];
   /** The ways in a superadmin has turned on for the organisation, the only ones an event can choose. */
   enabled_access_methods: RegistrationAccessMethod[];
+  /** `not_used` when a superadmin switched the bot check off for the organisation, so the link and password forms have none. */
+  bot_protection: "required" | "not_used";
   waitlist_enabled: boolean;
   verify_email: boolean;
   max_companions: number;

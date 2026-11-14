@@ -142,9 +142,26 @@ describe("the ways in a superadmin has not turned on", () => {
     fireEvent.click(radio("Link"));
     expect([notice().length, notice()[0]?.textContent]).toEqual([1, "Anyone who has the link can ask to join. A bot check protects the form."]);
     fireEvent.click(radio("Password"));
-    expect([notice().length, notice()[0]?.textContent]).toEqual([1, "Guests need the link and the event password to open the form. A bot check protects it."]);
+    expect([notice().length, notice()[0]?.textContent]).toEqual([1, "Guests need the link and the event password to open the form. A bot check protects the form."]);
     fireEvent.click(radio("Company SSO"));
     expect([notice().length, notice()[0]?.textContent]).toEqual([1, "Guests sign in with the company account. Their email comes from that sign-in."]);
+  });
+
+  it.each([
+    ["link", "Anyone who has the link can ask to join."],
+    ["password", "Guests need the link and the event password to open the form."],
+  ] as const)("says nothing of a bot check for %s when a superadmin switched it off, and says it when it is on", async (way, sentence) => {
+    await renderLoaded(settings({ access_methods: [way], bot_protection: "not_used" }));
+    expect(wayInCard().querySelector(".at-notice")?.textContent).toBe(sentence);
+    cleanup();
+
+    await renderLoaded(settings({ access_methods: [way], bot_protection: "required" }));
+    expect(wayInCard().querySelector(".at-notice")?.textContent).toBe(`${sentence} A bot check protects the form.`);
+  });
+
+  it("does not mention a bot check for the company SSO in either state", async () => {
+    await renderLoaded(settings({ access_methods: ["sso"], bot_protection: "not_used" }));
+    expect(wayInCard().querySelector(".at-notice")?.textContent).toBe("Guests sign in with the company account. Their email comes from that sign-in.");
   });
 
   it("is free of axe violations with a greyed way", async () => {

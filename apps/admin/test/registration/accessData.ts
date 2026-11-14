@@ -36,6 +36,7 @@ export function settings(overrides: Partial<RegistrationSettingsDto> = {}): Regi
     mode: null,
     access_methods: ["link"],
     enabled_access_methods: ["link", "password", "sso"],
+    bot_protection: "required",
     waitlist_enabled: true,
     verify_email: true,
     max_companions: 0,

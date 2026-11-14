@@ -108,6 +108,7 @@ export function RegistrationAccessForm({
         claimErrors={errors}
         passwordSet={server.password_set}
         enabledMethods={server.enabled_access_methods}
+        botCheck={server.bot_protection !== "not_used"}
         isSuperadmin={superadmin}
         disabled={archived || saving}
         onMethodChange={(method) => form.edit({ method })}

@@ -253,7 +253,7 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(screen.queryByText("Event password")).toBeNull();
 
     fireEvent.click(radio("Password"));
-    expect(screen.getByText("Guests need the link and the event password to open the form. A bot check protects it.")).toBeTruthy();
+    expect(screen.getByText("Guests need the link and the event password to open the form. A bot check protects the form.")).toBeTruthy();
     expect(screen.getByText("Event password")).toBeTruthy();
   });
 

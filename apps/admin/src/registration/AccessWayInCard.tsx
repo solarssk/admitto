@@ -19,11 +19,12 @@ const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
 ];
 
 /** What the chosen way means, in one notice under the choice. */
-const METHOD_NOTICES: Readonly<Record<AccessMethod, string>> = {
-  link: "Anyone who has the link can ask to join. A bot check protects the form.",
-  password: "Guests need the link and the event password to open the form. A bot check protects it.",
-  sso: "Guests sign in with the company account. Their email comes from that sign-in.",
-};
+const BOT_CHECK = " A bot check protects the form.";
+function methodNotice(method: AccessMethod, botCheck: boolean): string {
+  if (method === "sso") return "Guests sign in with the company account. Their email comes from that sign-in.";
+  const text = method === "link" ? "Anyone who has the link can ask to join." : "Guests need the link and the event password to open the form.";
+  return botCheck ? text + BOT_CHECK : text;
+}
 
 /** Why a way is off, in the tooltip of its button: the superadmin is told where to turn it on, the organiser to ask. */
 const NOT_TURNED_ON = "Not turned on for this organisation.";
@@ -86,6 +87,7 @@ export function AccessWayInCard({
   claimErrors,
   passwordSet,
   enabledMethods,
+  botCheck,
   isSuperadmin,
   disabled,
   onMethodChange,
@@ -104,6 +106,8 @@ export function AccessWayInCard({
   passwordSet: boolean;
   /** The ways in a superadmin has turned on for the organisation. The others cannot be chosen. */
   enabledMethods: readonly AccessMethod[];
+  /** The organisation checks guests for bots on the link and password forms (a superadmin has not switched it off). */
+  botCheck: boolean;
   /** A superadmin is told where to turn a way in on, and is the only one who changes the restriction of the company SSO. */
   isSuperadmin: boolean;
   disabled: boolean;
@@ -177,7 +181,7 @@ export function AccessWayInCard({
           disabled={disabled}
           onChange={choose}
         />
-        {method !== null && <Notice variant="info">{METHOD_NOTICES[method]}</Notice>}
+        {method !== null && <Notice variant="info">{methodNotice(method, botCheck)}</Notice>}
         {method === "password" && (
           <EventPasswordRow event={event} passwordSet={passwordSet} disabled={disabled} onSet={() => setSetOpen(true)} onRemove={() => setRemoveOpen(true)} />
         )}

@@ -27,6 +27,7 @@ import { loadRegistrantFormFields, writeAdminAuditLog, type RegistrantFormField,
 import { normalizeHostname } from "../guest-host/guest-host.js";
 import { lockAndLoadLegalGateRows, loadLegalGateRows, publishedConsentKeys } from "../legal/registration-gate.js";
 import type { SelectableAccessMethod } from "../registration/access-methods.js";
+import type { BotProtectionMode } from "../registration/bot-protection-mode.js";
 import { isOver } from "../registration/form-model.js";
 import {
   evaluateRegistrationReadiness,
@@ -97,6 +98,8 @@ export type OwnAddressDto = {
 export type RegistrationSettingsDto = SettingsValues & {
   /** The ways in a superadmin has turned on for the organisation: the ones an event may choose. An event that already has another one keeps it. */
   enabled_access_methods: RegistrationAccessMethod[];
+  /** Whether the organisation checks guests for bots on the link and password forms: `not_used` when a superadmin switched it off. */
+  bot_protection: BotProtectionMode;
   /** Whether a password is stored for the event. Only that: never the hash, never its length. */
   password_set: boolean;
   /** The address guests use: `/r/<slug>` on the event's own address once it is verified (D-C6), else on the instance's. Null while the
@@ -350,6 +353,7 @@ function toDto(args: {
   return {
     ...values,
     enabled_access_methods: environment.availability.filter((entry) => entry.enabled).map((entry) => entry.method),
+    bot_protection: environment.botProtectionMode,
     password_set: passwordSet,
     guest_url:
       environment.instanceBaseUrl === null

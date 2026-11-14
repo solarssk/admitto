@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
@@ -12,6 +12,7 @@ import {
   updateEventRegistrationSettings,
   type RegistrationSettingsDto,
 } from "../../src/admin/event-registration-settings.js";
+import { setBotProtectionMode } from "../../src/registration/bot-protection-mode.js";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { SSO_PROVIDER_SETTINGS_KEY, setSsoProviderId } from "../../src/registration/sso-provider.js";
 import { READINESS_KEYS, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
@@ -340,6 +341,7 @@ describe("reading the settings", () => {
       mode: "approval",
       access_methods: ["link"],
       enabled_access_methods: ["link", "password"],
+      bot_protection: "required",
       waitlist_enabled: false,
       verify_email: false,
       max_companions: 1,
@@ -376,6 +378,7 @@ describe("reading the settings", () => {
       "access_methods",
       "ask_company",
       "ask_department",
+      "bot_protection",
       "consent_keys",
       "enabled_access_methods",
       "guest_url",
@@ -1427,5 +1430,19 @@ describe("the ways in that are turned on, in the answer (A3)", () => {
     const event = await addEvent("a3-needs");
 
     expect((await dto(await get(event.id))).enabled_access_methods).toEqual(["link", "sso"]);
+  });
+});
+
+describe("whether the bot check is used, in the answer (A3)", () => {
+  afterEach(async () => {
+    await setBotProtectionMode(prisma, "required");
+  });
+
+  it.each(["required", "not_used"] as const)("says %s as a superadmin set it, on a read and on a save", async (mode) => {
+    await setBotProtectionMode(prisma, mode);
+    const event = await addEvent("a3-bot");
+
+    expect((await dto(await get(event.id))).bot_protection).toBe(mode);
+    expect((await dto(await put(event.id, { waitlist_enabled: false }))).bot_protection).toBe(mode);
   });
 });
