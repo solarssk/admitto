@@ -145,7 +145,6 @@ export function RegistrationTurnstileCard({
         title="Turn the bot check off?"
         message={CONFIRM_MESSAGE}
         confirmLabel="Turn off"
-        confirmVariant="warning"
         onConfirm={() => {
           setConfirming(false);
           onChange({ ...draft, botProtection: "not_used" });
