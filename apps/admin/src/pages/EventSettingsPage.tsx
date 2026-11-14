@@ -47,6 +47,7 @@ import { CheckInBehaviourPanel } from "../settings/CheckInBehaviourPanel.js";
 import { EventDangerZonePanel } from "../settings/EventDangerZonePanel.js";
 import { EventGeneralInfoPanel } from "../settings/EventGeneralInfoPanel.js";
 import { EventImagesPanel } from "../settings/EventImagesPanel.js";
+import { EventRegistrationPanel } from "../registration/EventRegistrationPanel.js";
 import { EventWalletPanel } from "../settings/EventWalletPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
 import { EventSettingsHeader } from "../settings/EventSettingsHeader.js";
@@ -648,6 +649,7 @@ interface ArchiveToggleDeps {
   setLocationCardResetKey: (updater: (n: number) => number) => void;
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
+  setRegistrationResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<unknown>;
   /** Resolves to false when the layout's read failed and it still shows the old archived state. */
@@ -666,6 +668,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setLocationCardResetKey,
     setTicketTypesCardResetKey,
     setCheckinBehaviourCardResetKey,
+    setRegistrationResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -685,6 +688,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setLocationCardResetKey((n) => n + 1);
     setTicketTypesCardResetKey((n) => n + 1);
     setCheckinBehaviourCardResetKey((n) => n + 1);
+    setRegistrationResetKey((n) => n + 1);
     await load();
     // The page's own read is current; the layout's failed, so the bar above every page (and the other pages)
     // still show the old state and the mismatch effect is paused while this runs: say so rather than leave it.
@@ -776,6 +780,7 @@ interface RevokeCheckinsDeps {
   setLocationCardResetKey: (updater: (n: number) => number) => void;
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
+  setRegistrationResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<unknown>;
   refreshLayoutEvent?: () => Promise<unknown>;
@@ -792,6 +797,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     setLocationCardResetKey,
     setTicketTypesCardResetKey,
     setCheckinBehaviourCardResetKey,
+    setRegistrationResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -811,6 +817,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     setLocationCardResetKey((n) => n + 1);
     setTicketTypesCardResetKey((n) => n + 1);
     setCheckinBehaviourCardResetKey((n) => n + 1);
+    setRegistrationResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -830,6 +837,7 @@ interface RevokeItemsDeps {
   setLocationCardResetKey: (updater: (n: number) => number) => void;
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
+  setRegistrationResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<unknown>;
   refreshLayoutEvent?: () => Promise<unknown>;
@@ -846,6 +854,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     setLocationCardResetKey,
     setTicketTypesCardResetKey,
     setCheckinBehaviourCardResetKey,
+    setRegistrationResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -865,6 +874,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     setLocationCardResetKey((n) => n + 1);
     setTicketTypesCardResetKey((n) => n + 1);
     setCheckinBehaviourCardResetKey((n) => n + 1);
+    setRegistrationResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -1138,8 +1148,12 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const [locationCardResetKey, setLocationCardResetKey] = useState(0);
   const [checkinBehaviourDirty, setCheckinBehaviourDirty] = useState(false);
   const [checkinBehaviourSaving, setCheckinBehaviourSaving] = useState(false);
+  const [registrationDirty, setRegistrationDirty] = useState(false);
+  const [registrationSaving, setRegistrationSaving] = useState(false);
   // Same reasoning as mailCardResetKey above, applied to CheckInBehaviourPanel's own draft state.
   const [checkinBehaviourCardResetKey, setCheckinBehaviourCardResetKey] = useState(0);
+  // Same reasoning as mailCardResetKey above, applied to the Registration tab's draft.
+  const [registrationResetKey, setRegistrationResetKey] = useState(0);
   const basicValidationErrorsRef = useRef<HTMLUListElement>(null);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
@@ -1189,10 +1203,10 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   // (CodeRabbit review).
   const mailTabDirty = mailDirty || bounceDirty;
   const mailTabSaving = mailSaving || bounceSaving;
-  const pageDirty = dirty || mailTabDirty || locationDirty || ticketTypesDirty || checkinBehaviourDirty;
+  const pageDirty = dirty || mailTabDirty || locationDirty || ticketTypesDirty || checkinBehaviourDirty || registrationDirty;
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
   // Mail or Location tab's own save is still in flight would race against it on the same event record.
-  const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving || checkinBehaviourSaving;
+  const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving || checkinBehaviourSaving || registrationSaving;
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       (pageDirty || pageBusy) && currentLocation.pathname !== nextLocation.pathname,
@@ -1257,6 +1271,7 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     setLocationCardResetKey((n) => n + 1);
     setTicketTypesCardResetKey((n) => n + 1);
     setCheckinBehaviourCardResetKey((n) => n + 1);
+    setRegistrationResetKey((n) => n + 1);
     void load().then((read) => {
       if (read) return;
       reconciledLayoutArchivedRef.current = undefined;
@@ -1357,6 +1372,7 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
         setLocationCardResetKey,
         setTicketTypesCardResetKey,
         setCheckinBehaviourCardResetKey,
+        setRegistrationResetKey,
         addToast,
         load,
         refreshLayoutEvent,
@@ -1387,6 +1403,7 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
       setLocationCardResetKey,
       setTicketTypesCardResetKey,
       setCheckinBehaviourCardResetKey,
+      setRegistrationResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1404,6 +1421,7 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
       setLocationCardResetKey,
       setTicketTypesCardResetKey,
       setCheckinBehaviourCardResetKey,
+      setRegistrationResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1680,6 +1698,19 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
             walletLocationPreview={walletLocationPreview}
             walletCustomFields={walletCustomFields}
             walletPushHistory={walletPushHistory}
+          />
+        </EventSettingsTabPanel>
+      )}
+
+      {isSa && (
+        <EventSettingsTabPanel tab="registration" activeTab={tab} visited={visitedTabs} label="Registration">
+          <EventRegistrationPanel
+            key={registrationResetKey}
+            eventId={eventId}
+            archived={isArchived}
+            refreshEvent={refreshLayoutEvent}
+            onDirtyChange={setRegistrationDirty}
+            onSavingChange={setRegistrationSaving}
           />
         </EventSettingsTabPanel>
       )}

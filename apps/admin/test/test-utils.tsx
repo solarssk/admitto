@@ -189,3 +189,8 @@ export function isOff(button: HTMLElement): boolean {
   return (button as HTMLButtonElement).disabled || button.getAttribute("aria-disabled") === "true";
 }
 
+
+/** The text of a node as it is read: the no-break space that keeps the end of a sentence together is an ordinary space. */
+export function plain(text: string | null | undefined): string {
+  return (text ?? "").replaceAll("\u00A0", " ");
+}

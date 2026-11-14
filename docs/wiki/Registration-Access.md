@@ -12,7 +12,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 - You must be the Administrator of the event's organisation, or a Superadmin. An Operator cannot open this page.
 - Some things are set up for the whole instance, by a Superadmin: bot protection, which ways in are allowed, the identity provider for the company SSO, email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
-- Only a Superadmin sets the address of the event for guests (see **Give the event an address of its own** below). Every Administrator of the event sees how it stands.
+- Only a Superadmin sets the address of the event for guests and the limit to one company, on the **Registration** tab of **Event settings** (see **Give the event an address of its own** and **Limit the company SSO to one company** below). Every Administrator of the event is warned on this page when the address stops working.
 - You write the legal texts and the questions yourself. See [Legal Texts and Consents](Legal-Texts-and-Consents) and [Registration Form Fields](Registration-Form-Fields).
 - An archived event keeps its settings. You can read them and copy the link, but you cannot change anything.
 
@@ -34,12 +34,13 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 **Limit the company SSO to one company**
 
-Only a Superadmin can change this limit. An Administrator sees the claim name and the allowed values, with the note "Only a superadmin can change this.", and cannot edit them.
+A Superadmin does this, in **Event settings → Registration**, on the **Company SSO** card. The card shows the identity provider chosen for the organisation and applies when the event's way is **Company SSO**. An Administrator cannot see or change this limit.
 
-1. Under **How guests open the form**, choose **Company SSO**.
-2. In **Claim name**, type the name of the claim that the identity provider puts in the sign-in. With Microsoft Entra ID it is usually `tid`.
+1. On the Access tab of Registration, under **How guests open the form**, choose **Company SSO** and select **Save**.
+2. Open **Event settings → Registration**. In **Claim name**, type the name of the claim that the identity provider puts in the sign-in. With Microsoft Entra ID it is usually `tid`.
 3. In **Allowed values**, type one value on each line. With `tid`, the value is the tenant ID of the company, a GUID.
-4. Select **Save**. Leave both fields empty for no limit.
+4. Select **Save** at the bottom of the tab. Leave both fields empty for no limit.
+5. Under **Setup for your IT team** on the same card, give IT the return addresses to enter at the identity provider (the instance's, and the event's own address when it has one), the note about a gateway such as Cloudflare Access, and the claim you set. **Copy instructions for an AI agent** puts all of it on the clipboard as plain text.
 
 **Choose what the form asks**
 
@@ -53,9 +54,9 @@ Only a Superadmin can change this limit. An Administrator sees the claim name an
 
 A Superadmin does this. By default guests get links on the address of the instance. An event can have an address of its own instead, such as `events.example.com`, and then every link a guest is sent points at it.
 
-1. Open the **Access** tab. Under **Address for guests**, type the address in **Own address**. Type the host name only: no `https://`, port or path.
+1. Open **Event settings → Registration**. Under **Address for guests**, type the address in **Own address**. Type the host name only: no `https://`, port or path.
 2. Select **Save address**. The card says the address is not checked yet. Guests still get links on the main address.
-3. Ask your IT department to set it up. The card lists the steps: a CNAME record that points the address to the instance, HTTPS with a valid certificate, the `Host` header passed on to Admitto, and no sign-in gateway in front of the pages guests open. If the form uses the bot check (Turnstile), the address also has to be added to the hostnames of its widget, or guests on the address fail the check. Admitto does not issue certificates.
+3. Ask your IT department to set it up. Under **Setup for your IT team** the card shows the DNS record (type, name and target; name and target have a copy button) and the steps. **Copy instructions for an AI agent** puts all of them on the clipboard as plain text, for a mail to IT or for a tool that can change DNS. The steps are: a CNAME record that points the address to the instance, HTTPS with a valid certificate, the `Host` header passed on to Admitto, and no sign-in gateway in front of the pages guests open. If the form uses the bot check (Turnstile), the address also has to be added to the hostnames of its widget, or guests on the address fail the check. Admitto does not issue certificates.
 4. When IT says it is ready, select **Check now**. The card says what the check found.
 5. When the card says **Working**, guests get links on the address.
 

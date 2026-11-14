@@ -66,8 +66,22 @@ export async function resolveGuestSsoProvider(db: ProviderDb): Promise<GuestSsoP
   return provider.enabled ? { state: "ready", provider } : { state: "disabled" };
 }
 
-/** What a superadmin may choose among: the enabled OIDC providers, by id and the name staff gave them. */
-export async function listSelectableSsoProviders(db: ProviderDb): Promise<{ id: string; display_name: string }[]> {
+export type SsoProviderKind = "entra" | "google" | "generic";
+
+/** The kind of a provider, told from its issuer: the screen shows an icon for it, and the issuer itself is never sent. */
+export function ssoProviderKind(issuer: string): SsoProviderKind {
+  let host = "";
+  try {
+    host = new URL(issuer).hostname.toLowerCase();
+  } catch {
+    return "generic";
+  }
+  if (host === "login.microsoftonline.com" || host === "sts.windows.net" || host === "login.windows.net") return "entra";
+  return host === "accounts.google.com" ? "google" : "generic";
+}
+
+/** What a superadmin may choose among: the enabled OIDC providers, by id, the name staff gave them and their kind. */
+export async function listSelectableSsoProviders(db: ProviderDb): Promise<{ id: string; display_name: string; kind: SsoProviderKind }[]> {
   const providers = await findEnabledOidcProviders(db);
-  return providers.map((provider) => ({ id: provider.id, display_name: provider.display_name }));
+  return providers.map((provider) => ({ id: provider.id, display_name: provider.display_name, kind: ssoProviderKind(provider.issuer) }));
 }

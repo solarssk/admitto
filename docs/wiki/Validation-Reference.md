@@ -333,7 +333,7 @@ The rows that are wrong are marked in the list of suggestions. A row left empty 
 
 ### Wallet (Superadmin only)
 
-- Editing anything under Wallet needs Superadmin access. Together with the Mail and Integrations tabs, it is one of three Event Settings tabs that an Administrator can't edit. Every other tab is open to Administrators.
+- Editing anything under Wallet needs Superadmin access. Together with the Mail, Registration and Integrations tabs, it is one of four Event Settings tabs that an Administrator can't edit. Every other tab is open to Administrators.
 - A field-mapping row needs both a PassCreator field key (letters, numbers and underscore, starting with a letter) and a value chosen from a fixed list of attendee and event tokens.
 - The editor won't let you pick the same source value on two rows. It warns you before you save a row that has only one of the two.
 - **Test connection** turns PassCreator's own rejection reasons into plain text: a wrong API key, a template that was not found, PassCreator rate-limiting you, or a timeout.

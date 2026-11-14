@@ -32,14 +32,14 @@ import {
 import { readRedirectUris } from "../../src/admin/registration-settings-routes.js";
 import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
-import { SSO_PROVIDER_SETTINGS_KEY } from "../../src/registration/sso-provider.js";
+import { SSO_PROVIDER_SETTINGS_KEY, ssoProviderKind } from "../../src/registration/sso-provider.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { memorySystemSettings } from "../helpers/memory-system-settings.js";
 
 const SITE_KEY = "0x4AAAAAAAsiteKEY";
 const SECRET = "0x4AAAAAAAsecretKEYvalue";
 
-type ProviderRow = { id: string; display_name: string; enabled: boolean; provider_type?: string };
+type ProviderRow = { id: string; display_name: string; issuer?: string; enabled: boolean; provider_type?: string };
 
 /** SystemSettings in memory, with a transaction that really rolls back when its callback throws, and an identity provider table. */
 function memoryDb(options: { providers?: ProviderRow[]; values?: Record<string, string> } = {}) {
@@ -553,12 +553,12 @@ describe("the return addresses of the guests' sign-in (D-C6)", () => {
 });
 
 describe("the identity provider guests sign in with (D-C4)", () => {
-  const company = { id: "idp-1", display_name: "Company IdP", enabled: true };
-  const other = { id: "idp-2", display_name: "Other IdP", enabled: true };
+  const company = { id: "idp-1", display_name: "Company IdP", issuer: "https://login.microsoftonline.com/tenant-a/v2.0", enabled: true };
+  const other = { id: "idp-2", display_name: "Other IdP", issuer: "https://idp.example.com", enabled: true };
   const off = { id: "idp-off", display_name: "Switched off", enabled: false };
   const saml = { id: "idp-saml", display_name: "Not OIDC", enabled: true, provider_type: "cloudflare_access" };
 
-  it("starts with no choice, and lists the enabled OIDC providers by id and name and nothing else", async () => {
+  it("starts with no choice, and lists the enabled OIDC providers by id, name and kind and nothing else", async () => {
     const res = await makeApp(memoryDb({ providers: [company, off, saml, other] }).db).request("/sso-provider");
 
     expect(res.status).toBe(200);
@@ -566,8 +566,8 @@ describe("the identity provider guests sign in with (D-C4)", () => {
       provider_id: null,
       state: "not_selected",
       providers: [
-        { id: "idp-1", display_name: "Company IdP" },
-        { id: "idp-2", display_name: "Other IdP" },
+        { id: "idp-1", display_name: "Company IdP", kind: "entra" },
+        { id: "idp-2", display_name: "Other IdP", kind: "generic" },
       ],
       redirect_uri: `${INSTANCE_URL}/sso/callback`,
       redirect_uris: [{ uri: `${INSTANCE_URL}/sso/callback`, host: "instance", verified: true }],
@@ -679,5 +679,19 @@ describe("the identity provider guests sign in with (D-C4)", () => {
 
     expect(res.status).toBe(500);
     expect(rows().has(SSO_PROVIDER_SETTINGS_KEY)).toBe(false);
+  });
+});
+
+describe("the kind of an identity provider, told from its issuer", () => {
+  it.each([
+    ["https://login.microsoftonline.com/tenant-a/v2.0", "entra"],
+    ["https://sts.windows.net/tenant-a/", "entra"],
+    ["https://login.windows.net/tenant-a", "entra"],
+    ["https://accounts.google.com", "google"],
+    ["https://sso.example.com/realms/acme", "generic"],
+    ["https://login.microsoftonline.com.evil.example/x", "generic"],
+    ["not an address", "generic"],
+  ])("tells %s from %s", (issuer, kind) => {
+    expect(ssoProviderKind(issuer)).toBe(kind);
   });
 });

@@ -173,44 +173,16 @@ describe("the ways in a superadmin has not turned on", () => {
   });
 });
 
-describe("the restriction of the company SSO by who looks", () => {
-  const restricted = (overrides: Partial<RegistrationSettingsDto> = {}) =>
-    ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111", "bbb-222"], ...overrides });
-  const name = () => screen.getByLabelText("Claim name") as HTMLInputElement;
-  const values = () => screen.getByLabelText("Allowed values") as HTMLTextAreaElement;
+describe("an event with a restriction of the company SSO, on this tab", () => {
+  const restricted = () => settings({ access_methods: ["sso"], readiness: ssoChecks(), sso_claim_name: "tid", sso_claim_values: ["aaa-111"] });
 
-  it("shows an administrator the claim and its values, read only, with the sentence that says why", async () => {
+  it("sends nothing for the restriction when another setting is saved", async () => {
     await renderLoaded(restricted());
-
-    expect(name().value).toBe("tid");
-    expect(values().value).toBe("aaa-111\nbbb-222");
-    expect([name().readOnly, values().readOnly]).toEqual([true, true]);
-    expect(within(wayInCard()).getByText("Only a superadmin can change this.")).toBeTruthy();
-  });
-
-  it("sends nothing for the restriction when an administrator saves another change", async () => {
-    await renderLoaded(restricted());
-    api.saveRegistrationSettings.mockResolvedValue(restricted({ ask_company: true }));
+    api.saveRegistrationSettings.mockResolvedValue({ ...restricted(), ask_company: true });
 
     fireEvent.click(toggle("Ask for the company"));
     fireEvent.click(saveButton());
 
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { ask_company: true }));
-  });
-
-  it("shows an administrator the empty restriction as read only too, so nothing there invites typing", async () => {
-    await renderLoaded(ssoSettings());
-
-    expect([name().readOnly, values().readOnly]).toEqual([true, true]);
-    fireEvent.change(name(), { target: { value: "tid" } });
-    expect(isOff(saveButton())).toBe(true);
-  });
-
-  it("lets a superadmin type the claim and the values, and does not say that only a superadmin can", async () => {
-    assignments = [SUPERADMIN];
-    await renderLoaded(restricted());
-
-    expect([name().readOnly, values().readOnly]).toEqual([false, false]);
-    expect(within(wayInCard()).queryByText("Only a superadmin can change this.")).toBeNull();
   });
 });
