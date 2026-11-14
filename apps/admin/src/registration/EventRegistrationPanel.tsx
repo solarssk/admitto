@@ -142,6 +142,12 @@ function SsoClaimCard({
   );
 }
 
+type Claim = Pick<AccessDraft, "sso_claim_name" | "sso_claim_values">;
+
+function claimOf(draft: AccessDraft): Claim {
+  return { sso_claim_name: draft.sso_claim_name, sso_claim_values: draft.sso_claim_values };
+}
+
 function EventRegistrationCards({
   eventId,
   archived,
@@ -162,15 +168,16 @@ function EventRegistrationCards({
   const { addToast } = useToast();
   const [settings, setSettings] = useState(initial);
   const base = useMemo(() => draftFromSettings(settings), [settings]);
-  const [draft, setDraft] = useState(base);
+  // What is typed in the restriction. It is kept apart from the settings: what the address card does, and the settings that are read
+  // again after it, must never take the typed text away. It starts over only with Reset and with a save of its own.
+  const [typed, setTyped] = useState(() => claimOf(base));
+  const draft = useMemo(() => ({ ...base, ...typed }), [base, typed]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const patch = settingsPatch(draft, base);
   const dirty = Object.keys(patch).length > 0;
   const guardEvent: ArchivedGuardEvent = { archived_at: archived ? "archived" : null };
 
-  // What the server holds after a save is the new starting point.
-  useEffect(() => setDraft(base), [base]);
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   useEffect(() => onSavingChange?.(saving), [saving, onSavingChange]);
 
@@ -204,7 +211,9 @@ function EventRegistrationCards({
     setSaving(true);
     setError(null);
     try {
-      setSettings(await saveRegistrationSettings(eventId, patch));
+      const answer = await saveRegistrationSettings(eventId, patch);
+      setSettings(answer);
+      setTyped(claimOf(draftFromSettings(answer)));
       addToast("Registration settings saved.", "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -227,7 +236,7 @@ function EventRegistrationCards({
         providerName={providerName}
         draft={draft}
         onChange={(change) => {
-          setDraft((current) => ({ ...current, ...change }));
+          setTyped((current) => ({ ...current, ...change }));
           setError(null);
         }}
       />
@@ -250,7 +259,7 @@ function EventRegistrationCards({
           hasUnsavedChanges={dirty}
           saving={saving}
           onReset={() => {
-            setDraft(base);
+            setTyped(claimOf(base));
             setError(null);
           }}
           onSave={() => void save()}

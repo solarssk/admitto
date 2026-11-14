@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
@@ -20,6 +20,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
     saveRegistrationSettings: (...args: unknown[]) => mocks.saveRegistrationSettings(...args),
     fetchRegistrationSsoProvider: (...args: unknown[]) => mocks.fetchRegistrationSsoProvider(...args),
+    saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
+    checkCustomDomain: (...args: unknown[]) => mocks.checkCustomDomain(...args),
   };
 });
 vi.mock("../../src/connection/ConnectionStateProvider.js");
@@ -241,6 +243,52 @@ describe("the Company SSO card", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("The restriction to one company works with the company SSO only.");
     expect(alert.textContent).not.toContain("sso_claim_needs_sso");
+  });
+});
+
+describe("the address card and the typed restriction", () => {
+  const DOMAIN = "summit.acme.example";
+  const own = { domain: DOMAIN, status: "unchecked" as const, check_result: null, verified: false, checked_at: null };
+  const state = { custom_domain: DOMAIN, custom_domain_status: "unchecked" as const, custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null };
+
+  it.each([
+    ["Save address", () => api.saveCustomDomain.mockResolvedValue(state), settings, "Save address"],
+    ["Check now", () => api.checkCustomDomain.mockResolvedValue(state), () => settings({ own_address: own }), "Check now"],
+    ["Remove", () => api.saveCustomDomain.mockResolvedValue({ ...state, custom_domain: null }), () => settings({ own_address: own }), "Remove"],
+  ])("keeps an unsaved claim, and Unsaved changes, when %s is used on the address card and the settings are read again", async (_what, mock, make, button) => {
+    mock();
+    await renderPanel(ssoSettings({ ...make(), access_methods: ["sso"], readiness: ssoChecks() }));
+    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: button === "Remove" ? null : own }));
+    type(claimName(), "tid");
+    type(claimValues(), "aaa-111");
+    if (button === "Save address") fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
+
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: button }));
+    if (button === "Remove") fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove address" }));
+
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    // The settings that were read again are on screen by now.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(claimName()?.value).toBe("tid");
+    expect(claimValues()?.value).toBe("aaa-111");
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it("still saves the typed claim after the address card was used", async () => {
+    api.saveCustomDomain.mockResolvedValue(state);
+    await renderPanel(ssoSettings());
+    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: own }));
+    type(claimName(), "tid");
+    type(claimValues(), "aaa-111");
+    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: own, sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
+
+    await save();
+
+    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["aaa-111"] });
   });
 });
 
