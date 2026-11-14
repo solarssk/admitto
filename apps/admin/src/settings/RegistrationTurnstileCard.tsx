@@ -71,33 +71,35 @@ export function RegistrationTurnstileCard({
         <p className="settings-card-intro">{CARD_INTRO}</p>
         {dto.status === "unreadable" && <Notice variant="warning">{UNREADABLE_NOTICE}</Notice>}
         <div className="mail-transport-section">
-          <div className="at-field">
-            <span className="at-label">
-              <HintLabel hint={PROVIDER_HINT}>Provider</HintLabel>
-            </span>
-            <div className="external-provider-and-test">
-              <SearchableSelect
-                id="external-bot-protection-provider"
-                label="Provider"
-                placeholder="Select provider…"
-                searchPlaceholder="Search providers…"
-                emptyLabel="No providers found"
-                showLabel={false}
-                value="turnstile"
-                options={PROVIDERS}
-                disabled={testing}
-                onChange={() => undefined}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                loading={testing}
-                loadingLabel="Testing…"
-                onClick={() => void handleTest()}
-                icon={<i className="ti ti-plug" aria-hidden="true" />}
-              >
-                Test connection
-              </Button>
+          <div className="mail-field-row">
+            <div className="at-field">
+              <span className="at-label">
+                <HintLabel hint={PROVIDER_HINT}>Provider</HintLabel>
+              </span>
+              <div className="external-provider-and-test">
+                <SearchableSelect
+                  id="external-bot-protection-provider"
+                  label="Provider"
+                  placeholder="Select provider…"
+                  searchPlaceholder="Search providers…"
+                  emptyLabel="No providers found"
+                  showLabel={false}
+                  value="turnstile"
+                  options={PROVIDERS}
+                  disabled={testing}
+                  onChange={() => undefined}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={testing}
+                  loadingLabel="Testing…"
+                  onClick={() => void handleTest()}
+                  icon={<i className="ti ti-plug" aria-hidden="true" />}
+                >
+                  Test connection
+                </Button>
+              </div>
             </div>
           </div>
           <Input
