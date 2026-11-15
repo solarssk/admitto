@@ -7,7 +7,7 @@ import { ItPanel, RecordField } from "./ItSetup.js";
 const NO_INSTANCE_ADDRESS = "There is no return address yet, because the Instance URL is not set. Set it under General in Organisation settings.";
 
 /** The host of a return address. */
-function hostOf(uri: string): string {
+export function hostOf(uri: string): string {
   return new URL(uri).host;
 }
 
@@ -29,7 +29,7 @@ function claimSentence(claim: SavedClaim & { name: string }): string {
 }
 
 /** The instructions for the company SSO as plain text, whole in themselves: a person can read them and so can an agent. */
-function ssoInstructionsText(addresses: readonly string[], claim: SavedClaim): string {
+export function ssoInstructionsText(addresses: readonly string[], claim: SavedClaim): string {
   const steps = [
     ...(addresses.length === 0 ? [] : [`At the identity provider, add ${addresses.length === 1 ? "this allowed redirect (callback) address" : "these allowed redirect (callback) addresses"}: ${addresses.join(", ")}`]),
     "If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback, /r/* and /legal/* through without asking for a sign-in.",
@@ -45,7 +45,7 @@ function ssoInstructionsText(addresses: readonly string[], claim: SavedClaim): s
 }
 
 /** One return address to enter at the identity provider, in a grey read only box with the button that copies it on its left. */
-function ReturnAddress({ label, uri }: Readonly<{ label: string; uri: string }>) {
+export function ReturnAddress({ label, uri }: Readonly<{ label: string; uri: string }>) {
   return (
     <div className="access-dns access-dns--single">
       <RecordField label={label} value={uri} placeholder="" copyLabel={`Copy the ${label.toLowerCase()}`} />

@@ -26,13 +26,15 @@ import {
 } from "../api/client.js";
 import type {
   ExternalServicesResponse,
+  MailSecretFieldDto,
   RegistrationTurnstileDto,
   WeatherProviderId,
 } from "../api/types.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
-import { NO_AUTOFILL_PROPS, SettingsFooter } from "./mailTransportFormParts.js";
+import { NO_AUTOFILL_PROPS, SecretFieldRow, SettingsFooter } from "./mailTransportFormParts.js";
+import type { SecretEditMode } from "./mailSettingsValidation.js";
 import { PanelLoadError } from "./PanelLoadError.js";
 import { RegistrationAccessMethodsCard } from "./RegistrationAccessMethodsCard.js";
 import { RegistrationTurnstileCard } from "./RegistrationTurnstileCard.js";
@@ -56,12 +58,12 @@ import {
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 import { fetchWaysIn, NOTHING_SAVED, saveWaysIn } from "./waysInRequests.js";
 
-/** The cards of the panel, for its placeholder: Weather, Maps, Guest registration and Ways in, each with an intro and fields or rows. */
+/** The cards of the panel, for its placeholder: Weather, Maps, Guest registration and the ways to open the form, each with an intro and fields or rows. */
 const EXTERNAL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "weather", title: "Weather", intro: true, fields: 1, rows: 1, rowHeight: 24 },
   { id: "maps", title: "Maps", intro: true, fields: 4, controlHeight: 62 },
   { id: "registration", title: "Guest registration", intro: true, fields: 2, columns: 2, controlHeight: 82, rows: 1, rowHeight: 36 },
-  { id: "ways-in", title: "Ways in", intro: 2, rows: 2, rowHeight: 58 },
+  { id: "ways-in", title: "Access methods", intro: 2, rows: 2, rowHeight: 58 },
 ];
 
 const WEATHER_CARD_HINT =
@@ -73,7 +75,8 @@ const WEATHER_PROVIDER_HINT =
 const WEATHER_BASE_URL_HINT =
   "Free (non-commercial): https://api.open-meteo.com. Commercial: https://customer-api.open-meteo.com (API key required). Self-hosted Open-Meteo: your own HTTPS base URL.";
 const WEATHER_API_KEY_HINT =
-  "Organisation API token for Open-Meteo. Required when Base URL is customer-api.open-meteo.com. Not your Admitto login password.";
+  "The organisation's API key for Open-Meteo. It is needed for customer-api.open-meteo.com. It stays on the server and is never shown again. It is not your Admitto password.";
+const WEATHER_API_KEY_EMPTY_MSG = "Enter the API key, or choose Cancel to keep the saved one.";
 const WEATHER_API_KEY_REQUIRED_MSG =
   "API key is required for customer-api.open-meteo.com.";
 const WEATHER_METNO_CONTACT_MSG =
@@ -128,8 +131,8 @@ type WeatherDraft = {
   enabled: boolean;
   provider: WeatherProviderId;
   baseUrl: string;
-  apiKey: string;
-  clearApiKey: boolean;
+  /** Write-only: never loaded into the draft, so `idle` means "keep what is saved". */
+  apiKey: { mode: SecretEditMode; value: string };
 };
 
 type MapsDraft = {
@@ -150,8 +153,7 @@ function weatherDraftFrom(data: ExternalServicesResponse["weather"]): WeatherDra
     enabled: data.enabled,
     provider: normalizeWeatherProvider(data.provider),
     baseUrl: data.base_url,
-    apiKey: "",
-    clearApiKey: false,
+    apiKey: { mode: "idle", value: "" },
   };
 }
 
@@ -171,8 +173,7 @@ function weatherDirty(draft: WeatherDraft, saved: WeatherDraft): boolean {
     draft.enabled !== saved.enabled ||
     draft.provider !== saved.provider ||
     draft.baseUrl !== saved.baseUrl ||
-    draft.apiKey !== "" ||
-    draft.clearApiKey !== saved.clearApiKey
+    draft.apiKey.mode !== "idle"
   );
 }
 
@@ -200,11 +201,6 @@ function externalServicesDirty(drafts: ExternalServicesDrafts, saved: ExternalSe
   if (weatherDirty(drafts.weather, saved.weather) || mapsDirty(drafts.maps, saved.maps)) return true;
   if (drafts.turnstile !== null && saved.turnstile !== null && turnstileDirty(drafts.turnstile, saved.turnstile)) return true;
   return drafts.access !== null && saved.access !== null && accessMethodsDirty(drafts.access, saved.access);
-}
-
-function apiKeyPlaceholder(required: boolean, configured: boolean): string {
-  if (configured) return "••••••••";
-  return required ? "Required" : "Optional";
 }
 
 /** Probe endpoints should return human copy; map leftover machine codes just in case. */
@@ -239,12 +235,14 @@ function probeResultToastMessage(
 
 function collectSaveValidationErrors(opts: {
   apiKeyMissing: boolean;
+  apiKeyEmpty: boolean;
   saveWeather: boolean;
   saveMaps: boolean;
   mapsDraft: MapsDraft;
 }): string[] {
   const errors: string[] = [];
   if (opts.saveWeather && opts.apiKeyMissing) errors.push(WEATHER_API_KEY_REQUIRED_MSG);
+  else if (opts.saveWeather && opts.apiKeyEmpty) errors.push(WEATHER_API_KEY_EMPTY_MSG);
   if (!opts.saveMaps) return errors;
   const maxZoom = Number.parseInt(opts.mapsDraft.maxZoom, 10);
   if (!Number.isFinite(maxZoom) || maxZoom < 1 || maxZoom > 22) {
@@ -273,8 +271,8 @@ function buildWeatherSaveBody(draft: WeatherDraft): {
   };
   if (draft.provider !== "openmeteo") return body;
   body.baseUrl = draft.baseUrl.trim();
-  if (draft.clearApiKey) body.apiKey = "";
-  else if (draft.apiKey.trim() !== "") body.apiKey = draft.apiKey.trim();
+  if (draft.apiKey.mode === "clear") body.apiKey = "";
+  else if (draft.apiKey.mode === "replace" && draft.apiKey.value.trim() !== "") body.apiKey = draft.apiKey.value.trim();
   return body;
 }
 
@@ -291,7 +289,7 @@ function toastExternalServicesSaveResult(
     weatherResult: SettledSave;
     mapsResult: SettledMapsSave;
     turnstileResult: SettledTurnstileSave;
-    /** The reasons the Ways in requests failed: none when they all worked. */
+    /** The reasons the requests of the Access methods card failed: none when they all worked. */
     accessFailures: readonly unknown[];
   },
 ): void {
@@ -407,9 +405,10 @@ export function ExternalServicesPanel() {
   const apiKeyMissing = Boolean(
     apiKeyRequired &&
       weatherDraft &&
-      !weatherDraft.apiKey.trim() &&
-      (weatherDraft.clearApiKey || !data?.weather.api_key.configured),
+      !weatherDraft.apiKey.value.trim() &&
+      (weatherDraft.apiKey.mode === "clear" || !data?.weather.api_key.configured),
   );
+  const apiKeyEmpty = weatherDraft?.apiKey.mode === "replace" && weatherDraft.apiKey.value.trim() === "";
   const showMetNoContactNotice = Boolean(
     weatherDraft?.enabled &&
       weatherDraft.provider === "metno" &&
@@ -450,6 +449,14 @@ export function ExternalServicesPanel() {
   const registration = turnstileDraft;
   const access = accessDraft;
   const waysIn = ways;
+  const weatherApiKeyField: MailSecretFieldDto = {
+    set: data.weather.api_key.configured,
+    masked: data.weather.api_key.configured ? "••••" : null,
+    source: "db",
+    locked: false,
+  };
+  const setApiKey = (mode: SecretEditMode, value: string) =>
+    patchDraft(setWeatherDraft, (d) => ({ ...d, apiKey: { mode, value } }));
 
   function handleReset() {
     setWeatherDraft({ ...weatherSavedRef.current! });
@@ -468,8 +475,8 @@ export function ExternalServicesPanel() {
     } = { provider: weather.provider };
     if (weather.provider === "openmeteo") {
       body.baseUrl = weather.baseUrl.trim();
-      if (weather.clearApiKey) body.clearApiKey = true;
-      else if (weather.apiKey.trim() !== "") body.apiKey = weather.apiKey.trim();
+      if (weather.apiKey.mode === "clear") body.clearApiKey = true;
+      else if (weather.apiKey.mode === "replace" && weather.apiKey.value.trim() !== "") body.apiKey = weather.apiKey.value.trim();
     }
     setWeatherTesting(true);
     try {
@@ -522,6 +529,7 @@ export function ExternalServicesPanel() {
     const errors = [
       ...collectSaveValidationErrors({
         apiKeyMissing,
+        apiKeyEmpty,
         saveWeather,
         saveMaps,
         mapsDraft: maps,
@@ -685,50 +693,18 @@ export function ExternalServicesPanel() {
                     }
                   />
                 </div>
-                <div className="at-field mail-secret-field">
-                  <span className="at-label">
-                    <HintLabel hint={WEATHER_API_KEY_HINT}>API key</HintLabel>
-                  </span>
-                  <Input
-                    type="text"
-                    id="external-weather-api-key"
-                    name="weather-org-api-token"
-                    value={weatherDraft.apiKey}
-                    disabled={weatherDraft.clearApiKey}
-                    invalid={apiKeyMissing}
-                    error={apiKeyMissing ? WEATHER_API_KEY_REQUIRED_MSG : undefined}
-                    placeholder={apiKeyPlaceholder(
-                      apiKeyRequired,
-                      data.weather.api_key.configured,
-                    )}
-                    {...NO_AUTOFILL_PROPS}
-                    onChange={(e) =>
-                      patchDraft(setWeatherDraft, (d) => ({
-                        ...d,
-                        apiKey: e.target.value,
-                        clearApiKey: false,
-                      }))
-                    }
-                  />
-                  {data.weather.api_key.configured && !apiKeyRequired && (
-                    <label className="form-check" style={{ marginTop: "var(--space-2)" }}>
-                      <input
-                        type="checkbox"
-                        id="external-weather-clear-api-key"
-                        name="weather-clear-api-key"
-                        checked={weatherDraft.clearApiKey}
-                        onChange={(e) =>
-                          patchDraft(setWeatherDraft, (d) => ({
-                            ...d,
-                            clearApiKey: e.target.checked,
-                            apiKey: e.target.checked ? "" : d.apiKey,
-                          }))
-                        }
-                      />
-                      <span>Clear organisation API key</span>
-                    </label>
-                  )}
-                </div>
+                <SecretFieldRow
+                  id="external-weather-api-key"
+                  label="API key"
+                  hint={WEATHER_API_KEY_HINT}
+                  field={weatherApiKeyField}
+                  edit={weatherDraft.apiKey}
+                  disabled={weatherTesting}
+                  onReplace={() => setApiKey("replace", "")}
+                  onClear={() => setApiKey("clear", "")}
+                  onValueChange={(value) => setApiKey("replace", value)}
+                  onCancel={() => setApiKey("idle", "")}
+                />
               </div>
             </>
           )}

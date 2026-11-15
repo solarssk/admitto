@@ -27,7 +27,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 **Choose how guests get in**
 
-1. Under **How guests open the form**, choose **Link**, **Password** or **Company SSO**. An event has one way at a time. A way that a Superadmin has not turned on for your organisation is grey and cannot be chosen. Hover over it to read why: "This way is not turned on for your organisation. Ask a superadmin to turn it on." A Superadmin reads "Turn it on in Organisation settings, External services, Ways in." instead.
+1. Under **How guests open the form**, choose **Link**, **Password** or **Company SSO**. An event has one way at a time. A way that a Superadmin has not turned on for your organisation is grey and cannot be chosen. Hover over it to read why: "This way is not turned on for your organisation. Ask a superadmin to turn it on." A Superadmin reads "Turn it on in Organisation settings, External services, Access methods." instead.
 2. For **Password**, select **Set**, type a password of 8 to 128 characters and select **Save** in the window that opens. This is saved at once, apart from the **Save** button of the page.
 3. For **Company SSO**, optionally restrict the form to one company. See **Restrict Company SSO to one company** below.
 4. Select **Save** at the bottom of the page.
@@ -135,9 +135,9 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 | Row | If it is not done |
 |---|---|
 | **How guests open the form** | Choose **Link**, **Password** or **Company SSO** on this tab |
-| **The chosen way is turned on** | Ask a Superadmin to turn that way on: Organisation settings > External services > Ways in |
+| **The chosen way is turned on** | Ask a Superadmin to turn that way on: Organisation settings > External services > Access methods |
 | **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company SSO does not have this row. If bot protection is **Off** for your organisation, the row is grey, says "Off for this organisation" and does not block anything |
-| **Company SSO** | Ask a Superadmin to choose the identity provider: Organisation settings > External services > Ways in. Only a form with the company SSO has this row |
+| **Company SSO** | Ask a Superadmin to choose the identity provider: Organisation settings > External services > Access methods. Only a form with the company SSO has this row |
 | **Event password** | Set the password on this tab |
 | **Legal texts** | Publish the privacy notice, the terms and the consents you chose on the **Legal** tab |
 | **Form questions** | A required question cannot be shown on the form. Open the **Fields** tab |

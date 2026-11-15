@@ -125,6 +125,6 @@ describe("the setup checklist of an event with the company SSO", () => {
 
     const row = rows()[0] as HTMLElement;
     expect(row.textContent).toContain("Company SSO is not set up, so the form stays closed.");
-    expect(row.textContent).toContain("Ask a superadmin to choose the identity provider in Organisation settings, External services, Ways in.");
+    expect(row.textContent).toContain("Ask a superadmin to choose the identity provider in Organisation settings, External services, Access methods.");
   });
 });

@@ -27,7 +27,7 @@ function methodNotice(method: AccessMethod, botCheck: boolean): string {
 
 /** Why a way is off, in the tooltip of its button: the superadmin is told where to turn it on, the organiser to ask. */
 const NOT_TURNED_ON = "This way is not turned on for your organisation.";
-const REASON_FOR_SUPERADMIN = `${NOT_TURNED_ON} Turn it on in Organisation settings, External services, Ways in.`;
+const REASON_FOR_SUPERADMIN = `${NOT_TURNED_ON} Turn it on in Organisation settings, External services, Access methods.`;
 const REASON_FOR_ORGANISER = `${NOT_TURNED_ON} Ask a superadmin to turn it on.`;
 
 /** The shared password of the event: whether one is set, and the buttons to set, change or remove it. It never shows the password. */

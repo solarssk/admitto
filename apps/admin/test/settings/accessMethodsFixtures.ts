@@ -18,8 +18,8 @@ export function accessMethodsDto(on: ReadonlyArray<RegistrationAccessMethodDto["
 
 /** The two providers a superadmin can choose from in the tests (both turned on). */
 export const SSO_PROVIDERS = [
-  { id: "idp-entra", display_name: "Company Entra ID" },
-  { id: "idp-okta", display_name: "Okta" },
+  { id: "idp-entra", display_name: "Company Entra ID", kind: "entra" as const },
+  { id: "idp-okta", display_name: "Okta", kind: "generic" as const },
 ];
 
 /**

@@ -42,7 +42,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add an admin API for the registration settings of an event; it refuses to turn registration on until the event is ready ([#1823](https://github.com/solarssk/admitto/pull/1823))
 - Add a guest's companion: it takes a seat, is marked in at check-in, and counts as "People on site" on the Overview and in Reports ([#1808](https://github.com/solarssk/admitto/pull/1808))
 - Add a Registration menu entry and its Access tab: turn guest registration on or off, choose the way in and password, and copy the guest link ([#1825](https://github.com/solarssk/admitto/pull/1825))
-- Add a Ways in card to Organisation settings > External services, where a superadmin turns the link and the password on so events can use them ([#1826](https://github.com/solarssk/admitto/pull/1826))
+- Add an Access methods card to Organisation settings > External services, where a superadmin turns the link and the password on so events can use them ([#1826](https://github.com/solarssk/admitto/pull/1826))
 - Let a guest bring one companion on the registration form, with a seat of their own counted against the event's capacity ([#1824](https://github.com/solarssk/admitto/pull/1824))
 - Let an Administrator correct or remove a guest's companion on the attendee's page, and mark a question as about the guest or the companion ([#1827](https://github.com/solarssk/admitto/pull/1827))
 - Add a switch on the Access tab for styled boxes on the guest form: a phone number gets a list of countries beside it ([#1829](https://github.com/solarssk/admitto/pull/1829))
@@ -54,7 +54,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a Sensitive switch to the field editor and a Show button for one person's sensitive answers, logged in the audit log ([#1849](https://github.com/solarssk/admitto/pull/1849))
 - Add an optional, sensitive question about accessibility needs to Add suggested questions, with a warning that such answers can be health data ([#1849](https://github.com/solarssk/admitto/pull/1849))
 - Use one return address for the guests' company sign-in on the whole instance, so the identity provider needs a single entry and not one per event ([#1850](https://github.com/solarssk/admitto/pull/1850))
-- Add the company sign-in to Ways in, with a provider picker, a return address to copy and an optional limit to one company for each event ([#1851](https://github.com/solarssk/admitto/pull/1851))
+- Add the company sign-in to Access methods, with a provider picker, a return address to copy and an optional limit to one company for each event ([#1851](https://github.com/solarssk/admitto/pull/1851))
 - Refuse turning an attendee field sensitive while the wallet field mapping still names it, so issued passes cannot keep its answer ([#1867](https://github.com/solarssk/admitto/pull/1867))
 - Let a superadmin store an own guest address for an event (not live yet: verification and routing follow) ([#1868](https://github.com/solarssk/admitto/pull/1868))
 - Serve only the guest pages of an event on its verified own address and hide the panel there; add the address proof at `/.well-known/admitto-domain-check` ([#1871](https://github.com/solarssk/admitto/pull/1871))
@@ -77,6 +77,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Move the attendee fields from the Requirements page to the Fields tab of the Registration page, and point to them from Requirements ([#1828](https://github.com/solarssk/admitto/pull/1828))
 - Give a new event a random link name made by the server, not from its title, and remove "Event link ID" from Event settings; existing events keep theirs ([#1924](https://github.com/solarssk/admitto/pull/1924))
 - Use one name for each thing in the Registration screens (Company SSO, How guests open the form, restriction, Off), and explain claims, CNAME and Host header in plain words ([#1929](https://github.com/solarssk/admitto/pull/1929))
+- Tidy Organisation settings > External services: rename Ways in to Access methods, put the return addresses in a panel for your IT team, and keep the Open-Meteo API key hidden like other secret keys
 
 ### Fixed
 

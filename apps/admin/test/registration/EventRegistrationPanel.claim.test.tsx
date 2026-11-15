@@ -93,7 +93,7 @@ describe("the Company SSO card", () => {
     expect(provider.className).toContain("at-input");
     expect([provider.readOnly, provider.disabled]).toEqual([true, true]);
     expect(provider.closest(".at-control, .at-inputgroup")?.querySelector(".at-inputgroup__icon i")?.className).toContain("ti-brand-azure");
-    expect(within(ssoCard()).getByText("Chosen for the organisation in Organisation settings, External services, Ways in.")).toBeTruthy();
+    expect(within(ssoCard()).getByText("Chosen for the organisation in Organisation settings, External services, Access methods.")).toBeTruthy();
   });
 
   it.each([
