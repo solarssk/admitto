@@ -8,6 +8,8 @@
  * its length, in an answer, in the audit entry or in a log. It is checked for its length only (REGISTRATION_PASSWORD_MIN
  * to REGISTRATION_PASSWORD_MAX characters) and is taken as typed, spaces included.
  *
+ * Both are a superadmin's: how guests open the form is technical, so from anyone else they are a 403 `password_superadmin_only`.
+ *
  * Mounted behind the archived-event guard, which checks first that the caller manages the event (an organisation admin
  * or a superadmin, like the other event routes: an operator gets 403, so does an admin of another organisation) and
  * then that the event is not archived (403 `event_archived`). Setting a password needs no registration settings yet:
@@ -18,6 +20,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import { REGISTRATION_PASSWORD_MAX, REGISTRATION_PASSWORD_MIN, registrationPasswordLength } from "@admitto/shared";
+import { canManageInstance } from "@admitto/auth";
 import { clearEventPassword, setEventPassword } from "../registration/event-password.js";
 import { requireAuditActor, requireEventId } from "./admin-helpers.js";
 
@@ -32,6 +35,7 @@ export async function handlePutRegistrationPassword(c: Context, db: PrismaClient
   if (eventId instanceof Response) return eventId;
   const actor = requireAuditActor(c);
   if (actor instanceof Response) return actor;
+  if (!(await canManageInstance(db, c.get("auth").userId))) return c.json({ error: "password_superadmin_only" }, 403);
 
   let raw: unknown;
   try {
@@ -59,6 +63,7 @@ export async function handleDeleteRegistrationPassword(c: Context, db: PrismaCli
   if (eventId instanceof Response) return eventId;
   const actor = requireAuditActor(c);
   if (actor instanceof Response) return actor;
+  if (!(await canManageInstance(db, c.get("auth").userId))) return c.json({ error: "password_superadmin_only" }, 403);
 
   const result = await clearEventPassword(db, { eventId, actor });
   if (result === "not_found") return c.json({ error: "not_found" }, 404);

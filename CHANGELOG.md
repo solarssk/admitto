@@ -77,8 +77,8 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Move the attendee fields from the Requirements page to the Fields tab of the Registration page, and point to them from Requirements ([#1828](https://github.com/solarssk/admitto/pull/1828))
 - Give a new event a random link name made by the server, not from its title, and remove "Event link ID" from Event settings; existing events keep theirs ([#1924](https://github.com/solarssk/admitto/pull/1924))
 - Use one name for each thing in the Registration screens (Company SSO, How guests open the form, restriction, Off), and explain claims, CNAME and Host header in plain words ([#1929](https://github.com/solarssk/admitto/pull/1929))
-- Let each event choose its own identity provider for Company SSO, with several providers possible, instead of one for the whole instance (server only, screens follow) ([#1933](https://github.com/solarssk/admitto/pull/1933))
-- Choose the identity provider for Company SSO on the Access tab of each event, under "Access method", and grey out Company SSO while no provider is turned on ([#1934](https://github.com/solarssk/admitto/pull/1934))
+- Let each event choose its own identity provider for Company SSO, with several providers possible, instead of one for the whole instance, set by a superadmin only (server only, screens follow) ([#1933](https://github.com/solarssk/admitto/pull/1933))
+- Move how guests open the form (access method, event password, identity provider for Company SSO) to Event settings, Registration, for superadmins; the Access tab only shows it ([#1934](https://github.com/solarssk/admitto/pull/1934))
 
 ### Fixed
 

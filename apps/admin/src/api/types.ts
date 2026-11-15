@@ -1762,8 +1762,9 @@ export interface SaveRegistrationSettingsBody {
   sso_claim_name?: string | null;
   sso_claim_values?: string[];
   /** The company SSO only: the id of an enabled identity provider, or `null` to remove the choice. Refused for another way in
-   * (422 `sso_provider_needs_sso`) and for a provider that is unknown, off or not OIDC (422 `sso_provider_not_available`). While
-   * the event is limited to one company only a superadmin may change it (403 `sso_provider_superadmin_only`). */
+   * (422 `sso_provider_needs_sso`) and for a provider that is unknown, off or not OIDC (422 `sso_provider_not_available`). Only a
+   * superadmin may change it (403 `sso_provider_superadmin_only`), and only a superadmin changes `access_methods` (403
+   * `access_method_superadmin_only`); a value sent as it already is, is no change. */
   sso_provider_id?: string | null;
 }
 

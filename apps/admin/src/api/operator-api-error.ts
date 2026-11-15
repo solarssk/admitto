@@ -21,6 +21,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   // The answer of the guest route to a password that does not open the event. A guest's page words it itself; it is mapped
   // here so that nothing that reads this map is left with a bare code.
   access_denied: "The event password did not work.",
+  access_method_superadmin_only: "Only a superadmin can change how guests open the form.",
   actor_mfa_required:
     "You need a confirmed authenticator app, passkey, or security key on your own account before you can reset another superadmin's two-factor or password, or revoke their sessions. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has one confirmed to do this instead.",
   api_key_required:
@@ -147,6 +148,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   not_found: "The requested item was not found.",
   password_change_required:
     "You must change your password before continuing. Update it in Account or go to /change-password.",
+  password_superadmin_only: "Only a superadmin can set the event password.",
   password_too_common: "This password is too common or predictable. Choose a different one.",
   registration_count_changed:
     "The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.",
@@ -177,8 +179,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   sso_claim_superadmin_only: "Only a superadmin can change the restriction to one company.",
   sso_provider_needs_sso: "Choose Company SSO first.",
   sso_provider_not_available: "This identity provider is not available. Choose another one.",
-  sso_provider_superadmin_only:
-    "Only a superadmin can change the identity provider while the event is limited to one company.",
+  sso_provider_superadmin_only: "Only a superadmin can change the identity provider.",
   source_provider_unavailable:
     "Select an enabled direct OIDC identity provider before enabling Cloudflare Access.",
   stale_write: "Someone else changed this record. Reload and try again.",
