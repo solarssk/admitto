@@ -1175,9 +1175,9 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
     fireEvent.click(toggle());
 
     expect(dialog()).not.toBeNull();
-    expect(within(dialog()!).getByText("Turn the bot check off?")).toBeTruthy();
-    expect(dialog()!.textContent).toMatch(/guests are no longer checked for bots/);
-    expect(dialog()!.textContent).toMatch(/use the company SSO or a strong password/);
+    expect(within(dialog()!).getByText("Turn bot protection off?")).toBeTruthy();
+    expect(dialog()!.textContent).toMatch(/guests are not checked for bots/);
+    expect(dialog()!.textContent).toMatch(/use Company SSO or a strong event password/);
     expect(dialog()!.textContent).not.toMatch(/stricter/);
     // Nothing changed yet: the choice, the keys and the Save button are as they were.
     expect(toggle().checked).toBe(true);
@@ -1270,8 +1270,8 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
     const ways = screen.getByText("Ways in").closest(".at-card") as HTMLElement;
 
     expect(within(ways).queryByText(/stay closed until the Turnstile keys above are ready/)).toBeNull();
-    expect(ways.textContent).toMatch(/Anyone who has the link of an event can open its form\. There is no bot check\./);
-    expect(ways.textContent).toMatch(/There is no bot check, so use a strong password\./);
+    expect(ways.textContent).toMatch(/Anyone who has the link of an event can open its form\. Bot protection is off\./);
+    expect(ways.textContent).toMatch(/Bot protection is off, so use a strong password\./);
     expect(ways.textContent).not.toMatch(/after a bot check/);
   });
 });
@@ -1611,8 +1611,8 @@ describe("ExternalServicesPanel, company SSO on the ways in card", () => {
     await renderLoaded();
 
     expect(card().textContent).toMatch(/Enter this address once at the identity provider/);
-    expect(card().textContent).toMatch(/same for every event that uses the company SSO/);
-    expect(card().textContent).toMatch(/let \/sso\/callback through without a sign-in, together with \/r\/\*/);
+    expect(card().textContent).toMatch(/same for every event that uses Company SSO/);
+    expect(card().textContent).toMatch(/let the paths \/sso\/callback and \/r\/\* through without asking for a sign-in/);
     fireEvent.click(within(card()).getByRole("button", { name: "Copy the return address" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://tickets.example.com/sso/callback"));
@@ -1635,8 +1635,8 @@ describe("ExternalServicesPanel, company SSO on the ways in card", () => {
     await renderLoaded();
 
     expect(document.getElementById("external-access-sso-redirect")).toBeNull();
-    expect(card().textContent).toMatch(/There is no return address for this instance yet, because its address is not set\./);
-    expect(within(card()).getByRole("link", { name: "Set the Instance URL under General." }).getAttribute("href")).toBe("/admin/settings?tab=general");
+    expect(card().textContent).toMatch(/There is no return address yet, because the Instance URL is not set\./);
+    expect(within(card()).getByRole("link", { name: "Set it under General in Organisation settings." }).getAttribute("href")).toBe("/admin/settings?tab=general");
   });
 
   it("takes the address from the server and never from the address the staff member opened the page at", async () => {
@@ -1682,7 +1682,7 @@ describe("ExternalServicesPanel, company SSO on the ways in card", () => {
     );
     await renderLoaded();
 
-    expect(card().textContent).toMatch(/There is no return address for this instance yet/);
+    expect(card().textContent).toMatch(/There is no return address yet/);
     expect(el<HTMLInputElement>("external-access-sso-redirect-1").value).toBe("https://a.acme.example/sso/callback");
   });
 

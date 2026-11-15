@@ -61,9 +61,9 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Check an event's own guest address on demand and every day, warn when it stops working, and list its company sign-in return address ([#1872](https://github.com/solarssk/admitto/pull/1872))
 - Add an IT checklist for an event's own address: DNS, HTTPS, Cloudflare Access bypass paths, company sign-in redirects, Turnstile hostname and the HSTS gap ([#1873](https://github.com/solarssk/admitto/pull/1873))
 - Add the Legal tab to the Registration page, where an administrator writes, publishes and withdraws an event's privacy notice, event terms and extra consents with a visual editor ([#1779](https://github.com/solarssk/admitto/pull/1779))
-- Add a Bot protection card to Organisation settings with an On/Off switch (Off needs no Turnstile keys; the usual limits stay), the provider and a Test connection button for the secret key ([#1926](https://github.com/solarssk/admitto/pull/1926))
-- Rename "Way in" to "How guests open the form" and "company sign-in" to "company SSO" in the admin; grey out a way a superadmin has not turned on (reason on hover); only a superadmin changes the company limit ([#1927](https://github.com/solarssk/admitto/pull/1927))
-- Add a Registration tab to Event settings for superadmins, with a Company SSO card (the limit to one company) and a redesigned Address for guests card with copy-ready DNS record; both leave the Registration page ([#1928](https://github.com/solarssk/admitto/pull/1928))
+- Add a Bot protection card to Organisation settings: turn bot protection On or Off, and test the Turnstile secret key ([#1926](https://github.com/solarssk/admitto/pull/1926))
+- Rename "Way in" to "How guests open the form" and "company sign-in" to "Company SSO", and grey out a way that is not turned on, with the reason on hover ([#1927](https://github.com/solarssk/admitto/pull/1927))
+- Add a Registration tab to Event settings for superadmins, with the Company SSO restriction and the Address for guests, moved from the Registration page ([#1928](https://github.com/solarssk/admitto/pull/1928))
 
 ### Changed
 
@@ -75,6 +75,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Open the Requests tab on the requests that wait for a decision when staff decide by hand, with a shortcut to all requests ([#1807](https://github.com/solarssk/admitto/pull/1807))
 - Move the attendee fields from the Requirements page to the Fields tab of the Registration page, and point to them from Requirements ([#1828](https://github.com/solarssk/admitto/pull/1828))
 - Give a new event a random link name made by the server, not from its title, and remove "Event link ID" from Event settings; existing events keep theirs ([#1924](https://github.com/solarssk/admitto/pull/1924))
+- Use one name for each thing in the Registration screens (Company SSO, How guests open the form, restriction, Off), and explain claims, CNAME and Host header in plain words
 
 ### Fixed
 

@@ -33,7 +33,7 @@ vi.mock("@admitto/ui", async (importOriginal) => {
 
 const SUPERADMIN: RoleAssignment = { role: "superadmin", scope_type: "instance", scope_id: null };
 const ORG_ADMIN: RoleAssignment = { role: "admin", scope_type: "organization", scope_id: "org-1" };
-const REASON = "Not turned on for this organisation.";
+const REASON = "This way is not turned on for your organisation.";
 
 const wayInCard = () => card("How guests open the form");
 const ssoSettings = (overrides: Partial<RegistrationSettingsDto> = {}) => settings({ access_methods: ["sso"], readiness: ssoChecks(), ...overrides });
@@ -49,8 +49,8 @@ afterEach(() => {
 });
 
 describe("the ways in a superadmin has not turned on", () => {
-  const forOrganiser = `${REASON} Ask a superadmin.`;
-  const forSuperadmin = `${REASON} Turn it on in Organisation settings, External services.`;
+  const forOrganiser = `${REASON} Ask a superadmin to turn it on.`;
+  const forSuperadmin = `${REASON} Turn it on in Organisation settings, External services, Ways in.`;
 
   it("leaves all three choosable when all three are on, with no hover text", async () => {
     await renderLoaded(settings({ enabled_access_methods: ["link", "password", "sso"] }));
@@ -144,7 +144,7 @@ describe("the ways in a superadmin has not turned on", () => {
     fireEvent.click(radio("Password"));
     expect([notice().length, notice()[0]?.textContent]).toEqual([1, "Guests need the link and the event password to open the form. A bot check protects the form."]);
     fireEvent.click(radio("Company SSO"));
-    expect([notice().length, notice()[0]?.textContent]).toEqual([1, "Guests sign in with the company account. Their email comes from that sign-in."]);
+    expect([notice().length, notice()[0]?.textContent]).toEqual([1, "Guests sign in with the company's single sign-on (SSO), using their work account. Their email comes from that sign-in."]);
   });
 
   it.each([
@@ -161,7 +161,7 @@ describe("the ways in a superadmin has not turned on", () => {
 
   it("does not mention a bot check for the company SSO in either state", async () => {
     await renderLoaded(settings({ access_methods: ["sso"], bot_protection: "not_used" }));
-    expect(wayInCard().querySelector(".at-notice")?.textContent).toBe("Guests sign in with the company account. Their email comes from that sign-in.");
+    expect(wayInCard().querySelector(".at-notice")?.textContent).toBe("Guests sign in with the company's single sign-on (SSO), using their work account. Their email comes from that sign-in.");
   });
 
   it("is free of axe violations with a greyed way", async () => {

@@ -4,7 +4,7 @@ import { RetryHint } from "../components/RetryHint.js";
 import { keepLastWords } from "../utils/keep-last-words.js";
 import { ItPanel, RecordField } from "./ItSetup.js";
 
-const NO_INSTANCE_ADDRESS = "There is no return address for this instance yet, because its address is not set.";
+const NO_INSTANCE_ADDRESS = "There is no return address yet, because the Instance URL is not set. Set it under General in Organisation settings.";
 
 /** The host of a return address. */
 function hostOf(uri: string): string {
@@ -24,19 +24,19 @@ export function eventReturnAddress(uris: readonly RegistrationRedirectUriDto[], 
 }
 
 function claimSentence(claim: SavedClaim & { name: string }): string {
-  const count = claim.values.length === 1 ? "1 value" : `${claim.values.length} values`;
-  return `The sign-in must carry the claim ${claim.name}. Guests may register with one of ${count}: ${claim.values.join(", ")}.`;
+  const which = claim.values.length === 1 ? "this value" : `one of these ${claim.values.length} values`;
+  return `The identity provider must send the claim ${claim.name} with ${which}: ${claim.values.join(", ")}. Guests with other values cannot register.`;
 }
 
 /** The instructions for the company SSO as plain text, whole in themselves: a person can read them and so can an agent. */
 function ssoInstructionsText(addresses: readonly string[], claim: SavedClaim): string {
   const steps = [
     ...(addresses.length === 0 ? [] : [`At the identity provider, add ${addresses.length === 1 ? "this allowed redirect (callback) address" : "these allowed redirect (callback) addresses"}: ${addresses.join(", ")}`]),
-    "If a gateway such as Cloudflare Access stands in front of Admitto, let /sso/callback through without a sign-in, together with /r/*.",
+    "If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback and /r/* through without asking for a sign-in.",
     ...(claim.name === null ? [] : [claimSentence({ ...claim, name: claim.name })]),
   ];
   return [
-    "Set up the company SSO (OpenID Connect) for the guest registration of an event in Admitto.",
+    "Set up Company SSO (OpenID Connect) for the guest registration of an event in Admitto.",
     "",
     ...steps.map((step, index) => `${index + 1}. ${step}`),
     "",

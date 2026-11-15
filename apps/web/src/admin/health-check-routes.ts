@@ -1614,7 +1614,7 @@ async function registrationCaptchaRow(db: PrismaClient, checkedAt: string): Prom
 
   // The superadmin chose to run the form without a bot check: nothing is waiting for keys, so nothing is wrong without them.
   if ((await getBotProtectionMode(db)) === "not_used") {
-    return row("not_configured", "Not used for this organisation", [["bot_protection", "not_used"]]);
+    return row("not_configured", "Off for this organisation", [["bot_protection", "not_used"]]);
   }
   const settings = await describeTurnstileSettings(db);
   if (settings.state === "ready") return row("ok", "Configured", [["configured", "yes"]]);

@@ -539,7 +539,7 @@ describe("RegistrationAccessTab: leaving the password as the way in", () => {
     fireEvent.click(radio("Link"));
 
     const dialog = await asked();
-    expect(within(dialog).getByText("Choosing another way removes the password when you save. You cannot read it again.")).toBeTruthy();
+    expect(within(dialog).getByText("If you choose another way and save, the event password is deleted. To use a password again, you must set a new one.")).toBeTruthy();
     expect(radio("Password").getAttribute("aria-checked")).toBe("true");
     expect(isOff(saveButton())).toBe(true);
     expect(screen.queryByText(/Saving removes the event password/)).toBeNull();

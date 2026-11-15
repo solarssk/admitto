@@ -23,9 +23,9 @@ import { ownAddressOf } from "./ownAddress.js";
 import { eventReturnAddress, SsoItSetup } from "./SsoItSetup.js";
 import "./registration-access.css";
 
-const PANEL_HINT = "The parts of guest registration that a superadmin sets for this event.";
+const PANEL_HINT = "Settings of guest registration that only a superadmin can change.";
 
-const NOT_USED_NOTE = "Company SSO is not chosen for this event. Choose it as the way guests open the form, on the Access tab of Registration.";
+const NOT_USED_NOTE = "This event does not use Company SSO, so these fields are off. To use it, choose Company SSO under How guests open the form, on the Access tab of the Registration page.";
 
 const SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
@@ -254,7 +254,7 @@ function EventRegistrationCards({
     /* v8 ignore if */
     if (saving || !dirty) return;
     if (Object.keys(claimErrors(draft)).length > 0) {
-      setError("Fix the restriction of the company SSO before you save.");
+      setError("Fix the restriction to one company before you save.");
       return;
     }
     setSaving(true);

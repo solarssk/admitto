@@ -93,7 +93,7 @@ describe("the Company SSO card", () => {
     expect(provider.className).toContain("at-input");
     expect([provider.readOnly, provider.disabled]).toEqual([true, true]);
     expect(provider.closest(".at-control, .at-inputgroup")?.querySelector(".at-inputgroup__icon i")?.className).toContain("ti-brand-azure");
-    expect(within(ssoCard()).getByText("Chosen for the organisation, in Organisation settings, Identity.")).toBeTruthy();
+    expect(within(ssoCard()).getByText("Chosen for the organisation in Organisation settings, External services, Ways in.")).toBeTruthy();
   });
 
   it.each([
@@ -151,13 +151,14 @@ describe("the Company SSO card", () => {
     await waitFor(() => expect(goToLogin).toHaveBeenCalled());
   });
 
-  it("explains the restriction in two sentences: the claim and its values, OpenID Connect, tid, exact matching, never an address, and empty for none", async () => {
+  it("explains the restriction: what a claim is, the claim and its values, tid, exact matching, never an address, and empty for none", async () => {
     await renderPanel(ssoSettings());
     const text = plain(ssoCard().textContent);
 
-    expect(text).toMatch(/OpenID Connect, such as Microsoft Entra ID/);
-    expect(text).toMatch(/Name the claim and list the values that may register/);
-    expect(text).toMatch(/Leave both empty for no restriction\./);
+    expect(text).toMatch(/the identity provider sends facts about the guest, called claims/);
+    expect(text).toMatch(/Name one claim and list the values that may register/);
+    expect(text).toMatch(/With Microsoft Entra ID, the claim is usually tid/);
+    expect(text).toMatch(/Leave both fields empty for no restriction\./);
     expect(text).toMatch(/must match exactly, with capital letters as they are\./);
     expect(text).toMatch(/Never use the end of an email address here/);
     expect(text).not.toMatch(/[–—]/);
@@ -170,7 +171,7 @@ describe("the Company SSO card", () => {
     expect(claimValues()?.disabled).toBe(true);
     expect(isOff(saveButton())).toBe(true);
     const notice = ssoCard().querySelector(".at-notice--info") as HTMLElement;
-    expect(plain(notice.textContent)).toBe("Company SSO is not chosen for this event. Choose it as the way guests open the form, on the Access tab of Registration.");
+    expect(plain(notice.textContent)).toBe("This event does not use Company SSO, so these fields are off. To use it, choose Company SSO under How guests open the form, on the Access tab of the Registration page.");
     // The explanation comes first, then the notice, then the fields.
     const parts = [...(ssoCard().querySelector(".access-claim") as HTMLElement).children];
     expect(parts.map((part) => part.className.split(" ")[0])).toEqual(["settings-card-intro", "at-notice", "mail-transport-section"]);
@@ -283,7 +284,7 @@ describe("the Company SSO card", () => {
     await save();
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("The restriction to one company works with the company SSO only.");
+    expect(alert.textContent).toContain("The restriction to one company works with Company SSO only.");
     expect(alert.textContent).not.toContain("sso_claim_needs_sso");
   });
 });
@@ -579,7 +580,7 @@ describe("what is wrong with the restriction", () => {
     expect(claimValues()?.getAttribute("aria-invalid")).toBe("true");
     fireEvent.click(saveButton());
 
-    expect((await screen.findByRole("alert")).textContent).toBe("Fix the restriction of the company SSO before you save.");
+    expect((await screen.findByRole("alert")).textContent).toBe("Fix the restriction to one company before you save.");
     expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
     type(claimValues(), "aaa-111");
     expect(screen.queryByRole("alert")).toBeNull();

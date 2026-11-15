@@ -1677,7 +1677,7 @@ describe("collectAdminHealth", () => {
       for (const saved of [null, READY_KEYS]) {
         const { row, report } = await captchaRow({ ...notUsed(saved), eventRegistrationSettings: { count } });
         expect(row.status).toBe("not_configured");
-        expect(row.summary).toBe("Not used for this organisation");
+        expect(row.summary).toBe("Off for this organisation");
         expect(row.details).toEqual(expect.arrayContaining([{ key: "bot_protection", value: "not_used" }]));
         expect(report.overall).toBe("ok");
       }

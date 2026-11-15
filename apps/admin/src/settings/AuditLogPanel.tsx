@@ -115,7 +115,7 @@ const ACTION_LABELS: Record<string, string> = {
   registration_bot_protection_updated: "Guest registration bot protection updated",
   registration_custom_domain_updated: "Guest registration own address updated",
   registration_password_changed: "Guest registration password changed",
-  registration_sso_provider_updated: "Guest registration company sign-in provider updated",
+  registration_sso_provider_updated: "Guest registration Company SSO provider updated",
   registration_rejected: "Guest registration rejected",
   registration_settings_changed: "Guest registration settings changed",
   registration_turnstile_cleared: "Guest registration Turnstile keys removed",

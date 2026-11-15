@@ -173,7 +173,7 @@ export const CODE_MESSAGES: Record<string, string> = {
     "A field with a condition can be on the registration form only when the field it depends on is on the form too.",
   source_field_conflict: "A custom field with this key already exists for this event.",
   sso_claim_needs_sso:
-    "The restriction to one company works with the company SSO only. Choose the company SSO as the way in, or leave the restriction out.",
+    "The restriction to one company works with Company SSO only. Choose Company SSO under How guests open the form, or leave the restriction out.",
   sso_claim_superadmin_only: "Only a superadmin can change the restriction to one company.",
   source_provider_unavailable:
     "Select an enabled direct OIDC identity provider before enabling Cloudflare Access.",

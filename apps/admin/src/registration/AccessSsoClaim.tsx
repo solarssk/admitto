@@ -16,8 +16,8 @@ export interface SsoProviderSummary {
 }
 
 const INTRO =
-  "Optionally let only the people of one company register: the identity provider (OpenID Connect, such as Microsoft Entra ID) vouches for them with a claim in the sign-in. Name the claim and list the values that may register; with Entra ID the claim is usually tid and the value the tenant ID of the company. Leave both empty for no restriction.";
-const PROVIDER_HINT = "Chosen for the organisation, in Organisation settings, Identity.";
+  "You can let only the people of one company register. When a guest signs in, the identity provider sends facts about the guest, called claims. Name one claim and list the values that may register. With Microsoft Entra ID, the claim is usually tid and the value is the tenant ID of the company. Leave both fields empty for no restriction.";
+const PROVIDER_HINT = "Chosen for the organisation in Organisation settings, External services, Ways in.";
 const MATCH_HINT =
   "A value must match exactly, with capital letters as they are. Never use the end of an email address here: it says where mail goes, not who the person is. A change counts at once, also for guests who have already signed in.";
 

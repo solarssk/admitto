@@ -34,7 +34,7 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     missing: "Choose how guests open the form: with a link, with a password or with company SSO.",
   },
   access_method_enabled: {
-    title: "How guests open the form: allowed",
+    title: "The chosen way is turned on",
     met: "This way is turned on for the organisation.",
     missing: "This way is not turned on for the organisation.",
     remedy: ASK_FOR_THE_WAY_IN,
@@ -47,14 +47,14 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
   },
   bot_protection_not_used: {
     title: "Bot protection",
-    met: "Not used for this organisation.",
-    missing: "Bot protection is switched off for this organisation.",
+    met: "Off for this organisation. The link and password forms have no bot check.",
+    missing: "Bot protection is off for this organisation.",
     info: true,
   },
   identity_provider: {
     title: "Company SSO",
-    met: "The company SSO is set up.",
-    missing: "The company SSO is not set up, so the form stays closed.",
+    met: "Company SSO is set up.",
+    missing: "Company SSO is not set up, so the form stays closed.",
     remedy: ASK_FOR_THE_PROVIDER,
   },
   password: {

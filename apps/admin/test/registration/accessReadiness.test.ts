@@ -23,7 +23,7 @@ describe("the words of the checks", () => {
     const info = Object.entries(READINESS_COPY).filter(([, copy]) => copy.info === true);
 
     expect(info.map(([key]) => key)).toEqual(["bot_protection_not_used"]);
-    expect(READINESS_COPY.bot_protection_not_used.met).toBe("Not used for this organisation.");
+    expect(READINESS_COPY.bot_protection_not_used.met).toBe("Off for this organisation. The link and password forms have no bot check.");
     expect(READINESS_COPY.bot_protection_not_used.remedy).toBeUndefined();
   });
 
@@ -66,7 +66,7 @@ describe("the words of the checks", () => {
 
   it("name the two rows about the way guests open the form, and never call it a way in", () => {
     expect(READINESS_COPY.access_method.title).toBe("How guests open the form");
-    expect(READINESS_COPY.access_method_enabled.title).toBe("How guests open the form: allowed");
+    expect(READINESS_COPY.access_method_enabled.title).toBe("The chosen way is turned on");
     expect(JSON.stringify([READINESS_COPY.access_method, READINESS_COPY.access_method_enabled])).not.toMatch(/way in/i);
   });
 
@@ -74,8 +74,8 @@ describe("the words of the checks", () => {
     expect(READINESS_COPY.access_method.missing).toBe("Choose how guests open the form: with a link, with a password or with company SSO.");
     expect(READINESS_COPY.identity_provider).toMatchObject({
       title: "Company SSO",
-      met: "The company SSO is set up.",
-      missing: "The company SSO is not set up, so the form stays closed.",
+      met: "Company SSO is set up.",
+      missing: "Company SSO is not set up, so the form stays closed.",
     });
   });
 

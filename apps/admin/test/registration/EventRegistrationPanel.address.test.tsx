@@ -134,7 +134,7 @@ describe("the address card", () => {
       expect(box.readOnly).toBe(true);
       expect(box.classList.contains("access-readonly")).toBe(true);
     }
-    expect(within(addressCard()).getByText("Create a CNAME record that points the address to admitto.example.com.")).toBeTruthy();
+    expect(within(addressCard()).getByText("Create a CNAME record (a DNS entry that makes one name an alias of another) that points the address to admitto.example.com.")).toBeTruthy();
   });
 
   it("gives all three fields of the record the same frame, each with its copy button on the left", async () => {
@@ -160,7 +160,7 @@ describe("the address card", () => {
     expect((within(addressCard()).getByRole("button", { name: "Copy the name" }) as HTMLButtonElement).disabled).toBe(true);
     expect((within(addressCard()).getByRole("button", { name: "Copy the target" }) as HTMLButtonElement).disabled).toBe(true);
     expect((within(addressCard()).getByRole("button", { name: "Copy the type" }) as HTMLButtonElement).disabled).toBe(false);
-    expect(within(addressCard()).getByText("Create a CNAME record that points the address to the address of this instance.")).toBeTruthy();
+    expect(within(addressCard()).getByText("Create a CNAME record (a DNS entry that makes one name an alias of another) that points the address to the address of this instance.")).toBeTruthy();
   });
 
   it("follows what is typed when the server would take it, falls back to the saved address when it would not, and to the example when there is none", async () => {
@@ -185,11 +185,11 @@ describe("the address card", () => {
 
   const text = (name: string, target: string) =>
     [
-      "Set up an own address for the guest registration of an event in Admitto.",
+      "Set up the own address of an event for guest registration in Admitto.",
       "",
-      `1. DNS: create a CNAME record from ${name} to ${target}.`,
+      `1. DNS: create a CNAME record (a DNS entry that makes one name an alias of another) from ${name} to ${target}.`,
       `2. Serve HTTPS on ${name} with a valid certificate. Admitto does not issue certificates.`,
-      `3. Pass the Host header on to Admitto, and keep ${name} open to guests, outside any sign-in gateway.`,
+      `3. Make sure the web server or proxy passes the original Host header (the address the guest typed) on to Admitto. Keep ${name} open to guests, with no sign-in gateway in front of it.`,
       "",
       "Report back when the address is ready.",
     ].join("\n");
@@ -229,7 +229,7 @@ describe("the address card", () => {
 
     fireEvent.click(copyButton());
 
-    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not copy.", "error"));
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not copy. Try again.", "error"));
     expect(writeText.mock.calls[0]?.[0]).toContain("from events.example.com to the address of this instance.");
   });
 
@@ -257,18 +257,17 @@ describe("the address card", () => {
 
     fireEvent.click(within(addressCard()).getByRole("button", { name: "Copy the target" }));
 
-    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not copy.", "error"));
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not copy. Select the text and copy it by hand.", "error"));
   });
 
-  it("lists the four steps in one numbered list, the record first", async () => {
+  it("lists the three steps in one numbered list, the record first", async () => {
     await renderPanel(settings({ own_address: own() }));
 
     const steps = Array.from(stepsBody().querySelectorAll("ol.access-steps > li"));
-    expect(steps.map((step) => step.querySelector(".access-dns") !== null)).toEqual([true, false, false, false]);
+    expect(steps.map((step) => step.querySelector(".access-dns") !== null)).toEqual([true, false, false]);
     expect(steps.slice(1).map((step) => plain(step.textContent))).toEqual([
       "Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.",
-      "Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.",
-      "Select Check now. Guests get links on the address once the check passes. Until then they keep the main address.",
+      "Make sure the web server or proxy passes the original Host header (the address the guest typed) on to Admitto. Keep the address open to guests, with no sign-in gateway in front of it.",
     ]);
   });
 
@@ -302,8 +301,8 @@ describe("the address card", () => {
   it("keeps the end of the texts of the steps together, so that none wraps to a lone word", async () => {
     await renderPanel(settings({ own_address: own() }));
 
-    const host = [...addressCard().querySelectorAll("ol.access-steps > li")].find((step) => step.textContent?.startsWith("Pass the Host header")) as HTMLElement;
-    expect(host.textContent?.endsWith("sign-in\u00A0gateway.")).toBe(true);
+    const host = [...addressCard().querySelectorAll("ol.access-steps > li")].find((step) => step.textContent?.startsWith("Make sure the web server")) as HTMLElement;
+    expect(host.textContent?.endsWith("front\u00A0of\u00A0it.")).toBe(true);
     expect(addressCard().querySelector(".at-hint")?.textContent).toBe("The host name only, such as events.example.com.".replace("such as events.example.com.", "such as\u00A0events.example.com."));
   });
 
@@ -325,12 +324,20 @@ describe("the address card", () => {
     expect(within(addressCard()).getAllByRole("button", { name: /Save address/ })).toHaveLength(1);
   });
 
+  it("tells the superadmin, not IT, to select Check now, in a hint under the buttons, once an address is saved", async () => {
+    await renderPanel(settings({ own_address: own() }));
+
+    const hint = [...addressCard().querySelectorAll(".access-address__controls > .at-hint")].map((node) => plain(node.textContent));
+    expect(hint).toEqual(["When IT is done, select Check now. Guests get links on the address once the check passes. Until then they keep the main address."]);
+    expect(within(stepsBody()).queryByText(/Select Check now/)).toBeNull();
+  });
+
   it("puts the setup for IT in a panel of its own, the steps under its heading", async () => {
     await renderPanel(settings());
 
     const panel = addressCard().querySelector("section.access-it") as HTMLElement;
     expect(panel.querySelector("ul")).toBeNull();
-    expect(panel.querySelectorAll("ol.access-steps > li")).toHaveLength(4);
+    expect(panel.querySelectorAll("ol.access-steps > li")).toHaveLength(3);
   });
 
   it.each([
@@ -492,7 +499,7 @@ describe("removing the address", () => {
     api.fetchRegistrationSettings.mockResolvedValue(settings());
 
     fireEvent.click(button("Remove"));
-    const dialog = await screen.findByRole("dialog", { name: "Remove the own address?" });
+    const dialog = await screen.findByRole("dialog", { name: "Remove the event's own address?" });
     expect(api.saveCustomDomain).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove address" }));
 
@@ -507,7 +514,7 @@ describe("removing the address", () => {
     await renderPanel(settings({ own_address: own() }));
 
     fireEvent.click(button("Remove"));
-    const dialog = await screen.findByRole("dialog", { name: "Remove the own address?" });
+    const dialog = await screen.findByRole("dialog", { name: "Remove the event's own address?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -519,11 +526,11 @@ describe("removing the address", () => {
     await renderPanel(settings({ own_address: own() }));
 
     fireEvent.click(button("Remove"));
-    const dialog = await screen.findByRole("dialog", { name: "Remove the own address?" });
+    const dialog = await screen.findByRole("dialog", { name: "Remove the event's own address?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove address" }));
 
     await waitFor(() => expect(within(dialog).getByText(/Something went wrong/)).toBeTruthy());
-    expect(screen.getByRole("dialog", { name: "Remove the own address?" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Remove the event's own address?" })).toBeTruthy();
   });
 });
 
