@@ -97,7 +97,7 @@ afterEach(() => {
   assignments = [];
 });
 
-describe("the Access methods card, which sits on the superadmin-only settings route", () => {
+describe("the Ways in card, which sits on the superadmin-only settings route", () => {
   it("shows a superadmin the card on External services, after reading the ways in", async () => {
     assignments = [makeSuperadminAssignment()];
     renderAt("/admin/settings?tab=external");
@@ -114,7 +114,7 @@ describe("the Access methods card, which sits on the superadmin-only settings ro
     renderAt("/admin/settings?tab=external");
 
     expect(await screen.findByText("events picker")).toBeTruthy();
-    expect(screen.queryByText("Access methods")).toBeNull();
+    expect(screen.queryByText("Ways in")).toBeNull();
     expect(screen.queryByRole("switch", { name: "Link" })).toBeNull();
     expect(fetchRegistrationAccessMethods).not.toHaveBeenCalled();
     expect(fetchRegistrationSsoProvider).not.toHaveBeenCalled();

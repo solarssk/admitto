@@ -58,12 +58,12 @@ import {
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 import { fetchWaysIn, NOTHING_SAVED, saveWaysIn } from "./waysInRequests.js";
 
-/** The cards of the panel, for its placeholder: Weather, Maps, Guest registration and the ways to open the form, each with an intro and fields or rows. */
+/** The cards of the panel, for its placeholder: Weather, Maps, Guest registration and Ways in, each with an intro and fields or rows. */
 const EXTERNAL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "weather", title: "Weather", intro: true, fields: 1, rows: 1, rowHeight: 24 },
   { id: "maps", title: "Maps", intro: true, fields: 4, controlHeight: 62 },
   { id: "registration", title: "Guest registration", intro: true, fields: 2, columns: 2, controlHeight: 82, rows: 1, rowHeight: 36 },
-  { id: "ways-in", title: "Access methods", intro: 2, rows: 2, rowHeight: 58 },
+  { id: "ways-in", title: "Ways in", intro: 2, rows: 2, rowHeight: 58 },
 ];
 
 const WEATHER_CARD_HINT =
@@ -289,7 +289,7 @@ function toastExternalServicesSaveResult(
     weatherResult: SettledSave;
     mapsResult: SettledMapsSave;
     turnstileResult: SettledTurnstileSave;
-    /** The reasons the requests of the Access methods card failed: none when they all worked. */
+    /** The reasons the Ways in requests failed: none when they all worked. */
     accessFailures: readonly unknown[];
   },
 ): void {

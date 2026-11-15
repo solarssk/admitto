@@ -50,7 +50,7 @@ afterEach(() => {
 
 describe("the ways in a superadmin has not turned on", () => {
   const forOrganiser = `${REASON} Ask a superadmin to turn it on.`;
-  const forSuperadmin = `${REASON} Turn it on in Organisation settings, External services, Access methods.`;
+  const forSuperadmin = `${REASON} Turn it on in Organisation settings, External services, Ways in.`;
 
   it("leaves all three choosable when all three are on, with no hover text", async () => {
     await renderLoaded(settings({ enabled_access_methods: ["link", "password", "sso"] }));

@@ -13,7 +13,7 @@ export async function fetchWaysIn(signal?: AbortSignal): Promise<WaysIn> {
   return { methods, sso };
 }
 
-/** What a save of the Access methods card got: the answer of each request that worked, and the reason of each that did not. */
+/** What a save of the Ways in card got: the answer of each request that worked, and the reason of each that did not. */
 export interface WaysInSaveResult {
   saved: WaysInSaved;
   failures: unknown[];

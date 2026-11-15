@@ -18,9 +18,9 @@ export interface ReadinessCopy {
 
 const ASK_A_SUPERADMIN = { text: "Ask a superadmin to set it up." } as const;
 /** The identity provider of the company SSO is chosen by a superadmin, on the same card as the switch. */
-const ASK_FOR_THE_PROVIDER = { text: "Ask a superadmin to choose the identity provider in Organisation settings, External services, Access methods." } as const;
+const ASK_FOR_THE_PROVIDER = { text: "Ask a superadmin to choose the identity provider in Organisation settings, External services, Ways in." } as const;
 /** The ways in of the whole instance are turned on by a superadmin, on a card of their own. */
-const ASK_FOR_THE_WAY_IN = { text: "Ask a superadmin to turn it on in Organisation settings, External services, Access methods." } as const;
+const ASK_FOR_THE_WAY_IN = { text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." } as const;
 
 /**
  * The words of every check the server reports (`READINESS_KEYS` in `apps/web/src/registration/readiness.ts`; a test holds the two

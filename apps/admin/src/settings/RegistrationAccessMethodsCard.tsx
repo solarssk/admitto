@@ -8,26 +8,27 @@ import {
   type SwitchedAccessMethod,
 } from "./registrationAccessMethods.js";
 
-const CARD_HINT = "The ways a guest can open a registration form. An organiser chooses one of the ways that are on for each event.";
-const CARD_INTRO = "An organiser can choose only a way that is on. Turning one off closes the forms of all events that use it. Nothing is deleted.";
+const CARD_HINT = "The ways a guest can reach a registration form. An organiser chooses one of the ways that are on for each event.";
+const CARD_INTRO =
+  "An organiser can choose only a way that is on. Turning one off closes the registration form of every event that uses it, at once: guests see a page that is not found. Nothing is deleted, and turning it on again opens those forms again.";
 const KEYS_NOTICE =
   "Forms behind a link or a password stay closed until the Turnstile keys above are ready: both keys saved, and the secret key readable.";
 
 const METHODS: Readonly<Record<SwitchedAccessMethod, { name: string; text: string; textWithoutCheck: string }>> = {
   link: {
     name: "Link",
-    text: "Anyone with the link of an event can open its form, after a bot check.",
-    textWithoutCheck: "Anyone with the link of an event can open its form. Bot protection is off.",
+    text: "Anyone who has the link of an event can open its form, after a bot check.",
+    textWithoutCheck: "Anyone who has the link of an event can open its form. Bot protection is off.",
   },
   password: {
     name: "Password",
-    text: "A guest needs the link and the password of the event, after a bot check.",
-    textWithoutCheck: "A guest needs the link and the password of the event. Bot protection is off, so use a strong password.",
+    text: "A guest needs the password of the event, as well as its link, to open the form, after a bot check.",
+    textWithoutCheck: "A guest needs the password of the event, as well as its link, to open the form. Bot protection is off, so use a strong password.",
   },
   sso: {
     name: "Company SSO",
-    text: "A guest signs in with the identity provider chosen below. This replaces the bot check.",
-    textWithoutCheck: "A guest signs in with the identity provider chosen below.",
+    text: "A guest signs in with the identity provider chosen below to open the form. The sign-in replaces the bot check, and the guest's email comes from the provider.",
+    textWithoutCheck: "A guest signs in with the identity provider chosen below to open the form. The guest's email comes from the provider.",
   },
 };
 
@@ -55,7 +56,7 @@ export function RegistrationAccessMethodsCard({
   const checked = botProtection === "required";
   const needsKeys = checked && TURNSTILE_ACCESS_METHODS.some((method) => draft[method]);
   return (
-    <Card title={<HintLabel hint={CARD_HINT}>Access methods</HintLabel>}>
+    <Card title={<HintLabel hint={CARD_HINT}>Ways in</HintLabel>}>
       <div className="settings-card-stack">
         <p className="settings-card-intro">{CARD_INTRO}</p>
         <div className="mail-transport-section">

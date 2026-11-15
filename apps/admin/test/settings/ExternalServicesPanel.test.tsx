@@ -1304,10 +1304,10 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
     mockFetchTurnstile.mockResolvedValue(sampleTurnstile({ bot_protection: "not_used" }));
     mockFetchAccess.mockResolvedValue(accessMethodsDto(["link", "password"], true));
     await renderLoaded();
-    const ways = screen.getByText("Access methods").closest(".at-card") as HTMLElement;
+    const ways = screen.getByText("Ways in").closest(".at-card") as HTMLElement;
 
     expect(within(ways).queryByText(/stay closed until the Turnstile keys above are ready/)).toBeNull();
-    expect(ways.textContent).toMatch(/Anyone with the link of an event can open its form\. Bot protection is off\./);
+    expect(ways.textContent).toMatch(/Anyone who has the link of an event can open its form\. Bot protection is off\./);
     expect(ways.textContent).toMatch(/Bot protection is off, so use a strong password\./);
     expect(ways.textContent).not.toMatch(/after a bot check/);
   });
@@ -1315,7 +1315,7 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
 
 describe("ExternalServicesPanel, ways in card", () => {
   type WayName = "Link" | "Password" | "Company SSO";
-  const card = () => screen.getByText("Access methods").closest(".at-card") as HTMLElement;
+  const card = () => screen.getByText("Ways in").closest(".at-card") as HTMLElement;
   const wayIn = (name: WayName) => within(card()).getByRole("switch", { name }) as HTMLInputElement;
   const save = () => screen.getByRole("button", { name: "Save" });
   const keysWarning = () => within(card()).queryByText(/stay closed until the Turnstile keys above are ready/);
@@ -1334,11 +1334,12 @@ describe("ExternalServicesPanel, ways in card", () => {
 
   it("says in the description of each switch what the way is, and in the card what turning one off does", async () => {
     await renderLoaded();
-    expect(describedBy(wayIn("Link"))).toMatch(/Anyone with the link of an event can open its form, after a bot check\./);
-    expect(describedBy(wayIn("Password"))).toMatch(/needs the link and the password of the event, after a bot check/);
-    expect(describedBy(wayIn("Company SSO"))).toMatch(/signs in with the identity provider chosen below\. This replaces the bot check/);
+    expect(describedBy(wayIn("Link"))).toMatch(/Anyone who has the link of an event can open its form, after a bot check\./);
+    expect(describedBy(wayIn("Password"))).toMatch(/needs the password of the event, as well as its link/);
+    expect(describedBy(wayIn("Company SSO"))).toMatch(/signs in with the identity provider chosen below to open the form\. The sign-in replaces the bot check/);
     expect(card().textContent).toMatch(/An organiser can choose only a way that is on\./);
-    expect(card().textContent).toMatch(/Turning one off closes the forms of all events that use it\. Nothing is deleted\./);
+    expect(card().textContent).toMatch(/Turning one off closes the registration form of every event that uses it, at once: guests see a page that is not found\./);
+    expect(card().textContent).toMatch(/Nothing is deleted, and turning it on again opens those forms again\./);
   });
 
   it("shows the ways that are on, as the server has them", async () => {
@@ -1537,7 +1538,7 @@ describe("ExternalServicesPanel, ways in card", () => {
     const retry = await screen.findByRole("button", { name: "Retry" });
     expect(screen.getByText("Could not load external services")).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
-    expect(screen.queryByText("Access methods")).toBeNull();
+    expect(screen.queryByText("Ways in")).toBeNull();
     expect(screen.queryByTestId("at-toast")).toBeNull();
     fireEvent.click(retry);
     await waitFor(() => expect(wayIn("Link")).toBeTruthy());
@@ -1549,7 +1550,7 @@ describe("ExternalServicesPanel, ways in card", () => {
     renderWithToastAndRouter(<ExternalServicesPanel />);
     await screen.findByRole("button", { name: "Retry" });
     expect(screen.getByText("You do not have access.")).toBeTruthy();
-    expect(screen.queryByText("Access methods")).toBeNull();
+    expect(screen.queryByText("Ways in")).toBeNull();
     expect(document.getElementById("external-access-link")).toBeNull();
     expect(document.getElementById("external-access-password")).toBeNull();
   });
@@ -1568,7 +1569,7 @@ describe("ExternalServicesPanel, ways in card", () => {
       renderWithToastAndRouter(<ExternalServicesPanel />);
       await advanceTimers(250);
       const region = screen.getByLabelText("Loading external services");
-      expect(within(region).getByText("Access methods")).toBeTruthy();
+      expect(within(region).getByText("Ways in")).toBeTruthy();
       expect(document.getElementById("external-weather-provider")).toBeNull();
       expect(document.getElementById("external-access-link")).toBeNull();
     });
@@ -1579,7 +1580,7 @@ describe("ExternalServicesPanel, ways in card", () => {
 const SSO_OTHER = { id: "idp-okta", display_name: "Okta" };
 
 describe("ExternalServicesPanel, company SSO on the ways in card", () => {
-  const card = () => screen.getByText("Access methods").closest(".at-card") as HTMLElement;
+  const card = () => screen.getByText("Ways in").closest(".at-card") as HTMLElement;
   const toggle = () => within(card()).getByRole("switch", { name: "Company SSO" }) as HTMLInputElement;
   const save = () => screen.getByRole("button", { name: "Save" });
   const picker = () => el<HTMLButtonElement>("external-access-sso-provider");
@@ -1588,11 +1589,6 @@ describe("ExternalServicesPanel, company SSO on the ways in card", () => {
     fireEvent.click(screen.getByRole("button", { name }));
   };
   const noteText = () => document.getElementById("external-access-sso-note")?.textContent ?? "";
-  const field = (label: string) => within(card()).getByLabelText(label) as HTMLInputElement;
-  const itPanel = () => within(card()).getByRole("region", { name: "Setup for your IT team" });
-  /** The text of the card with the no-break spaces that keep the end of a sentence together read as spaces. */
-  const cardText = () => (card().textContent ?? "").replace(/\s/g, " ");
-  const openItPanel = () => fireEvent.click(within(itPanel()).getByRole("button", { name: "Setup for your IT team" }));
 
   it("shows nothing of the provider while the company SSO is off, and the picker, the sentence and the address once it is on", async () => {
     await renderLoaded();
@@ -1603,67 +1599,8 @@ describe("ExternalServicesPanel, company SSO on the ways in card", () => {
 
     expect(picker().getAttribute("aria-label")).toBe("Identity provider, none selected");
     expect(noteText()).toMatch(/^No identity provider is chosen yet\./);
-    expect(field("Return address").value).toBe("https://tickets.example.com/sso/callback");
+    expect((el<HTMLInputElement>("external-access-sso-redirect")).value).toBe("https://tickets.example.com/sso/callback");
     expect(within(card()).getByText("Return address")).toBeTruthy();
-  });
-
-  it("keeps the return addresses in a panel for the IT team that is shut until it is opened", async () => {
-    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
-    await renderLoaded();
-
-    const toggleButton = within(itPanel()).getByRole("button", { name: "Setup for your IT team" });
-    expect(toggleButton.getAttribute("aria-expanded")).toBe("false");
-    expect(field("Return address").closest(".access-it__body")?.hasAttribute("hidden")).toBe(true);
-    openItPanel();
-    expect(toggleButton.getAttribute("aria-expanded")).toBe("true");
-    expect(field("Return address").closest(".access-it__body")?.hasAttribute("hidden")).toBe(false);
-  });
-
-  it("copies the same whole instructions for an AI agent as the card of an event, with every return address", async () => {
-    const writeText = vi.fn(() => Promise.resolve());
-    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
-    mockFetchSso.mockResolvedValue(
-      ssoProviderDto({
-        redirect_uris: [
-          { uri: "https://tickets.example.com/sso/callback", host: "instance", verified: true },
-          { uri: "https://a.acme.example/sso/callback", host: "event_domain", verified: true },
-        ],
-      }),
-    );
-    await renderLoaded();
-
-    fireEvent.click(within(itPanel()).getByRole("button", { name: "Copy instructions for an AI agent" }));
-
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    const text = (writeText.mock.calls[0] as unknown as [string])[0];
-    expect(text).toContain("Set up Company SSO (OpenID Connect)");
-    expect(text).toContain("these allowed redirect (callback) addresses: https://tickets.example.com/sso/callback, https://a.acme.example/sso/callback");
-    expect(text).toContain("/sso/callback, /r/* and /legal/*");
-    expect(text).not.toContain("claim");
-    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Instructions copied."));
-  });
-
-  it("shows the icon of the kind of provider in the field and in its list", async () => {
-    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
-    mockFetchSso.mockResolvedValue(ssoProviderDto({ provider_id: "idp-entra", state: "ready" }));
-    await renderLoaded();
-
-    expect(picker().querySelector("i.ti-brand-azure")).toBeTruthy();
-    fireEvent.click(picker());
-    const okta = screen.getByRole("button", { name: "Okta" });
-    expect(okta.querySelector("i.ti-shield-lock")).toBeTruthy();
-  });
-
-  it("says in a hint under the field, not in a notice, which provider guests sign in with", async () => {
-    mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
-    mockFetchSso.mockResolvedValue(ssoProviderDto({ provider_id: "idp-okta", state: "ready" }));
-    await renderLoaded();
-
-    const note = document.getElementById("external-access-sso-note");
-    expect(note?.classList.contains("at-hint")).toBe(true);
-    expect(note?.closest(".at-notice")).toBeNull();
-    expect(note?.closest(".mail-transport-section")).toBeTruthy();
   });
 
   it("offers the providers that are turned on by the name staff gave them, and shows the chosen one", async () => {
@@ -1709,38 +1646,33 @@ describe("ExternalServicesPanel, company SSO on the ways in card", () => {
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     await renderLoaded();
-    openItPanel();
 
-    expect(cardText()).toMatch(/Enter this address once at the identity provider/);
-    expect(field("Return address").classList.contains("access-readonly")).toBe(true);
-    expect(field("Return address").readOnly).toBe(true);
-    expect(cardText()).toMatch(/same for every event that uses Company SSO/);
-    expect(cardText()).toMatch(/let the paths \/sso\/callback, \/r\/\* and \/legal\/\* through without asking for a sign-in/);
+    expect(card().textContent).toMatch(/Enter this address once at the identity provider/);
+    expect(card().textContent).toMatch(/same for every event that uses Company SSO/);
+    expect(card().textContent).toMatch(/let the paths \/sso\/callback, \/r\/\* and \/legal\/\* through without asking for a sign-in/);
     fireEvent.click(within(card()).getByRole("button", { name: "Copy the return address" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://tickets.example.com/sso/callback"));
-    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Copied."));
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Return address copied."));
   });
 
   it("says so when the address cannot be copied", async () => {
     mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: () => Promise.reject(new Error("denied")) } });
     await renderLoaded();
-    openItPanel();
 
     fireEvent.click(within(card()).getByRole("button", { name: "Copy the return address" }));
 
-    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Could not copy. Select the text and copy it by hand."));
+    await waitFor(() => expect(screen.getByTestId("at-toast").textContent).toContain("Could not copy the return address."));
   });
 
   it("says that the address of the instance must be set first when the server has none to give, and points to General", async () => {
     mockFetchAccess.mockResolvedValue(accessMethodsDto(["sso"]));
     mockFetchSso.mockResolvedValue(ssoProviderDto({ redirect_uri: null }));
     await renderLoaded();
-    openItPanel();
 
-    expect(within(card()).queryByLabelText("Return address")).toBeNull();
-    expect(cardText()).toMatch(/There is no return address yet, because the Instance URL is not set\./);
+    expect(document.getElementById("external-access-sso-redirect")).toBeNull();
+    expect(card().textContent).toMatch(/There is no return address yet, because the Instance URL is not set\./);
     expect(within(card()).getByRole("link", { name: "Set it under General in Organisation settings." }).getAttribute("href")).toBe("/admin/settings?tab=general");
   });
 
@@ -1749,8 +1681,8 @@ describe("ExternalServicesPanel, company SSO on the ways in card", () => {
     mockFetchSso.mockResolvedValue(ssoProviderDto({ redirect_uri: "https://guests.example.org/sso/callback" }));
     await renderLoaded();
 
-    expect(field("Return address").value).toBe("https://guests.example.org/sso/callback");
-    expect(field("Return address").value).not.toContain(window.location.origin);
+    expect(el<HTMLInputElement>("external-access-sso-redirect").value).toBe("https://guests.example.org/sso/callback");
+    expect(el<HTMLInputElement>("external-access-sso-redirect").value).not.toContain(window.location.origin);
   });
 
   it("lists the return address of each own address of an event after the instance's, and says which has not passed its check", async () => {
@@ -1767,15 +1699,14 @@ describe("ExternalServicesPanel, company SSO on the ways in card", () => {
       }),
     );
     await renderLoaded();
-    openItPanel();
 
-    expect(field("Return address").value).toBe("https://tickets.example.com/sso/callback");
-    expect(field("Return address for a.acme.example").value).toBe("https://a.acme.example/sso/callback");
-    expect(field("Return address for b.acme.example").value).toBe("https://b.acme.example/sso/callback");
+    expect(el<HTMLInputElement>("external-access-sso-redirect").value).toBe("https://tickets.example.com/sso/callback");
+    expect(el<HTMLInputElement>("external-access-sso-redirect-1").value).toBe("https://a.acme.example/sso/callback");
+    expect(el<HTMLInputElement>("external-access-sso-redirect-2").value).toBe("https://b.acme.example/sso/callback");
     expect(within(card()).getByText("Return address for a.acme.example")).toBeTruthy();
     // Only the one that has not passed its check says so.
-    expect(cardText().match(/has not passed its check yet/g)).toHaveLength(1);
-    expect(cardText()).toMatch(/Also enter this address at the identity provider\./);
+    expect(card().textContent?.match(/has not passed its check yet/g)).toHaveLength(1);
+    expect(card().textContent).toMatch(/Also enter this address at the identity provider\./);
 
     fireEvent.click(within(card()).getByRole("button", { name: "Copy the return address for b.acme.example" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://b.acme.example/sso/callback"));
@@ -1789,7 +1720,7 @@ describe("ExternalServicesPanel, company SSO on the ways in card", () => {
     await renderLoaded();
 
     expect(card().textContent).toMatch(/There is no return address yet/);
-    expect(field("Return address for a.acme.example").value).toBe("https://a.acme.example/sso/callback");
+    expect(el<HTMLInputElement>("external-access-sso-redirect-1").value).toBe("https://a.acme.example/sso/callback");
   });
 
   it("saves a provider that was chosen with its own request, and not the list of ways when no switch moved", async () => {

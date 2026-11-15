@@ -68,10 +68,11 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - Cloudflare sees each visitor's IP address and browser details when the form opens. Name it in your privacy notice. See [SUBPROCESSORS.md](https://github.com/solarssk/admitto/blob/main/docs/security/SUBPROCESSORS.md).
 - An administrator turns registration on for each event, on the **Access** tab of its **Registration** page. See [Registration Access](Registration-Access).
 
-**Access methods**
+**Ways in**
 
 - Turn **Link**, **Password** or **Company SSO** on to let organisers choose it for their events. An organiser picks one way for each event, on the **Access** tab of its **Registration** page.
-- A way that is off cannot be chosen. Turning one off closes the forms of all events that use it, at once: guests see a page that is not found. Nothing is deleted, and turning it on again opens those forms again.
+- A way that is off cannot be chosen. Turning one off closes the form of every event that uses it, at once: guests see a page that is not found.
+- Nothing is deleted when you turn a way off. Turn it on again and those forms open again.
 - While the bot check is **On**, a link or a password opens a form only while the Turnstile keys are ready. The card warns you when they are not. The company SSO needs no Turnstile keys.
 - While the bot check is **Off**, the link and the password need no keys. The Provider and the keys stay on the card, so you can keep them ready.
 - Save once for the whole tab. The change is recorded in **Logs**, on the **Audit** view, as "Guest registration access methods updated".
@@ -79,9 +80,8 @@ Shared outbound connections. They are configured in this tab, not through deploy
 **Company SSO**
 
 - With **Company SSO** on, pick the **Identity provider** guests sign in with. The list holds the OIDC providers that are turned on, by the name you gave them under **Identity**. A guest who signs in this way does not get an Admitto account.
-- The picker is half the width of the row and shows the icon of the kind of provider (Microsoft Entra ID, Google or another OpenID Connect provider). The line under it says where the choice stands: no provider chosen yet, the chosen provider was deleted, the chosen provider is turned off, or ready. Unless it is ready, the forms of events that use the company SSO stay closed. Nothing is deleted.
+- The sentence under the picker says where the choice stands: no provider chosen yet, the chosen provider was deleted, the chosen provider is turned off, or ready. Unless it is ready, the forms of events that use the company SSO stay closed. Nothing is deleted.
 - The choice is saved with the one **Save** of the tab, and recorded in **Logs**, on the **Audit** view, as "Guest registration Company SSO provider updated". If the choice is refused, the switch is still saved and the provider stays as you left it.
-- The return addresses are in a panel called **Setup for your IT team**. It is shut until you open it. **Copy instructions for an AI agent** copies the same whole text as on the **Access** tab of an event: the addresses to enter at the identity provider and the gateway paths.
 - **Return address** is the address to enter at the identity provider, in its list of allowed redirect (callback) addresses. After a guest signs in, the provider sends the guest back to this address. It is the same for every event that uses Company SSO on the address of the instance, so you enter it once. It comes from the Instance URL under **General**. Without that address the card says so.
 - An event with an address of its own for guests has one more **Return address for** the name of that address, in the form `https://<address>/sso/callback`. It is the same for all events that share that address, so you enter it once for each address. It is listed before the address passes its check, so that the sign-in works as soon as it does. See [Registration Access](Registration-Access).
 - If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths `/sso/callback`, `/r/*` and `/legal/*` through without asking for a sign-in.

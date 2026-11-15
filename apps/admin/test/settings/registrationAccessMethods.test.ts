@@ -137,8 +137,8 @@ describe("mergeWaysIn", () => {
 describe("ssoProviderOptions", () => {
   it("offers the providers that are turned on by the name staff gave them", () => {
     expect(ssoProviderOptions(ssoProviderDto())).toEqual([
-      { id: "idp-entra", label: "Company Entra ID", icon: "brand-azure" },
-      { id: "idp-okta", label: "Okta", icon: "shield-lock" },
+      { id: "idp-entra", label: "Company Entra ID" },
+      { id: "idp-okta", label: "Okta" },
     ]);
     expect(ssoProviderOptions(ssoProviderDto({ providers: [] }))).toEqual([]);
   });

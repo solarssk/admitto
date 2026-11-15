@@ -43,9 +43,9 @@ describe("the words of the checks", () => {
       expect(remedy(key), key).toEqual({ text: "Ask a superadmin to set it up." });
     }
     // The company SSO is set up on the card of the ways in, and the organiser is told which.
-    expect(remedy("identity_provider")).toEqual({ text: "Ask a superadmin to choose the identity provider in Organisation settings, External services, Access methods." });
+    expect(remedy("identity_provider")).toEqual({ text: "Ask a superadmin to choose the identity provider in Organisation settings, External services, Ways in." });
     // A way in is turned on at one place, and the organiser is told which.
-    expect(remedy("access_method_enabled")).toEqual({ text: "Ask a superadmin to turn it on in Organisation settings, External services, Access methods." });
+    expect(remedy("access_method_enabled")).toEqual({ text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." });
     expect(remedy("legal_documents")?.link).toBe("legal");
     expect(remedy("form_questions")?.link).toBe("fields");
     expect(remedy("required_fields")?.link).toBe("fields");
