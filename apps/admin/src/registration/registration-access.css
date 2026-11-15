@@ -117,10 +117,6 @@
 
 /* The event's own address for guests: its state is a row of the checklist's kind with no rule above it; the field and its buttons are
  * spaced by the card's gap, and the steps for IT are a numbered list that wraps instead of widening the card. */
-.access-address__status {
-  padding: 0;
-}
-
 .access-address__controls {
   display: flex;
   flex-direction: column;
@@ -274,6 +270,7 @@
 /* The icon stands beside the title alone; the description (with when it was last checked) is one line of text under it, in the column of
  * the text. */
 .access-address__status {
+  padding: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   column-gap: var(--space-3);
