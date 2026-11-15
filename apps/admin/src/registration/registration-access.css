@@ -128,17 +128,25 @@
   min-width: 0;
 }
 
-.access-address__buttons {
+/* The field, Set address, Check now and Remove stand in one row; on a narrow screen the buttons wrap under the field. The field takes
+ * half of the card. */
+.access-address__row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-3);
 }
 
-/* The address box beside Save address uses the row of Provider and Test connection (.external-provider-and-test, staff.css): the box
- * takes what the button leaves of half of the card. */
-.external-provider-and-test > .at-control {
-  flex: 1 1 auto;
-  min-width: 0;
+.access-address__row > .access-address__field {
+  flex: 1 1 14rem;
+  max-width: calc(50% - var(--space-3));
+  min-width: min(14rem, 100%);
+}
+
+@media (max-width: 640px) {
+  .access-address__row > .access-address__field {
+    max-width: none;
+  }
 }
 
 /* The setup for IT: a white panel with a fine frame, as the other sub-panels, so that the grey values in it stand out as values, with a heading that opens and closes it and a
@@ -263,7 +271,25 @@
   grid-column: 1 / -1;
 }
 
-.access-address__status .overview-check__body,
+/* The icon stands beside the title alone; the description (with when it was last checked) is one line of text under it, in the column of
+ * the text. */
+.access-address__status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  align-items: center;
+}
+
+.access-address__status .overview-check__body {
+  display: contents;
+}
+
 .access-address__status .overview-check__detail {
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+
+.access-address__status strong {
   overflow-wrap: anywhere;
 }

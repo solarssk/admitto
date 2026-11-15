@@ -24,8 +24,10 @@ function AddressStatus({ address, instanceHost }: Readonly<{ address: Registrati
         <strong>
           {address.domain}: {line.title}
         </strong>
-        <span className="overview-check__detail">{line.detail}</span>
-        {address.checked_at !== null && <span className="overview-check__detail">Last checked {formatUtcDateTime(address.checked_at)}.</span>}
+        <span className="overview-check__detail">
+          {line.detail}
+          {address.checked_at !== null && ` Last checked ${formatUtcDateTime(address.checked_at)}.`}
+        </span>
       </span>
     </output>
   );
@@ -42,7 +44,9 @@ function recordName(own: OwnAddress, address: RegistrationOwnAddressDto | null, 
 const INTRO =
   "Guests get links on the address of this instance. An event can have its own address instead, such as events.example.com. Guests get links on it only after a check finds it working.";
 
-const CHECK_HINT = "When IT is done, select Check now. Guests get links on the address once the check passes. Until then they keep the main address.";
+const CHECK_HINT = "When IT is done, select Check now. Until it passes, guests keep the main address.";
+
+const FIELD_HINT = "The host name only, such as events.example.com. Set address applies at once. It is not part of Save below.";
 
 const NAME_PLACEHOLDER = "events.example.com";
 
@@ -84,7 +88,7 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
   );
 }
 
-/** The field with Save address beside it (as Provider and Test connection on the other cards), Check now and Remove under it once an address is saved, and the question before the address is removed. */
+/** The field with Set address, and Check now and Remove once an address is set, all in one row, and the question before the address is removed. */
 function AddressControls({
   event,
   own,
@@ -108,8 +112,8 @@ function AddressControls({
             <label className="at-label" htmlFor={`${id}-field`}>
               Own address
             </label>
-            <div className="external-provider-and-test">
-              <div className="at-control">
+            <div className="access-address__row">
+              <div className="at-control access-address__field">
                 <input
                   id={`${id}-field`}
                   className={`at-input${own.fieldError ? " at-input--invalid" : ""}`}
@@ -127,49 +131,47 @@ function AddressControls({
               <ArchivedGuard event={event} reasonId={`${id}-save`} disabled={(busy && !own.saving) || own.unchanged || own.typed.trim() === ""}>
                 {(guard) => (
                   <Button type="button" variant="primary" {...guard} loading={own.saving} onClick={own.save}>
-                    Save address
+                    Set address
                   </Button>
                 )}
               </ArchivedGuard>
+              {address !== null && (
+                <>
+                  <ArchivedGuard
+                    event={event}
+                    reasonId={`${id}-check`}
+                    disabled={(busy && !own.checking) || !own.unchanged}
+                    tooltip={own.unchanged ? undefined : "Set the address first. The check asks the address that is set."}
+                  >
+                    {(guard) => (
+                      <Button type="button" variant="secondary" {...guard} loading={own.checking} onClick={own.check}>
+                        Check now
+                      </Button>
+                    )}
+                  </ArchivedGuard>
+                  <ArchivedGuard event={event} reasonId={`${id}-remove`} disabled={busy}>
+                    {(guard) => (
+                      <Button type="button" variant="ghost" {...guard} onClick={() => setConfirmOpen(true)}>
+                        Remove
+                      </Button>
+                    )}
+                  </ArchivedGuard>
+                </>
+              )}
             </div>
+            {address !== null && <span className="at-hint">{keepLastWords(CHECK_HINT)}</span>}
             {own.fieldError ? (
               <span id={hintId} className="at-hint at-hint--error" role="alert">
                 {own.fieldError}
               </span>
             ) : (
               <span id={hintId} className="at-hint">
-                {keepLastWords("The host name only, such as events.example.com.")}
+                {keepLastWords(FIELD_HINT)}
               </span>
             )}
           </div>
         </div>
       </div>
-      {address !== null && (
-        <>
-          <div className="access-address__buttons">
-            <ArchivedGuard
-              event={event}
-              reasonId={`${id}-check`}
-              disabled={(busy && !own.checking) || !own.unchanged}
-              tooltip={own.unchanged ? undefined : "Save the address first. The check asks the address that is saved."}
-            >
-              {(guard) => (
-                <Button type="button" variant="secondary" {...guard} loading={own.checking} onClick={own.check}>
-                  Check now
-                </Button>
-              )}
-            </ArchivedGuard>
-            <ArchivedGuard event={event} reasonId={`${id}-remove`} disabled={busy}>
-              {(guard) => (
-                <Button type="button" variant="ghost" {...guard} onClick={() => setConfirmOpen(true)}>
-                  Remove
-                </Button>
-              )}
-            </ArchivedGuard>
-          </div>
-          <span className="at-hint">{keepLastWords(CHECK_HINT)}</span>
-        </>
-      )}
       {own.error !== null && (
         <Notice variant="error" role="alert">
           {own.error}

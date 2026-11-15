@@ -94,7 +94,7 @@ describe("the address card", () => {
   it("lays out the status, then the field with its buttons, then the setup for IT", async () => {
     await renderPanel(settings({ own_address: own({ status: "failing", check_result: "dns_failed" }) }));
 
-    const parts = [within(addressCard()).getByRole("status"), field(), button("Save address"), stepsToggle()];
+    const parts = [within(addressCard()).getByRole("status"), field(), button("Set address"), stepsToggle()];
     const order = parts.map((part) => parts.filter((other) => other !== part && (part.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).length);
     expect(order).toEqual([3, 2, 1, 0]);
   });
@@ -303,33 +303,52 @@ describe("the address card", () => {
 
     const host = [...addressCard().querySelectorAll("ol.access-steps > li")].find((step) => step.textContent?.startsWith("Make sure the web server")) as HTMLElement;
     expect(host.textContent?.endsWith("front\u00A0of\u00A0it.")).toBe(true);
-    expect(addressCard().querySelector(".at-hint")?.textContent).toBe("The host name only, such as events.example.com.".replace("such as events.example.com.", "such as\u00A0events.example.com."));
+    expect(document.getElementById(field().getAttribute("aria-describedby") ?? "none")?.textContent?.endsWith("Save\u00A0below.")).toBe(true);
   });
 
-  it("puts the field and Save address in the row Provider and Test connection use on the other cards, and Check now and Remove under it once an address is saved", async () => {
+  const fieldHint = "The host name only, such as events.example.com. Set address applies at once. It is not part of Save below.";
+
+  it("puts the field, Set address, Check now and Remove in one row once an address is set, and only the field and Set address before", async () => {
     await renderPanel(settings({ own_address: own() }));
 
-    const row = field().closest(".external-provider-and-test") as HTMLElement;
+    const row = field().closest(".access-address__row") as HTMLElement;
     expect(row.closest(".mail-transport-section > .mail-field-row")).not.toBeNull();
-    expect(within(row).getAllByRole("button").map((control) => control.textContent)).toEqual(["Save address"]);
-    const below = within(addressCard()).getByRole("button", { name: "Check now" }).closest(".access-address__buttons") as HTMLElement;
-    expect(within(below).getAllByRole("button").map((control) => control.textContent)).toEqual(["Check now", "Remove"]);
-    expect(css()).toMatch(/\.external-provider-and-test > \.at-control \{[^}]*flex: 1 1 auto;[^}]*min-width: 0;/);
+    expect(within(row).getAllByRole("button").map((control) => control.textContent)).toEqual(["Set address", "Check now", "Remove"]);
+    expect(css()).toMatch(/\.access-address__row \{[^}]*display: flex;[^}]*flex-wrap: wrap;/);
+    expect(css()).toMatch(/\.access-address__row > \.access-address__field \{[^}]*max-width: calc\(50% - var\(--space-3\)\);/);
+    cleanup();
+
+    await renderPanel(settings());
+    const first = field().closest(".access-address__row") as HTMLElement;
+    expect(within(first).getAllByRole("button").map((control) => control.textContent)).toEqual(["Set address"]);
   });
 
-  it("has no second row of buttons until an address is saved", async () => {
+  it("says under the field that Set address applies at once and is not part of the Save of the page, and keeps the host name hint with it", async () => {
     await renderPanel(settings());
 
+    expect(plain(document.getElementById(field().getAttribute("aria-describedby") ?? "none")?.textContent)).toBe(fieldHint);
     expect(addressCard().querySelector(".access-address__buttons")).toBeNull();
-    expect(within(addressCard()).getAllByRole("button", { name: /Save address/ })).toHaveLength(1);
   });
 
-  it("tells the superadmin, not IT, to select Check now, in a hint under the buttons, once an address is saved", async () => {
+  it("tells the superadmin, not IT, to select Check now, in an at-hint just under the row, once an address is set", async () => {
     await renderPanel(settings({ own_address: own() }));
 
-    const hint = [...addressCard().querySelectorAll(".access-address__controls > .at-hint")].map((node) => plain(node.textContent));
-    expect(hint).toEqual(["When IT is done, select Check now. Guests get links on the address once the check passes. Until then they keep the main address."]);
+    const hint = within(addressCard()).getByText(/When IT is done, select Check now\./);
+    expect(hint.className).toBe("at-hint");
+    expect(plain(hint.textContent)).toBe("When IT is done, select Check now. Until it passes, guests keep the main address.");
+    expect(hint.previousElementSibling?.className).toBe("access-address__row");
     expect(within(stepsBody()).queryByText(/Select Check now/)).toBeNull();
+  });
+
+  it("shows the status as two lines: the title with the icon, then one description that ends with when it was last checked in UTC", async () => {
+    await renderPanel(settings({ own_address: own({ status: "failing", check_result: "dns_failed", checked_at: "2026-11-15T11:46:00.000Z" }) }));
+
+    const status = within(addressCard()).getByRole("status");
+    const body = status.querySelector(".overview-check__body") as HTMLElement;
+    expect([...body.children].map((child) => child.tagName)).toEqual(["STRONG", "SPAN"]);
+    expect(plain(body.children[1]?.textContent)).toMatch(/Guests keep getting links on the main address\. Last checked .*UTC\.$/);
+    expect(css()).toMatch(/\.access-address__status \{[^}]*display: grid;/);
+    expect(css()).toMatch(/\.access-address__status \.overview-check__body \{[^}]*display: contents;/);
   });
 
   it("puts the setup for IT in a panel of its own, the steps under its heading", async () => {
@@ -356,15 +375,15 @@ describe("the address card", () => {
 describe("saving the address", () => {
   it("keeps Save off while nothing is typed, and judges what is typed when the field is left", async () => {
     await renderPanel(settings());
-    expect(isOff(button("Save address"))).toBe(true);
+    expect(isOff(button("Set address"))).toBe(true);
 
     type("https://summit.acme.example");
     expect(screen.queryByText(/Enter the host name only/)).toBeNull();
     fireEvent.blur(field());
     expect(screen.getByText(/Enter the host name only/)).toBeTruthy();
-    expect(isOff(button("Save address"))).toBe(false);
+    expect(isOff(button("Set address"))).toBe(false);
 
-    fireEvent.click(button("Save address"));
+    fireEvent.click(button("Set address"));
     expect(api.saveCustomDomain).not.toHaveBeenCalled();
     expect(screen.getByText(/Enter the host name only/)).toBeTruthy();
   });
@@ -384,12 +403,12 @@ describe("saving the address", () => {
     api.fetchRegistrationSettings.mockResolvedValue(settings({ own_address: own() }));
 
     type("  Summit.ACME.example ");
-    fireEvent.click(button("Save address"));
+    fireEvent.click(button("Set address"));
 
     await waitFor(() => expect(api.saveCustomDomain).toHaveBeenCalledWith("evt-1", DOMAIN));
     expect(await within(addressCard()).findByText(`${DOMAIN}: Not checked yet`)).toBeTruthy();
     expect(field().value).toBe(DOMAIN);
-    expect(addToast).toHaveBeenCalledWith("Address saved. Check it once IT has set it up.", "success");
+    expect(addToast).toHaveBeenCalledWith("Address set. Check it once IT has set it up.", "success");
     expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(1);
     expect(button("Remove")).toBeTruthy();
   });
@@ -397,9 +416,9 @@ describe("saving the address", () => {
   it("keeps Save off for the address that is saved", async () => {
     await renderPanel(settings({ own_address: own() }));
     expect(field().value).toBe(DOMAIN);
-    expect(isOff(button("Save address"))).toBe(true);
+    expect(isOff(button("Set address"))).toBe(true);
     type("other.acme.example");
-    expect(isOff(button("Save address"))).toBe(false);
+    expect(isOff(button("Set address"))).toBe(false);
   });
 
   it.each([
@@ -410,7 +429,7 @@ describe("saving the address", () => {
     await renderPanel(settings());
 
     type(DOMAIN);
-    fireEvent.click(button("Save address"));
+    fireEvent.click(button("Set address"));
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain(text);
@@ -425,7 +444,7 @@ describe("saving the address", () => {
     await renderPanel(settings());
 
     type(DOMAIN);
-    fireEvent.click(button("Save address"));
+    fireEvent.click(button("Set address"));
 
     await waitFor(() => expect(goToLogin).toHaveBeenCalled());
     expect(screen.queryByRole("alert")).toBeNull();
@@ -436,7 +455,7 @@ describe("saving the address", () => {
     await renderPanel(settings());
 
     type(DOMAIN);
-    fireEvent.click(button("Save address"));
+    fireEvent.click(button("Set address"));
 
     await screen.findByRole("alert");
     expect(refreshEvent).toHaveBeenCalled();
@@ -479,7 +498,7 @@ describe("checking the address", () => {
     type("other.acme.example");
 
     expect(isOff(button("Check now"))).toBe(true);
-    expect(getTooltipText(button("Check now"))).toBe("Save the address first. The check asks the address that is saved.");
+    expect(getTooltipText(button("Check now"))).toBe("Set the address first. The check asks the address that is set.");
   });
 
   it("says it could not check, and says too many when the limit is reached", async () => {
@@ -538,7 +557,7 @@ describe("an archived event", () => {
   it("is read only: the buttons are off, with the reason", async () => {
     await renderPanel(settings({ own_address: own() }), { archived: true });
 
-    for (const name of ["Save address", "Check now", "Remove"]) expect(isOff(button(name))).toBe(true);
+    for (const name of ["Set address", "Check now", "Remove"]) expect(isOff(button(name))).toBe(true);
     expect(field().disabled).toBe(true);
     expect(getTooltipText(button("Check now"))).toBe("This event is archived. Editing is disabled.");
   });

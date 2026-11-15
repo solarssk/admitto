@@ -68,11 +68,11 @@ export function useOwnAddress({ eventId, saved, instanceHost, onChanged, onArchi
     // The button is busy while a request runs and off for an address that is already saved; for one that is wrong it says why, at the field.
     if (!judged.ok) return;
     setSaving(true);
-    const state = await run(() => saveCustomDomain(eventId, judged.domain), "Could not save the address.");
+    const state = await run(() => saveCustomDomain(eventId, judged.domain), "Could not set the address.");
     setSaving(false);
     if (state === null) return;
     setTyped(state.custom_domain ?? "");
-    addToast("Address saved. Check it once IT has set it up.", "success");
+    addToast("Address set. Check it once IT has set it up.", "success");
     onChanged(state);
   }
 

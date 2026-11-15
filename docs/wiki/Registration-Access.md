@@ -55,7 +55,7 @@ A Superadmin does this, in **Event settings → Registration**, on the **Company
 A Superadmin does this. By default guests get links on the address of the instance. An event can have an address of its own instead, such as `events.example.com`, and then every link a guest is sent points at it.
 
 1. Open **Event settings → Registration**. Under **Address for guests**, type the address in **Own address**. Type the host name only: no `https://`, port or path.
-2. Select **Save address**. The card says the address is not checked yet. Guests still get links on the main address.
+2. Select **Set address**. It applies at once and is not part of the **Save** button at the bottom of the tab. The card says the address is not checked yet. Guests still get links on the main address. **Set address**, **Check now** and **Remove** stand in one row beside the field.
 3. Ask your IT team to set it up. Under **Setup for your IT team** the card shows the DNS record (type, name and target; name and target have a copy button) and the steps. **Copy instructions for an AI agent** puts all of them on the clipboard as plain text, for a mail to IT or for a tool that can change DNS. The steps are: a CNAME record (a DNS entry that makes one name an alias of another) that points the address to the instance, HTTPS with a valid certificate, the original `Host` header (the address the guest typed) passed on to Admitto, and no sign-in gateway in front of the pages guests open. If the form uses the bot check (Turnstile), the address also has to be added to the hostnames of its widget, or guests on the address fail the check. Admitto does not issue certificates.
 4. When IT says it is ready, select **Check now**. The card says what the check found.
 5. When the card says **Working**, guests get links on the address.
@@ -219,7 +219,7 @@ When you turn registration off:
 | The restriction says "The restriction to one company works with Company SSO only" | Choose **Company SSO** under **How guests open the form**, or clear both fields |
 | There is no link under **Link for guests** | The address of the instance is not set. Ask a Superadmin |
 | The tab warns that the address of the event stopped working | Ask a Superadmin or your IT team. The card under **Address for guests** names the reason |
-| **Check now** is off | The field holds an address that is not saved. Save it first |
+| **Check now** is off | The field holds an address that is not set. Select **Set address** first |
 | "Another event already uses this address" | One address belongs to one event. Remove it from the other event first |
 | Registration is on, but the page warns that something is missing | A row of the checklist stopped being done, for example the bot protection keys. The form may be closed to guests until it is fixed |
 | **Save** and the controls are off | The event is archived, or a save is still running |

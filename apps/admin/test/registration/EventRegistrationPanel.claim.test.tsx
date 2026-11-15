@@ -295,7 +295,7 @@ describe("the address card and the typed restriction", () => {
   const state = { custom_domain: DOMAIN, custom_domain_status: "unchecked" as const, custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null };
 
   it.each([
-    ["Save address", () => api.saveCustomDomain.mockResolvedValue(state), settings, "Save address"],
+    ["Set address", () => api.saveCustomDomain.mockResolvedValue(state), settings, "Set address"],
     ["Check now", () => api.checkCustomDomain.mockResolvedValue(state), () => settings({ own_address: own }), "Check now"],
     ["Remove", () => api.saveCustomDomain.mockResolvedValue({ ...state, custom_domain: null }), () => settings({ own_address: own }), "Remove"],
   ])("keeps an unsaved claim, and Unsaved changes, when %s is used on the address card and the settings are read again", async (_what, mock, make, button) => {
@@ -304,7 +304,7 @@ describe("the address card and the typed restriction", () => {
     api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: button === "Remove" ? null : own }));
     type(claimName(), "tid");
     type(claimValues(), "aaa-111");
-    if (button === "Save address") fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
+    if (button === "Set address") fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
 
     fireEvent.click(within(card("Address for guests")).getByRole("button", { name: button }));
     if (button === "Remove") fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove address" }));
@@ -324,7 +324,7 @@ describe("the address card and the typed restriction", () => {
     api.fetchRegistrationSettings.mockResolvedValue(restricted({ own_address: own, sso_claim_name: "groups", sso_claim_values: ["staff"] }));
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
 
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
 
@@ -344,7 +344,7 @@ describe("the address card and the typed restriction", () => {
     await renderPanel(restricted());
     api.fetchRegistrationSettings.mockResolvedValue(restricted({ own_address: own, sso_claim_name: "groups", sso_claim_values: ["staff"] }));
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     type(claimValues(), "aaa-111\nbbb-222");
 
@@ -367,7 +367,7 @@ describe("the address card and the typed restriction", () => {
     const addressCard = card("Address for guests");
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "other.acme.example" } });
     expect((screen.getByLabelText("Own address") as HTMLInputElement).disabled).toBe(true);
-    for (const name of ["Save address", "Check now", "Remove"]) {
+    for (const name of ["Set address", "Check now", "Remove"]) {
       expect(isOff(within(addressCard).getByRole("button", { name }))).toBe(true);
       fireEvent.click(within(addressCard).getByRole("button", { name }));
     }
@@ -401,7 +401,7 @@ describe("the address card and the typed restriction", () => {
     await renderPanel(ssoSettings());
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
     api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: own }));
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     expect(await within(card("Address for guests")).findByText(`${DOMAIN}: Not checked yet`)).toBeTruthy();
     // The answer of the save is made of what the server knew before the address: no address.
@@ -424,7 +424,7 @@ describe("the address card and the typed restriction", () => {
     type(claimName(), "tid");
     type(claimValues(), "aaa-111");
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: own, sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
 
@@ -449,13 +449,13 @@ describe("the icon of the identity provider", () => {
 
 describe("the requests of the address card, for the page", () => {
   it.each([
-    ["Save address", (resolve: (value: unknown) => void) => api.saveCustomDomain.mockReturnValue(new Promise(resolve)), "Save address"],
+    ["Set address", (resolve: (value: unknown) => void) => api.saveCustomDomain.mockReturnValue(new Promise(resolve)), "Set address"],
     ["Check now", (resolve: (value: unknown) => void) => api.checkCustomDomain.mockReturnValue(new Promise(resolve)), "Check now"],
   ])("tells the page that a request is out while %s runs, and that it is over", async (_what, hold, button) => {
     let finish: (value: unknown) => void = () => undefined;
     hold((resolve) => (finish = resolve));
     await renderPanel(ssoSettings({ own_address: { domain: "summit.acme.example", status: "unchecked", check_result: null, verified: false, checked_at: null } }));
-    if (button === "Save address") fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "other.acme.example" } });
+    if (button === "Set address") fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "other.acme.example" } });
 
     fireEvent.click(within(card("Address for guests")).getByRole("button", { name: button }));
 

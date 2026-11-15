@@ -113,7 +113,7 @@ describe("the setup for IT in the Company SSO card", () => {
     api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: [INSTANCE, { ...EVENT, verified: false }] });
 
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "summit.acme.example" } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
 
     await waitFor(() => expect(field("Return address for summit.acme.example").value).toBe(EVENT.uri));
     fireEvent.click(copyButton());
@@ -127,7 +127,7 @@ describe("the setup for IT in the Company SSO card", () => {
     api.fetchRegistrationSsoProvider.mockRejectedValue(new Error("down"));
 
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "summit.acme.example" } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
 
     await waitFor(() => expect(api.fetchRegistrationSsoProvider).toHaveBeenCalledTimes(2));
     expect(field("Return address").value).toBe(INSTANCE.uri);
