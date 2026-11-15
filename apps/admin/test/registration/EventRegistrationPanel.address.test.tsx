@@ -527,7 +527,7 @@ describe("removing the address", () => {
     fireEvent.click(button("Remove"));
     const dialog = await screen.findByRole("dialog", { name: "Remove the event's own address?" });
     expect(api.saveCustomDomain).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Remove address" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(api.saveCustomDomain).toHaveBeenCalledWith("evt-1", null));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -553,7 +553,7 @@ describe("removing the address", () => {
 
     fireEvent.click(button("Remove"));
     const dialog = await screen.findByRole("dialog", { name: "Remove the event's own address?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Remove address" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(within(dialog).getByText(/Something went wrong/)).toBeTruthy());
     expect(screen.getByRole("dialog", { name: "Remove the event's own address?" })).toBeTruthy();

@@ -307,7 +307,7 @@ describe("the address card and the typed restriction", () => {
     if (button === "Set address") fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
 
     fireEvent.click(within(card("Address for guests")).getByRole("button", { name: button }));
-    if (button === "Remove") fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove address" }));
+    if (button === "Remove") fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     // The settings that were read again are on screen by now.

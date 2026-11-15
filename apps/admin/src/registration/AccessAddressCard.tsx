@@ -178,7 +178,7 @@ function AddressControls({
         open={confirmOpen}
         title="Remove the event's own address?"
         message="Guests get links on the main address again, and the address stops opening this event's pages. Links already sent keep pointing at it."
-        confirmLabel="Remove address"
+        confirmLabel="Remove"
         errorMessage={own.error}
         loading={own.removing}
         onConfirm={() => void own.remove().then((removed) => setConfirmOpen(!removed))}
