@@ -1612,7 +1612,7 @@ describe("ExternalServicesPanel, company SSO on the ways in card", () => {
 
     expect(card().textContent).toMatch(/Enter this address once at the identity provider/);
     expect(card().textContent).toMatch(/same for every event that uses Company SSO/);
-    expect(card().textContent).toMatch(/let the paths \/sso\/callback and \/r\/\* through without asking for a sign-in/);
+    expect(card().textContent).toMatch(/let the paths \/sso\/callback, \/r\/\* and \/legal\/\* through without asking for a sign-in/);
     fireEvent.click(within(card()).getByRole("button", { name: "Copy the return address" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://tickets.example.com/sso/callback"));

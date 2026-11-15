@@ -36,7 +36,7 @@ const REDIRECT_HINT =
   "Enter this address once at the identity provider, in its list of allowed redirect (callback) addresses. After a guest signs in, the provider sends the guest back to this address. It is the same for every event that uses Company SSO on the address of this instance.";
 const EVENT_ADDRESS_HINT =
   "Also enter this address at the identity provider. It belongs to the event that uses Company SSO on its own address. Every event address needs its own entry at the identity provider.";
-const GATEWAY_NOTE = "If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback and /r/* through without asking for a sign-in.";
+const GATEWAY_NOTE = "If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback, /r/* and /legal/* through without asking for a sign-in.";
 
 const ssoSettings = (overrides: Partial<RegistrationSettingsDto> = {}) => settings({ access_methods: ["sso"], readiness: ssoChecks(), ...overrides });
 const css = () => readFileSync(join(__dirname, "../../src/registration/registration-access.css"), "utf8");
@@ -179,7 +179,7 @@ describe("the setup for IT in the Company SSO card", () => {
         "Set up Company SSO (OpenID Connect) for the guest registration of an event in Admitto.",
         "",
         `1. At the identity provider, add these allowed redirect (callback) addresses: ${INSTANCE.uri}, ${EVENT.uri}`,
-        "2. If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback and /r/* through without asking for a sign-in.",
+        "2. If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback, /r/* and /legal/* through without asking for a sign-in.",
         "3. The identity provider must send the claim tid with this value: aaa-111. Guests with other values cannot register.",
         "",
         "Report back when it is done.",

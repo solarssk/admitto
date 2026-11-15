@@ -69,7 +69,7 @@ describe("the company SSO as the way in of an event", () => {
     fireEvent.click(radio("Company SSO"));
 
     expect(isOff(toggle("Confirm email addresses"))).toBe(true);
-    expect(screen.getByText(/Not used with Company SSO\. The identity provider has already verified the address, so guests get no confirmation link\./)).toBeTruthy();
+    expect(screen.getByText(/Not used with Company SSO\. The address comes from the identity provider, so no confirmation link is sent\./)).toBeTruthy();
     expect(screen.queryByText(/Guests confirm their address with a link/)).toBeNull();
     fireEvent.click(radio("Link"));
     expect(isOff(toggle("Confirm email addresses"))).toBe(false);

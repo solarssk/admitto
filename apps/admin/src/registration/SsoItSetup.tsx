@@ -32,7 +32,7 @@ function claimSentence(claim: SavedClaim & { name: string }): string {
 function ssoInstructionsText(addresses: readonly string[], claim: SavedClaim): string {
   const steps = [
     ...(addresses.length === 0 ? [] : [`At the identity provider, add ${addresses.length === 1 ? "this allowed redirect (callback) address" : "these allowed redirect (callback) addresses"}: ${addresses.join(", ")}`]),
-    "If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback and /r/* through without asking for a sign-in.",
+    "If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback, /r/* and /legal/* through without asking for a sign-in.",
     ...(claim.name === null ? [] : [claimSentence({ ...claim, name: claim.name })]),
   ];
   return [

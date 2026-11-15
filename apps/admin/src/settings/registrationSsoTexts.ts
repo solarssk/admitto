@@ -4,4 +4,4 @@ export const REDIRECT_HINT =
 export const EVENT_ADDRESS_HINT =
   "Also enter this address at the identity provider. It belongs to the event that uses Company SSO on its own address. Every event address needs its own entry at the identity provider.";
 export const UNVERIFIED_NOTE = " This address has not passed its check yet. Enter it now, so sign-in works as soon as the address passes.";
-export const GATEWAY_NOTE = "If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback and /r/* through without asking for a sign-in.";
+export const GATEWAY_NOTE = "If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback, /r/* and /legal/* through without asking for a sign-in.";

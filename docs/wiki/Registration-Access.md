@@ -158,7 +158,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 - Guests confirm their address with a link in an email. The link works for 24 hours.
 - A request that is not confirmed in that time is deleted.
 - The guest's confirmation email replaces the "received" email.
-- With the company SSO this switch has no effect: the identity provider has already verified the address, so no confirmation link is sent. The switch is greyed out and keeps its setting for the other ways in.
+- With the company SSO this switch has no effect: the address comes from the identity provider, so no confirmation link is sent. The switch is greyed out and keeps its setting for the other ways in.
 
 **The address for guests: what the check can find**
 
@@ -213,7 +213,7 @@ When you turn registration off:
 | An extra consent is marked "(not published)" | Publish its text on the **Legal** tab, or take the consent off the list |
 | "One of the extra consents you chose is not published" | Someone took a text back while you were editing. Publish it again or take it off the list |
 | A phone question shows the browser's box although the styled boxes are on | The question asks for digits only, or sets a shortest or longest length. A country code would break that rule. Remove the rule if the question should take a country |
-| A guest sees "This event is not open to your company account." | The sign-in does not hold one of your allowed values. Check the claim name and the values on this tab |
+| A guest sees "This event is not open to your company account." | The sign-in does not hold one of your allowed values. Ask a Superadmin to check the claim and the values in **Event settings**, **Registration** |
 | A guest sees "Your company account did not give us a verified email address" | The identity provider sent no email address, or says the address is not verified. A Superadmin maps the email claim of the provider |
 | Saving says "Only a superadmin can change the restriction to one company" | The restriction to one company is a Superadmin's to set. Ask a Superadmin to change it |
 | The restriction says "The restriction to one company works with Company SSO only" | Choose **Company SSO** under **How guests open the form**, or clear both fields |

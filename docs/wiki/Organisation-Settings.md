@@ -83,7 +83,7 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - The choice is saved with the one **Save** of the tab, and recorded in **Logs**, on the **Audit** view, as "Guest registration Company SSO provider updated". If the choice is refused, the switch is still saved and the provider stays as you left it.
 - **Return address** is the address to enter at the identity provider, in its list of allowed redirect (callback) addresses. After a guest signs in, the provider sends the guest back to this address. It is the same for every event that uses Company SSO on the address of the instance, so you enter it once. It comes from the Instance URL under **General**. Without that address the card says so.
 - An event with an address of its own for guests has one more **Return address for** the name of that address, in the form `https://<address>/sso/callback`. It is the same for all events that share that address, so you enter it once for each address. It is listed before the address passes its check, so that the sign-in works as soon as it does. See [Registration Access](Registration-Access).
-- If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths `/sso/callback` and `/r/*` through without asking for a sign-in.
+- If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths `/sso/callback`, `/r/*` and `/legal/*` through without asking for a sign-in.
 - A Superadmin restricts Company SSO to one company per event, on the **Registration** tab of **Event settings**. An organiser cannot change it. See [Registration Access](Registration-Access).
 
 **Support contact and Test connection**
