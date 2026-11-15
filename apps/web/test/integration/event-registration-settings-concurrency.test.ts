@@ -151,7 +151,7 @@ beforeAll(async () => {
   seeder = eventSeeder(prisma, ORG);
   await removeStaff(prisma, [ADMIN_EMAIL]);
   await seeder.prepare();
-  const admin = await createStaffSession(prisma, ADMIN_EMAIL, { role: "admin", organizationId: ORG });
+  const admin = await createStaffSession(prisma, ADMIN_EMAIL, { role: "superadmin" }); // a superadmin: only they change the way in
   adminId = admin.userId;
   adminCookie = admin.cookie;
   app = buildTestApp({ prisma, checkinToken: "reg99a-concurrency-checkin-token-32", adminDistRoot });

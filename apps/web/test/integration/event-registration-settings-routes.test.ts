@@ -59,7 +59,9 @@ const settingsPath = (eventId: string) => `/api/admin/events/${eventId}/registra
 
 const get = (eventId: string, cookie = cookies.admin) => app.request(settingsPath(eventId), { headers: { Cookie: cookie } });
 
-const put = (eventId: string, body: unknown, cookie = cookies.admin) =>
+// A superadmin by default: how guests open the form is technical (the way in, the provider, the restriction), and only they change it. A test of
+// what an administrator of the event may or may not do passes `cookies.admin` on purpose.
+const put = (eventId: string, body: unknown, cookie = cookies.superadmin) =>
   app.request(settingsPath(eventId), { method: "PUT", headers: { ...jsonHeaders, Cookie: cookie }, body: JSON.stringify(body) });
 
 const dto = async (res: Response) => (await res.json()) as RegistrationSettingsDto;
@@ -996,7 +998,7 @@ describe("what a save leaves behind", () => {
 
     const [entry, ...rest] = await auditOf(event.id);
     expect(rest).toEqual([]);
-    expect(entry).toMatchObject({ organization_id: ORG, actor_user_id: adminId, action_type: "registration_settings_changed" });
+    expect(entry).toMatchObject({ organization_id: ORG, actor_user_id: superadminId, action_type: "registration_settings_changed" });
     expect(entry!.metadata).toEqual({
       event_id: event.id,
       event_title: "Audit Summit",
@@ -1086,7 +1088,7 @@ describe("the switch for the styled boxes of the guest form", () => {
 
     const [entry, ...rest] = await auditOf(event.id);
     expect(rest).toEqual([]);
-    expect(entry).toMatchObject({ organization_id: ORG, actor_user_id: adminId, action_type: "registration_settings_changed" });
+    expect(entry).toMatchObject({ organization_id: ORG, actor_user_id: superadminId, action_type: "registration_settings_changed" });
     expect(entry!.metadata).toEqual({
       event_id: event.id,
       event_title: "Styled Summit",
@@ -1344,16 +1346,17 @@ describe("the company sign-in as the way in, and its restriction to one company 
 describe("who may change the restriction of the company sign-in (A3)", () => {
   const claim = { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b"] };
   const none = { sso_claim_name: null, sso_claim_values: [] };
+  const asAdmin = (eventId: string, body: unknown) => put(eventId, body, cookies.admin);
   // Registration stays off in these events, so none of it waits for the provider to be set up.
   const withClaim = (label: string) => addEvent(label, { settings: { access_methods: ["sso"], ...claim } });
 
-  it("refuses an administrator who sets a restriction with the move to the company sign-in: 403, nothing saved, nothing audited", async () => {
+  it("refuses an administrator who sets a restriction with the move to the company sign-in: 403 (the way in is the first thing refused), nothing saved, nothing audited", async () => {
     const event = await addEvent("a3-set");
 
-    const res = await put(event.id, { access_methods: ["sso"], ...claim });
+    const res = await asAdmin(event.id, { access_methods: ["sso"], ...claim });
 
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "sso_claim_superadmin_only" });
+    expect(await res.json()).toEqual({ error: "access_method_superadmin_only" });
     expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["link"], ...none });
     expect(await auditOf(event.id)).toHaveLength(0);
   });
@@ -1361,10 +1364,10 @@ describe("who may change the restriction of the company sign-in (A3)", () => {
   it("refuses an administrator who changes or removes the restriction that is there, and keeps it", async () => {
     const event = await withClaim("a3-change");
 
-    const changed = await put(event.id, { sso_claim_name: "groups", sso_claim_values: ["staff"] });
-    const widened = await put(event.id, { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b", "tenant-c"] });
-    const renamed = await put(event.id, { sso_claim_name: "groups", sso_claim_values: claim.sso_claim_values });
-    const removed = await put(event.id, none);
+    const changed = await asAdmin(event.id, { sso_claim_name: "groups", sso_claim_values: ["staff"] });
+    const widened = await asAdmin(event.id, { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b", "tenant-c"] });
+    const renamed = await asAdmin(event.id, { sso_claim_name: "groups", sso_claim_values: claim.sso_claim_values });
+    const removed = await asAdmin(event.id, none);
 
     for (const res of [changed, widened, renamed, removed]) {
       expect(res.status).toBe(403);
@@ -1377,7 +1380,7 @@ describe("who may change the restriction of the company sign-in (A3)", () => {
   it("refuses the claim together with another change, and saves none of it", async () => {
     const event = await withClaim("a3-together");
 
-    const res = await put(event.id, { waitlist_enabled: false, sso_claim_name: "tid", sso_claim_values: ["other"] });
+    const res = await asAdmin(event.id, { waitlist_enabled: false, sso_claim_name: "tid", sso_claim_values: ["other"] });
 
     expect(res.status).toBe(403);
     expect(await settingsRow(event.id)).toMatchObject({ waitlist_enabled: true, ...claim });
@@ -1386,8 +1389,8 @@ describe("who may change the restriction of the company sign-in (A3)", () => {
   it("lets an administrator save other settings of an event that has a restriction, with no word of it or with it as it is", async () => {
     const event = await withClaim("a3-other");
 
-    const without = await put(event.id, { waitlist_enabled: false });
-    const same = await put(event.id, { ask_company: true, sso_claim_name: "tid", sso_claim_values: ["tenant-b", "tenant-a"] });
+    const without = await asAdmin(event.id, { waitlist_enabled: false });
+    const same = await asAdmin(event.id, { ask_company: true, sso_claim_name: "tid", sso_claim_values: ["tenant-b", "tenant-a"] });
 
     expect(without.status).toBe(200);
     // The same two values in another order are the same restriction.
@@ -1396,7 +1399,7 @@ describe("who may change the restriction of the company sign-in (A3)", () => {
     expect((await settingsRow(event.id))?.sso_claim_values).toEqual(expect.arrayContaining(claim.sso_claim_values));
   });
 
-  it("lets an administrator move to the company sign-in with no restriction, and away from it, which takes the restriction away", async () => {
+  it("lets a superadmin move to the company sign-in with no restriction, and away from it, which takes the restriction away", async () => {
     const plain = await addEvent("a3-move-in");
     const restricted = await withClaim("a3-move-out");
 
@@ -1585,37 +1588,66 @@ describe("the identity provider of an event with the company sign-in", () => {
     expect(await providerOf(event.id)).toBe(SECOND);
   });
 
-  describe("an event that is limited to one company", () => {
-    const limited = (label: string) => addEvent(label, { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER, ...claim } });
+  describe("who may change how guests open the form (the way in, the provider)", () => {
+    const technical = (label: string, settings: Record<string, unknown> = {}) =>
+      addEvent(label, { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER, ...settings } });
 
-    it("lets only a superadmin move it to another provider: 403 for an administrator, nothing saved, nothing audited", async () => {
-      const event = await limited("idp-limited");
+    it("refuses an administrator who changes the way in: 403 `access_method_superadmin_only`, nothing saved, nothing audited", async () => {
+      const event = await addEvent("idp-way");
 
-      const refused = await put(event.id, { sso_provider_id: SECOND });
-      const removed = await put(event.id, { sso_provider_id: null });
+      const res = await put(event.id, { access_methods: ["password"], waitlist_enabled: false }, cookies.admin);
 
-      for (const res of [refused, removed]) {
-        expect(res.status).toBe(403);
-        expect(await res.json()).toEqual({ error: "sso_provider_superadmin_only" });
-      }
-      expect(await providerOf(event.id)).toBe(PROVIDER);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "access_method_superadmin_only" });
+      expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["link"], waitlist_enabled: true });
       expect(await auditOf(event.id)).toHaveLength(0);
+    });
+
+    it("refuses an administrator who changes the provider, limited to one company or not: 403 `sso_provider_superadmin_only`, nothing saved", async () => {
+      for (const settings of [{}, { sso_claim_name: "tid", sso_claim_values: ["tenant-a"] }]) {
+        const event = await technical("idp-admin-provider", settings);
+
+        const moved = await put(event.id, { sso_provider_id: SECOND }, cookies.admin);
+        const removed = await put(event.id, { sso_provider_id: null }, cookies.admin);
+
+        for (const res of [moved, removed]) {
+          expect(res.status).toBe(403);
+          expect(await res.json()).toEqual({ error: "sso_provider_superadmin_only" });
+        }
+        expect(await providerOf(event.id)).toBe(PROVIDER);
+        expect(await auditOf(event.id)).toHaveLength(0);
+      }
+    });
+
+    it("refuses an administrator who sets the provider with the move to the company sign-in: the way in is refused first", async () => {
+      const event = await addEvent("idp-first");
+
+      const res = await put(event.id, { access_methods: ["sso"], sso_provider_id: PROVIDER }, cookies.admin);
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "access_method_superadmin_only" });
+    });
+
+    it("lets an administrator send the way in and the provider as they are, and change everything else", async () => {
+      const event = await technical("idp-same-values");
+
+      const res = await put(
+        event.id,
+        { access_methods: ["sso"], sso_provider_id: PROVIDER, waitlist_enabled: false, mode: "automatic", ask_company: true },
+        cookies.admin,
+      );
+
+      expect(res.status).toBe(200);
+      expect(await settingsRow(event.id)).toMatchObject({ mode: "automatic", waitlist_enabled: false, ask_company: true, sso_provider_id: PROVIDER });
+    });
+
+    it("lets a superadmin change the way in and the provider, and moves an event away from the company sign-in with the provider", async () => {
+      const event = await technical("idp-super");
+
       expect((await put(event.id, { sso_provider_id: SECOND }, cookies.superadmin)).status).toBe(200);
       expect(await providerOf(event.id)).toBe(SECOND);
-    });
-
-    it("lets an administrator keep the provider, change the rest and move the event away from the company sign-in", async () => {
-      const event = await limited("idp-limited-keep");
-
-      expect((await put(event.id, { sso_provider_id: PROVIDER, waitlist_enabled: false })).status).toBe(200);
-      expect((await put(event.id, { access_methods: ["link"] })).status).toBe(200);
-      expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["link"], sso_provider_id: null, sso_claim_name: null });
-    });
-
-    it("lets an administrator choose a provider for an event that is not limited", async () => {
-      const event = await addEvent("idp-unlimited", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
-
-      expect((await put(event.id, { sso_provider_id: SECOND })).status).toBe(200);
+      expect((await put(event.id, { access_methods: ["link"] }, cookies.superadmin)).status).toBe(200);
+      expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["link"], sso_provider_id: null });
     });
   });
 

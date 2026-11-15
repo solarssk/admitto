@@ -139,13 +139,13 @@ export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_met
  * - `sso_claim_superadmin_only`: the save changes the restriction of the company sign-in, and the caller is not a superadmin;
  * - `sso_provider_needs_sso`: the save names a provider, and the way in it leaves the event with is another;
  * - `sso_provider_not_available`: the provider named is not one of the enabled OIDC providers (unknown, switched off, not OIDC);
- * - `sso_provider_superadmin_only`: the save changes the provider of an event that is limited to one company (a restriction by claim
- *   is in force), and the caller is not a superadmin;
+ * - `access_method_superadmin_only`: the save changes the way in, and the caller is not a superadmin;
+ * - `sso_provider_superadmin_only`: the save changes the provider of the company sign-in, and the caller is not a superadmin;
  * - `not_ready`: the change needs the event to be ready, and these checks are not met.
  */
 export type SettingsUpdate =
   | { kind: "saved"; settings: RegistrationSettingsDto }
-  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" | "sso_provider_needs_sso" | "sso_provider_not_available" | "sso_provider_superadmin_only" }
+  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" | "sso_provider_needs_sso" | "sso_provider_not_available" | "sso_provider_superadmin_only" | "access_method_superadmin_only" }
   | { kind: "not_ready"; blockers: RegistrationReadinessKey[] };
 
 export interface SettingsOptions {
@@ -332,16 +332,14 @@ function changesSsoClaim(before: SettingsValues, after: SettingsValues): boolean
 }
 
 /**
- * Whether a save moves the company sign-in of an event that is limited to one company (a claim restriction is in force) to
- * another provider. Moving the event away from the company sign-in is no such change (the provider and the restriction go with
- * the way in), and the same provider is none.
+ * Whether a save changes the identity provider that is in force afterwards. Moving the event away from the company sign-in is no
+ * such change (the provider goes with the way in; the way in is judged on its own), and the same provider is none.
  */
-function changesProviderOfLimitedEvent(before: SettingsValues, after: SettingsValues): boolean {
-  if (!after.access_methods.includes("sso") || before.sso_claim_name === null) return false;
-  return before.sso_provider_id !== after.sso_provider_id;
+function changesProvider(before: SettingsValues, after: SettingsValues): boolean {
+  return after.access_methods.includes("sso") && before.sso_provider_id !== after.sso_provider_id;
 }
 
-type Refusal = Extract<SettingsUpdate["kind"], "consent_not_published" | `sso_${string}`>;
+type Refusal = Extract<SettingsUpdate["kind"], "consent_not_published" | "access_method_superadmin_only" | `sso_${string}`>;
 
 /** What, if anything, refuses the patch before the readiness is looked at: a consent the event has not published; the company sign-in's restriction and provider. */
 function refusalOf(args: {
@@ -354,6 +352,8 @@ function refusalOf(args: {
 }): Refusal | null {
   const { patch, before, after, published, provider, canChange } = args;
   if (patch.consent_keys?.some((key) => !published.includes(key))) return "consent_not_published";
+  // How guests open the form is technical: a superadmin's to change (an event admin may send the value that is there).
+  if (!canChange && !sameMembers(before.access_methods, after.access_methods)) return "access_method_superadmin_only";
   // A restriction is sent for the company sign-in only: one sent with another way in is refused, not dropped without a word.
   if (patch.sso_claim_name && !after.access_methods.includes("sso")) return "sso_claim_needs_sso";
   // Who may let in the people of one company is a superadmin's to say (the administrator of the event only keeps what is there).
@@ -364,7 +364,7 @@ function refusalOf(args: {
 /**
  * What, if anything, refuses the provider of a save: it is named for the company sign-in alone (422 `sso_provider_needs_sso`), a new
  * choice must be one that can be chosen (422 `sso_provider_not_available`; one already the event's may stay while it is switched off,
- * the form is then closed), and an event limited to one company is moved by a superadmin only (403 `sso_provider_superadmin_only`).
+ * the form is then closed), and only a superadmin changes it (403 `sso_provider_superadmin_only`, first).
  */
 function providerRefusal(args: {
   patch: RegistrationSettingsPatch;
@@ -374,11 +374,13 @@ function providerRefusal(args: {
   canChange: boolean;
 }): Refusal | null {
   const { patch, before, after, provider, canChange } = args;
+  // The provider is technical too: only a superadmin changes it, whether or not the event is limited to one company.
+  if (!canChange && changesProvider(before, after)) return "sso_provider_superadmin_only";
   if (patch.sso_provider_id) {
     if (!after.access_methods.includes("sso")) return "sso_provider_needs_sso";
     if (patch.sso_provider_id !== before.sso_provider_id && provider?.state !== "ready") return "sso_provider_not_available";
   }
-  return !canChange && changesProviderOfLimitedEvent(before, after) ? "sso_provider_superadmin_only" : null;
+  return null;
 }
 
 /** A password that waits for the way in must not come back by itself: it is cleared with the move away from it. */
@@ -479,7 +481,7 @@ type SaveRequest = {
   actor: StaffActor;
   environment: ReadinessEnvironment;
   now: Date | undefined;
-  /** The caller is a superadmin: they change the restriction of the company sign-in, and the provider of an event that has one. */
+  /** The caller is a superadmin: only they change the way in, the provider and the restriction of the company sign-in. */
   canChangeSsoClaim: boolean;
 };
 

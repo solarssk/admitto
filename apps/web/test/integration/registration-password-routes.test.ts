@@ -41,7 +41,7 @@ type Method = (typeof METHODS)[number];
 let prisma: PrismaClient;
 let app: ReturnType<typeof buildTestApp>;
 const cookies = { adminA: "", adminB: "", operator: "", superadmin: "" };
-const users = { adminA: "" };
+const users = { superadmin: "" };
 
 /** A fresh app has a fresh rate limit store, so a test never spends the budget of another. */
 const freshApp = () => buildTestApp({ prisma, checkinToken: "reg111-routes-checkin-token-32!!", adminDistRoot });
@@ -94,7 +94,7 @@ async function seed(client: PrismaClient): Promise<void> {
     ],
   });
   for (const user of [adminA!, adminB!, superadmin!]) await enrollConfirmedTotp(client, user.id);
-  users.adminA = adminA!.id;
+  users.superadmin = superadmin!.id;
   cookies.adminA = await sessionCookieFor(client, adminA!.id);
   cookies.adminB = await sessionCookieFor(client, adminB!.id);
   cookies.operator = await sessionCookieFor(client, operator!.id);
@@ -126,7 +126,8 @@ async function call(
   body: unknown,
   init: { eventId?: string; cookie?: string; headers?: Record<string, string>; application?: ReturnType<typeof buildTestApp> } = {},
 ): Promise<Response> {
-  const { eventId = EVENT_A, cookie = cookies.adminA, headers = sameOrigin, application = app } = init;
+  // A superadmin by default: the password is how guests open the form, which only a superadmin sets.
+  const { eventId = EVENT_A, cookie = cookies.superadmin, headers = sameOrigin, application = app } = init;
   return await application.request(path(eventId), {
     method,
     headers: { ...(cookie ? { Cookie: cookie } : {}), ...headers, "Content-Type": "application/json" },
@@ -164,12 +165,22 @@ describe("who may set or switch off the password", () => {
     expect(await auditOf()).toHaveLength(1);
   });
 
-  it.each(METHODS)("%s: an admin of the organisation and a superadmin may", async (method) => {
-    for (const cookie of [cookies.adminA, cookies.superadmin]) {
-      const res = await call(method, { password: PASSWORD }, { cookie, application: freshApp() });
-      expect(res.status).toBe(204);
-      expect(await res.text()).toBe("");
-    }
+  it.each(METHODS)("%s: a superadmin may", async (method) => {
+    const res = await call(method, { password: PASSWORD }, { cookie: cookies.superadmin, application: freshApp() });
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe("");
+  });
+
+  it.each(METHODS)("%s: an admin of the organisation gets 403 `password_superadmin_only` and changes nothing, before the body is read", async (method) => {
+    await put(PASSWORD);
+    const before = await hashOf();
+
+    const res = await call(method, method === "PUT" ? "{ not json" : undefined, { cookie: cookies.adminA, application: freshApp() });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "password_superadmin_only" });
+    expect(await hashOf()).toBe(before);
+    expect(await auditOf()).toHaveLength(1);
   });
 
   it.each(METHODS)("%s: answers 404 for an event that does not exist to a superadmin, and 403 to anyone else", async (method) => {
@@ -332,7 +343,7 @@ describe("the entry in the audit log", () => {
       { event_id: EVENT_A, event_title: `Password ${EVENT_A}`, change: "set" },
       { event_id: EVENT_A, event_title: `Password ${EVENT_A}`, change: "cleared" },
     ]);
-    expect(entries.every((entry) => entry.actor_user_id === users.adminA && entry.organization_id === ORG_A)).toBe(true);
+    expect(entries.every((entry) => entry.actor_user_id === users.superadmin && entry.organization_id === ORG_A)).toBe(true);
     const hash = await hashOf();
     const text = JSON.stringify(entries);
     expect(hash).toBeNull();
