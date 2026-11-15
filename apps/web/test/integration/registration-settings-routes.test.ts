@@ -469,14 +469,14 @@ describe("access methods, end to end", () => {
     ]);
   });
 
-  it("make the link and the password available only with the keys, and SSO only with the provider chosen for guests", async () => {
+  it("make the link and the password available only with the keys, and SSO whatever the provider chosen for the instance (it is the event's own)", async () => {
     const enable = await put("/api/admin/registration/access-methods", { methods: ["link", "password", "sso"] });
     expect(enable.status).toBe(200);
     const before = (await enable.json()) as { methods: Array<{ method: string; available: boolean; blocked_by: string | null }> };
     expect(before.methods.map((m) => [m.method, m.available, m.blocked_by])).toEqual([
       ["link", false, "bot_protection"],
       ["password", false, "bot_protection"],
-      ["sso", false, "identity_provider"],
+      ["sso", true, null],
     ]);
 
     await put("/api/admin/registration/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
@@ -495,18 +495,15 @@ describe("access methods, end to end", () => {
       const res = await app.request("/api/admin/registration/access-methods", { headers: { Cookie: superCookie } });
       return ((await res.json()) as { methods: Array<{ method: string; available: boolean }> }).methods.map((m) => [m.method, m.available]);
     };
-    // An enabled provider is not enough: guests sign in with the one a superadmin chose.
-    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", false]]);
+    // The enabled provider is not what makes the way in available: it needs no provider of the instance.
+    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", true]]);
 
     expect((await put("/api/admin/registration/sso-provider", { provider_id: provider.id })).status).toBe(200);
     expect(await availability()).toEqual([["link", true], ["password", true], ["sso", true]]);
 
     await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: false } });
-    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", false]]);
-    await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: true } });
-    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", true]]);
     await prisma.identityProvider.delete({ where: { id: provider.id } });
-    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", false]]);
+    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", true]]);
   });
 
   it("are audited with the list that is now enabled", async () => {

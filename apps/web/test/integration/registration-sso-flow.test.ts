@@ -15,7 +15,6 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { handleSsoCallback, handleSsoStart } from "../../src/registration/sso-routes.js";
-import { setSsoProviderId } from "../../src/registration/sso-provider.js";
 import { verifyGuestSsoSession } from "../../src/registration/sso-session.js";
 import { createGuestSsoState } from "../../src/registration/sso-state.js";
 import { newGuestSsoStateValue } from "../../src/registration/sso-state-value.js";
@@ -29,6 +28,7 @@ import {
   callbackPath,
   flowCookieName,
   goToProvider,
+  SSO_EVENT_SETTINGS,
   installProvider,
   removeProvider,
   startPath,
@@ -50,7 +50,7 @@ const eventIds = new Map<string, string>();
 /** An event whose way in is the company sign-in, open, with its slug. */
 async function addEvent(label: string, seed: Parameters<typeof seeder.addEvent>[1] = {}): Promise<string> {
   const slug = `reg118a-${label}-${(counter += 1)}`;
-  eventIds.set(slug, await seeder.addEvent(slug, { ...seed, settings: seed.settings === null ? null : { access_methods: ["sso"], mode: "approval", ...seed.settings } }));
+  eventIds.set(slug, await seeder.addEvent(slug, { ...seed, settings: seed.settings === null ? null : { ...SSO_EVENT_SETTINGS, mode: "approval", ...seed.settings } }));
   return slug;
 }
 
@@ -173,7 +173,7 @@ describe("the start", () => {
   });
 
   it("is the one 404 of the registration routes for an event that is not open with the company sign-in, and writes nothing", async () => {
-    const link = await addEvent("start-link", { settings: { access_methods: ["link"] } });
+    const link = await addEvent("start-link", { settings: { access_methods: ["link"], sso_provider_id: null } });
     const off = await addEvent("start-off", { settings: { mode: null } });
     const archived = await addEvent("start-archived", { archived: true });
     const over = await addEvent("start-over", { date: PAST });
@@ -190,13 +190,16 @@ describe("the start", () => {
     expect(await stateRows()).toHaveLength(0);
   });
 
-  it("is the same 404 while no provider is chosen, the chosen one is switched off, or it was deleted", async () => {
+  it("is the same 404 while the event has chosen no provider, the chosen one is switched off, or it was deleted", async () => {
     const slug = await addEvent("start-provider");
     const unknown = await signature(await browse(h.app, new Jar(), startPath("reg118a-no-such-event")));
 
     for (const breakIt of [
-      () => setSsoProviderId(prisma, null),
-      () => installProvider(prisma, idp, { enabled: false }),
+      () => prisma.eventRegistrationSettings.update({ where: { event_id: eventIds.get(slug)! }, data: { sso_provider_id: null } }),
+      async () => {
+        await installProvider(prisma, idp, { enabled: false });
+        await prisma.eventRegistrationSettings.update({ where: { event_id: eventIds.get(slug)! }, data: { sso_provider_id: PROVIDER_ID } });
+      },
       () => removeProvider(prisma),
     ]) {
       await breakIt();

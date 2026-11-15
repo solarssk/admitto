@@ -4,12 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadRegistrationPage, resolveConfirmation, resolveRegistration } from "../../src/registration/form-model.js";
 import { resolveAccessMethodAvailability } from "../../src/registration/access-methods.js";
 import { getBotProtectionMode } from "../../src/registration/bot-protection-mode.js";
-import { getSsoProviderId } from "../../src/registration/sso-provider.js";
+import { resolveGuestSsoProvider } from "../../src/registration/sso-provider.js";
 import { resolveTurnstileKeys } from "../../src/registration/turnstile-settings.js";
 
 vi.mock("../../src/registration/access-methods.js", () => ({ resolveAccessMethodAvailability: vi.fn() }));
 vi.mock("../../src/registration/bot-protection-mode.js", () => ({ getBotProtectionMode: vi.fn(async () => "required") }));
-vi.mock("../../src/registration/sso-provider.js", () => ({ getSsoProviderId: vi.fn(async () => null) }));
+vi.mock("../../src/registration/sso-provider.js", () => ({ resolveGuestSsoProvider: vi.fn() }));
 vi.mock("../../src/registration/turnstile-settings.js", () => ({ resolveTurnstileKeys: vi.fn() }));
 vi.mock("../../src/legal/registration-gate.js", () => ({
   loadRequiredLegalDocuments: vi.fn(async () => ({
@@ -50,6 +50,9 @@ const row = {
     consent_keys: [],
     max_companions: 0,
     styled_form_controls: false,
+    sso_provider_id: null,
+    sso_claim_name: null,
+    sso_claim_values: [],
   },
 };
 
@@ -65,7 +68,6 @@ const availability = (available: boolean) => [
 beforeEach(() => {
   vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(true));
   vi.mocked(resolveTurnstileKeys).mockResolvedValue({ state: "ready", siteKey: "site-key", secret: "secret" });
-  vi.mocked(getSsoProviderId).mockResolvedValue(null);
   vi.mocked(getBotProtectionMode).mockResolvedValue("required");
 });
 
@@ -642,7 +644,7 @@ describe("the company sign-in as the way in (D-C4)", () => {
       event: {
         findUnique: vi.fn(async () => ({
           ...row,
-          registration_settings: { ...row.registration_settings, access_methods: ["sso"], sso_claim_name: null, sso_claim_values: [], ...changes },
+          registration_settings: { ...row.registration_settings, access_methods: ["sso"], sso_provider_id: "idp-1", sso_claim_name: null, sso_claim_values: [], ...changes },
         })),
       },
     }) as unknown as PrismaClient;
@@ -655,7 +657,7 @@ describe("the company sign-in as the way in (D-C4)", () => {
 
   beforeEach(() => {
     vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(ssoAvailability(true));
-    vi.mocked(getSsoProviderId).mockResolvedValue("idp-1");
+    vi.mocked(resolveGuestSsoProvider).mockResolvedValue({ state: "ready", provider: { id: "idp-1" } as never });
   });
 
   it("opens an event whose way in is the company sign-in while the provider chosen for guests is available, and tells the route which", async () => {
@@ -710,13 +712,37 @@ describe("the company sign-in as the way in (D-C4)", () => {
     }
   });
 
-  it("is not found while no provider is chosen, and while the one chosen is not available: gone, or switched off", async () => {
-    vi.mocked(getSsoProviderId).mockResolvedValue(null);
-    expect(await resolveRegistration(withSettings(), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+  it("reads the provider of the event from its own column, and asks for the state of that one", async () => {
+    await resolveRegistration(withSettings({ sso_provider_id: "idp-event" }), "northwind-summit", NOW);
 
-    vi.mocked(getSsoProviderId).mockResolvedValue("idp-1");
+    expect(resolveGuestSsoProvider).toHaveBeenCalledWith(expect.anything(), "idp-event");
+  });
+
+  it("is not found while the event has chosen no provider: no look at the provider is made", async () => {
+    vi.mocked(resolveGuestSsoProvider).mockClear();
+
+    expect(await resolveRegistration(withSettings({ sso_provider_id: null }), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+    expect(resolveGuestSsoProvider).not.toHaveBeenCalled();
+  });
+
+  it("is not found while the provider of the event is not ready: switched off, or gone", async () => {
+    for (const state of ["disabled", "missing", "not_selected"] as const) {
+      vi.mocked(resolveGuestSsoProvider).mockResolvedValue({ state });
+      expect(await resolveRegistration(withSettings(), "northwind-summit", NOW), state).toEqual({ kind: "not_found" });
+    }
+  });
+
+  it("is not found while the system has not enabled the company sign-in", async () => {
     vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(ssoAvailability(false));
     expect(await resolveRegistration(withSettings(), "northwind-summit", NOW)).toEqual({ kind: "not_found" });
+  });
+
+  it("does not look for a provider for the link or the password", async () => {
+    vi.mocked(resolveGuestSsoProvider).mockClear();
+    vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(true));
+
+    await resolveRegistration(withSettings({ access_methods: ["link"] }), "northwind-summit", NOW);
+    expect(resolveGuestSsoProvider).not.toHaveBeenCalled();
   });
 
   it("asks the availability of the company sign-in, not of the link: a link that is available does not open it", async () => {

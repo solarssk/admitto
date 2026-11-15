@@ -4,7 +4,6 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { getEventRegistrationSettings } from "../../src/admin/event-registration-settings.js";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { setBotProtectionMode } from "../../src/registration/bot-protection-mode.js";
-import { SSO_PROVIDER_SETTINGS_KEY, setSsoProviderId } from "../../src/registration/sso-provider.js";
 import { resolveRegistration } from "../../src/registration/form-model.js";
 import { READINESS_KEYS, readinessBlockers, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
@@ -37,28 +36,34 @@ beforeAll(async () => {
 });
 
 const PROVIDER_ID = "reg118a-ready-idp";
+const OTHER_PROVIDER_ID = "reg118a-ready-other-idp";
+
+/** What an event of the company sign-in holds: its way in and its own provider (the one `ssoSystem` creates). */
+const COMPANY = { access_methods: ["sso"], sso_provider_id: PROVIDER_ID };
 
 async function resetSso(): Promise<void> {
-  await prisma.systemSettings.deleteMany({ where: { key: SSO_PROVIDER_SETTINGS_KEY } });
-  await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
+  await prisma.identityProvider.deleteMany({ where: { id: { in: [PROVIDER_ID, OTHER_PROVIDER_ID] } } });
+}
+
+async function createProvider(id: string, enabled: boolean): Promise<void> {
+  await prisma.identityProvider.create({
+    data: {
+      id,
+      issuer: `https://${id}.reg118a.example.com/`,
+      client_id: id,
+      authorization_endpoint: `https://${id}.reg118a.example.com/authorize`,
+      token_endpoint: `https://${id}.reg118a.example.com/token`,
+      jwks_uri: `https://${id}.reg118a.example.com/jwks`,
+      display_name: "Ready IdP",
+      enabled,
+    },
+  });
 }
 
 /** An identity provider and the company sign-in turned on by the system, with the parts a row may take away. */
-async function ssoSystem(options: { providerEnabled?: boolean; chosen?: boolean; wayEnabled?: boolean; keys?: boolean } = {}): Promise<void> {
-  const { providerEnabled = true, chosen = true, wayEnabled = true, keys = true } = options;
-  await prisma.identityProvider.create({
-    data: {
-      id: PROVIDER_ID,
-      issuer: "https://idp.reg118a.example.com/",
-      client_id: "reg118a-ready",
-      authorization_endpoint: "https://idp.reg118a.example.com/authorize",
-      token_endpoint: "https://idp.reg118a.example.com/token",
-      jwks_uri: "https://idp.reg118a.example.com/jwks",
-      display_name: "Ready IdP",
-      enabled: providerEnabled,
-    },
-  });
-  await setSsoProviderId(prisma, chosen ? PROVIDER_ID : null);
+async function ssoSystem(options: { providerEnabled?: boolean; wayEnabled?: boolean; keys?: boolean } = {}): Promise<void> {
+  const { providerEnabled = true, wayEnabled = true, keys = true } = options;
+  await createProvider(PROVIDER_ID, providerEnabled);
   await setEnabledAccessMethods(prisma, wayEnabled ? ["link", "sso"] : ["link"]);
   if (!keys) await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
 }
@@ -96,13 +101,23 @@ const ROWS: Row[] = [
   { name: "an event that has everything, in the mode of approval", seed: { settings: { mode: "approval" } }, page: "open", blockers: [] },
   { name: "an event that is ready and has registration off: ready, and still a not-found page", seed: { settings: { mode: null } }, page: "not_found", blockers: [] },
   { name: "no way in chosen", seed: { settings: { access_methods: [] } }, page: "not_found", blockers: ["access_method"] },
-  { name: "the company sign-in, with a provider chosen and on, and no Turnstile keys: the form needs no bot check", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem({ keys: false }), page: "open", blockers: [] },
-  { name: "the company sign-in, with the Turnstile keys saved too", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem(), page: "open", blockers: [] },
-  { name: "the company sign-in, with no provider chosen", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem({ chosen: false }), page: "not_found", blockers: ["identity_provider"] },
-  { name: "the company sign-in, with the chosen provider switched off", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem({ providerEnabled: false }), page: "not_found", blockers: ["identity_provider"] },
-  { name: "the company sign-in, which the system administrator has not enabled", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem({ wayEnabled: false }), page: "not_found", blockers: ["access_method_enabled"] },
+  { name: "the company sign-in, with a provider chosen and on, and no Turnstile keys: the form needs no bot check", seed: { settings: COMPANY }, system: () => ssoSystem({ keys: false }), page: "open", blockers: [] },
+  { name: "the company sign-in, with the Turnstile keys saved too", seed: { settings: COMPANY }, system: () => ssoSystem(), page: "open", blockers: [] },
+  { name: "the company sign-in, with no provider chosen by the event", seed: { settings: { access_methods: ["sso"] } }, system: () => ssoSystem(), page: "not_found", blockers: ["identity_provider"] },
+  {
+    name: "the company sign-in, with a provider that is enabled but is not the event's own",
+    seed: { settings: COMPANY },
+    system: async () => {
+      await createProvider(OTHER_PROVIDER_ID, true);
+      await ssoSystem({ providerEnabled: false });
+    },
+    page: "not_found",
+    blockers: ["identity_provider"],
+  },
+  { name: "the company sign-in, with the chosen provider switched off", seed: { settings: COMPANY }, system: () => ssoSystem({ providerEnabled: false }), page: "not_found", blockers: ["identity_provider"] },
+  { name: "the company sign-in, which the system administrator has not enabled", seed: { settings: COMPANY }, system: () => ssoSystem({ wayEnabled: false }), page: "not_found", blockers: ["access_method_enabled"] },
   { name: "the company sign-in next to the link", seed: { settings: { access_methods: ["sso", "link"] } }, system: () => ssoSystem(), page: "not_found", blockers: ["access_method"] },
-  { name: "a link, whatever the state of the identity provider", system: () => ssoSystem({ chosen: false, providerEnabled: false }), page: "open", blockers: [] },
+  { name: "a link, whatever the state of the identity provider", system: () => ssoSystem({ providerEnabled: false }), page: "open", blockers: [] },
   { name: "two ways in", seed: { settings: { access_methods: ["link", "password"] } }, system: bothWays, page: "not_found", blockers: ["access_method"] },
   { name: "a link that the system administrator has not enabled", system: () => setEnabledAccessMethods(prisma, []), page: "not_found", blockers: ["access_method_enabled"] },
   {
@@ -227,6 +242,20 @@ describe("the readiness of an event and the page it is about", () => {
     const modeOn = row.seed?.settings?.mode !== null;
     if (modeOn && formBlockers.length === 0) expect(page.kind).toBe("open");
     if (formBlockers.length > 0) expect(page.kind).not.toBe("open");
+  });
+
+  it("closes the form and names the identity provider once the provider the event chose is deleted", async () => {
+    await ssoSystem();
+    const slug = `reg99a-ready-gone-${(counter += 1)}`;
+    const eventId = await seeder.addEvent(slug, { settings: { mode: "automatic", ...COMPANY } });
+    expect((await resolveRegistration(prisma, slug, new Date())).kind).toBe("open");
+
+    await prisma.identityProvider.delete({ where: { id: PROVIDER_ID } });
+
+    const settings = await getEventRegistrationSettings(prisma, eventId);
+    expect(readinessBlockers(settings!.readiness)).toEqual(["identity_provider"]);
+    expect(settings).toMatchObject({ sso_provider_id: null, sso_provider: null });
+    expect((await resolveRegistration(prisma, slug, new Date())).kind).toBe("not_found");
   });
 
   it("lists the information row in the place of the bot check while bot protection is not used, and the other way round", async () => {

@@ -40,7 +40,12 @@ export const MAX_REGISTRATION_SETTINGS_BODY_BYTES = 4_096;
  *   of the values in one claim, sent together. `null` and `[]` remove it. A restriction sent for an event whose way in is
  *   not the company sign-in is a 422 `sso_claim_needs_sso`; moving an event away from that way in removes the restriction.
  *   Only a superadmin may change it: from anyone else a change is a 403 `sso_claim_superadmin_only` (a restriction sent as it
- *   already is, and a move away from the company sign-in, are no change).
+ *   already is, and a move away from the company sign-in, are no change);
+ * - `sso_provider_id` (D-C4): the identity provider guests of the event sign in with, an enabled OIDC provider (a provider that is
+ *   not one, switched off or unknown is a 422 `sso_provider_not_available`; a provider already chosen may stay while it is off).
+ *   Sent for an event whose way in is not the company sign-in it is a 422 `sso_provider_needs_sso`; `null` removes the choice, and
+ *   moving an event away from that way in removes it. While the event is limited to one company (a claim restriction is in force)
+ *   only a superadmin may move it to another provider: from anyone else a change is a 403 `sso_provider_superadmin_only`.
  */
 const putBodySchema = z
   .object({
@@ -54,6 +59,8 @@ const putBodySchema = z
     styled_form_controls: z.boolean().optional(),
     consent_keys: z.array(z.string().regex(LEGAL_CONSENT_KEY_PATTERN)).max(MAX_CONSENT_DOCUMENTS_PER_EVENT).optional(),
     sso_claim_name: z.string().trim().min(1).refine((name) => ssoClaimNameProblem(name) === null).nullable().optional(),
+    // The provider of the company sign-in, a cuid of an identity provider: its existence and state are judged by the save.
+    sso_provider_id: z.string().trim().min(1).max(64).nullable().optional(),
     sso_claim_values: z
       .array(
         z
@@ -117,6 +124,12 @@ export async function handlePutEventRegistrationSettings(c: Context, db: PrismaC
       return c.json({ error: "sso_claim_needs_sso" }, 422);
     case "sso_claim_superadmin_only":
       return c.json({ error: "sso_claim_superadmin_only" }, 403);
+    case "sso_provider_needs_sso":
+      return c.json({ error: "sso_provider_needs_sso" }, 422);
+    case "sso_provider_not_available":
+      return c.json({ error: "sso_provider_not_available" }, 422);
+    case "sso_provider_superadmin_only":
+      return c.json({ error: "sso_provider_superadmin_only" }, 403);
     case "not_ready":
       // The keys of the checks that are not met, and nothing else: no text, no value, no name of anybody.
       return c.json({ error: "registration_not_ready", blockers: result.blockers }, 409);

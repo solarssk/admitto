@@ -476,7 +476,7 @@ describe("access methods", () => {
     });
   });
 
-  it("can be enabled, and say what an enabled method still waits for", async () => {
+  it("can be enabled, and say what an enabled method still waits for (the link: bot protection; SSO: nothing)", async () => {
     const { db, rows } = memoryDb();
     const res = await sendJson(makeApp(db), "PUT", "/access-methods", { methods: ["sso", "link", "link"] });
     expect(res.status).toBe(200);
@@ -484,7 +484,8 @@ describe("access methods", () => {
       methods: [
         { method: "link", enabled: true, available: false, blocked_by: "bot_protection" },
         { method: "password", enabled: false, available: false, blocked_by: null },
-        { method: "sso", enabled: true, available: false, blocked_by: "identity_provider" },
+        // The identity provider is the event's own: the system has nothing more to wait for.
+        { method: "sso", enabled: true, available: true, blocked_by: null },
       ],
     });
     expect(rows().get(ACCESS_METHODS_SETTINGS_KEY)).toBe('["link","sso"]');

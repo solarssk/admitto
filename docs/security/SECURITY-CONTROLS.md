@@ -432,7 +432,7 @@ The checks, in the order of the answer. A check that does not apply is not in it
 | `access_method_enabled` | the system administrator has enabled that way in |
 | `bot_protection` | the Turnstile keys are saved (listed for the link and the password, and while no way in is chosen; not for the company sign-in; not while bot protection is "not used") |
 | `bot_protection_not_used` | always met: information that a superadmin set bot protection to "not used", listed in the place of `bot_protection` (never a blocker) |
-| `identity_provider` | the identity provider chosen for guests exists and is enabled (listed for the company sign-in only) |
+| `identity_provider` | the identity provider the event chose (`sso_provider_id`) exists and is enabled (listed for the company sign-in only) |
 | `password` | the way in is the password and a password is set |
 | `legal_documents` | the privacy notice, the terms and every extra consent the event asks for are published |
 | `form_questions` | the form can draw every required question |

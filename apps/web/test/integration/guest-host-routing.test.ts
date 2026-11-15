@@ -17,7 +17,7 @@ import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/mock-oidc-idp.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
-import { GUEST_SSO_SESSION_COOKIE, Jar, browse, goToProvider, installProvider, removeProvider, type App } from "../helpers/registration-sso-harness.js";
+import { GUEST_SSO_SESSION_COOKIE, Jar, browse, SSO_EVENT_SETTINGS, goToProvider, installProvider, removeProvider, type App } from "../helpers/registration-sso-harness.js";
 import { ORIGIN, SelectiveStore, eventSeeder, harness, signature } from "../helpers/registration-submit-harness.js";
 
 const ORG = "org-reg119b-routing";
@@ -80,7 +80,8 @@ beforeAll(async () => {
   idp = await startMockOidcIdp();
   seeder = eventSeeder(prisma, ORG);
   await seeder.prepare();
-  const sso = { access_methods: ["sso"], mode: "approval" };
+  await installProvider(prisma, idp);
+  const sso = { ...SSO_EVENT_SETTINGS, mode: "approval" };
   ids.a = await seeder.addEvent(SLUG_A, { settings: sso });
   ids.b = await seeder.addEvent(SLUG_B, { settings: sso });
   ids.pending = await seeder.addEvent(SLUG_PENDING);

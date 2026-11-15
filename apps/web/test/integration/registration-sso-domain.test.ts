@@ -14,6 +14,7 @@ import {
   Jar,
   browse,
   goToProvider,
+  SSO_EVENT_SETTINGS,
   installProvider,
   removeProvider,
   type App,
@@ -47,7 +48,8 @@ beforeAll(async () => {
   idp = await startMockOidcIdp();
   seeder = eventSeeder(prisma, ORG);
   await seeder.prepare();
-  eventId = await seeder.addEvent(SLUG, { settings: { access_methods: ["sso"], mode: "approval" } });
+  await installProvider(prisma, idp);
+  eventId = await seeder.addEvent(SLUG, { settings: { ...SSO_EVENT_SETTINGS, mode: "approval" } });
   h = harness({ prisma, store: new SelectiveStore() });
 });
 

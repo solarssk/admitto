@@ -5,15 +5,15 @@
  *
  * "Available" is stricter than "enabled". A method the administrator enabled is available only when
  * what it needs is there: link and password need the Turnstile keys (the password form mails
- * addresses too, D-C2) unless the superadmin set bot protection to "not used" (./bot-protection-mode.ts), SSO needs the identity provider chosen for guests to exist and be enabled
- * (./sso-provider.ts); it needs no Turnstile, because the form stands behind a sign-in. Turning a method off, or losing what
+ * addresses too, D-C2) unless the superadmin set bot protection to "not used" (./bot-protection-mode.ts). SSO needs nothing of the
+ * system: the identity provider is the event's own (./sso-provider.ts, judged for the event by the page and by the readiness), and it
+ * needs no Turnstile, because the form stands behind a sign-in. Turning a method off, or losing what
  * it needs, closes the form of every event that uses it; nothing is deleted. Callers decide
  * availability from `resolveAccessMethodAvailability` at request time, never from a cached copy.
  */
 
 import { REGISTRATION_ACCESS_METHOD, type Prisma, type PrismaClient, type RegistrationAccessMethod } from "@admitto/db";
 import { getBotProtectionMode } from "./bot-protection-mode.js";
-import { resolveGuestSsoProvider } from "./sso-provider.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
 
 /** SystemSettings.key of the JSON array of enabled method names. */
@@ -69,33 +69,25 @@ export async function setEnabledAccessMethods(
   return enabled;
 }
 
-/** The rule itself, apart from the lookups. `identityProviderEnabled`: the provider chosen for guests exists and is enabled. */
+/** The rule itself, apart from the lookups. The company sign-in is never blocked here: its provider belongs to the event. */
 export function computeAccessMethodAvailability(input: {
   enabled: readonly RegistrationAccessMethod[];
   botProtectionReady: boolean;
-  identityProviderEnabled: boolean;
 }): AccessMethodAvailability[] {
   return REGISTRATION_ACCESS_METHOD.map((method) => {
     const enabled = input.enabled.includes(method);
-    const ready = method === "sso" ? input.identityProviderEnabled : input.botProtectionReady;
-    const blocker: AccessMethodBlocker = method === "sso" ? "identity_provider" : "bot_protection";
-    return { method, enabled, available: enabled && ready, blockedBy: enabled && !ready ? blocker : null };
+    const ready = method === "sso" || input.botProtectionReady;
+    return { method, enabled, available: enabled && ready, blockedBy: enabled && !ready ? "bot_protection" : null };
   });
 }
 
 /** Every method, in the canonical order, with whether the administrator enabled it and whether it
  * can be used right now. */
 export async function resolveAccessMethodAvailability(db: AccessMethodsDb): Promise<AccessMethodAvailability[]> {
-  const [enabled, keys, mode, provider] = await Promise.all([
-    getEnabledAccessMethods(db),
-    resolveTurnstileKeys(db),
-    getBotProtectionMode(db),
-    resolveGuestSsoProvider(db),
-  ]);
+  const [enabled, keys, mode] = await Promise.all([getEnabledAccessMethods(db), resolveTurnstileKeys(db), getBotProtectionMode(db)]);
   return computeAccessMethodAvailability({
     enabled,
     // With the check not used there is nothing to wait for.
     botProtectionReady: mode === "not_used" || keys.state === "ready",
-    identityProviderEnabled: provider.state === "ready",
   });
 }

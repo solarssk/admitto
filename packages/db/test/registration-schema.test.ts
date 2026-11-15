@@ -128,6 +128,7 @@ describe("EventRegistrationSettings", () => {
       custom_domain_verified_at: null,
       custom_domain_checked_at: null,
       custom_domain_check_result: null,
+      sso_provider_id: null,
     });
   });
 
@@ -256,6 +257,33 @@ describe("EventRegistrationSettings: the event's own address (D-C6)", () => {
     await expectViolation(() => setDomain(EVENT_ID, null), "23514", "EventRegistrationSettings_custom_domain_verified_check");
     await prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "custom_domain_verified_at" = NULL WHERE "event_id" = ${EVENT_ID}`;
     await setDomain(EVENT_ID, null);
+  });
+
+  it("keeps a provider only for the company sign-in, and sets it null when the provider is deleted", async () => {
+    const providerId = "idp-registration-schema";
+    await prisma.identityProvider.create({
+      data: {
+        id: providerId, issuer: "https://login.example.com", client_id: "client", authorization_endpoint: "https://login.example.com/a",
+        token_endpoint: "https://login.example.com/t", jwks_uri: "https://login.example.com/j", display_name: "Example sign-in", enabled: true,
+      },
+    });
+    const setProvider = (methods: string[], id: string | null) =>
+      prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "access_methods" = ${methods}::text[], "sso_provider_id" = ${id} WHERE "event_id" = ${EVENT_ID}`;
+    await expectViolation(() => setProvider(["link"], providerId), "23514", "EventRegistrationSettings_sso_provider_check");
+    await expectViolation(() => setProvider([], providerId), "23514", "EventRegistrationSettings_sso_provider_check");
+    await expectViolation(() => setProvider(["sso"], "idp-nobody"), "23503", "EventRegistrationSettings_sso_provider_id_fkey");
+    await setProvider(["sso"], providerId);
+    await expectViolation(
+      () => prisma.$executeRaw`UPDATE "EventRegistrationSettings" SET "access_methods" = ARRAY['password']::text[] WHERE "event_id" = ${EVENT_ID}`,
+      "23514",
+      "EventRegistrationSettings_sso_provider_check",
+    );
+    await prisma.identityProvider.delete({ where: { id: providerId } });
+    expect(await prisma.eventRegistrationSettings.findUniqueOrThrow({ where: { event_id: EVENT_ID } })).toMatchObject({
+      access_methods: ["sso"],
+      sso_provider_id: null,
+    });
+    await setProvider([], null);
   });
 });
 

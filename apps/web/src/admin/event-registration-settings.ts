@@ -29,6 +29,7 @@ import { lockAndLoadLegalGateRows, loadLegalGateRows, publishedConsentKeys } fro
 import type { SelectableAccessMethod } from "../registration/access-methods.js";
 import type { BotProtectionMode } from "../registration/bot-protection-mode.js";
 import { isOver } from "../registration/form-model.js";
+import { loadEventSsoProvider, type EventSsoProviderDto, type SelectableSsoProvider } from "../registration/sso-provider.js";
 import {
   evaluateRegistrationReadiness,
   loadReadinessEnvironment,
@@ -60,6 +61,9 @@ export type SettingsValues = {
    * them register. Both are empty (`null` and `[]`) for no restriction; they move together. */
   sso_claim_name: string | null;
   sso_claim_values: string[];
+  /** The company sign-in only: the identity provider guests of this event sign in with. `null` while none is chosen, and always
+   * `null` for another way in. */
+  sso_provider_id: string | null;
 };
 
 /** What an event without a settings row has: registration off, and everything else as the columns default. A test keeps the
@@ -77,6 +81,7 @@ export function defaultSettings(): SettingsValues {
     styled_form_controls: false,
     sso_claim_name: null,
     sso_claim_values: [],
+    sso_provider_id: null,
   };
 }
 
@@ -98,6 +103,11 @@ export type OwnAddressDto = {
 export type RegistrationSettingsDto = SettingsValues & {
   /** The ways in a superadmin has turned on for the organisation: the ones an event may choose. An event that already has another one keeps it. */
   enabled_access_methods: RegistrationAccessMethod[];
+  /** The provider the event chose (`sso_provider_id`) with its name, kind and state, or null for no choice. */
+  sso_provider: EventSsoProviderDto | null;
+  /** What an event may choose for the company sign-in: the enabled OIDC providers. The organiser who saves the event is not a superadmin,
+   * so the list travels with the settings. Id, name and kind only. */
+  sso_providers: SelectableSsoProvider[];
   /** Whether the organisation checks guests for bots on the link and password forms: `not_used` when a superadmin switched it off. */
   bot_protection: BotProtectionMode;
   /** Whether a password is stored for the event. Only that: never the hash, never its length. */
@@ -127,11 +137,15 @@ export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_met
  * - `sso_claim_needs_sso`: the save sets a restriction of the company sign-in, and the way in it leaves the event with is
  *   another;
  * - `sso_claim_superadmin_only`: the save changes the restriction of the company sign-in, and the caller is not a superadmin;
+ * - `sso_provider_needs_sso`: the save names a provider, and the way in it leaves the event with is another;
+ * - `sso_provider_not_available`: the provider named is not one of the enabled OIDC providers (unknown, switched off, not OIDC);
+ * - `sso_provider_superadmin_only`: the save changes the provider of an event that is limited to one company (a restriction by claim
+ *   is in force), and the caller is not a superadmin;
  * - `not_ready`: the change needs the event to be ready, and these checks are not met.
  */
 export type SettingsUpdate =
   | { kind: "saved"; settings: RegistrationSettingsDto }
-  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" }
+  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" | "sso_provider_needs_sso" | "sso_provider_not_available" | "sso_provider_superadmin_only" }
   | { kind: "not_ready"; blockers: RegistrationReadinessKey[] };
 
 export interface SettingsOptions {
@@ -165,6 +179,7 @@ const SETTINGS_SELECT = {
   styled_form_controls: true,
   sso_claim_name: true,
   sso_claim_values: true,
+  sso_provider_id: true,
   // Not settings of this form (a superadmin sets the address, ./event-custom-domain-routes.ts), but what the address of the form is.
   custom_domain: true,
   custom_domain_verified_at: true,
@@ -190,6 +205,7 @@ function valuesOf(row: StoredRow): SettingsValues {
     // Both or none, as the table checks; a row that holds one without the other reads as no restriction.
     sso_claim_name: row.sso_claim_values.length > 0 ? row.sso_claim_name : null,
     sso_claim_values: row.sso_claim_name === null ? [] : [...row.sso_claim_values],
+    sso_provider_id: row.sso_provider_id,
   };
 }
 
@@ -248,6 +264,15 @@ function claimAfter(
   return name === null || values.length === 0 ? none : { sso_claim_name: name, sso_claim_values: values };
 }
 
+/**
+ * The provider of the company sign-in after a save. It is for that way in alone: an event that does not have it has none, so a move
+ * away clears it (as the restriction, and the CHECK of the table needs it), and a provider that waits for the way in does not come back.
+ */
+function providerAfter(current: SettingsValues, patch: RegistrationSettingsPatch, hasSso: boolean): string | null {
+  if (!hasSso) return null;
+  return patch.sso_provider_id === undefined ? current.sso_provider_id : patch.sso_provider_id;
+}
+
 /** The settings with the patch laid over them. A list given twice is kept once. */
 function mergeSettings(current: SettingsValues, patch: RegistrationSettingsPatch): SettingsValues {
   const accessMethods = patch.access_methods ?? current.access_methods;
@@ -262,6 +287,7 @@ function mergeSettings(current: SettingsValues, patch: RegistrationSettingsPatch
     consent_keys: patch.consent_keys === undefined ? current.consent_keys : [...new Set(patch.consent_keys)],
     styled_form_controls: patch.styled_form_controls ?? current.styled_form_controls,
     ...claimAfter(current, patch, accessMethods.includes("sso")),
+    sso_provider_id: providerAfter(current, patch, accessMethods.includes("sso")),
   };
 }
 
@@ -282,14 +308,18 @@ function sameMembers(a: readonly string[], b: readonly string[]): boolean {
 }
 
 /**
- * Whether a save has to find the event ready: when it turns registration on, and when it changes the way in or the
- * consents of an event that has it on. Turning registration off is never judged, and neither is a switch that does not
+ * Whether a save has to find the event ready: when it turns registration on, and when it changes the way in (or the provider
+ * of the company sign-in) or the consents of an event that has it on. Turning registration off is never judged, and neither is a switch that does not
  * touch what the form needs (the waiting list, the check of the address, the companion, the company and department, the styled boxes).
  */
 function needsReadiness(before: SettingsValues, after: SettingsValues): boolean {
   if (after.mode === null) return false;
   if (before.mode === null) return true;
-  return !sameMembers(before.access_methods, after.access_methods) || !sameMembers(before.consent_keys, after.consent_keys);
+  return (
+    !sameMembers(before.access_methods, after.access_methods) ||
+    !sameMembers(before.consent_keys, after.consent_keys) ||
+    before.sso_provider_id !== after.sso_provider_id
+  );
 }
 
 /**
@@ -299,6 +329,56 @@ function needsReadiness(before: SettingsValues, after: SettingsValues): boolean 
 function changesSsoClaim(before: SettingsValues, after: SettingsValues): boolean {
   if (!after.access_methods.includes("sso")) return false;
   return before.sso_claim_name !== after.sso_claim_name || !sameMembers(before.sso_claim_values, after.sso_claim_values);
+}
+
+/**
+ * Whether a save moves the company sign-in of an event that is limited to one company (a claim restriction is in force) to
+ * another provider. Moving the event away from the company sign-in is no such change (the provider and the restriction go with
+ * the way in), and the same provider is none.
+ */
+function changesProviderOfLimitedEvent(before: SettingsValues, after: SettingsValues): boolean {
+  if (!after.access_methods.includes("sso") || before.sso_claim_name === null) return false;
+  return before.sso_provider_id !== after.sso_provider_id;
+}
+
+type Refusal = Extract<SettingsUpdate["kind"], "consent_not_published" | `sso_${string}`>;
+
+/** What, if anything, refuses the patch before the readiness is looked at: a consent the event has not published; the company sign-in's restriction and provider. */
+function refusalOf(args: {
+  patch: RegistrationSettingsPatch;
+  before: SettingsValues;
+  after: SettingsValues;
+  published: readonly string[];
+  provider: EventSsoProviderDto | null;
+  canChange: boolean;
+}): Refusal | null {
+  const { patch, before, after, published, provider, canChange } = args;
+  if (patch.consent_keys?.some((key) => !published.includes(key))) return "consent_not_published";
+  // A restriction is sent for the company sign-in only: one sent with another way in is refused, not dropped without a word.
+  if (patch.sso_claim_name && !after.access_methods.includes("sso")) return "sso_claim_needs_sso";
+  // Who may let in the people of one company is a superadmin's to say (the administrator of the event only keeps what is there).
+  if (!canChange && changesSsoClaim(before, after)) return "sso_claim_superadmin_only";
+  return providerRefusal({ patch, before, after, provider, canChange });
+}
+
+/**
+ * What, if anything, refuses the provider of a save: it is named for the company sign-in alone (422 `sso_provider_needs_sso`), a new
+ * choice must be one that can be chosen (422 `sso_provider_not_available`; one already the event's may stay while it is switched off,
+ * the form is then closed), and an event limited to one company is moved by a superadmin only (403 `sso_provider_superadmin_only`).
+ */
+function providerRefusal(args: {
+  patch: RegistrationSettingsPatch;
+  before: SettingsValues;
+  after: SettingsValues;
+  provider: EventSsoProviderDto | null;
+  canChange: boolean;
+}): Refusal | null {
+  const { patch, before, after, provider, canChange } = args;
+  if (patch.sso_provider_id) {
+    if (!after.access_methods.includes("sso")) return "sso_provider_needs_sso";
+    if (patch.sso_provider_id !== before.sso_provider_id && provider?.state !== "ready") return "sso_provider_not_available";
+  }
+  return !canChange && changesProviderOfLimitedEvent(before, after) ? "sso_provider_superadmin_only" : null;
 }
 
 /** A password that waits for the way in must not come back by itself: it is cleared with the move away from it. */
@@ -342,6 +422,7 @@ async function writeSettingsAudit(
 
 function toDto(args: {
   values: SettingsValues;
+  ssoProvider: EventSsoProviderDto | null;
   passwordSet: boolean;
   domain: StoredDomain;
   slug: string;
@@ -349,9 +430,11 @@ function toDto(args: {
   checks: RegistrationReadinessCheck[];
   fields: readonly RegistrantFormField[];
 }): RegistrationSettingsDto {
-  const { values, passwordSet, domain, slug, environment, checks, fields } = args;
+  const { values, ssoProvider, passwordSet, domain, slug, environment, checks, fields } = args;
   return {
     ...values,
+    sso_provider: ssoProvider,
+    sso_providers: [...environment.enabledSsoProviders],
     enabled_access_methods: environment.availability.filter((entry) => entry.enabled).map((entry) => entry.method),
     bot_protection: environment.botProtectionMode,
     password_set: passwordSet,
@@ -381,12 +464,13 @@ export async function getEventRegistrationSettings(
     loadLegalGateRows(db, eventId),
     loadRegistrantFormFields(db, eventId),
   ]);
+  const ssoProvider = await loadEventSsoProvider(db, stored.values.sso_provider_id);
   const checks = evaluateRegistrationReadiness({
     settings: { ...stored.values, password_set: stored.passwordSet },
     environment,
     event: { archived: event.archived_at !== null, ended: isOver(event, now), legalRows, fields },
   });
-  return toDto({ values: stored.values, passwordSet: stored.passwordSet, domain: stored.domain, slug: event.slug, environment, checks, fields });
+  return toDto({ values: stored.values, ssoProvider, passwordSet: stored.passwordSet, domain: stored.domain, slug: event.slug, environment, checks, fields });
 }
 
 type SaveRequest = {
@@ -395,6 +479,7 @@ type SaveRequest = {
   actor: StaffActor;
   environment: ReadinessEnvironment;
   now: Date | undefined;
+  /** The caller is a superadmin: they change the restriction of the company sign-in, and the provider of an event that has one. */
   canChangeSsoClaim: boolean;
 };
 
@@ -410,14 +495,12 @@ async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest):
 
   const stored = await readStoredSettings(tx, eventId);
   const after = mergeSettings(stored.values, patch);
-  const published = publishedConsentKeys(legalRows);
-  if (patch.consent_keys?.some((key) => !published.includes(key))) return { kind: "consent_not_published" };
-  // A restriction is sent for the company sign-in only: one sent with another way in is refused, not dropped without a word.
-  const sendsRestriction = patch.sso_claim_name !== undefined && patch.sso_claim_name !== null;
-  if (sendsRestriction && !after.access_methods.includes("sso")) return { kind: "sso_claim_needs_sso" };
-
-  // Who may let in the people of one company is a superadmin's to say (the administrator of the event only keeps what is there).
-  if (!request.canChangeSsoClaim && changesSsoClaim(stored.values, after)) return { kind: "sso_claim_superadmin_only" };
+  // A provider that is deleted after the checks below would fail the write on its foreign key, and the catch at the end would read that as
+  // "no such event": held `FOR KEY SHARE`, a delete waits for this save (a switch-off, which changes no key, does not).
+  if (patch.sso_provider_id) await tx.$queryRaw`SELECT "id" FROM "IdentityProvider" WHERE "id" = ${patch.sso_provider_id} FOR KEY SHARE`;
+  const ssoProvider = await loadEventSsoProvider(tx, after.sso_provider_id);
+  const refusal = refusalOf({ patch, before: stored.values, after, published: publishedConsentKeys(legalRows), provider: ssoProvider, canChange: request.canChangeSsoClaim });
+  if (refusal) return { kind: refusal };
 
   const fields = await loadRegistrantFormFields(tx, eventId);
   // The clock is read here, with the locks held, and not when the request came in.
@@ -442,7 +525,7 @@ async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest):
   }
   return {
     kind: "saved",
-    settings: toDto({ values: after, passwordSet: stored.passwordSet && !passwordCleared, domain: stored.domain, slug: event.slug, environment, checks, fields }),
+    settings: toDto({ values: after, ssoProvider, passwordSet: stored.passwordSet && !passwordCleared, domain: stored.domain, slug: event.slug, environment, checks, fields }),
   };
 }
 
