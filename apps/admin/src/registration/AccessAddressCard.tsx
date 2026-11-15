@@ -15,6 +15,7 @@ const TONE_ICONS: Record<AddressTone, string> = { ok: "check", warn: "alert-tria
 /** How the address stands, as a row of the checklist's kind: an icon, the state, what the last check found and what to do. */
 function AddressStatus({ address, instanceHost }: Readonly<{ address: RegistrationOwnAddressDto; instanceHost: string | null }>) {
   const line = addressStatusLine(address, instanceHost);
+  const lastCheckedSuffix = address.checked_at === null ? "" : "Last checked " + formatUtcDateTime(address.checked_at) + ".";
   return (
     <output className="access-check access-address__status">
       <span className={`overview-check__icon overview-check__icon--${line.tone}`} aria-hidden="true">
@@ -25,7 +26,7 @@ function AddressStatus({ address, instanceHost }: Readonly<{ address: Registrati
           {address.domain}: {line.title}
         </strong>
         <span className="overview-check__detail">
-          {keepLastWords(`${line.detail}${address.checked_at === null ? "" : ` Last checked ${formatUtcDateTime(address.checked_at)}.`}`)}
+          {keepLastWords(lastCheckedSuffix === "" ? line.detail : `${line.detail} ${lastCheckedSuffix}`)}
         </span>
       </span>
     </output>
