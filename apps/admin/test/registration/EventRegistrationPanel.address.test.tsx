@@ -306,7 +306,7 @@ describe("the address card", () => {
     expect(document.getElementById(field().getAttribute("aria-describedby") ?? "none")?.textContent?.endsWith("Save\u00A0below.")).toBe(true);
   });
 
-  const fieldHint = "The host name only, such as events.example.com. Set address applies at once. It is not part of Save below.";
+  const fieldHint = "The host name only, such as events.example.com. The buttons act at once, not with Save below.";
 
   it("puts the field, Set address, Check now and Remove in one row once an address is set, and only the field and Set address before", async () => {
     await renderPanel(settings({ own_address: own() }));
@@ -323,32 +323,34 @@ describe("the address card", () => {
     expect(within(first).getAllByRole("button").map((control) => control.textContent)).toEqual(["Set address"]);
   });
 
-  it("says under the field that Set address applies at once and is not part of the Save of the page, and keeps the host name hint with it", async () => {
+  it("says in one hint under the row that the buttons act at once and are not part of the Save of the page", async () => {
     await renderPanel(settings());
 
     expect(plain(document.getElementById(field().getAttribute("aria-describedby") ?? "none")?.textContent)).toBe(fieldHint);
     expect(addressCard().querySelector(".access-address__buttons")).toBeNull();
   });
 
-  it("tells the superadmin, not IT, to select Check now, in an at-hint just under the row, once an address is set", async () => {
+  it("has one hint under the row, in the at-hint style, and none about Check now, which the status and the IT panel already say", async () => {
     await renderPanel(settings({ own_address: own() }));
 
-    const hint = within(addressCard()).getByText(/When IT is done, select Check now\./);
-    expect(hint.className).toBe("at-hint");
-    expect(plain(hint.textContent)).toBe("When IT is done, select Check now. Until it passes, guests keep the main address.");
-    expect(hint.previousElementSibling?.className).toBe("access-address__row");
+    const hints = [...addressCard().querySelectorAll(".access-address__row ~ .at-hint")];
+    expect(hints).toHaveLength(1);
+    expect(hints[0]?.previousElementSibling?.className).toBe("access-address__row");
+    expect(addressCard().textContent).not.toContain("When IT is done");
     expect(within(stepsBody()).queryByText(/Select Check now/)).toBeNull();
   });
 
-  it("shows the status as two lines: the title with the icon, then one description that ends with when it was last checked in UTC", async () => {
+  it("shows the status as a row of the checklist: the icon beside two lines, the title and one description that ends with when it was last checked in UTC", async () => {
     await renderPanel(settings({ own_address: own({ status: "failing", check_result: "dns_failed", checked_at: "2026-11-15T11:46:00.000Z" }) }));
 
     const status = within(addressCard()).getByRole("status");
     const body = status.querySelector(".overview-check__body") as HTMLElement;
     expect([...body.children].map((child) => child.tagName)).toEqual(["STRONG", "SPAN"]);
     expect(plain(body.children[1]?.textContent)).toMatch(/Guests keep getting links on the main address\. Last checked .*UTC\.$/);
-    expect(css()).toMatch(/\.access-address__status \{[^}]*display: grid;/);
-    expect(css()).toMatch(/\.access-address__status \.overview-check__body \{[^}]*display: contents;/);
+    // The row is the checklist's own (.access-check with the overview icon and body), with no layout of its own.
+    expect(status.classList.contains("access-check")).toBe(true);
+    expect(css()).not.toMatch(/\.access-address__status[^{]*\{[^}]*(display: grid|display: contents)/);
+    expect(css()).toMatch(/\.access-address__controls \{[^}]*display: contents;/);
   });
 
   it("puts the setup for IT in a panel of its own, the steps under its heading", async () => {

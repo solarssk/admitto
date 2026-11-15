@@ -117,11 +117,9 @@
 
 /* The event's own address for guests: its state is a row of the checklist's kind with no rule above it; the field and its buttons are
  * spaced by the card's gap, and the steps for IT are a numbered list that wraps instead of widening the card. */
+/* The controls add no gap of their own: their parts are items of the card's stack, as on the Weather and Wallet cards. */
 .access-address__controls {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
+  display: contents;
 }
 
 /* The field, Set address, Check now and Remove stand in one row; on a narrow screen the buttons wrap under the field. The field takes
@@ -267,26 +265,12 @@
   grid-column: 1 / -1;
 }
 
-/* The icon stands beside the title alone; the description (with when it was last checked) is one line of text under it, in the column of
- * the text. */
+/* The status is a row of the checklist's kind (.access-check): only the wrap of a long address is added. */
 .access-address__status {
   padding: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: var(--space-3);
-  row-gap: 2px;
-  align-items: center;
 }
 
-.access-address__status .overview-check__body {
-  display: contents;
-}
-
+.access-address__status .overview-check__body,
 .access-address__status .overview-check__detail {
-  grid-column: 2;
-  overflow-wrap: anywhere;
-}
-
-.access-address__status strong {
   overflow-wrap: anywhere;
 }

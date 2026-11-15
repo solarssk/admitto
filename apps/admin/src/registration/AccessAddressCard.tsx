@@ -44,9 +44,7 @@ function recordName(own: OwnAddress, address: RegistrationOwnAddressDto | null, 
 const INTRO =
   "Guests get links on the address of this instance. An event can have its own address instead, such as events.example.com. Guests get links on it only after a check finds it working.";
 
-const CHECK_HINT = "When IT is done, select Check now. Until it passes, guests keep the main address.";
-
-const FIELD_HINT = "The host name only, such as events.example.com. Set address applies at once. It is not part of Save below.";
+const FIELD_HINT = "The host name only, such as events.example.com. The buttons act at once, not with Save below.";
 
 const NAME_PLACEHOLDER = "events.example.com";
 
@@ -159,7 +157,6 @@ function AddressControls({
                 </>
               )}
             </div>
-            {address !== null && <span className="at-hint">{keepLastWords(CHECK_HINT)}</span>}
             {own.fieldError ? (
               <span id={hintId} className="at-hint at-hint--error" role="alert">
                 {own.fieldError}
