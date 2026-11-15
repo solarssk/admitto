@@ -15,6 +15,7 @@ const TONE_ICONS: Record<AddressTone, string> = { ok: "check", warn: "alert-tria
 /** How the address stands, as a row of the checklist's kind: an icon, the state, what the last check found and what to do. */
 function AddressStatus({ address, instanceHost }: Readonly<{ address: RegistrationOwnAddressDto; instanceHost: string | null }>) {
   const line = addressStatusLine(address, instanceHost);
+  const lastCheckedSuffix = address.checked_at === null ? "" : "Last checked " + formatUtcDateTime(address.checked_at) + ".";
   return (
     <output className="access-check access-address__status">
       <span className={`overview-check__icon overview-check__icon--${line.tone}`} aria-hidden="true">
@@ -24,8 +25,9 @@ function AddressStatus({ address, instanceHost }: Readonly<{ address: Registrati
         <strong>
           {address.domain}: {line.title}
         </strong>
-        <span className="overview-check__detail">{line.detail}</span>
-        {address.checked_at !== null && <span className="overview-check__detail">Last checked {formatUtcDateTime(address.checked_at)}.</span>}
+        <span className="overview-check__detail">
+          {keepLastWords(lastCheckedSuffix === "" ? line.detail : `${line.detail} ${lastCheckedSuffix}`)}
+        </span>
       </span>
     </output>
   );
@@ -40,7 +42,9 @@ function recordName(own: OwnAddress, address: RegistrationOwnAddressDto | null, 
 }
 
 const INTRO =
-  "Guests are sent links on the address of this instance. An event can have an address of its own instead, such as events.example.com. Guests get links on it only after a check finds it working.";
+  "Guests get links on the address of this instance. An event can have its own address instead, such as events.example.com. Guests get links on it only after a check finds it working. If it later stops working, fix it or remove it: guests are still sent links on it.";
+
+const FIELD_HINT = "The host name only, such as events.example.com. The buttons act at once, not with Save below.";
 
 const NAME_PLACEHOLDER = "events.example.com";
 
@@ -48,11 +52,11 @@ const NAME_PLACEHOLDER = "events.example.com";
 function instructionsText(name: string, target: string): string {
   const address = name === "" ? NAME_PLACEHOLDER : name;
   return [
-    "Set up an own address for the guest registration of an event in Admitto.",
+    "Set up the own address of an event for guest registration in Admitto.",
     "",
-    `1. DNS: create a CNAME record from ${address} to ${target}.`,
+    `1. DNS: create a CNAME record (a DNS entry that makes one name an alias of another) from ${address} to ${target}.`,
     `2. Serve HTTPS on ${address} with a valid certificate. Admitto does not issue certificates.`,
-    `3. Pass the Host header on to Admitto, and keep ${address} open to guests, outside any sign-in gateway.`,
+    `3. Make sure the web server or proxy passes the original Host header (the address the guest typed) on to Admitto. Keep ${address} open to guests, with no sign-in gateway in front of it.`,
     "",
     "Report back when the address is ready.",
   ].join("\n");
@@ -69,7 +73,7 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
   return (
     <ItPanel text={instructionsText(name, target)}>
       <li>
-        <span>{keepLastWords(`Create a CNAME record that points the address to ${target}.`)}</span>
+        <span>{keepLastWords(`Create a CNAME record (a DNS entry that makes one name an alias of another) that points the address to ${target}.`)}</span>
         <div className="access-dns">
           <RecordField label="Type" value="CNAME" placeholder="" copyLabel="Copy the type" />
           <RecordField label="Name" value={name} placeholder={NAME_PLACEHOLDER} copyLabel="Copy the name" />
@@ -77,13 +81,12 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
         </div>
       </li>
       <li>{keepLastWords("Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.")}</li>
-      <li>{keepLastWords("Pass the Host header on to Admitto, and keep the address open to guests, outside any sign-in gateway.")}</li>
-      <li>{keepLastWords("Select Check now. Guests get links on the address once the check passes. Until then they keep the main address.")}</li>
+      <li>{keepLastWords("Make sure the web server or proxy passes the original Host header (the address the guest typed) on to Admitto. Keep the address open to guests, with no sign-in gateway in front of it.")}</li>
     </ItPanel>
   );
 }
 
-/** The field with Save address beside it (as Provider and Test connection on the other cards), Check now and Remove under it once an address is saved, and the question before the address is removed. */
+/** The field with Set address, and Check now and Remove once an address is set, all in one row, and the question before the address is removed. */
 function AddressControls({
   event,
   own,
@@ -107,8 +110,8 @@ function AddressControls({
             <label className="at-label" htmlFor={`${id}-field`}>
               Own address
             </label>
-            <div className="external-provider-and-test">
-              <div className="at-control">
+            <div className="access-address__row">
+              <div className="at-control access-address__field">
                 <input
                   id={`${id}-field`}
                   className={`at-input${own.fieldError ? " at-input--invalid" : ""}`}
@@ -126,10 +129,33 @@ function AddressControls({
               <ArchivedGuard event={event} reasonId={`${id}-save`} disabled={(busy && !own.saving) || own.unchanged || own.typed.trim() === ""}>
                 {(guard) => (
                   <Button type="button" variant="primary" {...guard} loading={own.saving} onClick={own.save}>
-                    Save address
+                    Set address
                   </Button>
                 )}
               </ArchivedGuard>
+              {address !== null && (
+                <>
+                  <ArchivedGuard
+                    event={event}
+                    reasonId={`${id}-check`}
+                    disabled={(busy && !own.checking) || !own.unchanged}
+                    tooltip={own.unchanged ? undefined : "Set the address first. The check asks the address that is set."}
+                  >
+                    {(guard) => (
+                      <Button type="button" variant="secondary" {...guard} loading={own.checking} onClick={own.check}>
+                        Check now
+                      </Button>
+                    )}
+                  </ArchivedGuard>
+                  <ArchivedGuard event={event} reasonId={`${id}-remove`} disabled={busy}>
+                    {(guard) => (
+                      <Button type="button" variant="ghost" {...guard} onClick={() => setConfirmOpen(true)}>
+                        Remove
+                      </Button>
+                    )}
+                  </ArchivedGuard>
+                </>
+              )}
             </div>
             {own.fieldError ? (
               <span id={hintId} className="at-hint at-hint--error" role="alert">
@@ -137,35 +163,12 @@ function AddressControls({
               </span>
             ) : (
               <span id={hintId} className="at-hint">
-                {keepLastWords("The host name only, such as events.example.com.")}
+                {keepLastWords(FIELD_HINT)}
               </span>
             )}
           </div>
         </div>
       </div>
-      {address !== null && (
-        <div className="access-address__buttons">
-          <ArchivedGuard
-            event={event}
-            reasonId={`${id}-check`}
-            disabled={(busy && !own.checking) || !own.unchanged}
-            tooltip={own.unchanged ? undefined : "Save the address first. The check asks the address that is saved."}
-          >
-            {(guard) => (
-              <Button type="button" variant="secondary" {...guard} loading={own.checking} onClick={own.check}>
-                Check now
-              </Button>
-            )}
-          </ArchivedGuard>
-          <ArchivedGuard event={event} reasonId={`${id}-remove`} disabled={busy}>
-            {(guard) => (
-              <Button type="button" variant="ghost" {...guard} onClick={() => setConfirmOpen(true)}>
-                Remove
-              </Button>
-            )}
-          </ArchivedGuard>
-        </div>
-      )}
       {own.error !== null && (
         <Notice variant="error" role="alert">
           {own.error}
@@ -173,9 +176,9 @@ function AddressControls({
       )}
       <ConfirmDialog
         open={confirmOpen}
-        title="Remove the own address?"
+        title="Remove the event's own address?"
         message="Guests get links on the main address again, and the address stops opening this event's pages. Links already sent keep pointing at it."
-        confirmLabel="Remove address"
+        confirmLabel="Remove"
         errorMessage={own.error}
         loading={own.removing}
         onConfirm={() => void own.remove().then((removed) => setConfirmOpen(!removed))}

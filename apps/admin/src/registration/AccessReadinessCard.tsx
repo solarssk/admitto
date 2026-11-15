@@ -37,11 +37,11 @@ export function MissingChecks({ eventId, keys }: Readonly<{ eventId: string; key
   );
 }
 
-/** How a row looks: a tick for a check that is met, a warning for one that is not, a grey dash for information such as "Not used". */
+/** How a row looks: a tick for a check that is met, a warning for one that is not, a grey dash for information such as "Off". */
 const ROW_LOOK = {
   done: { tone: "ok", icon: "check", prefix: "Done: " },
   todo: { tone: "warn", icon: "alert-triangle", prefix: "To do: " },
-  info: { tone: "neutral", icon: "minus", prefix: "Not used: " },
+  info: { tone: "neutral", icon: "minus", prefix: "Off: " },
 } as const;
 
 function rowLook(check: RegistrationReadinessCheckDto, copy: ReadinessCopy) {

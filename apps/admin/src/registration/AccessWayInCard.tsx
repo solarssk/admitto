@@ -20,15 +20,15 @@ const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
 /** What the chosen way means, in one notice under the choice. */
 const BOT_CHECK = " A bot check protects the form.";
 function methodNotice(method: AccessMethod, botCheck: boolean): string {
-  if (method === "sso") return "Guests sign in with the company account. Their email comes from that sign-in.";
+  if (method === "sso") return "Guests sign in with the company's single sign-on (SSO), using their work account. Their email comes from that sign-in.";
   const text = method === "link" ? "Anyone who has the link can ask to join." : "Guests need the link and the event password to open the form.";
   return botCheck ? text + BOT_CHECK : text;
 }
 
 /** Why a way is off, in the tooltip of its button: the superadmin is told where to turn it on, the organiser to ask. */
-const NOT_TURNED_ON = "Not turned on for this organisation.";
-const REASON_FOR_SUPERADMIN = `${NOT_TURNED_ON} Turn it on in Organisation settings, External services.`;
-const REASON_FOR_ORGANISER = `${NOT_TURNED_ON} Ask a superadmin.`;
+const NOT_TURNED_ON = "This way is not turned on for your organisation.";
+const REASON_FOR_SUPERADMIN = `${NOT_TURNED_ON} Turn it on in Organisation settings, External services, Ways in.`;
+const REASON_FOR_ORGANISER = `${NOT_TURNED_ON} Ask a superadmin to turn it on.`;
 
 /** The shared password of the event: whether one is set, and the buttons to set, change or remove it. It never shows the password. */
 function EventPasswordRow({
@@ -193,7 +193,7 @@ export function AccessWayInCard({
       <ConfirmDialog
         open={leaving !== null}
         title="Remove the event password?"
-        message="Choosing another way removes the password when you save. You cannot read it again."
+        message="If you choose another way and save, the event password is deleted. To use a password again, you must set a new one."
         confirmLabel="Remove"
         onConfirm={() => {
           if (leaving !== null) onMethodChange(leaving);

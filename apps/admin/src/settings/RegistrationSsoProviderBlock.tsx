@@ -52,8 +52,8 @@ function RedirectAddresses({ uris }: Readonly<{ uris: RegistrationRedirectUriDto
         <RedirectAddress id="external-access-sso-redirect" label="Return address" uri={instance.uri} hint={REDIRECT_HINT} />
       ) : (
         <p className="settings-card-intro">
-          There is no return address for this instance yet, because its address is not set.{" "}
-          <Link to="/admin/settings?tab=general">Set the Instance URL under General.</Link>
+          There is no return address yet, because the Instance URL is not set.{" "}
+          <Link to="/admin/settings?tab=general">Set it under General in Organisation settings.</Link>
         </p>
       )}
       {ofEvents.map((entry, index) => (

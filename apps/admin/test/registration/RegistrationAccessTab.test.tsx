@@ -354,8 +354,8 @@ describe("RegistrationAccessTab: the checklist", () => {
     expect(rows).toHaveLength(10);
     const info = rows.at(-1) as HTMLElement;
     expect(info.textContent).toContain("Bot protection");
-    expect(info.textContent).toContain("Not used for this organisation.");
-    expect(info.querySelector(".sr-only")?.textContent).toBe("Not used: ");
+    expect(info.textContent).toContain("Off for this organisation. The link and password forms have no bot check.");
+    expect(info.querySelector(".sr-only")?.textContent).toBe("Off: ");
     expect(info.querySelector(".overview-check__icon--neutral")).not.toBeNull();
     expect(info.querySelector(".ti-minus")).not.toBeNull();
     // Nine tasks, one of them not done, and the information row is not one of them.

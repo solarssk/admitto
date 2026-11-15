@@ -18,12 +18,12 @@ const METHODS: Readonly<Record<SwitchedAccessMethod, { name: string; text: strin
   link: {
     name: "Link",
     text: "Anyone who has the link of an event can open its form, after a bot check.",
-    textWithoutCheck: "Anyone who has the link of an event can open its form. There is no bot check.",
+    textWithoutCheck: "Anyone who has the link of an event can open its form. Bot protection is off.",
   },
   password: {
     name: "Password",
     text: "A guest needs the password of the event, as well as its link, to open the form, after a bot check.",
-    textWithoutCheck: "A guest needs the password of the event, as well as its link, to open the form. There is no bot check, so use a strong password.",
+    textWithoutCheck: "A guest needs the password of the event, as well as its link, to open the form. Bot protection is off, so use a strong password.",
   },
   sso: {
     name: "Company SSO",

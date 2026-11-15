@@ -13,10 +13,10 @@ const CARD_HINT =
 const CARD_INTRO =
   "Cloudflare Turnstile checks that a guest on the registration form is not a bot. Without both keys, a public link or password form stays closed.";
 const CONFIRM_MESSAGE =
-  "After you save, guests are no longer checked for bots. For an event that needs a firm barrier, use the company SSO or a strong password.";
-const PROVIDER_HINT = "The service that checks a guest is not a bot. Cloudflare Turnstile is the only one for now.";
+  "After you save, guests are not checked for bots. For an event that needs strong protection, use Company SSO or a strong event password.";
+const PROVIDER_HINT = "The service that checks that a guest is not a bot. Cloudflare Turnstile is the only choice for now.";
 const PROVIDERS = [{ id: "turnstile", label: "Cloudflare Turnstile" }];
-const SITE_KEY_HINT = "The public key of your Turnstile widget. Add the address of this instance to its hostnames in Cloudflare.";
+const SITE_KEY_HINT = "The public key of your Turnstile widget. In Cloudflare, add the address of this Admitto instance to the widget's hostnames.";
 const SECRET_KEY_HINT = "Stays on the server. It is stored encrypted and is never shown again.";
 const TEST_FAILED = "Could not test the connection.";
 const UNREADABLE_NOTICE =
@@ -140,7 +140,7 @@ export function RegistrationTurnstileCard({
       <ConfirmDialog
         open={confirming}
         icon={<i className="ti ti-shield-off" />}
-        title="Turn the bot check off?"
+        title="Turn bot protection off?"
         message={CONFIRM_MESSAGE}
         confirmLabel="Turn off"
         onConfirm={() => {

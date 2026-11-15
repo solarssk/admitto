@@ -33,10 +33,10 @@ const OTHER_EVENT: RegistrationRedirectUriDto = { uri: "https://other.acme.examp
 const OWN = { domain: "summit.acme.example", status: "ok" as const, check_result: "ok" as const, verified: true, checked_at: null };
 
 const REDIRECT_HINT =
-  "Enter this address once at the identity provider, as an allowed redirect (callback) address. It is the same for every event that uses the company SSO on the address of this instance.";
+  "Enter this address once at the identity provider, in its list of allowed redirect (callback) addresses. After a guest signs in, the provider sends the guest back to this address. It is the same for every event that uses Company SSO on the address of this instance.";
 const EVENT_ADDRESS_HINT =
-  "Also enter this address at the identity provider. It belongs to the event that uses the company SSO on its own address. Every event address needs its own entry at the identity provider.";
-const GATEWAY_NOTE = "If a gateway such as Cloudflare Access stands in front of Admitto, it must let /sso/callback through without a sign-in, together with /r/*.";
+  "Also enter this address at the identity provider. It belongs to the event that uses Company SSO on its own address. Every event address needs its own entry at the identity provider.";
+const GATEWAY_NOTE = "If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback, /r/* and /legal/* through without asking for a sign-in.";
 
 const ssoSettings = (overrides: Partial<RegistrationSettingsDto> = {}) => settings({ access_methods: ["sso"], readiness: ssoChecks(), ...overrides });
 const css = () => readFileSync(join(__dirname, "../../src/registration/registration-access.css"), "utf8");
@@ -113,7 +113,7 @@ describe("the setup for IT in the Company SSO card", () => {
     api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: [INSTANCE, { ...EVENT, verified: false }] });
 
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "summit.acme.example" } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
 
     await waitFor(() => expect(field("Return address for summit.acme.example").value).toBe(EVENT.uri));
     fireEvent.click(copyButton());
@@ -127,7 +127,7 @@ describe("the setup for IT in the Company SSO card", () => {
     api.fetchRegistrationSsoProvider.mockRejectedValue(new Error("down"));
 
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "summit.acme.example" } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Save address" }));
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
 
     await waitFor(() => expect(api.fetchRegistrationSsoProvider).toHaveBeenCalledTimes(2));
     expect(field("Return address").value).toBe(INSTANCE.uri);
@@ -136,7 +136,7 @@ describe("the setup for IT in the Company SSO card", () => {
   it("tells the unverified own address to be entered now", async () => {
     await renderPanel(ssoSettings({ own_address: { ...OWN, status: "unchecked", verified: false } }), [INSTANCE, { ...EVENT, verified: false }]);
 
-    expect(plain(steps()[1]?.querySelector("span")?.textContent)).toContain("This address has not passed its check yet. Enter it now so that the sign-in works as soon as it does.");
+    expect(plain(steps()[1]?.querySelector("span")?.textContent)).toContain("This address has not passed its check yet. Enter it now, so sign-in works as soon as the address passes.");
   });
 
   it("has no return address of the event while the event has no own address, even when the instance lists others", async () => {
@@ -148,22 +148,22 @@ describe("the setup for IT in the Company SSO card", () => {
   it("says that the instance has no return address when its address is not set, and leaves the box out", async () => {
     await renderPanel(ssoSettings(), []);
 
-    expect(plain(steps()[0]?.textContent)).toBe("There is no return address for this instance yet, because its address is not set.");
+    expect(plain(steps()[0]?.textContent)).toBe("There is no return address yet, because the Instance URL is not set. Set it under General in Organisation settings.");
     expect(fields()).toHaveLength(0);
   });
 
   it("adds the claim and its values as saved, and nothing while there is no restriction", async () => {
     await renderPanel(ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111", "bbb-222"] }));
-    expect(plain(steps().at(-1)?.textContent)).toBe("The sign-in must carry the claim tid. Guests may register with one of 2 values: aaa-111, bbb-222.");
+    expect(plain(steps().at(-1)?.textContent)).toBe("The identity provider must send the claim tid with one of these 2 values: aaa-111, bbb-222. Guests with other values cannot register.");
     cleanup();
 
     await renderPanel(ssoSettings({ sso_claim_name: "groups", sso_claim_values: ["staff"] }));
-    expect(plain(steps().at(-1)?.textContent)).toBe("The sign-in must carry the claim groups. Guests may register with one of 1 value: staff.");
+    expect(plain(steps().at(-1)?.textContent)).toBe("The identity provider must send the claim groups with this value: staff. Guests with other values cannot register.");
     cleanup();
 
     await renderPanel(ssoSettings());
     expect(steps().map((step) => step.textContent)).toHaveLength(2);
-    expect(panel().textContent).not.toContain("must carry the claim");
+    expect(panel().textContent).not.toContain("must send the claim");
   });
 
   it("copies the whole of it as plain text, return addresses and claim included, and says so", async () => {
@@ -176,11 +176,11 @@ describe("the setup for IT in the Company SSO card", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     expect(writeText).toHaveBeenCalledWith(
       [
-        "Set up the company SSO (OpenID Connect) for the guest registration of an event in Admitto.",
+        "Set up Company SSO (OpenID Connect) for the guest registration of an event in Admitto.",
         "",
         `1. At the identity provider, add these allowed redirect (callback) addresses: ${INSTANCE.uri}, ${EVENT.uri}`,
-        "2. If a gateway such as Cloudflare Access stands in front of Admitto, let /sso/callback through without a sign-in, together with /r/*.",
-        "3. The sign-in must carry the claim tid. Guests may register with one of 1 value: aaa-111.",
+        "2. If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths /sso/callback, /r/* and /legal/* through without asking for a sign-in.",
+        "3. The identity provider must send the claim tid with this value: aaa-111. Guests with other values cannot register.",
         "",
         "Report back when it is done.",
       ].join("\n"),
@@ -214,7 +214,7 @@ describe("the setup for IT in the Company SSO card", () => {
     await waitFor(() => expect(addToast).toHaveBeenCalledWith("Copied.", "success"));
     fireEvent.click(within(panel()).getByRole("button", { name: "Copy the return address" }));
 
-    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not copy.", "error"));
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not copy. Select the text and copy it by hand.", "error"));
     expect(writeText).toHaveBeenNthCalledWith(1, INSTANCE.uri);
   });
 

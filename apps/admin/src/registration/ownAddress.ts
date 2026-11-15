@@ -57,22 +57,22 @@ export function stoppedWarning(address: RegistrationOwnAddressDto): string {
 /** Where a CNAME has to point: the instance's host, or words for it when the instance has no address yet. */
 const instanceTarget = (host: string | null): string => host ?? "the address of this instance";
 
-/** What to do about each result, for the person who reads the card (a superadmin passes it on to IT). */
+/** What each result of a check says, in one short sentence, with what to do about it (a superadmin passes it on to IT). */
 export function checkAdvice(result: CustomDomainCheckResult, instanceHost: string | null): string {
   const target = instanceTarget(instanceHost);
   switch (result) {
     case "ok":
-      return "The address answers as this event on this instance.";
+      return "Guests get links on this address.";
     case "dns_failed":
-      return `The name does not resolve. Ask IT to create a CNAME record that points it to ${target}.`;
+      return `The name does not resolve. Ask IT to add a CNAME to ${target}.`;
     case "tls_failed":
-      return "The name resolves, but its HTTPS certificate was refused. Ask IT to serve a valid certificate for exactly this name. Admitto does not issue certificates.";
+      return "The name resolves, but its certificate is refused. Ask IT to fix it.";
     case "wrong_target":
-      return "The name answers, but not as this event on this instance. It may point to another service, another instance or another event, or a proxy may not pass the Host header on. Ask IT where it points.";
+      return "The name answers, but not as this event. Ask IT to check the setup.";
     case "unreachable":
-      return "The address did not answer in time. Ask IT to check that it accepts HTTPS connections from the internet and that no firewall blocks them.";
+      return "The address did not answer. Ask IT to check its HTTPS access.";
     case "not_verifiable_from_server":
-      return "The name resolves to a private network address, as the name of an internal DNS does. This server cannot reach it, so it cannot check the address. This is no fault of the address.";
+      return "The name points to a private network. This server cannot check it.";
   }
 }
 
@@ -85,29 +85,17 @@ export interface AddressStatusLine {
   detail: string;
 }
 
-const UNCHECKED_DETAIL = "It has not been checked yet. The first check runs soon after saving, and it repeats every day. Guests keep getting links on the main address until it passes.";
+const UNCHECKED_DETAIL = "The first check runs soon after you set the address.";
 
-function stoppedLine(address: RegistrationOwnAddressDto, instanceHost: string | null): AddressStatusLine {
-  return {
-    tone: "warn",
-    title: "Stopped working",
-    detail: `${checkAdvice(address.check_result ?? "unreachable", instanceHost)} Guests are still sent links on this address.`,
-  };
-}
-
-/** How the address stands, in the words of the card. */
+/** How the address stands, in the words of the card. What it means for the links of guests is said once, in the intro of the card. */
 export function addressStatusLine(address: RegistrationOwnAddressDto, instanceHost: string | null): AddressStatusLine {
-  if (address.status === "ok") {
-    return { tone: "ok", title: "Working", detail: "Guests are sent links on this address." };
-  }
+  if (address.status === "ok") return { tone: "ok", title: "Working", detail: checkAdvice("ok", instanceHost) };
   if (address.status === "failing") {
-    return address.verified
-      ? stoppedLine(address, instanceHost)
-      : { tone: "warn", title: "Not working yet", detail: `${checkAdvice(address.check_result ?? "unreachable", instanceHost)} Guests keep getting links on the main address.` };
+    const detail = checkAdvice(address.check_result ?? "unreachable", instanceHost);
+    return address.verified ? { tone: "warn", title: "Stopped working", detail } : { tone: "warn", title: "Not working yet", detail };
   }
   if (address.check_result === "not_verifiable_from_server") {
-    const links = address.verified ? "Guests are still sent links on this address." : "Guests keep getting links on the main address.";
-    return { tone: "neutral", title: "Cannot be checked from this server", detail: `${checkAdvice("not_verifiable_from_server", instanceHost)} ${links}` };
+    return { tone: "neutral", title: "Cannot be checked from this server", detail: checkAdvice("not_verifiable_from_server", instanceHost) };
   }
   return { tone: "neutral", title: "Not checked yet", detail: UNCHECKED_DETAIL };
 }

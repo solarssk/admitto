@@ -15,7 +15,7 @@ export function RecordField({ label, value, placeholder, copyLabel }: Readonly<{
       await navigator.clipboard.writeText(value);
       addToast("Copied.", "success");
     } catch {
-      addToast("Could not copy.", "error");
+      addToast("Could not copy. Select the text and copy it by hand.", "error");
     }
   }
   return (
@@ -47,7 +47,7 @@ export function ItPanel({ text, children }: Readonly<{ /** What the button copie
       await navigator.clipboard.writeText(text);
       addToast("Instructions copied.", "success");
     } catch {
-      addToast("Could not copy.", "error");
+      addToast("Could not copy. Try again.", "error");
     }
   }
 

@@ -1312,6 +1312,21 @@ describe("AuditLogPanel rendering", () => {
     expect(screen.getByRole("button", { name: "Guest registration bot protection updated" })).toBeTruthy();
   });
 
+  it("names a change of the identity provider of Company SSO with the name Company SSO, not company sign-in", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry({ id: "audit-sso-provider", action_type: "registration_sso_provider_updated", metadata: {} })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Guest registration Company SSO provider updated")).toBeTruthy();
+    expect(within(table).queryByText(/company sign-in/)).toBeNull();
+  });
+
   it("names a change to the registration settings of an event, shows in Details what changed and to what, and offers it in the Action filter", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [
