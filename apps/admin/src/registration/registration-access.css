@@ -268,6 +268,7 @@
 /* The status is a row of the checklist's kind (.access-check): only the wrap of a long address is added. */
 .access-address__status {
   padding: 0;
+  align-items: center;
 }
 
 .access-address__status .overview-check__body,

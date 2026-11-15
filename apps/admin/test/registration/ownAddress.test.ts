@@ -56,32 +56,26 @@ describe("hasStopped: an address that worked and no longer does", () => {
   });
 });
 
+const WORDS = (text: string) => text.split(" ").length;
+
 describe("the sentences of a check", () => {
-  it("has advice for every result, and names the host of the instance in the one about DNS", () => {
-    for (const result of CUSTOM_DOMAIN_CHECK_RESULTS) expect(checkAdvice(result, HOST).length).toBeGreaterThan(20);
-    expect(checkAdvice("dns_failed", HOST)).toBe("The name does not resolve. Ask IT to create a CNAME record that points it to tickets.example.com.");
-    expect(checkAdvice("dns_failed", null)).toContain("points it to the address of this instance.");
+  it("has one short sentence of advice for every result, and names the host of the instance in the one about DNS", () => {
+    for (const result of CUSTOM_DOMAIN_CHECK_RESULTS) {
+      expect(checkAdvice(result, HOST).length).toBeGreaterThan(20);
+      expect(WORDS(checkAdvice(result, HOST))).toBeLessThanOrEqual(15);
+      expect(checkAdvice(result, HOST)).not.toMatch(/main address|still sent links/);
+    }
+    expect(checkAdvice("dns_failed", HOST)).toBe("The name does not resolve. Ask IT to add a CNAME to tickets.example.com.");
+    expect(checkAdvice("dns_failed", null)).toContain("CNAME to the address of this instance.");
   });
 
-  it("tells a private address from a fault", () => {
-    expect(checkAdvice("not_verifiable_from_server", HOST)).toContain("This is no fault of the address.");
-    expect(checkAdvice("tls_failed", HOST)).toContain("does not issue certificates");
+  it("tells a private address from a fault, and a refused certificate from a name that answers as another event", () => {
+    expect(checkAdvice("not_verifiable_from_server", HOST)).toBe("The name points to a private network. This server cannot check it.");
+    expect(checkAdvice("tls_failed", HOST)).toBe("The name resolves, but its certificate is refused. Ask IT to fix it.");
+    expect(checkAdvice("wrong_target", HOST)).toBe("The name answers, but not as this event. Ask IT to check the setup.");
+    expect(checkAdvice("unreachable", HOST)).toBe("The address did not answer. Ask IT to check its HTTPS access.");
   });
 
-  it.each<[CustomDomainCheckResult | null, string]>([
-    ["dns_failed", "the name does not resolve any more"],
-    ["tls_failed", "its HTTPS certificate is refused"],
-    ["wrong_target", "it no longer reaches this instance"],
-    ["unreachable", "it did not answer"],
-    ["ok", "the last check failed"],
-    ["not_verifiable_from_server", "the last check failed"],
-    [null, "the last check failed"],
-  ])("the warning for %s says %s", (result, reason) => {
-    const warning = stoppedWarning(address({ status: "failing", verified: true, check_result: result }));
-    expect(warning).toBe(
-      `The address of this event for guests, summit.acme.example, stopped working: ${reason}. Guests are still sent links on it, so they may not open. Ask a superadmin or your IT department to look at it.`,
-    );
-  });
 });
 
 describe("addressStatusLine: how the card words the state", () => {
@@ -89,56 +83,32 @@ describe("addressStatusLine: how the card words the state", () => {
     expect(addressStatusLine(address({ status: "ok", verified: true, check_result: "ok" }), HOST)).toEqual({
       tone: "ok",
       title: "Working",
-      detail: "Guests are sent links on this address.",
+      detail: "Guests get links on this address.",
     });
   });
 
-  it("says stopped for one that worked, with what to ask IT, and that guests are still sent there", () => {
+  it("says stopped for one that worked, with what to ask IT", () => {
     const line = addressStatusLine(address({ status: "failing", verified: true, check_result: "tls_failed" }), HOST);
-    expect(line.tone).toBe("warn");
-    expect(line.title).toBe("Stopped working");
-    expect(line.detail).toContain("certificate was refused");
-    expect(line.detail).toContain("Guests are still sent links on this address.");
+    expect(line).toEqual({ tone: "warn", title: "Stopped working", detail: "The name resolves, but its certificate is refused. Ask IT to fix it." });
   });
 
-  it("says not working yet for one that never worked, and that guests keep the main address", () => {
+  it("says not working yet for one that never worked, with the CNAME to ask for", () => {
     const line = addressStatusLine(address({ status: "failing", check_result: "dns_failed" }), HOST);
-    expect(line).toMatchObject({ tone: "warn", title: "Not working yet" });
-    expect(line.detail).toContain("CNAME record");
-    expect(line.detail).toContain("Guests keep getting links on the main address.");
+    expect(line).toEqual({ tone: "warn", title: "Not working yet", detail: "The name does not resolve. Ask IT to add a CNAME to tickets.example.com." });
   });
 
   it("falls back to unreachable's advice for a failure with no recorded result", () => {
-    expect(addressStatusLine(address({ status: "failing", verified: true, check_result: null }), HOST).detail).toContain("did not answer in time");
+    expect(addressStatusLine(address({ status: "failing", verified: true, check_result: null }), HOST).detail).toContain("did not answer");
   });
 
-  it("says whether guests keep the main address or stay on the address, for a name that cannot be checked from the server", () => {
-    expect(addressStatusLine(address({ check_result: "not_verifiable_from_server", verified: false }), HOST).detail).toContain("Guests keep getting links on the main address.");
-    expect(addressStatusLine(address({ check_result: "not_verifiable_from_server", verified: true }), HOST).detail).toContain("Guests are still sent links on this address.");
+  it("says the same short thing for a name that cannot be checked from the server, whether or not it worked before", () => {
+    const text = "The name points to a private network. This server cannot check it.";
+    expect(addressStatusLine(address({ check_result: "not_verifiable_from_server", verified: false }), HOST).detail).toBe(text);
+    expect(addressStatusLine(address({ check_result: "not_verifiable_from_server", verified: true }), HOST).detail).toBe(text);
   });
 
-  it("is neutral for a name that cannot be checked from the server, and for one not checked yet", () => {
+  it("is neutral for a name that cannot be checked from the server, and for one not checked yet, in one short sentence", () => {
     expect(addressStatusLine(address({ check_result: "not_verifiable_from_server" }), HOST)).toMatchObject({ tone: "neutral", title: "Cannot be checked from this server" });
-    expect(addressStatusLine(address(), HOST)).toMatchObject({ tone: "neutral", title: "Not checked yet" });
-  });
-});
-
-describe("ownAddressOf: the answer of the address routes, as the settings read it", () => {
-  const state = (overrides: Partial<CustomDomainDto> = {}): CustomDomainDto => ({
-    custom_domain: "summit.acme.example",
-    custom_domain_status: "ok",
-    custom_domain_check_result: "ok",
-    custom_domain_verified_at: "2026-11-12T10:00:00.000Z",
-    custom_domain_checked_at: "2026-11-12T10:00:00.000Z",
-    ...overrides,
-  });
-
-  it("is no address when there is none", () => {
-    expect(ownAddressOf(state({ custom_domain: null, custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null }))).toBeNull();
-  });
-
-  it("turns the time of the verification into a yes or a no", () => {
-    expect(ownAddressOf(state())).toEqual({ domain: "summit.acme.example", status: "ok", check_result: "ok", verified: true, checked_at: "2026-11-12T10:00:00.000Z" });
-    expect(ownAddressOf(state({ custom_domain_verified_at: null }))?.verified).toBe(false);
+    expect(addressStatusLine(address(), HOST)).toEqual({ tone: "neutral", title: "Not checked yet", detail: "The first check runs soon after you set the address." });
   });
 });

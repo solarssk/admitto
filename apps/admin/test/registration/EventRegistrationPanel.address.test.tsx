@@ -346,11 +346,16 @@ describe("the address card", () => {
     const status = within(addressCard()).getByRole("status");
     const body = status.querySelector(".overview-check__body") as HTMLElement;
     expect([...body.children].map((child) => child.tagName)).toEqual(["STRONG", "SPAN"]);
-    expect(plain(body.children[1]?.textContent)).toMatch(/Guests keep getting links on the main address\. Last checked .*UTC\.$/);
+    expect(plain(body.children[1]?.textContent)).toMatch(/^The name does not resolve\. Ask IT to add a CNAME to admitto\.example\.com\. Last checked .*UTC\.$/);
+    expect(body.children[1]?.textContent).not.toMatch(/main address/);
     // The row is the checklist's own (.access-check with the overview icon and body), with no layout of its own.
     expect(status.classList.contains("access-check")).toBe(true);
     expect(css()).not.toMatch(/\.access-address__status[^{]*\{[^}]*(display: grid|display: contents)/);
     expect(css()).toMatch(/\.access-address__controls \{[^}]*display: contents;/);
+    // The icon is centred on the block of the title and the description.
+    expect(css()).toMatch(/\.access-address__status \{[^}]*align-items: center;/);
+    // What the state means for the links of guests is said once, in the intro, not in every status.
+    expect(plain(addressCard().querySelector(".settings-card-intro")?.textContent)).toContain("If it later stops working, fix it or remove it: guests are still sent links on it.");
   });
 
   it("puts the setup for IT in a panel of its own, the steps under its heading", async () => {
@@ -492,7 +497,7 @@ describe("checking the address", () => {
     fireEvent.click(button("Check now"));
 
     expect(await within(addressCard()).findByText(`${DOMAIN}: Not working yet`)).toBeTruthy();
-    expect(within(addressCard()).getByText(/Ask IT to create a CNAME record that points it to admitto.example.com\./)).toBeTruthy();
+    expect(within(addressCard()).getByText(/Ask IT to add a CNAME to admitto.example.com\./)).toBeTruthy();
   });
 
   it("is off, with the reason, while the field holds an address that is not saved", async () => {

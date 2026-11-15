@@ -25,8 +25,7 @@ function AddressStatus({ address, instanceHost }: Readonly<{ address: Registrati
           {address.domain}: {line.title}
         </strong>
         <span className="overview-check__detail">
-          {line.detail}
-          {address.checked_at !== null && ` Last checked ${formatUtcDateTime(address.checked_at)}.`}
+          {keepLastWords(`${line.detail}${address.checked_at === null ? "" : ` Last checked ${formatUtcDateTime(address.checked_at)}.`}`)}
         </span>
       </span>
     </output>
@@ -42,7 +41,7 @@ function recordName(own: OwnAddress, address: RegistrationOwnAddressDto | null, 
 }
 
 const INTRO =
-  "Guests get links on the address of this instance. An event can have its own address instead, such as events.example.com. Guests get links on it only after a check finds it working.";
+  "Guests get links on the address of this instance. An event can have its own address instead, such as events.example.com. Guests get links on it only after a check finds it working. If it later stops working, fix it or remove it: guests are still sent links on it.";
 
 const FIELD_HINT = "The host name only, such as events.example.com. The buttons act at once, not with Save below.";
 
