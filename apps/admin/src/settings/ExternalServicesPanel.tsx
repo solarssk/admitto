@@ -75,7 +75,7 @@ const WEATHER_PROVIDER_HINT =
 const WEATHER_BASE_URL_HINT =
   "Free (non-commercial): https://api.open-meteo.com. Commercial: https://customer-api.open-meteo.com (API key required). Self-hosted Open-Meteo: your own HTTPS base URL.";
 const WEATHER_API_KEY_HINT =
-  "The organisation's API key for Open-Meteo. It is needed for customer-api.open-meteo.com. It stays on the server and is never shown again. It is not your Admitto password.";
+  "Needed for customer-api.open-meteo.com. Stays on the server and is never shown again.";
 const WEATHER_API_KEY_EMPTY_MSG = "Enter the API key, or choose Cancel to keep the saved one.";
 const WEATHER_API_KEY_REQUIRED_MSG =
   "API key is required for customer-api.open-meteo.com.";
