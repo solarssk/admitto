@@ -54,7 +54,7 @@ async function readBoth(eventId: string, signal: AbortSignal): Promise<Loaded> {
 
 /** The identity provider the event chose, as the claim card shows it: none while it has none, or while the provider is gone. */
 function providerSummary(provider: RegistrationSettingsDto["sso_provider"]): SsoProviderSummary | null {
-  if (provider === null || provider.display_name === null || provider.kind === null) return null;
+  if (!provider?.display_name || !provider.kind) return null;
   return { name: provider.display_name, kind: provider.kind, off: provider.state === "disabled" };
 }
 

@@ -25,6 +25,13 @@ const NO_PROVIDER_HINT = "No identity provider is chosen yet. Choose one on the 
 const MATCH_HINT =
   "A value must match exactly, with capital letters as they are. Never use the end of an email address here: it says where mail goes, not who the person is. A change counts at once, also for guests who have already signed in.";
 
+/** What the read only provider field says: nothing while none is chosen, else the name, the protocol and whether it is turned off. */
+function providerValue(provider: SsoProviderSummary | null): string {
+  if (provider === null) return "";
+  const off = provider.off === true ? PROVIDER_TURNED_OFF : "";
+  return `${provider.name} (${SSO_PROVIDER_PROTOCOL})${off}`;
+}
+
 /**
  * The restriction of the company SSO to the people of one company: the name of one claim and the values of it that may register.
  * The server takes the two together, so an error on one says what the other is missing. The values are typed one on each line.
@@ -61,7 +68,7 @@ export function AccessSsoClaim({
         {showProvider && (
           <Input
             label="Identity provider"
-            value={provider === null ? "" : `${provider.name} (${SSO_PROVIDER_PROTOCOL})${provider.off === true ? PROVIDER_TURNED_OFF : ""}`}
+            value={providerValue(provider)}
             icon={<i className={`ti ti-${provider === null ? "shield-lock" : ssoProviderIcon(provider.kind)}`} />}
             readOnly
             disabled

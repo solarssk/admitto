@@ -46,6 +46,11 @@ describe("providerOptions", () => {
     expect(providerOptions([PROVIDERS[1] as (typeof PROVIDERS)[number]], { ...ENTRA, state: "missing", display_name: null, kind: null }, "idp-entra")).toHaveLength(1);
   });
 
+  it("lists a turned off provider without an icon when its kind is not known", () => {
+    const off = { id: "idp-entra", state: "disabled", display_name: "Contoso Entra", kind: null } as const;
+    expect(providerOptions([], off, "idp-entra")).toEqual([{ id: "idp-entra", label: "Contoso Entra (turned off)", icon: undefined }]);
+  });
+
   it("does not list it twice when it is on the list", () => {
     expect(providerOptions(PROVIDERS, { ...ENTRA, state: "disabled" }, "idp-entra")).toHaveLength(2);
   });
