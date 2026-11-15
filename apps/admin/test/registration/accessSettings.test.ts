@@ -106,6 +106,7 @@ describe("settingsPatch", () => {
     const sso = base({ method: "sso", sso_provider_id: "idp-a", sso_claim_name: "tid", sso_claim_values: "aaa" });
     expect(settingsPatch({ ...sso, method: "password", sso_provider_id: "idp-b", sso_claim_name: "oid", sso_claim_values: "bbb" }, sso)).toEqual({});
     expect(settingsPatch(base({ method: null }), base({ method: "link" }))).toEqual({});
+    expect(settingsPatch({ ...sso, sso_provider_id: "idp-b" }, sso)).toEqual({});
   });
 
   it("holds the changed settings and no others when several changed", () => {

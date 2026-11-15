@@ -210,6 +210,16 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_provider_id: "idp-google" }));
   });
 
+  it("takes the provider of the answer of a save, so that one that is turned off meanwhile is marked", async () => {
+    await renderPanel(settings({ sso_providers: ONLY_ENTRA }));
+    saved({ sso_providers: ONLY_ENTRA, sso_provider_id: "idp-google", sso_provider: { id: "idp-google", state: "disabled", display_name: "Contoso Google", kind: "google" } });
+    fireEvent.click(radio("Company SSO"));
+    pickProvider("Contoso Entra");
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(trigger().getAttribute("aria-label")).toBe("Identity provider, Contoso Google (turned off)"));
+  });
+
   it("sends only the method when it is changed away from Company SSO, because the server clears the provider and the restriction", async () => {
     await renderPanel(ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
     api.saveRegistrationSettings.mockResolvedValue(settings());
