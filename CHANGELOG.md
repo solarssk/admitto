@@ -67,7 +67,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Changed
 
-- Show an icon beside the title of every confirmation window, so they all look alike ([#1930](https://github.com/solarssk/admitto/pull/1930))
+- Show an icon beside the title of every confirmation window, so they all look alike ([#1931](https://github.com/solarssk/admitto/pull/1931))
 - Use the width of the screen in the Add attendee and Edit attendee forms, two fields to a row, with the custom fields under their own heading ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Hide a question that is shown only for another answer in the Add attendee and Edit attendee forms, and do not require or save it ([#1787](https://github.com/solarssk/admitto/pull/1787))
 - Give the Communication template picker a row of its own on a phone, so the open template's name is not cut off ([#1791](https://github.com/solarssk/admitto/pull/1791))
