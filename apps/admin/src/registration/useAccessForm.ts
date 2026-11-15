@@ -16,6 +16,8 @@ function savedMessage(patch: SaveRegistrationSettingsBody, base: AccessDraft): s
   return "Registration settings saved.";
 }
 
+const STALE_CODES = ["registration_not_ready", "consent_not_published", "sso_provider_not_available"];
+
 export interface AccessFormInput {
   eventId: string;
   /** The settings and the event's legal texts, as the first read of the tab found them. */
@@ -83,9 +85,9 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
       redirectToLogin();
       return;
     }
-    // These answers say that what the screen shows is out of date (the event lost something, a text was withdrawn, the event was
-    // archived): read it again, and let the answer be the truth.
-    if (hasApiErrorCode(err, "registration_not_ready") || hasApiErrorCode(err, "consent_not_published")) void refresh();
+    // These answers say that what the screen shows is out of date (the event lost something, a text was withdrawn, a provider was
+    // turned off or deleted, the event was archived): read it again, and let the answer be the truth.
+    if (STALE_CODES.some((code) => hasApiErrorCode(err, code))) void refresh();
     if (hasApiErrorCode(err, "event_archived")) eventArchived();
     // Only a 409 `registration_not_ready` carries `blockers`: the keys of the checks that are not met, which the screen words itself.
     const blockers = err instanceof ApiError ? err.blockers : undefined;

@@ -11,6 +11,23 @@ import { LEGAL_LIMITS, legalDoc } from "./legalFixtures.js";
 export const event = { id: "evt-1", title: "Demo", slug: "demo", archived_at: null } as EventDto;
 export const archivedEvent = { ...event, archived_at: "2026-10-01T10:00:00.000Z" } as EventDto;
 
+/** The identity providers a superadmin has turned on: two, so that none is taken for the event by itself. */
+export const PROVIDERS: RegistrationSettingsDto["sso_providers"] = [
+  { id: "idp-entra", display_name: "Contoso Entra", kind: "entra" },
+  { id: "idp-google", display_name: "Contoso Google", kind: "google" },
+];
+
+/** The settings of an event whose way in is the company SSO with the first of the providers chosen, and ready to be used. */
+export function ssoEventSettings(overrides: Partial<RegistrationSettingsDto> = {}): RegistrationSettingsDto {
+  return settings({
+    access_methods: ["sso"],
+    sso_provider_id: "idp-entra",
+    sso_provider: { id: "idp-entra", state: "ready", display_name: "Contoso Entra", kind: "entra" },
+    readiness: ssoChecks(),
+    ...overrides,
+  });
+}
+
 /** The checks of an event that has chosen the link, in the order the server lists them. */
 const LINK_KEYS: readonly RegistrationReadinessKey[] = [
   "access_method",
@@ -46,6 +63,9 @@ export function settings(overrides: Partial<RegistrationSettingsDto> = {}): Regi
     styled_form_controls: false,
     sso_claim_name: null,
     sso_claim_values: [],
+    sso_provider_id: null,
+    sso_provider: null,
+    sso_providers: PROVIDERS,
     password_set: false,
     guest_url: "https://admitto.example.com/r/demo",
     instance_host: "admitto.example.com",

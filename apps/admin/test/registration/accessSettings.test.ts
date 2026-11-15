@@ -46,7 +46,12 @@ describe("draftFromSettings", () => {
       styled_form_controls: true,
       sso_claim_name: "",
       sso_claim_values: "",
+      sso_provider_id: null,
     });
+  });
+
+  it("holds the identity provider of the event", () => {
+    expect(draftFromSettings(settings({ access_methods: ["sso"], sso_provider_id: "idp-a" })).sso_provider_id).toBe("idp-a");
   });
 
   it("holds the restriction of the company SSO as it is typed: the name, and the values one on each line", () => {
@@ -95,6 +100,17 @@ describe("settingsPatch", () => {
   ])("holds only %s when that is all that changed", (_name, change, patch) => {
     const from = base({ mode: change.mode === null ? "approval" : null });
     expect(settingsPatch({ ...from, ...change }, from)).toEqual(patch);
+  });
+
+  it("holds the identity provider only for Company SSO, and only when it changed", () => {
+    const sso = base({ method: "sso", sso_provider_id: "idp-a" });
+    expect(settingsPatch({ ...sso, sso_provider_id: "idp-b" }, sso)).toEqual({ sso_provider_id: "idp-b" });
+    expect(settingsPatch({ ...sso, sso_provider_id: null }, sso)).toEqual({ sso_provider_id: null });
+    expect(settingsPatch(sso, sso)).toEqual({});
+    // A move to Company SSO sends the way and the provider together.
+    expect(settingsPatch({ ...base(), method: "sso", sso_provider_id: "idp-a" }, base())).toEqual({ access_methods: ["sso"], sso_provider_id: "idp-a" });
+    // The server clears the provider when the way changes to another, so none is sent.
+    expect(settingsPatch({ ...sso, method: "link", sso_provider_id: "idp-b" }, sso)).toEqual({ access_methods: ["link"] });
   });
 
   it("holds the changed settings and no others when several changed", () => {

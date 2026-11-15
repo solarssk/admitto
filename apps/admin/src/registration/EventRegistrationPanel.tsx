@@ -25,36 +25,37 @@ import "./registration-access.css";
 
 const PANEL_HINT = "Settings of guest registration that only a superadmin can change.";
 
-const NOT_USED_NOTE = "This event does not use Company SSO, so these fields are off. To use it, choose Company SSO under How guests open the form, on the Access tab of the Registration page.";
+const NOT_USED_NOTE = "This event does not use Company SSO, so these fields are off. To use it, choose Company SSO under Access method, on the Access tab of the Registration page.";
 
 const SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
   { id: "address", title: "Address for guests", intro: 2, fields: 1 },
 ];
 
-/** The first read: the settings of the event (the address and the restriction come from them) and the name of the identity provider, which a
- * superadmin may read. The name is a nicety: a read of it that fails leaves the row out, and the panel still works. */
+/** The first read: the settings of the event (the address, the restriction and the identity provider come from them) and the return
+ * addresses of the company SSO, which a superadmin may read. A read of the addresses that fails leaves them out, and the panel still works. */
 interface Loaded {
   settings: RegistrationSettingsDto;
-  provider: SsoProviderSummary | null;
   /** Every return address of the company SSO that the instance lists, for the setup for IT. */
   redirectUris: RegistrationRedirectUriDto[];
-  /** The read of the identity provider failed (not for want of a session): the return addresses are not known, which is not the same as none. */
+  /** The read of the return addresses failed (not for want of a session): they are not known, which is not the same as none. */
   redirectUrisFailed: boolean;
 }
 
 async function readBoth(eventId: string, signal: AbortSignal): Promise<Loaded> {
   const settings = await fetchRegistrationSettings(eventId, signal);
-  let provider: Awaited<ReturnType<typeof fetchRegistrationSsoProvider>> | null = null;
-  let redirectUrisFailed = false;
   try {
-    provider = await fetchRegistrationSsoProvider(signal);
+    return { settings, redirectUris: (await fetchRegistrationSsoProvider(signal)).redirect_uris, redirectUrisFailed: false };
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) throw err;
-    redirectUrisFailed = true;
+    return { settings, redirectUris: [], redirectUrisFailed: true };
   }
-  const chosen = provider?.providers.find((candidate) => candidate.id === provider?.provider_id);
-  return { settings, provider: chosen === undefined ? null : { name: chosen.display_name, kind: chosen.kind }, redirectUris: provider?.redirect_uris ?? [], redirectUrisFailed };
+}
+
+/** The identity provider the event chose, as the claim card shows it: none while it has none, or while the provider is gone. */
+function providerSummary(provider: RegistrationSettingsDto["sso_provider"]): SsoProviderSummary | null {
+  if (provider === null || provider.display_name === null || provider.kind === null) return null;
+  return { name: provider.display_name, kind: provider.kind, off: provider.state === "disabled" };
 }
 
 /**
@@ -112,7 +113,6 @@ function EventRegistrationBody({ eventId, archived, refreshEvent, onDirtyChange,
       eventId={eventId}
       archived={archived}
       initial={loaded.settings}
-      provider={loaded.provider}
       redirectUris={loaded.redirectUris}
       redirectUrisFailed={loaded.redirectUrisFailed}
       refreshEvent={refreshEvent}
@@ -151,6 +151,7 @@ function SsoClaimCard({
           errors={claimErrors(draft)}
           disabled={!usesSso || archived || saving}
           provider={provider}
+          showProvider={usesSso}
           note={usesSso ? undefined : NOT_USED_NOTE}
           onChange={onChange}
         />
@@ -170,7 +171,6 @@ function EventRegistrationCards({
   eventId,
   archived,
   initial,
-  provider,
   redirectUris,
   redirectUrisFailed,
   refreshEvent,
@@ -180,7 +180,6 @@ function EventRegistrationCards({
   eventId: string;
   archived: boolean;
   initial: RegistrationSettingsDto;
-  provider: SsoProviderSummary | null;
   redirectUris: readonly RegistrationRedirectUriDto[];
   redirectUrisFailed: boolean;
   refreshEvent?: () => Promise<unknown>;
@@ -216,12 +215,12 @@ function EventRegistrationCards({
    * address move with a change. A read that fails leaves what the cards show as it is. */
   async function refresh() {
     const mine = ++newestRead.current;
-    const [latest, provider] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchRegistrationSsoProvider()]);
+    const [latest, addresses] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchRegistrationSsoProvider()]);
     // A save that started meanwhile, or a newer read, has made this snapshot old.
     if (mine !== newestRead.current) return;
     if (latest.status === "fulfilled") setSettings(latest.value);
-    if (provider.status === "fulfilled") {
-      setReturnAddresses(provider.value.redirect_uris);
+    if (addresses.status === "fulfilled") {
+      setReturnAddresses(addresses.value.redirect_uris);
       setReturnAddressesFailed(false);
     }
   }
@@ -284,7 +283,7 @@ function EventRegistrationCards({
         usesSso={base.method === "sso"}
         archived={archived}
         saving={saving}
-        provider={provider}
+        provider={providerSummary(settings.sso_provider)}
         draft={draft}
         setup={
           <SsoItSetup

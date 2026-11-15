@@ -8,7 +8,7 @@ import { EventRegistrationPanel } from "../../src/registration/EventRegistration
 import { isOff, plain } from "../test-utils.js";
 import { reportApiError } from "../../src/connection/__mocks__/ConnectionStateProvider.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
-import { settings, ssoChecks } from "./accessData.js";
+import { settings, ssoChecks, ssoEventSettings } from "./accessData.js";
 import { card, resetApi } from "./accessFixtures.js";
 
 const goToLogin = vi.fn();
@@ -31,7 +31,8 @@ vi.mock("@admitto/ui", async (importOriginal) => {
   return { ...(await importOriginal<typeof import("@admitto/ui")>()), useToast: () => ({ addToast: toast }) };
 });
 
-const ssoSettings = (overrides: Partial<RegistrationSettingsDto> = {}) => settings({ access_methods: ["sso"], readiness: ssoChecks(), ...overrides });
+const ACME: RegistrationSettingsDto["sso_provider"] = { id: "idp-1", state: "ready", display_name: "Acme Entra ID", kind: "entra" };
+const ssoSettings = (overrides: Partial<RegistrationSettingsDto> = {}) => ssoEventSettings({ sso_provider_id: "idp-1", sso_provider: ACME, ...overrides });
 const restricted = (overrides: Partial<RegistrationSettingsDto> = {}) => ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"], ...overrides });
 const claimName = () => screen.queryByLabelText("Claim name") as HTMLInputElement | null;
 const claimValues = () => screen.queryByLabelText("Allowed values") as HTMLTextAreaElement | null;
@@ -93,24 +94,32 @@ describe("the Company SSO card", () => {
     expect(provider.className).toContain("at-input");
     expect([provider.readOnly, provider.disabled]).toEqual([true, true]);
     expect(provider.closest(".at-control, .at-inputgroup")?.querySelector(".at-inputgroup__icon i")?.className).toContain("ti-brand-azure");
-    expect(within(ssoCard()).getByText("Chosen for the organisation in Organisation settings, External services, Ways in.")).toBeTruthy();
+    expect(within(ssoCard()).getByText("Chosen on the Access tab of the Registration page.")).toBeTruthy();
   });
 
-  it.each([
-    ["none is chosen", { provider_id: null, state: "none", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: [] }],
-  ])("leaves the provider row out when %s", async (_what, answer) => {
-    api.fetchRegistrationSsoProvider.mockResolvedValue(answer);
-    await renderPanel(ssoSettings());
+  it("says that no identity provider is chosen yet, and where to choose one, when the event has none", async () => {
+    await renderPanel(ssoSettings({ sso_provider_id: null, sso_provider: null }));
 
-    expect(screen.queryByLabelText("Identity provider")).toBeNull();
+    const provider = within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement;
+    expect(provider.value).toBe("");
+    expect(within(ssoCard()).getByText("No identity provider is chosen yet. Choose one on the Access tab.")).toBeTruthy();
     expect(claimName()).toBeTruthy();
   });
 
-  it("leaves the provider row out, and still works, when its name cannot be read", async () => {
+  it("marks the identity provider of the event that a superadmin turned off, and leaves the row out for an event that does not use Company SSO", async () => {
+    await renderPanel(ssoSettings({ sso_provider: { ...ACME, state: "disabled" } as RegistrationSettingsDto["sso_provider"] }));
+    expect((within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement).value).toBe("Acme Entra ID (OpenID Connect) (turned off)");
+    cleanup();
+
+    await renderPanel(settings({ access_methods: ["link"] }));
+    expect(screen.queryByLabelText("Identity provider")).toBeNull();
+  });
+
+  it("reads the provider from the settings of the event, and still works, when the return addresses cannot be read", async () => {
     api.fetchRegistrationSsoProvider.mockRejectedValue(new ApiError(500, "internal_error"));
     await renderPanel(ssoSettings());
 
-    expect(screen.queryByLabelText("Identity provider")).toBeNull();
+    expect((within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement).value).toBe("Acme Entra ID (OpenID Connect)");
     expect(claimName()).toBeTruthy();
   });
 
@@ -171,7 +180,7 @@ describe("the Company SSO card", () => {
     expect(claimValues()?.disabled).toBe(true);
     expect(isOff(saveButton())).toBe(true);
     const notice = ssoCard().querySelector(".at-notice--info") as HTMLElement;
-    expect(plain(notice.textContent)).toBe("This event does not use Company SSO, so these fields are off. To use it, choose Company SSO under How guests open the form, on the Access tab of the Registration page.");
+    expect(plain(notice.textContent)).toBe("This event does not use Company SSO, so these fields are off. To use it, choose Company SSO under Access method, on the Access tab of the Registration page.");
     // The explanation comes first, then the notice, then the fields.
     const parts = [...(ssoCard().querySelector(".access-claim") as HTMLElement).children];
     expect(parts.map((part) => part.className.split(" ")[0])).toEqual(["settings-card-intro", "at-notice", "mail-transport-section"]);
@@ -440,8 +449,7 @@ describe("the icon of the identity provider", () => {
     ["google", "ti-brand-google"],
     ["generic", "ti-shield-lock"],
   ] as const)("is the one of the kind %s", async (kind, icon) => {
-    api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme", kind }], redirect_uri: null, redirect_uris: [] });
-    await renderPanel(ssoSettings());
+    await renderPanel(ssoSettings({ sso_provider: { ...ACME, kind } }));
 
     expect(ssoCard().querySelector(".at-inputgroup__icon i")?.className).toContain(icon);
   });

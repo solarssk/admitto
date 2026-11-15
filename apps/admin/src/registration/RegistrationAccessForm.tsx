@@ -15,6 +15,7 @@ import { AccessReadinessCard, MissingChecks } from "./AccessReadinessCard.js";
 import { AccessWayInCard } from "./AccessWayInCard.js";
 import { GuestLinkField } from "./GuestLinkField.js";
 import { hasStopped, stoppedWarning } from "./ownAddress.js";
+import { methodEdit, providerIsLocked } from "./ssoProviderChoice.js";
 import { useAccessForm, type AccessProblem } from "./useAccessForm.js";
 import "./registration-access.css";
 
@@ -49,7 +50,7 @@ function TurnOffConsequences() {
 }
 
 /**
- * The Access tab once its first read is in: registration mode, the way in and its password, the switches of the form, the consents,
+ * The Access tab once its first read is in: registration mode, the access method and its password, the switches of the form, the consents,
  * the checklist of what registration needs, and the link for guests. The page holds a draft, and Save sends what changed. A
  * navigation away with changes in the draft asks first, and so does turning registration off.
  */
@@ -102,11 +103,16 @@ export function RegistrationAccessForm({
         method={draft.method}
         savedMethod={base.method}
         passwordSet={server.password_set}
-        enabledMethods={server.enabled_access_methods}
+        providers={server.sso_providers}
+        currentProvider={server.sso_provider}
+        providerId={draft.sso_provider_id}
+        savedProviderId={base.sso_provider_id}
+        providerLocked={providerIsLocked(server, superadmin)}
         botCheck={server.bot_protection !== "not_used"}
         isSuperadmin={superadmin}
         disabled={archived || saving}
-        onMethodChange={(method) => form.edit({ method })}
+        onMethodChange={(method) => form.edit(methodEdit(method, draft, server.sso_providers))}
+        onProviderChange={(providerId) => form.edit({ sso_provider_id: providerId })}
         onPasswordChanged={form.passwordChanged}
         onArchived={form.eventArchived}
       />

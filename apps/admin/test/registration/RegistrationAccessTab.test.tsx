@@ -68,7 +68,7 @@ describe("RegistrationAccessTab: the first read", () => {
 
     const held = placeholder() as HTMLElement;
     expect(held.classList.contains("at-loading-hold")).toBe(true);
-    for (const title of ["Guest registration", "Setup checklist", "How guests open the form", "Form", "Your questions on the form"]) expect(within(held).getByText(title)).toBeTruthy();
+    for (const title of ["Guest registration", "Setup checklist", "Access method", "Form", "Your questions on the form"]) expect(within(held).getByText(title)).toBeTruthy();
     // The shapes are decoration; nothing claims that there is nothing yet.
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("radiogroup")).toBeNull();
@@ -335,7 +335,7 @@ describe("RegistrationAccessTab: the checklist", () => {
     expect(rows[0]?.textContent).toContain("Publish the privacy notice, the terms and every consent you chose.");
     expect(rows[1]?.textContent).toContain("Email sending");
     expect(rows[1]?.textContent).toContain("Email sending is not set up for this event, so guests would get no email.");
-    expect(rows[2]?.textContent).toContain("A way for guests to open the form is chosen.");
+    expect(rows[2]?.textContent).toContain("An access method is chosen.");
     expect(within(card("Setup checklist")).getByText("8 of 10 done")).toBeTruthy();
   });
 
@@ -389,7 +389,7 @@ describe("RegistrationAccessTab: the checklist", () => {
     await renderLoaded(settings({ access_methods: [], readiness: checks("access_method") }));
 
     const row = checklistRows()[0] as HTMLElement;
-    expect(row.textContent).toContain("Choose how guests open the form: with a link, with a password or with company SSO.");
+    expect(row.textContent).toContain("Choose an access method: link, password or Company SSO.");
     expect(within(row).queryByRole("link")).toBeNull();
   });
 

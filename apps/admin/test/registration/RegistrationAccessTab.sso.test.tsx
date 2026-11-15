@@ -6,7 +6,7 @@ import { ApiError } from "../../src/api/client.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
 import { isOff } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
-import { archivedEvent, settings, ssoChecks } from "./accessData.js";
+import { archivedEvent, settings, ssoChecks, ssoEventSettings } from "./accessData.js";
 import { card, radio, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -54,10 +54,10 @@ afterEach(() => {
 
 describe("the company SSO as the way in of an event", () => {
   it("is a third way in beside the link and the password, and says what it does", async () => {
-    await renderLoaded(ssoSettings());
+    await renderLoaded(ssoEventSettings());
 
     expect(radio("Company SSO").getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByText("Guests sign in with the company's single sign-on (SSO), using their work account. Their email comes from that sign-in.")).toBeTruthy();
+    expect(screen.getByText(/Guests sign in with their work account\. Their email comes from that sign-in\./)).toBeTruthy();
     expect(screen.queryByText("Event password")).toBeNull();
     expect(screen.queryByText("Choosing another way in later removes the password.")).toBeNull();
   });
@@ -91,7 +91,7 @@ describe("the company SSO as the way in of an event", () => {
     await renderLoaded(ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
     expect(screen.queryByLabelText("Claim name")).toBeNull();
     expect(screen.queryByLabelText("Allowed values")).toBeNull();
-    expect(card("How guests open the form").textContent).not.toMatch(/claim/i);
+    expect(card("Access method").textContent).not.toMatch(/claim/i);
 
     fireEvent.click(radio("Link"));
     fireEvent.click(radio("Company SSO"));
@@ -116,15 +116,14 @@ describe("the setup checklist of an event with the company SSO", () => {
     await renderLoaded(ssoSettings());
 
     expect(screen.queryByText("Bot protection")).toBeNull();
-    expect(within(card("Setup checklist")).getByText("Company SSO")).toBeTruthy();
+    expect(within(card("Setup checklist")).getByText("Identity provider")).toBeTruthy();
     expect(rows()).toHaveLength(10);
   });
 
-  it("says that the form stays closed and who sets it up, with where, when the identity provider is not chosen", async () => {
+  it("says what to do, and who sets providers up, when the identity provider is not chosen", async () => {
     await renderLoaded(ssoSettings({ readiness: ssoChecks("identity_provider") }));
 
     const row = rows()[0] as HTMLElement;
-    expect(row.textContent).toContain("Company SSO is not set up, so the form stays closed.");
-    expect(row.textContent).toContain("Ask a superadmin to choose the identity provider in Organisation settings, External services, Ways in.");
+    expect(row.textContent).toContain("Choose an identity provider for Company SSO. If the list is empty, ask a superadmin to set one up under Identity.");
   });
 });

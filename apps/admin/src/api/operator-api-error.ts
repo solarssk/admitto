@@ -173,7 +173,7 @@ export const CODE_MESSAGES: Record<string, string> = {
     "A field with a condition can be on the registration form only when the field it depends on is on the form too.",
   source_field_conflict: "A custom field with this key already exists for this event.",
   sso_claim_needs_sso:
-    "The restriction to one company works with Company SSO only. Choose Company SSO under How guests open the form, or leave the restriction out.",
+    "The restriction to one company works with Company SSO only. Choose Company SSO under Access method, or leave the restriction out.",
   sso_claim_superadmin_only: "Only a superadmin can change the restriction to one company.",
   sso_provider_needs_sso: "Choose Company SSO first.",
   sso_provider_not_available: "This identity provider is not available. Choose another one.",

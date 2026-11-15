@@ -11,7 +11,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 ## Before you start
 
 - You must be the Administrator of the event's organisation, or a Superadmin. An Operator cannot open this page.
-- Some things are set up for the whole instance, by a Superadmin: bot protection, which ways in are allowed, the identity provider for the company SSO, email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
+- Some things are set up for the whole instance, by a Superadmin: bot protection, which ways in are allowed, the list of identity providers for Company SSO, email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
 - Only a Superadmin sets the address of the event for guests and the restriction to one company, on the **Registration** tab of **Event settings** (see **Give the event an address of its own** and **Restrict Company SSO to one company** below). Every Administrator of the event is warned on this page when the address stops working.
 - You write the legal texts and the questions yourself. See [Legal Texts and Consents](Legal-Texts-and-Consents) and [Registration Form Fields](Registration-Form-Fields).
 - An archived event keeps its settings. You can read them and copy the link, but you cannot change anything.
@@ -27,16 +27,17 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 **Choose how guests get in**
 
-1. Under **How guests open the form**, choose **Link**, **Password** or **Company SSO**. An event has one way at a time. A way that a Superadmin has not turned on for your organisation is grey and cannot be chosen. Hover over it to read why: "This way is not turned on for your organisation. Ask a superadmin to turn it on." A Superadmin reads "Turn it on in Organisation settings, External services, Ways in." instead.
+1. Under **Access method**, choose **Link**, **Password** or **Company SSO**. An event has one method at a time. Link and Password can always be chosen. **Company SSO** is grey while no identity provider is turned on. Hover over it to read why: "No identity provider is set up. Ask a superadmin to set up an identity provider." A Superadmin reads "No identity provider is turned on. Add one under Identity." instead.
 2. For **Password**, select **Set**, type a password of 8 to 128 characters and select **Save** in the window that opens. This is saved at once, apart from the **Save** button of the page.
-3. For **Company SSO**, optionally restrict the form to one company. See **Restrict Company SSO to one company** below.
-4. Select **Save** at the bottom of the page.
+3. For **Company SSO**, pick the **Identity provider** guests of this event sign in with. The list holds the providers that are turned on, by the name a Superadmin gave them under **Identity**. If there is only one, it is picked for you. A provider that is turned off stays in the list with "(turned off)", and the form stays closed until you choose another one or a Superadmin turns it on. When you change the provider of an event that already has one, guests who are filling in the form have to sign in again.
+4. Optionally restrict the form to one company. See **Restrict Company SSO to one company** below. While an event is restricted, only a Superadmin can change its identity provider. You can read it.
+5. Select **Save** at the bottom of the page.
 
 **Restrict Company SSO to one company**
 
-A Superadmin does this, in **Event settings → Registration**, on the **Company SSO** card. The card shows the identity provider chosen for the organisation and applies when the event's way is **Company SSO**. An Administrator cannot see or change this restriction.
+A Superadmin does this, in **Event settings → Registration**, on the **Company SSO** card. The card shows the identity provider chosen for the event, on the Access tab, and applies when the event's access method is **Company SSO**. An Administrator cannot see or change this restriction.
 
-1. On the Access tab of Registration, under **How guests open the form**, choose **Company SSO** and select **Save**.
+1. On the Access tab of Registration, under **Access method**, choose **Company SSO**, pick the identity provider and select **Save**.
 2. Open **Event settings → Registration**. In **Claim name**, type the name of the claim that the identity provider puts in the sign-in. With Microsoft Entra ID it is usually `tid`.
 3. In **Allowed values**, type one value on each line. With `tid`, the value is the tenant ID of the company, a GUID.
 4. Select **Save** at the bottom of the tab. Leave both fields empty for no restriction.
@@ -92,11 +93,11 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 
 **Link, password or company SSO**
 
-| How guests open the form | Who can open the form |
+| Access method | Who can open the form |
 |---|---|
 | **Link** | Anyone who has the link |
 | **Password** | Anyone who has the link and types the event password |
-| **Company SSO** | Anyone who has the link and signs in with the identity provider of your organisation |
+| **Company SSO** | Anyone who has the link and signs in with the identity provider chosen for the event |
 
 - The link and the password are protected by a bot check, unless a Superadmin turned bot protection **Off** for your organisation. Then the checklist shows **Bot protection** in grey, as information, and a script can send the form or guess an event password within the usual limits. Use the company SSO or a strong password for an event that matters. The company SSO needs no bot check, because the form opens only after the sign-in.
 - You cannot read the password again after you save it. Keep a copy where you share it with guests.
@@ -105,7 +106,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 
 **Company SSO**
 
-- The guest signs in with the identity provider that a Superadmin chose. The form shows the email address from that sign-in, and the guest cannot change it. A sign-in without an email address cannot register.
+- The guest signs in with the identity provider chosen for the event. The form shows the email address from that sign-in, and the guest cannot change it. A sign-in without an email address cannot register.
 - A guest who signs in does not get an Admitto account and cannot open the staff screens.
 - The restriction compares the value in the sign-in with your list. It must match exactly, with capital letters as they are, and a match with any one value is enough. A list holds up to 20 values.
 - Use a claim that the identity provider vouches for, such as the tenant. Never use the end of an email address: it says where mail goes, not who the person is.
@@ -134,10 +135,10 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 
 | Row | If it is not done |
 |---|---|
-| **How guests open the form** | Choose **Link**, **Password** or **Company SSO** on this tab |
+| **Access method** | Choose **Link**, **Password** or **Company SSO** on this tab |
 | **The chosen way is turned on** | Ask a Superadmin to turn that way on: Organisation settings > External services > Ways in |
 | **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company SSO does not have this row. If bot protection is **Off** for your organisation, the row is grey, says "Off for this organisation" and does not block anything |
-| **Company SSO** | Ask a Superadmin to choose the identity provider: Organisation settings > External services > Ways in. Only a form with the company SSO has this row |
+| **Identity provider** | Choose an identity provider under **Access method**. If the list is empty, ask a Superadmin to set one up under **Identity**. Only a form with the company SSO has this row |
 | **Event password** | Set the password on this tab |
 | **Legal texts** | Publish the privacy notice, the terms and the consents you chose on the **Legal** tab |
 | **Form questions** | A required question cannot be shown on the form. Open the **Fields** tab |
@@ -216,7 +217,7 @@ When you turn registration off:
 | A guest sees "This event is not open to your company account." | The sign-in does not hold one of your allowed values. Ask a Superadmin to check the claim and the values in **Event settings**, **Registration** |
 | A guest sees "Your company account did not give us a verified email address" | The identity provider sent no email address, or says the address is not verified. A Superadmin maps the email claim of the provider |
 | Saving says "Only a superadmin can change the restriction to one company" | The restriction to one company is a Superadmin's to set. Ask a Superadmin to change it |
-| The restriction says "The restriction to one company works with Company SSO only" | Choose **Company SSO** under **How guests open the form**, or clear both fields |
+| The restriction says "The restriction to one company works with Company SSO only" | Choose **Company SSO** under **Access method**, or clear both fields |
 | There is no link under **Link for guests** | The address of the instance is not set. Ask a Superadmin |
 | The tab warns that the address of the event stopped working | Ask a Superadmin or your IT team. The card under **Address for guests** names the reason |
 | **Check now** is off | The field holds an address that is not set. Select **Set address** first |
