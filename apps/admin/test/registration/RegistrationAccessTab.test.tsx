@@ -211,8 +211,7 @@ describe("RegistrationAccessTab: the settings", () => {
 
     expect(radio("With approval").getAttribute("aria-checked")).toBe("true");
     expect(radio("Off").getAttribute("aria-checked")).toBe("false");
-    expect(radio("Password").getAttribute("aria-checked")).toBe("true");
-    expect(radio("Link").getAttribute("aria-checked")).toBe("false");
+    expect(within(card("Access method")).getByText("Password", { selector: "strong" })).toBeTruthy();
     expect(toggle("Waiting list").checked).toBe(false);
     expect(toggle("Confirm email addresses").checked).toBe(true);
     expect(toggle("Ask for the company").checked).toBe(true);
@@ -237,31 +236,19 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(screen.getByText("Guests cannot open the form. The requests you already have stay on the Requests tab.")).toBeTruthy();
   });
 
-  it.each<[string[]]>([[[]], [["link", "password"]], [["sso", "link"]]])("shows no way in as chosen for %j, as the server counts none, and has nothing to save", async (methods) => {
+  it.each<[string[]]>([[[]], [["link", "password"]], [["sso", "link"]]])("shows no access method as chosen for %j, as the server counts none, and has nothing to save", async (methods) => {
     await renderLoaded(settings({ access_methods: methods as RegistrationSettingsDto["access_methods"], readiness: checks("access_method") }));
 
-    expect(radio("Link").getAttribute("aria-checked")).toBe("false");
-    expect(radio("Password").getAttribute("aria-checked")).toBe("false");
-    expect(radio("Company SSO").getAttribute("aria-checked")).toBe("false");
-    expect(screen.getByText("Choose how guests open the registration form.")).toBeTruthy();
+    expect(within(card("Access method")).getByText("Not chosen", { selector: "strong" })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "Link" })).toBeNull();
     expect(isOff(saveButton())).toBe(true);
-  });
-
-  it("says what each way does in a notice, and shows the password row only for the password", async () => {
-    await renderLoaded(settings({ access_methods: ["link"] }));
-    expect(screen.getByText("Anyone who has the link can ask to join. A bot check protects the form.")).toBeTruthy();
-    expect(screen.queryByText("Event password")).toBeNull();
-
-    fireEvent.click(radio("Password"));
-    expect(screen.getByText("Guests need the link and the event password to open the form. A bot check protects the form.")).toBeTruthy();
-    expect(screen.getByText("Event password")).toBeTruthy();
   });
 
   it("reads again nothing under the form that is loaded: one read, whatever the person does", async () => {
     await renderLoaded();
 
     fireEvent.click(toggle("Waiting list"));
-    fireEvent.click(radio("Password"));
+    fireEvent.click(toggle("Ask for the company"));
 
     expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(1);
     expect(api.fetchLegalDocuments).toHaveBeenCalledTimes(1);
@@ -549,7 +536,7 @@ describe("RegistrationAccessTab: an archived event", () => {
   });
 
   it("locks every control that would change a setting, and has no Save or Reset", () => {
-    for (const name of ["Off", "Automatic", "With approval", "Link", "Password"]) expect(radio(name).hasAttribute("disabled"), name).toBe(true);
+    for (const name of ["Off", "Automatic", "With approval"]) expect(radio(name).hasAttribute("disabled"), name).toBe(true);
     for (const name of ["Waiting list", "Confirm email addresses", "Ask for the company", "Ask for the department", "Guests can bring one person", "Styled form boxes"]) {
       expect(toggle(name).disabled, name).toBe(true);
     }
@@ -558,19 +545,10 @@ describe("RegistrationAccessTab: an archived event", () => {
     expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
   });
 
-  it("turns the password buttons off with the reason, which is the one reason an archived event gives", () => {
-    for (const name of ["Change", "Remove"]) {
-      const button = screen.getByRole("button", { name });
-      expect(isOff(button), name).toBe(true);
-      expect(getTooltipText(button)).toBe("This event is archived. Editing is disabled.");
-    }
-  });
-
-  it("does not say again, in the panel, that the event is archived: only the reason of a button that is off says it, to assistive tech", () => {
+  it("does not say again, in the panel, that the event is archived: the page above says it, and the access method is only read", () => {
     const sayings = Array.from(accessPanel().querySelectorAll("*")).filter((node) => node.children.length === 0 && /archived/i.test(node.textContent ?? ""));
 
-    expect(sayings.every((node) => node.classList.contains("sr-only"))).toBe(true);
-    expect(sayings).toHaveLength(2);
+    expect(sayings).toHaveLength(0);
   });
 });
 

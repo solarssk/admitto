@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { READINESS_COPY, readinessCopy } from "../../src/registration/accessReadiness.js";
+import { READINESS_COPY, readinessCopy, remedyFor } from "../../src/registration/accessReadiness.js";
 
 /** The checks the server reports, read from the file that holds them: the screen has words for each one, and for no other. */
 function serverKeys(): string[] {
@@ -42,22 +42,26 @@ describe("the words of the checks", () => {
     for (const key of ["bot_protection", "mail_provider", "instance_url"] as const) {
       expect(remedy(key), key).toEqual({ text: "Ask a superadmin to set it up." });
     }
-    // The provider is chosen on this tab, and its sentence says where the list is set up.
-    expect(remedy("identity_provider")).toBeUndefined();
+    // How guests open the form is set in Event settings, by a superadmin: the others are told to ask, a superadmin is sent there.
+    for (const key of ["access_method", "identity_provider", "password"] as const) {
+      expect(remedy(key)?.text, key).toMatch(/^Ask a superadmin to (choose|set) it in Event settings, Registration\.$/);
+      expect(remedyFor(READINESS_COPY[key], true)?.link, key).toBe("registration_settings");
+      expect(remedyFor(READINESS_COPY[key], true)?.text, key).toMatch(/^(Choose|Set) it in Event settings, Registration\.$/);
+      expect(remedyFor(READINESS_COPY[key], false), key).toBe(READINESS_COPY[key].remedy);
+    }
+    // A check without a place of its own for a superadmin reads the same for everybody.
+    expect(remedyFor(READINESS_COPY.mail_provider, true)).toBe(READINESS_COPY.mail_provider.remedy);
     // A way in is turned on at one place, and the organiser is told which.
     expect(remedy("access_method_enabled")).toEqual({ text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." });
     expect(remedy("legal_documents")?.link).toBe("legal");
     expect(remedy("form_questions")?.link).toBe("fields");
     expect(remedy("required_fields")?.link).toBe("fields");
     expect(remedy("event_not_ended")?.link).toBe("event_settings");
-    // What is put right on the Access tab itself is said in the sentence: nothing to send the person to.
-    expect(remedy("access_method")).toBeUndefined();
-    expect(remedy("password")).toBeUndefined();
   });
 
   it("are plain: no dash that stands for a pause, no code and no name of a service", () => {
     const words = Object.values(READINESS_COPY)
-      .flatMap((copy) => [copy.title, copy.met, copy.missing, copy.remedy?.text ?? ""])
+      .flatMap((copy) => [copy.title, copy.met, copy.missing, copy.remedy?.text ?? "", copy.superadminRemedy?.text ?? ""])
       .join("\n");
 
     expect(words).not.toMatch(/[\u2013\u2014]/);

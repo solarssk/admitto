@@ -2,15 +2,13 @@ import { useId, useState } from "react";
 import { Button, Card, Notice, useToast } from "@admitto/ui";
 import { ApiError, clearRegistrationPassword } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventDto, RegistrationSettingsDto } from "../api/types.js";
-import { ArchivedGuard } from "../components/ArchivedGuard.js";
+import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
 import type { AccessMethod } from "./accessSettings.js";
-import { AccessSsoProvider } from "./AccessSsoProvider.js";
 import { EventPasswordDialog } from "./EventPasswordDialog.js";
-import { NO_PROVIDER_FOR_ORGANISER, NO_PROVIDER_FOR_SUPERADMIN } from "./ssoProviderChoice.js";
+import { ADD_PROVIDER, NO_PROVIDER } from "./ssoProviderChoice.js";
 import "./registration-access.css";
 
 const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
@@ -19,9 +17,10 @@ const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
   { value: "sso", label: "Company SSO" },
 ];
 
-/** What the chosen method means, in one notice under the choice. Company SSO says it under its provider, which has a notice of its own. */
+/** What the chosen method means, in one notice under the choice. */
 const BOT_CHECK = " A bot check protects the form.";
-function methodNotice(method: Exclude<AccessMethod, "sso">, botCheck: boolean): string {
+function methodNotice(method: AccessMethod, botCheck: boolean): string {
+  if (method === "sso") return "Guests sign in with the company's single sign-on (SSO), using their work account. Their email comes from that sign-in.";
   const text = method === "link" ? "Anyone who has the link can ask to join." : "Guests need the link and the event password to open the form.";
   return botCheck ? text + BOT_CHECK : text;
 }
@@ -33,7 +32,7 @@ function EventPasswordRow({
   disabled,
   onSet,
   onRemove,
-}: Readonly<{ event: EventDto; passwordSet: boolean; disabled: boolean; onSet: () => void; onRemove: () => void }>) {
+}: Readonly<{ event: ArchivedGuardEvent; passwordSet: boolean; disabled: boolean; onSet: () => void; onRemove: () => void }>) {
   const id = useId();
   return (
     <div className="settings-row settings-row--switch access-password">
@@ -69,8 +68,9 @@ function EventPasswordRow({
 
 /**
  * How guests open the form, the access method: the link, a password that the organiser sets, or a sign-in with an identity provider
- * (Company SSO, which can be limited to the people of one company). One at a time. The password has its own requests (it is not one of the settings that the Save of the page sends): it is set, changed and removed from here, and
- * the page learns of it through `onPasswordChanged`.
+ * (Company SSO, which can be limited to the people of one company). One at a time. The password has its own requests (it is not one
+ * of the settings that the Save of the page sends): it is set, changed and removed from here, and the page learns of it through
+ * `onPasswordChanged`.
  */
 export function AccessWayInCard({
   eventId,
@@ -78,49 +78,34 @@ export function AccessWayInCard({
   method,
   savedMethod,
   passwordSet,
-  providers,
-  currentProvider,
-  providerId,
-  savedProviderId,
-  providerLocked,
+  ssoAvailable,
   botCheck,
-  isSuperadmin,
   disabled,
   onMethodChange,
-  onProviderChange,
   onPasswordChanged,
   onArchived,
 }: Readonly<{
   eventId: string;
-  event: EventDto;
+  event: ArchivedGuardEvent;
   /** The way in the form holds now, and the one that is saved. */
   method: AccessMethod | null;
   savedMethod: AccessMethod | null;
   passwordSet: boolean;
-  /** The identity providers Company SSO can use, and the one this event has saved. Company SSO is off while there is none to use. */
-  providers: RegistrationSettingsDto["sso_providers"];
-  currentProvider: RegistrationSettingsDto["sso_provider"];
-  /** The identity provider in the form, and the one that is saved. */
-  providerId: string | null;
-  savedProviderId: string | null;
-  /** The event is limited to one company: only a superadmin may change its provider. */
-  providerLocked: boolean;
+  /** An identity provider is turned on. Company SSO is greyed while there is none. */
+  ssoAvailable: boolean;
   /** The organisation checks guests for bots on the link and password forms (a superadmin has not switched it off). */
   botCheck: boolean;
-  /** A superadmin is told where to add an identity provider. */
-  isSuperadmin: boolean;
   disabled: boolean;
   onMethodChange: (method: AccessMethod) => void;
-  onProviderChange: (providerId: string) => void;
   onPasswordChanged: (isSet: boolean) => void;
   /** A change of the password was refused because the event is archived: the page reads the event and the settings again. */
   onArchived: () => void;
 }>) {
   const { addToast } = useToast();
   // Company SSO is greyed while no identity provider is turned on, also when the event has chosen it: it stays chosen, nothing is removed.
-  const reason = isSuperadmin ? NO_PROVIDER_FOR_SUPERADMIN : NO_PROVIDER_FOR_ORGANISER;
+  const reason = `${NO_PROVIDER} ${ADD_PROVIDER}`;
   const options = METHOD_OPTIONS.map((option) =>
-    option.value === "sso" && providers.length === 0 ? { ...option, disabled: true, tooltip: reason } : option,
+    option.value === "sso" && !ssoAvailable ? { ...option, disabled: true, tooltip: reason } : option,
   );
   // The way the person pressed while a password is set: it waits for the answer of the dialog, and the choice stays as it was until then.
   const [leaving, setLeaving] = useState<AccessMethod | null>(null);
@@ -180,19 +165,7 @@ export function AccessWayInCard({
           disabled={disabled}
           onChange={choose}
         />
-        {method === "sso" && (
-          <AccessSsoProvider
-            providers={providers}
-            current={currentProvider}
-            value={providerId}
-            saved={{ method: savedMethod, providerId: savedProviderId }}
-            locked={providerLocked}
-            isSuperadmin={isSuperadmin}
-            disabled={disabled}
-            onChange={onProviderChange}
-          />
-        )}
-        {method !== null && method !== "sso" && <Notice variant="info">{methodNotice(method, botCheck)}</Notice>}
+        {method !== null && <Notice variant="info">{methodNotice(method, botCheck)}</Notice>}
         {method === "password" && (
           <EventPasswordRow event={event} passwordSet={passwordSet} disabled={disabled} onSet={() => setSetOpen(true)} onRemove={() => setRemoveOpen(true)} />
         )}

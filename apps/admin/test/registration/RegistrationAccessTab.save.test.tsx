@@ -127,16 +127,6 @@ describe("RegistrationAccessTab: what a save sends", () => {
     expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { max_companions: 0 });
   });
 
-  it("sends the way in as a list of one", async () => {
-    await renderLoaded();
-    api.saveRegistrationSettings.mockResolvedValue(settings({ access_methods: ["password"] }));
-
-    fireEvent.click(screen.getByRole("radio", { name: "Password" }));
-    await save();
-
-    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["password"] });
-  });
-
   it("sends the consents that were chosen", async () => {
     await renderLoaded();
     api.saveRegistrationSettings.mockResolvedValue(settings({ consent_keys: ["photo"] }));
@@ -203,11 +193,9 @@ describe("RegistrationAccessTab: what a save sends", () => {
     await renderLoaded();
 
     fireEvent.click(toggle("Waiting list"));
-    fireEvent.click(radio("Password"));
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
     expect(toggle("Waiting list").checked).toBe(true);
-    expect(radio("Link").getAttribute("aria-checked")).toBe("true");
     expect(unsavedNote()).toBeNull();
     expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
   });
@@ -441,19 +429,6 @@ describe("RegistrationAccessTab: a save that the server refuses because registra
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     expect((await screen.findByRole("alert")).textContent).toContain("This change needs something that is not set up yet.");
     expect(radio("Off").getAttribute("aria-checked")).toBe("true");
-  });
-
-  it("is told too for a change of the way in of an event that has registration on, and leaves the mode alone", async () => {
-    await renderLoaded(settings({ mode: "approval" }));
-    refuse("password");
-
-    fireEvent.click(radio("Password"));
-    await save();
-
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("Set the password that guests will enter.");
-    expect(radio("With approval").getAttribute("aria-checked")).toBe("true");
-    expect(radio("Password").getAttribute("aria-checked")).toBe("true");
   });
 
   it("falls back to a sentence of the app when the answer names no key", async () => {

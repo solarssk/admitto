@@ -1,20 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { methodEdit, providerIsLocked, providerNotice, providerOptions } from "../../src/registration/ssoProviderChoice.js";
+import { methodEdit, providerNotice, providerOptions } from "../../src/registration/ssoProviderChoice.js";
 import { PROVIDERS } from "./accessData.js";
 
 const ENTRA = { id: "idp-entra", state: "ready", display_name: "Contoso Entra", kind: "entra" } as const;
 const NOTHING_SAVED = { method: null, providerId: null };
-
-describe("providerIsLocked", () => {
-  it.each([
-    ["an administrator, Company SSO limited to one company", { access_methods: ["sso"], sso_claim_name: "tid" }, false, true],
-    ["a superadmin, the same event", { access_methods: ["sso"], sso_claim_name: "tid" }, true, false],
-    ["an administrator, no restriction", { access_methods: ["sso"], sso_claim_name: null }, false, false],
-    ["an administrator, another method", { access_methods: ["link"], sso_claim_name: "tid" }, false, false],
-  ] as const)("is decided for %s", (_who, saved, superadmin, expected) => {
-    expect(providerIsLocked({ access_methods: [...saved.access_methods], sso_claim_name: saved.sso_claim_name }, superadmin)).toBe(expected);
-  });
-});
 
 describe("methodEdit", () => {
   it("takes the only provider with Company SSO while none is chosen", () => {
@@ -61,7 +50,7 @@ describe("providerNotice", () => {
     expect(providerNotice({ providers: PROVIDERS, current: null, chosenId: null, saved: NOTHING_SAVED }).variant).toBe("warning");
     expect(providerNotice({ providers: PROVIDERS, current: ENTRA, chosenId: "idp-entra", saved: NOTHING_SAVED })).toEqual({
       variant: "info",
-      text: "Guests sign in with their work account. Their email comes from that sign-in.",
+      text: "Guests of this event sign in with this provider.",
     });
   });
 

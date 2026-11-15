@@ -59,7 +59,7 @@ Each card that needs saving (Basic information, Location, Ticket types, Images, 
 | General | Organisation Admin | Title, date, time zone, capacity, event type |
 | Location | Organisation Admin | Venue, map pin, directions, accessibility, access points |
 | Ticket types | Organisation Admin | Event ticket-type catalog |
-| Registration | Superadmin | Guest registration: the limit of the company SSO to one company, and the event's own address for guests |
+| Registration | Superadmin | How guests open the registration form (access method, event password, identity provider for Company SSO), the limit of Company SSO to one company, and the event's own address for guests |
 | Mailing | Superadmin | Event mail transport and bounce detection |
 | Wallet | Superadmin | Per-event PassCreator API key, template, and Apple and Google toggles |
 | Images | Organisation Admin | Logo, header, mail image assets |

@@ -6,29 +6,21 @@ import { ssoProviderIcon } from "./ssoProviderKind.js";
 type Providers = RegistrationSettingsDto["sso_providers"];
 
 /** The words of the choice of the identity provider of an event. */
-export const PROVIDER_HINT = "The provider guests sign in with. A superadmin sets providers up under Identity.";
+export const PROVIDER_HINT = "The provider guests sign in with. Providers are set up under Identity.";
 export const PROVIDER_TURNED_OFF = " (turned off)";
-const READY = "Guests sign in with their work account. Their email comes from that sign-in.";
+const READY = "Guests of this event sign in with this provider.";
 const NOT_CHOSEN = "Choose an identity provider. Until you do, the form stays closed.";
 const GONE = "The identity provider that was chosen no longer exists, so the form stays closed. Choose another one.";
 const CHANGED = "Guests who are filling in the form will have to sign in again.";
 
-/** Why Company SSO cannot be chosen while no identity provider is turned on: a superadmin is told where to add one, anybody else to ask. */
-export const NO_PROVIDER_FOR_SUPERADMIN = "No identity provider is turned on. Add one under Identity.";
-export const NO_PROVIDER_FOR_ORGANISER = "No identity provider is set up. Ask a superadmin to set up an identity provider.";
-
-/** Why an event that is limited to one company has its provider shown and not offered. */
-export const LOCKED_NOTE = "Only a superadmin can change the identity provider while the event is limited to one company.";
+/** Why Company SSO cannot be chosen while no identity provider is turned on, and where to add one (the link text, and the sentence before it). */
+export const NO_PROVIDER = "No identity provider is turned on.";
+export const ADD_PROVIDER = "Add one under Identity.";
 
 /** What choosing a method changes in the form: Company SSO with a single provider to use takes that provider, when none is chosen yet. */
 export function methodEdit(method: AccessMethod, draft: Pick<AccessDraft, "sso_provider_id">, providers: Providers): Partial<AccessDraft> {
   const only = providers.length === 1 ? providers[0] : undefined;
   return method === "sso" && draft.sso_provider_id === null && only !== undefined ? { method, sso_provider_id: only.id } : { method };
-}
-
-/** Whether the provider of an event is only a superadmin's to change: a restriction to one company is saved for Company SSO. */
-export function providerIsLocked(saved: Pick<RegistrationSettingsDto, "access_methods" | "sso_claim_name">, superadmin: boolean): boolean {
-  return !superadmin && saved.access_methods.includes("sso") && saved.sso_claim_name !== null;
 }
 
 /**
@@ -55,7 +47,7 @@ function standOf(providers: Providers, current: EventSsoProviderDto | null, chos
   if (providers.some((provider) => provider.id === chosenId)) return { variant: "info", text: READY };
   if (current !== null && current.id === chosenId && current.state === "disabled") {
     const name = current.display_name ?? "This provider";
-    return { variant: "warning", text: `${name} is turned off, so the form stays closed. Choose another provider or ask a superadmin to turn it on.` };
+    return { variant: "warning", text: `${name} is turned off, so the form stays closed. Choose another provider or turn it on under Identity.` };
   }
   return { variant: "warning", text: GONE };
 }

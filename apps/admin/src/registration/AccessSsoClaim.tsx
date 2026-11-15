@@ -1,36 +1,15 @@
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import { SSO_CLAIM_NAME_MAX, SSO_CLAIM_VALUE_MAX, SSO_CLAIM_VALUES_MAX } from "@admitto/shared";
 import { Input, Notice } from "@admitto/ui";
 import { keepLastWords } from "../utils/keep-last-words.js";
-import { SSO_PROVIDER_PROTOCOL, ssoProviderIcon } from "./ssoProviderKind.js";
 import { NO_AUTOFILL_PROPS } from "../utils/no-autofill.js";
 import type { AccessDraft, ClaimErrors } from "./accessSettings.js";
-import { PROVIDER_TURNED_OFF } from "./ssoProviderChoice.js";
 import "./registration-access.css";
-
-/** The identity provider the organisation chose for the company SSO, as the event page shows it. */
-export type SsoProviderKind = "entra" | "google" | "generic";
-
-export interface SsoProviderSummary {
-  name: string;
-  kind: SsoProviderKind;
-  /** The provider is turned off: the form stays closed. */
-  off?: boolean;
-}
 
 const INTRO =
   "You can let only the people of one company register. When a guest signs in, the identity provider sends facts about the guest, called claims. Name one claim and list the values that may register. With Microsoft Entra ID, the claim is usually tid and the value is the tenant ID of the company. Leave both fields empty for no restriction.";
-const PROVIDER_HINT = "Chosen on the Access tab of the Registration page.";
-const NO_PROVIDER_HINT = "No identity provider is chosen yet. Choose one on the Access tab.";
 const MATCH_HINT =
   "A value must match exactly, with capital letters as they are. Never use the end of an email address here: it says where mail goes, not who the person is. A change counts at once, also for guests who have already signed in.";
-
-/** What the read only provider field says: nothing while none is chosen, else the name, the protocol and whether it is turned off. */
-function providerValue(provider: SsoProviderSummary | null): string {
-  if (provider === null) return "";
-  const off = provider.off === true ? PROVIDER_TURNED_OFF : "";
-  return `${provider.name} (${SSO_PROVIDER_PROTOCOL})${off}`;
-}
 
 /**
  * The restriction of the company SSO to the people of one company: the name of one claim and the values of it that may register.
@@ -41,15 +20,12 @@ export function AccessSsoClaim({
   values,
   errors,
   disabled,
-  provider,
-  showProvider,
+  providerField,
   note,
   onChange,
 }: Readonly<{
-  /** The identity provider the event chose, read only above the claim. */
-  provider: SsoProviderSummary | null;
-  /** The event uses Company SSO: the provider row is there, and says so while none is chosen. Without it the row is left out. */
-  showProvider: boolean;
+  /** The choice of the identity provider, above the claim. */
+  providerField: ReactNode;
   /** One short info notice under the intro, such as why the fields are off. */
   note?: string;
   name: string;
@@ -65,16 +41,7 @@ export function AccessSsoClaim({
       <p className="settings-card-intro">{keepLastWords(INTRO)}</p>
       {note !== undefined && <Notice variant="info">{keepLastWords(note)}</Notice>}
       <div className="mail-transport-section">
-        {showProvider && (
-          <Input
-            label="Identity provider"
-            value={providerValue(provider)}
-            icon={<i className={`ti ti-${provider === null ? "shield-lock" : ssoProviderIcon(provider.kind)}`} />}
-            readOnly
-            disabled
-            hint={keepLastWords(provider === null ? NO_PROVIDER_HINT : PROVIDER_HINT)}
-          />
-        )}
+        {providerField}
         <Input
           label="Claim name"
           value={name}

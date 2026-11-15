@@ -7,20 +7,19 @@ import type { EventDto, LegalDocumentDto, RegistrationSettingsDto } from "../api
 import { isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SettingsFooter } from "../settings/mailTransportFormParts.js";
-import { missingChecks } from "./accessSettings.js";
+import { chosenMethod, missingChecks } from "./accessSettings.js";
 import { AccessFormCard } from "./AccessFormCard.js";
 import { AccessModeCard } from "./AccessModeCard.js";
 import { AccessQuestionsCard } from "./AccessQuestionsCard.js";
 import { AccessReadinessCard, MissingChecks } from "./AccessReadinessCard.js";
-import { AccessWayInCard } from "./AccessWayInCard.js";
+import { AccessMethodSummary } from "./AccessMethodSummary.js";
 import { GuestLinkField } from "./GuestLinkField.js";
 import { hasStopped, stoppedWarning } from "./ownAddress.js";
-import { methodEdit, providerIsLocked } from "./ssoProviderChoice.js";
 import { useAccessForm, type AccessProblem } from "./useAccessForm.js";
 import "./registration-access.css";
 
 /** Why the last save did not happen, at the buttons that made it: the checks that are not met, or a sentence. Not a toast. */
-function ProblemMessage({ eventId, problem }: Readonly<{ eventId: string; problem: AccessProblem }>) {
+function ProblemMessage({ eventId, problem, superadmin }: Readonly<{ eventId: string; problem: AccessProblem; superadmin: boolean }>) {
   if (problem.kind === "message") {
     return (
       <Notice variant="error" role="alert" className="access-balanced">
@@ -33,7 +32,7 @@ function ProblemMessage({ eventId, problem }: Readonly<{ eventId: string; proble
       <Notice variant="error" className="access-balanced">
         This change needs something that is not set up yet.
       </Notice>
-      <MissingChecks eventId={eventId} keys={problem.blockers} />
+      <MissingChecks eventId={eventId} keys={problem.blockers} superadmin={superadmin} />
     </div>
   );
 }
@@ -50,7 +49,7 @@ function TurnOffConsequences() {
 }
 
 /**
- * The Access tab once its first read is in: registration mode, the access method and its password, the switches of the form, the consents,
+ * The Access tab once its first read is in: registration mode, the access method (to read), the switches of the form, the consents,
  * the checklist of what registration needs, and the link for guests. The page holds a draft, and Save sends what changed. A
  * navigation away with changes in the draft asks first, and so does turning registration off.
  */
@@ -68,7 +67,7 @@ export function RegistrationAccessForm({
   refreshEvent?: () => Promise<unknown>;
 }>) {
   const form = useAccessForm({ eventId, settings, legalItems, refreshEvent });
-  const { server, draft, base, dirty, saving, problem, confirmOffOpen } = form;
+  const { server, draft, dirty, saving, problem, confirmOffOpen } = form;
   const archived = isEventArchived(event);
   const missing = missingChecks(server.readiness);
   // A move between the two modes that are on is never refused, so only an event that has registration off needs to be ready.
@@ -96,29 +95,11 @@ export function RegistrationAccessForm({
       <AccessModeCard mode={draft.mode} canTurnOn={canTurnOn} unsaved={dirty} disabled={archived || saving} onChange={(mode) => form.edit({ mode })}>
         <GuestLinkField url={server.guest_url} registrationOn={server.mode !== null} />
       </AccessModeCard>
-      <AccessReadinessCard eventId={eventId} checks={server.readiness} hideArchived={archived} unsaved={dirty} />
-      <AccessWayInCard
-        eventId={eventId}
-        event={event}
-        method={draft.method}
-        savedMethod={base.method}
-        passwordSet={server.password_set}
-        providers={server.sso_providers}
-        currentProvider={server.sso_provider}
-        providerId={draft.sso_provider_id}
-        savedProviderId={base.sso_provider_id}
-        providerLocked={providerIsLocked(server, superadmin)}
-        botCheck={server.bot_protection !== "not_used"}
-        isSuperadmin={superadmin}
-        disabled={archived || saving}
-        onMethodChange={(method) => form.edit(methodEdit(method, draft, server.sso_providers))}
-        onProviderChange={(providerId) => form.edit({ sso_provider_id: providerId })}
-        onPasswordChanged={form.passwordChanged}
-        onArchived={form.eventArchived}
-      />
+      <AccessReadinessCard eventId={eventId} checks={server.readiness} hideArchived={archived} unsaved={dirty} superadmin={superadmin} />
+      <AccessMethodSummary eventId={eventId} method={chosenMethod(server.access_methods)} provider={server.sso_provider} isSuperadmin={superadmin} />
       <AccessFormCard draft={draft} legalItems={form.legalItems} disabled={archived || saving} onChange={form.edit} />
       <AccessQuestionsCard fields={server.public_fields} />
-      {problem && !confirmOffOpen && <ProblemMessage eventId={eventId} problem={problem} />}
+      {problem && !confirmOffOpen && <ProblemMessage eventId={eventId} problem={problem} superadmin={superadmin} />}
       {!archived && <SettingsFooter hasUnsavedChanges={dirty} saving={saving} onReset={form.reset} onSave={form.save} />}
       <ConfirmDialog
         open={confirmOffOpen}

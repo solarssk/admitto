@@ -3,6 +3,3 @@ export function ssoProviderIcon(kind: "entra" | "google" | "generic"): string {
   if (kind === "entra") return "brand-azure";
   return kind === "google" ? "brand-google" : "shield-lock";
 }
-
-/** The protocol of every provider the app has, said beside its name. */
-export const SSO_PROVIDER_PROTOCOL = "OpenID Connect";

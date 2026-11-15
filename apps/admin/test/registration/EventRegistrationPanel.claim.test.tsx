@@ -10,6 +10,7 @@ import { reportApiError } from "../../src/connection/__mocks__/ConnectionStatePr
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import { settings, ssoChecks, ssoEventSettings } from "./accessData.js";
 import { card, resetApi } from "./accessFixtures.js";
+import { onDirtyChange, onSavingChange, renderPanel, resetPanelApi, save } from "./panelFixtures.js";
 
 const goToLogin = vi.fn();
 
@@ -31,8 +32,7 @@ vi.mock("@admitto/ui", async (importOriginal) => {
   return { ...(await importOriginal<typeof import("@admitto/ui")>()), useToast: () => ({ addToast: toast }) };
 });
 
-const ACME: RegistrationSettingsDto["sso_provider"] = { id: "idp-1", state: "ready", display_name: "Acme Entra ID", kind: "entra" };
-const ssoSettings = (overrides: Partial<RegistrationSettingsDto> = {}) => ssoEventSettings({ sso_provider_id: "idp-1", sso_provider: ACME, ...overrides });
+const ssoSettings = (overrides: Partial<RegistrationSettingsDto> = {}) => ssoEventSettings(overrides);
 const restricted = (overrides: Partial<RegistrationSettingsDto> = {}) => ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"], ...overrides });
 const claimName = () => screen.queryByLabelText("Claim name") as HTMLInputElement | null;
 const claimValues = () => screen.queryByLabelText("Allowed values") as HTMLTextAreaElement | null;
@@ -40,44 +40,10 @@ const type = (control: HTMLElement | null, value: string) => fireEvent.change(co
 const ssoCard = () => card("Company SSO");
 const saveButton = () => screen.getByRole("button", { name: "Save" });
 
-const onDirtyChange = vi.fn();
-const onSavingChange = vi.fn();
-
-async function renderPanel(saved: RegistrationSettingsDto, { archived = false, withRefresh = true } = {}) {
-  api.fetchRegistrationSettings.mockResolvedValue(saved);
-  render(
-    <EventRegistrationPanel
-      eventId="evt-1"
-      archived={archived}
-      refreshEvent={withRefresh ? refreshEvent : undefined}
-      onDirtyChange={onDirtyChange}
-      onSavingChange={onSavingChange}
-    />,
-  );
-  await screen.findByText("Company SSO", { selector: ".at-card__title" });
-  await waitFor(() => expect(screen.queryByLabelText("Own address")).toBeTruthy());
-}
-
-async function save() {
-  // The address card keeps Save busy while its request is out, and the page lifts that a render or two after the settings were read
-  // again. A click before that is dropped, as it is for a person, so wait for Save to be on (on a loaded machine the click came first).
-  await waitFor(() => expect(isOff(saveButton())).toBe(false));
-  fireEvent.click(saveButton());
-  await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalled());
-}
-
 beforeEach(() => {
   resetApi();
-  onDirtyChange.mockReset();
-  onSavingChange.mockReset();
   goToLogin.mockReset();
-  api.fetchRegistrationSsoProvider.mockResolvedValue({
-    provider_id: "idp-1",
-    state: "ready",
-    providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }],
-    redirect_uri: null,
-    redirect_uris: [],
-  });
+  resetPanelApi();
 });
 
 afterEach(() => {
@@ -85,41 +51,44 @@ afterEach(() => {
 });
 
 describe("the Company SSO card", () => {
-  it("shows the identity provider of the organisation, read only, with where it is chosen", async () => {
+  it("lets a superadmin choose the identity provider of the event, with the icon of its kind, above the claim", async () => {
     await renderPanel(ssoSettings());
 
-    const provider = within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement;
-    expect(provider.value).toBe("Acme Entra ID (OpenID Connect)");
-    // A field to look at: its frame and height are the standard ones, grey like the claim of an event that does not use the company SSO, and it takes no focus.
-    expect(provider.className).toContain("at-input");
-    expect([provider.readOnly, provider.disabled]).toEqual([true, true]);
-    expect(provider.closest(".at-control, .at-inputgroup")?.querySelector(".at-inputgroup__icon i")?.className).toContain("ti-brand-azure");
-    expect(within(ssoCard()).getByText("Chosen on the Access tab of the Registration page.")).toBeTruthy();
-  });
-
-  it("says that no identity provider is chosen yet, and where to choose one, when the event has none", async () => {
-    await renderPanel(ssoSettings({ sso_provider_id: null, sso_provider: null }));
-
-    const provider = within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement;
-    expect(provider.value).toBe("");
-    expect(within(ssoCard()).getByText("No identity provider is chosen yet. Choose one on the Access tab.")).toBeTruthy();
+    const trigger = within(ssoCard()).getByRole("button", { name: "Identity provider, Contoso Entra" }) as HTMLButtonElement;
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.querySelector("i")?.className).toContain("ti-brand-azure");
+    expect(within(ssoCard()).getByText("The provider guests sign in with. Providers are set up under Identity.", { normalizer: plain })).toBeTruthy();
+    const parts = [...(ssoCard().querySelector(".mail-transport-section") as HTMLElement).children];
+    expect(parts[0]?.className).toBe("access-provider");
     expect(claimName()).toBeTruthy();
   });
 
-  it("marks the identity provider of the event that a superadmin turned off, and leaves the row out for an event that does not use Company SSO", async () => {
-    await renderPanel(ssoSettings({ sso_provider: { ...ACME, state: "disabled" } as RegistrationSettingsDto["sso_provider"] }));
-    expect((within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement).value).toBe("Acme Entra ID (OpenID Connect) (turned off)");
+  it("says that no identity provider is chosen yet when the event has none, and shows the way to Identity when none is turned on", async () => {
+    await renderPanel(ssoSettings({ sso_provider_id: null, sso_provider: null }));
+    expect(within(ssoCard()).getByRole("button", { name: "Identity provider, none selected" })).toBeTruthy();
+    expect(plain(ssoCard().querySelector(".access-provider .at-notice")?.textContent)).toBe("Choose an identity provider. Until you do, the form stays closed.");
+    cleanup();
+
+    await renderPanel(ssoSettings({ sso_provider_id: null, sso_provider: null, sso_providers: [] }));
+    expect(within(ssoCard()).getByRole("link", { name: "Add one under Identity." }).getAttribute("href")).toBe("/admin/settings/identity/providers");
+    expect((within(ssoCard()).getByRole("button", { name: "Identity provider, none selected" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("marks a provider that is turned off, and keeps the provider fields grey and notice free for an event that does not use Company SSO", async () => {
+    await renderPanel(ssoSettings({ sso_providers: [{ id: "idp-google", display_name: "Contoso Google", kind: "google" }], sso_provider: { id: "idp-entra", state: "disabled", display_name: "Contoso Entra", kind: "entra" } }));
+    expect(within(ssoCard()).getByRole("button", { name: "Identity provider, Contoso Entra (turned off)" })).toBeTruthy();
     cleanup();
 
     await renderPanel(settings({ access_methods: ["link"] }));
-    expect(screen.queryByLabelText("Identity provider")).toBeNull();
+    expect((within(ssoCard()).getByRole("button", { name: /^Identity provider, / }) as HTMLButtonElement).disabled).toBe(true);
+    expect(ssoCard().querySelector(".access-provider .at-notice")).toBeNull();
   });
 
   it("reads the provider from the settings of the event, and still works, when the return addresses cannot be read", async () => {
     api.fetchRegistrationSsoProvider.mockRejectedValue(new ApiError(500, "internal_error"));
     await renderPanel(ssoSettings());
 
-    expect((within(ssoCard()).getByLabelText("Identity provider") as HTMLInputElement).value).toBe("Acme Entra ID (OpenID Connect)");
+    expect(within(ssoCard()).getByRole("button", { name: "Identity provider, Contoso Entra" })).toBeTruthy();
     expect(claimName()).toBeTruthy();
   });
 
@@ -180,7 +149,7 @@ describe("the Company SSO card", () => {
     expect(claimValues()?.disabled).toBe(true);
     expect(isOff(saveButton())).toBe(true);
     const notice = ssoCard().querySelector(".at-notice--info") as HTMLElement;
-    expect(plain(notice.textContent)).toBe("This event does not use Company SSO, so these fields are off. To use it, choose Company SSO under Access method, on the Access tab of the Registration page.");
+    expect(plain(notice.textContent)).toBe("This event does not use Company SSO, so these fields are off. To use it, choose Company SSO under Access method, above.");
     // The explanation comes first, then the notice, then the fields.
     const parts = [...(ssoCard().querySelector(".access-claim") as HTMLElement).children];
     expect(parts.map((part) => part.className.split(" ")[0])).toEqual(["settings-card-intro", "at-notice", "mail-transport-section"]);
@@ -194,7 +163,7 @@ describe("the Company SSO card", () => {
     cleanup();
 
     await renderPanel(ssoSettings());
-    expect(ssoCard().querySelector(".at-notice")).toBeNull();
+    expect(ssoCard().querySelector(".access-claim > .at-notice")).toBeNull();
     expect(claimName()?.disabled).toBe(false);
   });
 
@@ -440,18 +409,6 @@ describe("the address card and the typed restriction", () => {
     await save();
 
     expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["aaa-111"] });
-  });
-});
-
-describe("the icon of the identity provider", () => {
-  it.each([
-    ["entra", "ti-brand-azure"],
-    ["google", "ti-brand-google"],
-    ["generic", "ti-shield-lock"],
-  ] as const)("is the one of the kind %s", async (kind, icon) => {
-    await renderPanel(ssoSettings({ sso_provider: { ...ACME, kind } }));
-
-    expect(ssoCard().querySelector(".at-inputgroup__icon i")?.className).toContain(icon);
   });
 });
 
