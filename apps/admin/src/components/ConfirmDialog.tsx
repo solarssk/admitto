@@ -6,7 +6,8 @@ import "./confirm-dialog.css";
 
 export type ConfirmDialogProps = {
   open: boolean;
-  /** Tabler icon element shown beside the title (e.g. <i className="ti ti-shield-lock" />). */
+  /** Tabler icon element shown beside the title (e.g. <i className="ti ti-shield-lock" />). Every dialog has one: when it is left out,
+   * the icon of the dialog's severity is used (see `DEFAULT_ICONS`). */
   icon?: ReactNode;
   title: string;
   message: string;
@@ -43,6 +44,13 @@ export type ConfirmDialogProps = {
 };
 
 const ignore = () => undefined;
+
+/** The icon of a dialog that does not name one of its own, by how severe the action is. */
+const DEFAULT_ICONS = {
+  primary: "ti ti-help-circle",
+  warning: "ti ti-alert-circle",
+  danger: "ti ti-alert-triangle",
+} as const;
 
 /** Accessible confirmation modal replacing native window.confirm. */
 export function ConfirmDialog({
@@ -108,11 +116,9 @@ export function ConfirmDialog({
       <ModalBackdrop onClose={loading ? undefined : onCancel} />
       <div ref={panelRef} className={`confirm-dialog__panel${wide ? " confirm-dialog__panel--wide" : ""}`}>
         <h3 id={titleId} className="confirm-dialog__title">
-          {icon && (
-            <span className="confirm-dialog__icon" aria-hidden="true">
-              {icon}
-            </span>
-          )}
+          <span className="confirm-dialog__icon" aria-hidden="true">
+            {icon ?? <i className={DEFAULT_ICONS[confirmVariant]} />}
+          </span>
           {title}
         </h3>
         <p id={descriptionId} className="confirm-dialog__message">

@@ -10,6 +10,23 @@ afterEach(() => {
 });
 
 describe("ConfirmDialog", () => {
+  it("shows the icon of its severity when it names none, and its own icon when it does", () => {
+    const { rerender } = render(
+      <ConfirmDialog open title="Go on?" message="m" onConfirm={vi.fn()} onCancel={vi.fn()} />,
+    );
+    const iconOf = () => screen.getByRole("dialog").querySelector(".confirm-dialog__icon i")?.className;
+    expect(iconOf()).toBe("ti ti-help-circle");
+    rerender(<ConfirmDialog open title="Go on?" message="m" confirmVariant="warning" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    expect(iconOf()).toBe("ti ti-alert-circle");
+    rerender(<ConfirmDialog open title="Go on?" message="m" confirmVariant="danger" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    expect(iconOf()).toBe("ti ti-alert-triangle");
+    rerender(
+      <ConfirmDialog open title="Go on?" message="m" confirmVariant="danger" icon={<i className="ti ti-trash" />} onConfirm={vi.fn()} onCancel={vi.fn()} />,
+    );
+    expect(iconOf()).toBe("ti ti-trash");
+    expect(screen.getByRole("dialog").querySelector(".confirm-dialog__icon")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
   it("renders nothing when closed", () => {
     render(
       <ConfirmDialog
