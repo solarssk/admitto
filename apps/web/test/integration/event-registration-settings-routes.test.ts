@@ -1664,6 +1664,35 @@ describe("the identity provider of an event with the company sign-in", () => {
     expect(res.status).toBe(400);
   });
 
+  it("judges the provider as it is in the transaction: switched off after the environment was read, turning registration on is 409", async () => {
+    const event = await addEvent("idp-switched-off-meanwhile", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+    let reads = 0;
+    const provider = new Proxy(prisma.identityProvider, {
+      get(model, key) {
+        if (key !== "findMany") return Reflect.get(model, key);
+        return async (args: Parameters<typeof model.findMany>[0]) => {
+          const rows = await model.findMany(args);
+          reads += 1;
+          // The first read is the one of the environment, before the transaction: the provider is switched off right after it.
+          if (reads === 1) await model.update({ where: { id: PROVIDER }, data: { enabled: false } });
+          return rows;
+        };
+      },
+    });
+    const racing = new Proxy(prisma, {
+      get(client, key) {
+        if (key === "identityProvider") return provider;
+        const value: unknown = Reflect.get(client, key);
+        return typeof value === "function" ? value.bind(client) : value;
+      },
+    });
+
+    const result = await updateEventRegistrationSettings(racing, { eventId: event.id, patch: { mode: "automatic" }, actor: actorOf(superadminId) });
+
+    expect(result).toEqual({ kind: "not_ready", blockers: ["identity_provider"] });
+    expect((await settingsRow(event.id))?.mode).toBeNull();
+  });
+
   it("refuses a delete of the provider while a save that chose it is under way, instead of failing the write on its key", async () => {
     const event = await addEvent("idp-race");
     let pending: Promise<Response> | null = null;

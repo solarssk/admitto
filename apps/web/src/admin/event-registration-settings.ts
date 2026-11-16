@@ -29,7 +29,7 @@ import { lockAndLoadLegalGateRows, loadLegalGateRows, publishedConsentKeys } fro
 import type { SelectableAccessMethod } from "../registration/access-methods.js";
 import type { BotProtectionMode } from "../registration/bot-protection-mode.js";
 import { isOver } from "../registration/form-model.js";
-import { loadEventSsoProvider, type EventSsoProviderDto, type SelectableSsoProvider } from "../registration/sso-provider.js";
+import { listSelectableSsoProviders, loadEventSsoProvider, type EventSsoProviderDto, type SelectableSsoProvider } from "../registration/sso-provider.js";
 import {
   evaluateRegistrationReadiness,
   loadReadinessEnvironment,
@@ -486,7 +486,7 @@ type SaveRequest = {
 };
 
 async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest): Promise<SettingsUpdate> {
-  const { eventId, patch, actor, environment } = request;
+  const { eventId, patch, actor } = request;
   // The locks first, in the one order: the event's questions, then its texts. A question that is saved meanwhile waits for
   // this transaction and finds the mode it leaves, and a text that is withdrawn meanwhile finds the consents it keeps.
   await acquireEventCustomFieldsLock(tx, eventId);
@@ -501,6 +501,8 @@ async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest):
   // "no such event": held `FOR KEY SHARE`, a delete waits for this save (a switch-off, which changes no key, does not).
   if (patch.sso_provider_id) await tx.$queryRaw`SELECT "id" FROM "IdentityProvider" WHERE "id" = ${patch.sso_provider_id} FOR KEY SHARE`;
   const ssoProvider = await loadEventSsoProvider(tx, after.sso_provider_id);
+  // The list of providers is read again here, in the transaction: the one read with the rest of the environment, before the locks, may be older than a switch-off.
+  const environment = { ...request.environment, enabledSsoProviders: await listSelectableSsoProviders(tx) };
   const refusal = refusalOf({ patch, before: stored.values, after, published: publishedConsentKeys(legalRows), provider: ssoProvider, canChange: request.canChangeSsoClaim });
   if (refusal) return { kind: refusal };
 
