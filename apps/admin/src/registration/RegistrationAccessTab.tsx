@@ -11,7 +11,7 @@ import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "../settings/Se
 import { assertPresent } from "../utils/assert-present.js";
 import { RegistrationAccessForm } from "./RegistrationAccessForm.js";
 
-const ACCESS_HINT = "Whether guests can register for this event, how they get in, and what the form asks them.";
+const ACCESS_HINT = "Whether guests can register for this event, the access method, and what the form asks them.";
 
 /** The cards of the tab as its placeholder draws them: the real titles, over rows that make each card about as tall as the real one
  * at 1280px (272, 731 for ten checks, 177, 553 and 256 for three questions, measured in Chrome on an event that is ready). */
