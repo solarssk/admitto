@@ -92,6 +92,25 @@ describe("the Company SSO card", () => {
     expect(ssoCard().querySelector(".access-provider .at-notice")).toBeNull();
   });
 
+  it("takes the list of providers from the answer of a save of the claim, so a provider turned off meanwhile is marked and the form is said to be closed", async () => {
+    await renderPanel(ssoSettings());
+    api.saveRegistrationSettings.mockResolvedValue(
+      ssoSettings({
+        sso_claim_name: "tid",
+        sso_claim_values: ["aaa-111"],
+        sso_providers: [{ id: "idp-google", display_name: "Contoso Google", kind: "google" }],
+        sso_provider: { id: "idp-entra", state: "disabled", display_name: "Contoso Entra", kind: "entra" },
+      }),
+    );
+    type(claimName(), "tid");
+    type(claimValues(), "aaa-111");
+
+    await save();
+
+    await waitFor(() => expect(within(ssoCard()).getByRole("button", { name: "Identity provider, Contoso Entra (turned off)" })).toBeTruthy());
+    expect(plain(ssoCard().querySelector(".access-provider .at-notice--warning")?.textContent)).toMatch(/^Contoso Entra is turned off, so the form stays closed\./);
+  });
+
   it("reads the provider from the settings of the event, and still works, when the return addresses cannot be read", async () => {
     api.fetchRegistrationSsoProvider.mockRejectedValue(new ApiError(500, "internal_error"));
     await renderPanel(ssoSettings());

@@ -294,6 +294,7 @@ function EventRegistrationCards({
         sso_claim_values: answer.sso_claim_values,
         sso_provider_id: answer.sso_provider_id,
         sso_provider: answer.sso_provider,
+        sso_providers: answer.sso_providers,
         password_set: answer.password_set,
       }));
       const next = technicalOf(draftFromSettings(answer));
