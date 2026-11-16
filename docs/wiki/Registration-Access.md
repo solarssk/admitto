@@ -115,6 +115,8 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 - The guest signs in with the identity provider chosen for the event. The form shows the email address from that sign-in, and the guest cannot change it. A sign-in without an email address cannot register.
 - A guest who signs in does not get an Admitto account and cannot open the staff screens.
 - The restriction compares the value in the sign-in with your list. It must match exactly, with capital letters as they are, and a match with any one value is enough. A list holds up to 20 values.
+- A claim that holds a list, such as `groups`, works too: a guest who is in any of the groups you list can register. If the provider sends no such claim for a guest (Microsoft Entra ID sends no group list for a person in too many groups), that guest cannot register.
+- Example: claim `tid` with the tenant ID of your company lets only people of that company register. Claim `groups` with two group IDs lets only members of those groups register.
 - Use a claim that the identity provider vouches for, such as the tenant. Never use the end of an email address: it says where mail goes, not who the person is.
 - A change of the restriction counts at once, also for guests who have already signed in. A guest who does not match sees a message and cannot register.
 - Moving the event to another way removes the restriction.

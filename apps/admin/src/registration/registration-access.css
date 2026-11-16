@@ -122,19 +122,18 @@
   display: contents;
 }
 
-/* The field, Set address, Check now and Remove stand in one row that is half of the card, as the rows of the Weather card are. The field
- * is what gives way (it shrinks to 8rem, so that all four fit in the half of the card at 1280px); the buttons keep their width. When they do not fit, the buttons wrap under the field
- * and never leave the card. On a narrow screen the row takes the whole card. */
+/* The field and Set address together are the half of the card, with an address or without one. Check now and Remove come after them, to
+ * the right, and may reach past the half. The buttons keep their width; when the row is too narrow they wrap under the field and never
+ * leave the card. On a narrow screen the field takes what is left of its line. */
 .access-address__row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  max-width: 50%;
 }
 
 .access-address__row > .access-address__field {
-  flex: 1 1 0;
+  flex: 0 1 calc(50% - 7rem);
   min-width: min(8rem, 100%);
 }
 
@@ -143,8 +142,8 @@
 }
 
 @media (max-width: 640px) {
-  .access-address__row {
-    max-width: none;
+  .access-address__row > .access-address__field {
+    flex: 1 1 10rem;
   }
 }
 

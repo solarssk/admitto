@@ -141,12 +141,15 @@ describe("the Company SSO card", () => {
     await renderPanel(ssoSettings());
     const text = plain(ssoCard().textContent);
 
-    expect(text).toMatch(/the identity provider sends facts about the guest, called claims/);
-    expect(text).toMatch(/Name one claim and list the values that may register/);
-    expect(text).toMatch(/With Microsoft Entra ID, the claim is usually tid/);
-    expect(text).toMatch(/Leave both fields empty for no restriction\./);
-    expect(text).toMatch(/must match exactly, with capital letters as they are\./);
-    expect(text).toMatch(/Never use the end of an email address here/);
+    expect(text).toMatch(/Limit who can register\. The identity provider tells us facts about each guest, called claims\./);
+    expect(text).toMatch(/Name a claim and list the values that may register\./);
+    expect(text).toMatch(/Example: the claim tid with the ID of your company, so only people of that company can register\./);
+    expect(text).toMatch(/A claim that holds a list, such as groups, works too: a guest who is in any listed group can register\./);
+    expect(text).toMatch(/Leave both fields empty for no limit\./);
+    expect(text).toMatch(/The name of the fact to check, for example tid\./);
+    expect(text).toMatch(/The grey lines are an example, not values\./);
+    expect(text).toMatch(/Values must match exactly, capital letters too\./);
+    expect(text).toMatch(/Never use the end of an email address/);
     expect(text).not.toMatch(/[–—]/);
   });
 
