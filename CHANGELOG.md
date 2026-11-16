@@ -79,7 +79,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Use one name for each thing in the Registration screens (Company SSO, How guests open the form, restriction, Off), and explain claims, CNAME and Host header in plain words ([#1929](https://github.com/solarssk/admitto/pull/1929))
 - Let each event choose its own identity provider for Company SSO, with several providers possible, instead of one for the whole instance, set by a superadmin only (server only, screens follow) ([#1933](https://github.com/solarssk/admitto/pull/1933))
 - Move how guests open the form (access method, event password, identity provider for Company SSO) to Event settings, Registration, for superadmins; the Access tab only shows it ([#1934](https://github.com/solarssk/admitto/pull/1934))
-- Remove the Ways in card from External services: how guests open the form is set on each event
+- Remove the Ways in card from External services: how guests open the form is set on each event ([#1939](https://github.com/solarssk/admitto/pull/1939))
 - Show the Open-Meteo API key like the other secret keys: a locked box with Set, Change and Clear, and never its value ([#1932](https://github.com/solarssk/admitto/pull/1932))
 
 ### Fixed
