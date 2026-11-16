@@ -61,6 +61,12 @@ interface AccessMethodState {
   provider: RegistrationSettingsDto["sso_provider"];
 }
 
+/** The sentence of a row: what the access method is, for that row when it is met; else the words of the check for its state. */
+function rowSentence(ok: boolean, copy: ReadinessCopy, accessMethod: AccessMethodState | null): string {
+  if (accessMethod !== null) return accessMethodDetail(accessMethod.method, accessMethod.provider);
+  return ok ? copy.met : copy.missing;
+}
+
 function ReadinessRow({
   eventId,
   check,
@@ -80,7 +86,7 @@ function ReadinessRow({
           <span className="sr-only">{look.prefix}</span>
           {copy.title}
         </strong>
-        <span className="overview-check__detail">{states ? accessMethodDetail(accessMethod.method, accessMethod.provider) : check.ok ? copy.met : copy.missing}</span>
+        <span className="overview-check__detail">{rowSentence(check.ok, copy, states ? accessMethod : null)}</span>
         {states && <span className="overview-check__detail">{ACCESS_METHOD_SET_BY}</span>}
         {!check.ok && <ReadinessRemedy eventId={eventId} remedy={remedyFor(copy, superadmin)} />}
       </span>
