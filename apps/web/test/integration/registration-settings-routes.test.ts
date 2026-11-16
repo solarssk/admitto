@@ -8,9 +8,7 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { decryptFromString, encryptToString, SECRET_CONTEXTS } from "@admitto/crypto";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
-import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
-import { SSO_PROVIDER_SETTINGS_KEY, ssoProviderKind } from "../../src/registration/sso-provider.js";
 import { readRedirectUris } from "../../src/admin/registration-settings-routes.js";
 import { verifyBotChallenge, botChallengeCData } from "../../src/registration/bot-challenge.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
@@ -45,9 +43,13 @@ const ROUTES: Array<{ method: string; path: string; body?: unknown }> = [
   { method: "PUT", path: "/api/admin/registration/turnstile", body: { bot_protection: "not_used" } },
   { method: "POST", path: "/api/admin/registration/turnstile/test", body: {} },
   { method: "DELETE", path: "/api/admin/registration/turnstile" },
+  { method: "GET", path: "/api/admin/registration/sso-provider" },
+];
+
+/** What the old screens called: the list of ways in the organisation enabled, and the one provider for the whole instance. */
+const REMOVED_ROUTES: Array<{ method: string; path: string; body?: unknown }> = [
   { method: "GET", path: "/api/admin/registration/access-methods" },
   { method: "PUT", path: "/api/admin/registration/access-methods", body: { methods: ["link"] } },
-  { method: "GET", path: "/api/admin/registration/sso-provider" },
   { method: "PUT", path: "/api/admin/registration/sso-provider", body: { provider_id: null } },
 ];
 
@@ -69,7 +71,7 @@ async function storedValue(key: string): Promise<string | null> {
 
 async function cleanSettings() {
   await prisma.systemSettings.deleteMany({
-    where: { key: { in: [TURNSTILE_SETTINGS_KEY, ACCESS_METHODS_SETTINGS_KEY, SSO_PROVIDER_SETTINGS_KEY, BOT_PROTECTION_SETTINGS_KEY] } },
+    where: { key: { in: [TURNSTILE_SETTINGS_KEY, BOT_PROTECTION_SETTINGS_KEY] } },
   });
 }
 
@@ -148,7 +150,6 @@ describe("who may use the registration settings routes", () => {
       expect(asAdmin.status).toBe(403);
       expect(await asAdmin.json()).toEqual({ error: "forbidden" });
       expect(await storedValue(TURNSTILE_SETTINGS_KEY)).toBeNull();
-      expect(await storedValue(ACCESS_METHODS_SETTINGS_KEY)).toBeNull();
       expect(await storedValue(BOT_PROTECTION_SETTINGS_KEY)).toBeNull();
       expect(await auditRows()).toHaveLength(0);
     },
@@ -215,29 +216,6 @@ describe("the mode of the bot check, end to end (A2)", () => {
     ]);
     expect(rows[0]!.actor_email).toBe(EMAILS.superadmin);
     expect(rows[0]!.organization_id).toBe(await resolveInstanceOrganizationId(prisma));
-  });
-
-  it("opens the link and the password with no keys at all, once it is not used, and closes them again when it is required", async () => {
-    await put("/api/admin/registration/access-methods", { methods: ["link", "password"] });
-    const blocked = async () => {
-      const res = await app.request("/api/admin/registration/access-methods", { headers: { Cookie: superCookie } });
-      return ((await res.json()) as { methods: Array<{ method: string; available: boolean; blocked_by: string | null }> }).methods;
-    };
-    expect((await blocked()).map((entry) => [entry.method, entry.available, entry.blocked_by])).toEqual([
-      ["link", false, "bot_protection"],
-      ["password", false, "bot_protection"],
-      ["sso", false, null],
-    ]);
-
-    await put("/api/admin/registration/turnstile", { bot_protection: "not_used" });
-    expect((await blocked()).map((entry) => [entry.method, entry.available, entry.blocked_by])).toEqual([
-      ["link", true, null],
-      ["password", true, null],
-      ["sso", false, null],
-    ]);
-
-    await put("/api/admin/registration/turnstile", { bot_protection: "required" });
-    expect((await blocked()).map((entry) => entry.available)).toEqual([false, false, false]);
   });
 
   it("refuses a mode that is not one of the two, and writes nothing", async () => {
@@ -388,8 +366,6 @@ describe("registration_captcha in the Health check", () => {
   // have left an event with registration on, so start each test with this file's own event only.
   beforeEach(async () => {
     await prisma.eventRegistrationSettings.deleteMany({ where: { event_id: { not: EVENT_ID } } });
-    // The row only counts methods the administrator has turned on for everyone.
-    await put("/api/admin/registration/access-methods", { methods: ["link", "password"] });
   });
 
   it("stays quiet until an event uses registration, warns then, and is ok with the keys", async () => {
@@ -429,26 +405,6 @@ describe("registration_captcha in the Health check", () => {
     expect(await healthRow()).toMatchObject({ status: "degraded" });
   });
 
-  it("does not count a method the administrator turned off for everyone, even when the event still lists it", async () => {
-    await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
-    await prisma.eventRegistrationSettings.upsert({
-      where: { event_id: EVENT_ID },
-      create: { event_id: EVENT_ID, mode: "automatic", access_methods: ["link"] },
-      update: { mode: "automatic", access_methods: ["link"] },
-    });
-    expect(await healthRow()).toMatchObject({ status: "degraded" });
-
-    await put("/api/admin/registration/access-methods", { methods: [] });
-    expect(await healthRow()).toMatchObject({ status: "not_configured" });
-
-    // Only the other challenged method is on: the event's own list has no overlap with it.
-    await put("/api/admin/registration/access-methods", { methods: ["password"] });
-    expect(await healthRow()).toMatchObject({ status: "not_configured" });
-
-    await put("/api/admin/registration/access-methods", { methods: ["link"] });
-    expect(await healthRow()).toMatchObject({ status: "degraded" });
-  });
-
   it("does not count an event whose registration is off", async () => {
     await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
     await prisma.eventRegistrationSettings.update({ where: { event_id: EVENT_ID }, data: { mode: null } });
@@ -456,71 +412,18 @@ describe("registration_captcha in the Health check", () => {
   });
 });
 
-describe("access methods, end to end", () => {
-  it("start empty and unavailable", async () => {
-    await cleanSettings();
-    const res = await app.request("/api/admin/registration/access-methods", { headers: { Cookie: superCookie } });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { methods: Array<{ method: string; enabled: boolean; available: boolean }> };
-    expect(body.methods.map((m) => [m.method, m.enabled, m.available])).toEqual([
-      ["link", false, false],
-      ["password", false, false],
-      ["sso", false, false],
-    ]);
-  });
+describe("the routes of the old ways in and provider screens", () => {
+  it.each(REMOVED_ROUTES.map((route) => [`${route.method} ${route.path}`, route] as const))("%s is gone, also for a superadmin, and writes nothing", async (_label, route) => {
+    const before = (await auditRows()).length;
 
-  it("make the link and the password available only with the keys, and SSO whatever the provider chosen for the instance (it is the event's own)", async () => {
-    const enable = await put("/api/admin/registration/access-methods", { methods: ["link", "password", "sso"] });
-    expect(enable.status).toBe(200);
-    const before = (await enable.json()) as { methods: Array<{ method: string; available: boolean; blocked_by: string | null }> };
-    expect(before.methods.map((m) => [m.method, m.available, m.blocked_by])).toEqual([
-      ["link", false, "bot_protection"],
-      ["password", false, "bot_protection"],
-      ["sso", true, null],
-    ]);
+    const res = await call(route, superCookie);
 
-    await put("/api/admin/registration/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
-    const provider = await prisma.identityProvider.create({
-      data: {
-        issuer: IDP_ISSUER,
-        client_id: "reg-settings-client",
-        authorization_endpoint: `${IDP_ISSUER}/authorize`,
-        token_endpoint: `${IDP_ISSUER}/token`,
-        jwks_uri: `${IDP_ISSUER}/jwks`,
-        display_name: "Reg Settings IdP",
-        enabled: true,
-      },
-    });
-    const availability = async () => {
-      const res = await app.request("/api/admin/registration/access-methods", { headers: { Cookie: superCookie } });
-      return ((await res.json()) as { methods: Array<{ method: string; available: boolean }> }).methods.map((m) => [m.method, m.available]);
-    };
-    // The enabled provider is not what makes the way in available: it needs no provider of the instance.
-    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", true]]);
-
-    expect((await put("/api/admin/registration/sso-provider", { provider_id: provider.id })).status).toBe(200);
-    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", true]]);
-
-    await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: false } });
-    await prisma.identityProvider.delete({ where: { id: provider.id } });
-    expect(await availability()).toEqual([["link", true], ["password", true], ["sso", true]]);
-  });
-
-  it("are audited with the list that is now enabled", async () => {
-    await put("/api/admin/registration/access-methods", { methods: ["password"] });
-    const rows = (await auditRows()).filter((row) => row.action_type === "registration_access_methods_updated");
-    expect(rows.at(-1)!.metadata).toEqual({ methods: ["password"] });
-  });
-
-  it("refuse an unknown method and keep the list as it was", async () => {
-    const before = await storedValue(ACCESS_METHODS_SETTINGS_KEY);
-    const res = await put("/api/admin/registration/access-methods", { methods: ["password", "carrier-pigeon"] });
-    expect(res.status).toBe(400);
-    expect(await storedValue(ACCESS_METHODS_SETTINGS_KEY)).toBe(before);
+    expect(res.status).toBe(404);
+    expect(await auditRows()).toHaveLength(before);
   });
 });
 
-describe("the identity provider guests sign in with, end to end (D-C4)", () => {
+describe("the return addresses of the guests' sign-in, end to end (D-C6)", () => {
   let providerId = "";
 
   beforeAll(async () => {
@@ -550,12 +453,7 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
 
   const read = (cookie = superCookie) => app.request("/api/admin/registration/sso-provider", { headers: { Cookie: cookie } });
 
-  type Offered = { provider_id: string | null; state: string; providers: { id: string; display_name: string; kind: string }[]; redirect_uri: string | null };
-  const byId = (a: { id: string }, b: { id: string }): number => a.id.localeCompare(b.id);
-  /** The providers the route can offer: the enabled ones of this worker's schema, in which another test file may have left rows. */
-  const enabledProviders = async () =>
-    (await prisma.identityProvider.findMany({ where: { enabled: true }, select: { id: true, display_name: true, issuer: true } })).map((provider) => ({ id: provider.id, display_name: provider.display_name, kind: ssoProviderKind(provider.issuer) })).sort(byId);
-  const offered = (body: Offered) => [...body.providers].sort(byId);
+  type Offered = { redirect_uri: string | null };
 
   it("is for a superadmin alone: signed out is 401, an admin and an operator are 403, and nothing is written", async () => {
     for (const route of ROUTES.filter((candidate) => candidate.path.endsWith("/sso-provider"))) {
@@ -566,45 +464,17 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
         expect(await res.json()).toEqual({ error: "forbidden" });
       }
     }
-    expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBeNull();
   });
 
-  it("refuses a write from another site", async () => {
-    const res = await app.request("/api/admin/registration/sso-provider", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Origin: "https://evil.example.net", Cookie: superCookie },
-      body: JSON.stringify({ provider_id: providerId }),
-    });
-
-    expect(res.status).toBe(403);
-    expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBeNull();
-  });
-
-  it("lists the providers that can be chosen, chooses one, and audits it", async () => {
-    const before = (await (await read()).json()) as Offered;
-    expect(before).toMatchObject({ provider_id: null, state: "not_selected" });
-    expect(offered(before)).toEqual(await enabledProviders());
-    expect(offered(before)).toContainEqual({ id: providerId, display_name: "Reg Settings IdP", kind: "generic" });
-
-    const chosen = await put("/api/admin/registration/sso-provider", { provider_id: providerId });
-
-    expect(chosen.status).toBe(200);
-    expect(await chosen.json()).toMatchObject({ provider_id: providerId, state: "ready" });
-    expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBe(JSON.stringify(providerId));
-    const entry = (await auditRows()).filter((row) => row.action_type === "registration_sso_provider_updated").at(-1);
-    expect(entry?.metadata).toEqual({ provider_id: providerId, previous_provider_id: null });
-  });
-
-  it("gives the one address the provider lists for the guests' sign-in, from the address of the instance, on the read and on the write", async () => {
+  it("gives the one address the provider lists for the guests' sign-in, from the address of the instance, and no field of a provider", async () => {
     const read1 = (await (await read()).json()) as Offered;
-    const written = (await (await put("/api/admin/registration/sso-provider", { provider_id: providerId })).json()) as Offered;
 
     // The instance of this test has the address https://tickets.example.com; the sign-in builds its redirect on the same one.
     expect(read1.redirect_uri).toBe("https://tickets.example.com/sso/callback");
-    expect(written.redirect_uri).toBe(read1.redirect_uri);
+    expect(Object.keys(read1).sort()).toEqual(["redirect_uri", "redirect_uris"]);
   });
 
-  it("builds the address from the saved Instance URL when the server has no BASE_URL and none is injected, on the read and on the write", async () => {
+  it("builds the address from the saved Instance URL when the server has no BASE_URL and none is injected", async () => {
     const savedEnv = process.env.BASE_URL;
     delete process.env.BASE_URL;
     const saved = JSON.stringify("https://saved.example.com");
@@ -612,14 +482,8 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
     try {
       const fromSaved = createApp({ prisma, rateLimitStore: new InMemoryRateLimitStore(), skipCheckinBootValidation: true, adminDistRoot });
       const readOnce = await fromSaved.request("/api/admin/registration/sso-provider", { headers: { Cookie: superCookie } });
-      const written = await fromSaved.request("/api/admin/registration/sso-provider", {
-        method: "PUT",
-        headers: { ...jsonHeaders, Cookie: superCookie },
-        body: JSON.stringify({ provider_id: providerId }),
-      });
 
       expect(((await readOnce.json()) as Offered).redirect_uri).toBe("https://saved.example.com/sso/callback");
-      expect(((await written.json()) as Offered).redirect_uri).toBe("https://saved.example.com/sso/callback");
     } finally {
       if (savedEnv !== undefined) process.env.BASE_URL = savedEnv;
       await prisma.systemSettings.deleteMany({ where: { key: "instance_url" } });
@@ -654,10 +518,8 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
       ];
 
       const readBody = (await (await read()).json()) as Offered & { redirect_uris: unknown };
-      const written = (await (await put("/api/admin/registration/sso-provider", { provider_id: providerId })).json()) as Offered & { redirect_uris: unknown };
 
       expect(readBody.redirect_uris).toEqual(expected);
-      expect(written.redirect_uris).toEqual(expected);
       // The one address of the instance stays where the screens that read one find it.
       expect(readBody.redirect_uri).toBe(instance.uri);
     } finally {
@@ -670,63 +532,5 @@ describe("the identity provider guests sign in with, end to end (D-C4)", () => {
     const body = (await (await read()).json()) as Offered & { redirect_uris: unknown };
     expect(body.redirect_uris).toEqual([{ uri: "https://tickets.example.com/sso/callback", host: "instance", verified: true }]);
     expect(await readRedirectUris(prisma, null)).toEqual([]);
-  });
-
-  it("never sends a field of the provider but its id, its name and its kind", async () => {
-    await put("/api/admin/registration/sso-provider", { provider_id: providerId });
-
-    const text = await (await read()).text();
-
-    expect(text).not.toContain("must-never-leave");
-    expect(text).not.toContain(IDP_ISSUER);
-    expect(text).not.toContain("reg-settings-client");
-  });
-
-  it("says the choice is gone or off when the provider was deleted or switched off, and keeps the row", async () => {
-    await put("/api/admin/registration/sso-provider", { provider_id: providerId });
-
-    await prisma.identityProvider.update({ where: { id: providerId }, data: { enabled: false } });
-    const off = (await (await read()).json()) as Offered;
-    expect(off).toMatchObject({ provider_id: providerId, state: "disabled" });
-    expect(offered(off).map((provider) => provider.id)).not.toContain(providerId);
-    expect(offered(off)).toEqual(await enabledProviders());
-    await prisma.identityProvider.update({ where: { id: providerId }, data: { enabled: true } });
-    expect(await (await read()).json()).toMatchObject({ state: "ready" });
-    await prisma.identityProvider.delete({ where: { id: providerId } });
-    expect(await (await read()).json()).toMatchObject({ provider_id: providerId, state: "missing" });
-    expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBe(JSON.stringify(providerId));
-  });
-
-  it("refuses a provider that is not there or is off, with one answer, and saves nothing", async () => {
-    const other = await prisma.identityProvider.create({
-      data: {
-        issuer: `${IDP_ISSUER}/off`,
-        client_id: "reg-settings-off",
-        authorization_endpoint: `${IDP_ISSUER}/authorize`,
-        token_endpoint: `${IDP_ISSUER}/token`,
-        jwks_uri: `${IDP_ISSUER}/jwks`,
-        display_name: "Off",
-        enabled: false,
-      },
-    });
-    try {
-      for (const id of ["nobody", other.id]) {
-        const res = await put("/api/admin/registration/sso-provider", { provider_id: id });
-        expect(res.status).toBe(422);
-        expect(await res.json()).toEqual({ error: "provider_not_available" });
-      }
-      expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBeNull();
-    } finally {
-      await prisma.identityProvider.delete({ where: { id: other.id } });
-    }
-  });
-
-  it("removes the choice with null", async () => {
-    await put("/api/admin/registration/sso-provider", { provider_id: providerId });
-
-    const res = await put("/api/admin/registration/sso-provider", { provider_id: null });
-
-    expect(await res.json()).toMatchObject({ provider_id: null, state: "not_selected" });
-    expect(await storedValue(SSO_PROVIDER_SETTINGS_KEY)).toBeNull();
   });
 });

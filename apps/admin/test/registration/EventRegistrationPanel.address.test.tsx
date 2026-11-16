@@ -23,7 +23,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
     saveRegistrationSettings: (...args: unknown[]) => mocks.saveRegistrationSettings(...args),
     fetchLegalDocuments: (...args: unknown[]) => mocks.fetchLegalDocuments(...args),
-    fetchRegistrationSsoProvider: (...args: unknown[]) => mocks.fetchRegistrationSsoProvider(...args),
+    fetchRegistrationReturnAddresses: (...args: unknown[]) => mocks.fetchRegistrationReturnAddresses(...args),
     saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
     checkCustomDomain: (...args: unknown[]) => mocks.checkCustomDomain(...args),
   };
@@ -70,7 +70,7 @@ const type = (value: string) => fireEvent.change(field(), { target: { value } })
 beforeEach(() => {
   resetApi();
   goToLogin.mockReset();
-  api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: null, state: "none", providers: [], redirect_uri: null, redirect_uris: [] });
+  api.fetchRegistrationReturnAddresses.mockResolvedValue({ provider_id: null, state: "none", providers: [], redirect_uri: null, redirect_uris: [] });
 });
 
 afterEach(() => {

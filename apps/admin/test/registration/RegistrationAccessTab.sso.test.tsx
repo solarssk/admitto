@@ -88,7 +88,7 @@ describe("the setup checklist of an event with the company SSO", () => {
 
     expect(screen.queryByText("Bot protection")).toBeNull();
     expect(within(card("Setup checklist")).getByText("Identity provider")).toBeTruthy();
-    expect(rows()).toHaveLength(10);
+    expect(rows()).toHaveLength(9);
   });
 
   it("says what to do, and who sets providers up, when the identity provider is not chosen", async () => {

@@ -16,7 +16,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...(await importOriginal<typeof import("../../src/api/client.js")>()),
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
     saveRegistrationSettings: (...args: unknown[]) => mocks.saveRegistrationSettings(...args),
-    fetchRegistrationSsoProvider: (...args: unknown[]) => mocks.fetchRegistrationSsoProvider(...args),
+    fetchRegistrationReturnAddresses: (...args: unknown[]) => mocks.fetchRegistrationReturnAddresses(...args),
     saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
     checkCustomDomain: (...args: unknown[]) => mocks.checkCustomDomain(...args),
   };
@@ -93,13 +93,6 @@ describe("the access method of an event, in Event settings", () => {
 
     expect([isGreyed("Link"), isGreyed("Password"), isGreyed("Company SSO")]).toEqual([false, false, false]);
     for (const name of ["Link", "Password", "Company SSO"]) expect(getTooltipText(radio(name))).toBeNull();
-  });
-
-  it("does not read the list of enabled methods any more: a settings answer without it greys nothing", async () => {
-    const { enabled_access_methods: _gone, ...without } = settings();
-    await renderPanel(without as RegistrationSettingsDto);
-
-    expect([isGreyed("Link"), isGreyed("Password"), isGreyed("Company SSO")]).toEqual([false, false, false]);
   });
 
   it("is free of axe violations", async () => {

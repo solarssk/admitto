@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { RegistrantFormField } from "@admitto/tickets";
-import { computeAccessMethodAvailability } from "../../src/registration/access-methods.js";
 import { isRequiredFieldOffForm } from "../../src/registration/field-on-form.js";
 import {
   READINESS_KEYS,
@@ -24,7 +23,6 @@ const PUBLISHED = new Date("2026-10-20T10:00:00Z");
 const PROVIDER = { id: "idp-1", display_name: "Example sign-in", kind: "generic" as const };
 
 const environment = (overrides: Partial<ReadinessEnvironment> = {}): ReadinessEnvironment => ({
-  availability: computeAccessMethodAvailability({ enabled: ["link", "password"], botProtectionReady: true }),
   botProtectionReady: true,
   botProtectionMode: "required",
   enabledSsoProviders: [PROVIDER],
@@ -118,9 +116,7 @@ describe("the company sign-in (D-C4)", () => {
   const sso = (overrides: Partial<ReadinessInput> = {}) =>
     ready({
       settings: { access_methods: ["sso"], consent_keys: [], password_set: false, sso_provider_id: "idp-1" },
-      environment: environment({
-        availability: computeAccessMethodAvailability({ enabled: ["sso"], botProtectionReady: true }),
-      }),
+      environment: environment(),
       ...overrides,
     });
 
@@ -157,14 +153,6 @@ describe("the company sign-in (D-C4)", () => {
     expect(withProvider("idp-1", [{ ...PROVIDER, id: "idp-2" }])).toEqual(["identity_provider"]);
   });
 
-  it("needs the system to have turned the way in on", () => {
-    const off = environment({
-      availability: computeAccessMethodAvailability({ enabled: ["link"], botProtectionReady: true }),
-    });
-
-    expect(blockersOf(sso({ environment: off }))).toEqual(["access_method_enabled"]);
-  });
-
   it("does not ask the link or the password for the identity provider, whatever state it is in", () => {
     const input = ready({ environment: environment({ enabledSsoProviders: [] }) });
 
@@ -178,14 +166,6 @@ describe("each check alone", () => {
     ["access_method", ready({ settings: { access_methods: [], consent_keys: [], password_set: false, sso_provider_id: null } })],
     ["access_method", ready({ settings: { access_methods: ["link", "password"], consent_keys: [], password_set: true, sso_provider_id: null } })],
     ["access_method", ready({ settings: { access_methods: ["sso", "link"], consent_keys: [], password_set: false, sso_provider_id: null } })],
-    [
-      "access_method_enabled",
-      ready({
-        environment: environment({
-          availability: computeAccessMethodAvailability({ enabled: ["password"], botProtectionReady: true }),
-        }),
-      }),
-    ],
     ["bot_protection", ready({ environment: environment({ botProtectionReady: false }) })],
     ["password", ready({ settings: { access_methods: ["password"], consent_keys: [], password_set: false, sso_provider_id: null } })],
     ["legal_documents", ready({ event: eventFacts({ legalRows: [] }) })],
@@ -220,11 +200,11 @@ describe("each check alone", () => {
     expect(blockers).toEqual(READINESS_KEYS.filter((key) => blockers.includes(key)));
   });
 
-  it("says nothing about whether the chosen way in is enabled while none is chosen", () => {
+  it("names no check but the access method while none is chosen, and has no check of a list of enabled ways in any more", () => {
     const input = ready({ settings: { access_methods: [], consent_keys: [], password_set: false, sso_provider_id: null } });
 
-    expect(keysOf(input)).not.toContain("access_method_enabled");
     expect(blockersOf(input)).toEqual(["access_method"]);
+    expect(READINESS_KEYS as readonly string[]).not.toContain("access_method_enabled");
   });
 
   it("holds a published consent as met and a draft one as missing", () => {

@@ -31,7 +31,6 @@ export function ssoEventSettings(overrides: Partial<RegistrationSettingsDto> = {
 /** The checks of an event that has chosen the link, in the order the server lists them. */
 const LINK_KEYS: readonly RegistrationReadinessKey[] = [
   "access_method",
-  "access_method_enabled",
   "bot_protection",
   "legal_documents",
   "form_questions",
@@ -52,7 +51,6 @@ export function settings(overrides: Partial<RegistrationSettingsDto> = {}): Regi
   return {
     mode: null,
     access_methods: ["link"],
-    enabled_access_methods: ["link", "password", "sso"],
     bot_protection: "required",
     waitlist_enabled: true,
     verify_email: true,

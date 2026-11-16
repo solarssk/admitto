@@ -101,8 +101,6 @@ export type OwnAddressDto = {
 };
 
 export type RegistrationSettingsDto = SettingsValues & {
-  /** The ways in a superadmin has turned on for the organisation: the ones an event may choose. An event that already has another one keeps it. */
-  enabled_access_methods: RegistrationAccessMethod[];
   /** The provider the event chose (`sso_provider_id`) with its name, kind and state, or null for no choice. */
   sso_provider: EventSsoProviderDto | null;
   /** What an event may choose for the company sign-in: the enabled OIDC providers. The organiser who saves the event is not a superadmin,
@@ -458,7 +456,6 @@ function toDto(args: {
     ...values,
     sso_provider: ssoProvider,
     sso_providers: [...environment.enabledSsoProviders],
-    enabled_access_methods: environment.availability.filter((entry) => entry.enabled).map((entry) => entry.method),
     bot_protection: environment.botProtectionMode,
     password_set: passwordSet,
     guest_url:

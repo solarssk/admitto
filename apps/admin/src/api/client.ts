@@ -94,7 +94,7 @@ import type {
   SaveMapsSettingsBody,
   RegistrationTurnstileDto,
   SaveRegistrationTurnstileBody,
-  RegistrationSsoProviderDto,
+  RegistrationReturnAddressesDto,
   LegalDocumentDto,
   LegalDocumentsListResponse,
   LegalDocumentWithContentDto,
@@ -2624,10 +2624,10 @@ export async function testRegistrationTurnstile(body: { secret_key?: string }): 
   return parseJson<ConnectionTestResponse>(res);
 }
 
-/** The identity provider guests sign in with, the ones that can be chosen and the address to list at the provider. Superadmin only. */
-export async function fetchRegistrationSsoProvider(signal?: AbortSignal): Promise<RegistrationSsoProviderDto> {
+/** The addresses to list at the identity provider for the guests' company SSO. Superadmin only. */
+export async function fetchRegistrationReturnAddresses(signal?: AbortSignal): Promise<RegistrationReturnAddressesDto> {
   const res = await fetch("/api/admin/registration/sso-provider", { credentials: "same-origin", signal });
-  return parseJson<RegistrationSsoProviderDto>(res);
+  return parseJson<RegistrationReturnAddressesDto>(res);
 }
 
 function legalDocumentsUrl(eventId: string, ref?: string): string {

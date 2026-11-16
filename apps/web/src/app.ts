@@ -414,11 +414,8 @@ import {
 } from "./admin/external-services-routes.js";
 import {
   handleDeleteRegistrationTurnstile,
-  handleGetRegistrationAccessMethods,
   handleGetRegistrationSsoProvider,
   handleGetRegistrationTurnstile,
-  handlePutRegistrationAccessMethods,
-  handlePutRegistrationSsoProvider,
   handlePutRegistrationTurnstile,
   handlePostRegistrationTurnstileTest,
 } from "./admin/registration-settings-routes.js";
@@ -2065,25 +2062,8 @@ export function createApp(options: CreateAppOptions = {}) {
   app.delete("/api/admin/registration/turnstile", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteRegistrationTurnstile(c, db),
   );
-  app.get("/api/admin/registration/access-methods", staffAdminGate, (c) =>
-    handleGetRegistrationAccessMethods(c, db),
-  );
-  app.put(
-    "/api/admin/registration/access-methods",
-    mailSettingsBodyLimit,
-    jsonPostCsrf,
-    staffAdminGate,
-    (c) => handlePutRegistrationAccessMethods(c, db),
-  );
   app.get("/api/admin/registration/sso-provider", staffAdminGate, (c) =>
     handleGetRegistrationSsoProvider(c, db, oidcPublicBaseUrl),
-  );
-  app.put(
-    "/api/admin/registration/sso-provider",
-    mailSettingsBodyLimit,
-    jsonPostCsrf,
-    staffAdminGate,
-    (c) => handlePutRegistrationSsoProvider(c, db, oidcPublicBaseUrl),
   );
   app.get("/api/admin/notification-settings", staffAdminGate, (c) =>
     handleGetNotificationSettings(c, db),
