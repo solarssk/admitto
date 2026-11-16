@@ -1628,7 +1628,7 @@ async function registrationCaptchaRow(db: PrismaClient, checkedAt: string): Prom
   // SSO needs no challenge, so an event that only offers SSO is no reason to warn.
   const challenged: Array<"link" | "password"> = ["link", "password"];
   const events = await db.eventRegistrationSettings.count({
-    where: { mode: { not: null }, access_methods: { hasSome: challenged }, event: { archived_at: null } },
+    where: { mode: { not: null }, access_methods: { hasSome: challenged }, bot_protection_enabled: true, event: { archived_at: null } },
   });
   if (events === 0) return row("not_configured", "Not configured", [["configured", "no"]]);
   return row(

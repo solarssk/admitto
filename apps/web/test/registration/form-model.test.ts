@@ -8,7 +8,10 @@ import { resolveGuestSsoProvider } from "../../src/registration/sso-provider.js"
 import { resolveTurnstileKeys } from "../../src/registration/turnstile-settings.js";
 
 vi.mock("../../src/registration/access-methods.js", () => ({ resolveAccessMethodAvailability: vi.fn() }));
-vi.mock("../../src/registration/bot-protection-mode.js", () => ({ getBotProtectionMode: vi.fn(async () => "required") }));
+vi.mock("../../src/registration/bot-protection-mode.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/registration/bot-protection-mode.js")>()),
+  getBotProtectionMode: vi.fn(async () => "required"),
+}));
 vi.mock("../../src/registration/sso-provider.js", () => ({ resolveGuestSsoProvider: vi.fn() }));
 vi.mock("../../src/registration/turnstile-settings.js", () => ({ resolveTurnstileKeys: vi.fn() }));
 vi.mock("../../src/legal/registration-gate.js", () => ({
@@ -50,6 +53,7 @@ const row = {
     consent_keys: [],
     max_companions: 0,
     styled_form_controls: false,
+    bot_protection_enabled: true,
     sso_provider_id: null,
     sso_claim_name: null,
     sso_claim_values: [],
@@ -105,6 +109,24 @@ describe("loadRegistrationPage, when the answers of its dependencies do not agre
     vi.mocked(getBotProtectionMode).mockResolvedValue("not_used");
     const state = await loadRegistrationPage(db, "northwind-summit", NOW);
     expect(state.kind === "open" ? [state.form.needsChallenge, state.form.turnstileSiteKey] : null).toEqual([false, ""]);
+  });
+
+  it("opens without the keys, with no widget and no site key, when the event has switched its own bot protection off", async () => {
+    const eventOff = { ...row, registration_settings: { ...row.registration_settings, bot_protection_enabled: false } };
+    const fake = { event: { findUnique: vi.fn(async () => eventOff) } } as unknown as PrismaClient;
+    vi.mocked(resolveTurnstileKeys).mockResolvedValue({ state: "incomplete" });
+
+    const state = await loadRegistrationPage(fake, "northwind-summit", NOW);
+
+    expect(state.kind).toBe("open");
+    if (state.kind === "open") expect([state.form.needsChallenge, state.form.turnstileSiteKey]).toEqual([false, ""]);
+    // The availability of the way in is asked with the event's switch, so that it does not wait for keys the event does not use.
+    expect(vi.mocked(resolveAccessMethodAvailability)).toHaveBeenLastCalledWith(fake, false);
+  });
+
+  it("keeps the check, and asks the availability with the event's switch on, for an event that has not switched it off", async () => {
+    await loadRegistrationPage(db, "northwind-summit", NOW);
+    expect(vi.mocked(resolveAccessMethodAvailability)).toHaveBeenLastCalledWith(db, true);
   });
 
   it("still closes the form of a way in that is not available, whatever the mode", async () => {

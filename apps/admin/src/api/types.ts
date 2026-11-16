@@ -1652,6 +1652,9 @@ export interface RegistrationSettingsDto {
   consent_keys: string[];
   /** The guest form draws its date, time and phone boxes in the product's style, not the browser's. */
   styled_form_controls: boolean;
+  /** The bot check of the link and password forms of this event, on by default; it counts only while `bot_protection` is `required`. Only a
+   * superadmin changes it. */
+  bot_protection_enabled: boolean;
   /** The company SSO only: the one claim of the identity provider's token that a guest must hold (for example `tid`), or
    * null for no restriction. Sent and saved together with `sso_claim_values`. */
   sso_claim_name: string | null;
@@ -1717,6 +1720,8 @@ export interface SaveRegistrationSettingsBody {
   ask_department?: boolean;
   consent_keys?: string[];
   styled_form_controls?: boolean;
+  /** A superadmin only (403 `bot_protection_superadmin_only`). */
+  bot_protection_enabled?: boolean;
   /** Sent together with `sso_claim_values`: both set, or `null` and `[]` to remove the restriction. A restriction for an event
    * whose way in is not the company SSO is refused (422 `sso_claim_needs_sso`). Only a superadmin may change it (403
    * `sso_claim_superadmin_only`). */

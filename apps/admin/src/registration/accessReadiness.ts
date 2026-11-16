@@ -45,8 +45,8 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
   },
   bot_protection_not_used: {
     title: "Bot protection",
-    met: "Off for this organisation. The link and password forms have no bot check.",
-    missing: "Bot protection is off for this organisation.",
+    met: "Off. The link and password forms have no bot check.",
+    missing: "Bot protection is off.",
     info: true,
   },
   identity_provider: {

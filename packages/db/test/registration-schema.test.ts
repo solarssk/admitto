@@ -123,6 +123,7 @@ describe("EventRegistrationSettings", () => {
       ask_department: false,
       consent_keys: [],
       styled_form_controls: false,
+      bot_protection_enabled: true,
       custom_domain: null,
       custom_domain_status: "unchecked",
       custom_domain_verified_at: null,

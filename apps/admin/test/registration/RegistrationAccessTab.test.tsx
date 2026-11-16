@@ -344,7 +344,7 @@ describe("RegistrationAccessTab: the checklist", () => {
     expect(rows).toHaveLength(9);
     const info = rows.at(-1) as HTMLElement;
     expect(info.textContent).toContain("Bot protection");
-    expect(info.textContent).toContain("Off for this organisation. The link and password forms have no bot check.");
+    expect(info.textContent).toContain("Off. The link and password forms have no bot check.");
     expect(info.querySelector(".sr-only")?.textContent).toBe("Off: ");
     expect(info.querySelector(".overview-check__icon--neutral")).not.toBeNull();
     expect(info.querySelector(".ti-minus")).not.toBeNull();

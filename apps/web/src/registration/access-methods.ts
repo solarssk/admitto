@@ -9,7 +9,7 @@
  */
 
 import { REGISTRATION_ACCESS_METHOD, type Prisma, type PrismaClient, type RegistrationAccessMethod } from "@admitto/db";
-import { getBotProtectionMode } from "./bot-protection-mode.js";
+import { botProtectionApplies, getBotProtectionMode } from "./bot-protection-mode.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
 
 /** The methods an event can choose in this release: every one the model has. */
@@ -36,9 +36,11 @@ export function computeAccessMethodAvailability(input: { botProtectionReady: boo
   });
 }
 
-/** Every method, in the canonical order, with whether it can be used right now. */
-export async function resolveAccessMethodAvailability(db: AccessMethodsDb): Promise<AccessMethodAvailability[]> {
+/**
+ * Every method, in the canonical order, with whether it can be used right now. `eventBotProtection` is the event's own switch
+ * (`bot_protection_enabled`): with the organisation's switch or the event's off there is nothing to wait for.
+ */
+export async function resolveAccessMethodAvailability(db: AccessMethodsDb, eventBotProtection = true): Promise<AccessMethodAvailability[]> {
   const [keys, mode] = await Promise.all([resolveTurnstileKeys(db), getBotProtectionMode(db)]);
-  // With the check not used there is nothing to wait for.
-  return computeAccessMethodAvailability({ botProtectionReady: mode === "not_used" || keys.state === "ready" });
+  return computeAccessMethodAvailability({ botProtectionReady: !botProtectionApplies(mode, eventBotProtection) || keys.state === "ready" });
 }

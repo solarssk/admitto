@@ -23,7 +23,7 @@ describe("the words of the checks", () => {
     const info = Object.entries(READINESS_COPY).filter(([, copy]) => copy.info === true);
 
     expect(info.map(([key]) => key)).toEqual(["bot_protection_not_used"]);
-    expect(READINESS_COPY.bot_protection_not_used.met).toBe("Off for this organisation. The link and password forms have no bot check.");
+    expect(READINESS_COPY.bot_protection_not_used.met).toBe("Off. The link and password forms have no bot check.");
     expect(READINESS_COPY.bot_protection_not_used.remedy).toBeUndefined();
   });
 

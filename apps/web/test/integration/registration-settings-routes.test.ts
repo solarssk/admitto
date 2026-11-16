@@ -405,6 +405,19 @@ describe("registration_captcha in the Health check", () => {
     expect(await healthRow()).toMatchObject({ status: "degraded" });
   });
 
+  it("does not count an event that switched its own bot protection off, but counts the next one that has it on", async () => {
+    await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
+    await prisma.eventRegistrationSettings.upsert({
+      where: { event_id: EVENT_ID },
+      create: { event_id: EVENT_ID, mode: "automatic", access_methods: ["link"], bot_protection_enabled: false },
+      update: { mode: "automatic", access_methods: ["link"], bot_protection_enabled: false },
+    });
+    expect(await healthRow()).toMatchObject({ status: "not_configured" });
+
+    await prisma.eventRegistrationSettings.update({ where: { event_id: EVENT_ID }, data: { bot_protection_enabled: true } });
+    expect(await healthRow()).toMatchObject({ status: "degraded" });
+  });
+
   it("does not count an event whose registration is off", async () => {
     await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
     await prisma.eventRegistrationSettings.update({ where: { event_id: EVENT_ID }, data: { mode: null } });
