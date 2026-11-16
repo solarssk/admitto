@@ -1737,6 +1737,9 @@ export interface SaveRegistrationSettingsBody {
    * superadmin may change it (403 `sso_provider_superadmin_only`), and only a superadmin changes `access_methods` (403
    * `access_method_superadmin_only`); a value sent as it already is, is no change. */
   sso_provider_id?: string | null;
+  /** The provider the screen showed (`sso_provider_id` of the settings it read). When it differs from the one stored, nothing is saved
+   * (409 `sso_provider_changed`); left out, no check is made. */
+  expected_sso_provider_id?: string | null;
 }
 
 /** What the request list is asked for; a left-out filter selects every request. */

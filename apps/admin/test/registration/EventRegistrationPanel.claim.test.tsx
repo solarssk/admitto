@@ -213,7 +213,7 @@ describe("the Company SSO card", () => {
     type(claimValues(), "aaa-111\n\nbbb-222\n");
     await save();
 
-    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["aaa-111", "bbb-222"] });
+    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["aaa-111", "bbb-222"], expected_sso_provider_id: "idp-entra" });
     await waitFor(() => expect(claimValues()?.value).toBe("aaa-111\nbbb-222"));
     expect(addToast).toHaveBeenCalledWith("Registration settings saved.", "success");
     expect(isOff(saveButton())).toBe(true);
@@ -226,7 +226,7 @@ describe("the Company SSO card", () => {
     type(claimValues(), "aaa-111\nccc-333");
     await save();
 
-    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["aaa-111", "ccc-333"] });
+    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["aaa-111", "ccc-333"], expected_sso_provider_id: "idp-entra" });
   });
 
   it("takes the restriction away with null and an empty list when both fields are cleared", async () => {
@@ -237,7 +237,7 @@ describe("the Company SSO card", () => {
     type(claimValues(), "");
     await save();
 
-    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: null, sso_claim_values: [] });
+    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: null, sso_claim_values: [], expected_sso_provider_id: "idp-entra" });
     await waitFor(() => expect(claimName()?.value).toBe(""));
   });
 
@@ -438,7 +438,7 @@ describe("the address card and the typed restriction", () => {
 
     await save();
 
-    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["aaa-111"] });
+    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["aaa-111"], expected_sso_provider_id: "idp-entra" });
   });
 });
 
