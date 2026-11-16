@@ -13,7 +13,6 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { buildConfirmUrl } from "@admitto/mail-delivery";
 import { REGISTRATION_PASSWORD_MAX } from "@admitto/shared";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
-import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { clearEventPassword, setEventPassword } from "../../src/registration/event-password.js";
 import { documentOf } from "../helpers/registration-form-fixtures.js";
 import {
@@ -165,18 +164,16 @@ describe("the page of an event whose way in is the password", () => {
     expect(doc.getElementById("reg-form").hidden).toBe(false);
   });
 
-  it("is the one 404 of the registration routes for an event that has no password, over or not, and for a password that is not available", async () => {
+  it("is the one 404 of the registration routes for an event that has no password, over or not, and while the Turnstile keys are gone", async () => {
     const h = harness({ prisma });
     const unknown = await signature(await h.get("/r/reg111-no-such-event"));
     expect(unknown.status).toBe(404);
     const none = nextSlug("none");
     const noneOver = nextSlug("none-over");
-    const off = nextSlug("method-off");
     const nokeys = nextSlug("nokeys");
     const archived = nextSlug("archived");
     await addPasswordEvent(none, { settings: { password_hash: null } });
     await addPasswordEvent(noneOver, { date: PAST, settings: { password_hash: null } });
-    await addPasswordEvent(off);
     await addPasswordEvent(nokeys);
     await addPasswordEvent(archived, { archived: true });
 
@@ -184,13 +181,6 @@ describe("the page of an event whose way in is the password", () => {
     expect(await signature(await h.get(`/r/${noneOver}`))).toEqual(unknown);
     expect(await signature(await h.post(none, h.body(none, { password: PASSWORD })))).toEqual(unknown);
     expect(await signature(await h.post(archived, h.body(archived, { password: PASSWORD })))).toEqual(unknown);
-    await setEnabledAccessMethods(prisma, ["link"]);
-    try {
-      expect(await signature(await h.get(`/r/${off}`))).toEqual(unknown);
-      expect(await signature(await h.post(off, h.body(off, { password: PASSWORD })))).toEqual(unknown);
-    } finally {
-      await setEnabledAccessMethods(prisma, ["link", "password"]);
-    }
     await seeder.setSystemKeys(false);
     try {
       expect(await signature(await h.get(`/r/${nokeys}`))).toEqual(unknown);

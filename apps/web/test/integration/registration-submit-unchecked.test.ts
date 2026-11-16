@@ -9,7 +9,6 @@ import { hashPassword } from "@admitto/auth";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
-import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { setBotProtectionMode } from "../../src/registration/bot-protection-mode.js";
 import { documentOf } from "../helpers/registration-form-fixtures.js";
 import { SelectiveStore, eventSeeder, harness, nextEmail, signature, type EventSeed } from "../helpers/registration-submit-harness.js";
@@ -67,7 +66,6 @@ describe("the page without the check", () => {
     await seeder.setSystemKeys(false);
     await setBotProtectionMode(prisma, "not_used");
     // `setSystemKeys(false)` also removes the ways in: turn them on again, with no keys.
-    await setEnabledAccessMethods(prisma, ["link", "password"]);
     const h = harness({ prisma });
 
     const res = await h.get(`/r/${slug}`);

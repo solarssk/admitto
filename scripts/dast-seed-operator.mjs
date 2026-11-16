@@ -84,7 +84,6 @@ await prisma.eventCustomField.createMany({
 });
 // Instance-wide settings, in the form the settings screens save them (the secret is encrypted with its own context).
 const systemSettings = [
-  { key: "registration_access_methods", value_json: JSON.stringify(["link"]) },
   {
     key: "registration_turnstile",
     value_json: JSON.stringify({

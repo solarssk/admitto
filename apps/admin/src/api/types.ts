@@ -1485,17 +1485,10 @@ export interface SaveRegistrationTurnstileBody {
   bot_protection?: RegistrationBotProtection;
 }
 
-/** Where the choice of the identity provider for the company SSO stands: `ready` (it exists and is on), `not_selected`,
- * `missing` (the chosen one was deleted) or `disabled` (the chosen one is turned off). */
-export type RegistrationSsoProviderState = "ready" | "not_selected" | "missing" | "disabled";
-
-/** GET and PUT /api/admin/registration/sso-provider: the identity provider guests sign in with. `providers` are the ones that can
- * be chosen (turned on), by id and the name staff gave them. `redirect_uri` is the one address the provider must list as a
- * redirect, built from the address of the instance; null while the instance has none. Superadmin only. */
-export interface RegistrationSsoProviderDto {
-  provider_id: string | null;
-  state: RegistrationSsoProviderState;
-  providers: Array<{ id: string; display_name: string; kind: "entra" | "google" | "generic" }>;
+/** GET /api/admin/registration/sso-provider: the addresses an identity provider must list as allowed redirects for the guests' company
+ * SSO. `redirect_uri` is the instance's, built from the address of the instance; null while the instance has none. Which provider an
+ * event uses is the event's own setting (`RegistrationSettingsDto`). Superadmin only. */
+export interface RegistrationReturnAddressesDto {
   redirect_uri: string | null;
   /** Every return address to list at the provider: the instance's first, then one for each event with an own address of its own that
    * uses the company SSO, verified or not (`verified` says which). */
@@ -1613,7 +1606,6 @@ export interface RegistrationCountsDto {
  * `apps/web/src/registration/readiness.ts`), and a test keeps the words of each key (`registration/accessReadiness.ts`) equal to it. */
 export type RegistrationReadinessKey =
   | "access_method"
-  | "access_method_enabled"
   | "bot_protection"
   | "bot_protection_not_used"
   | "identity_provider"
@@ -1650,8 +1642,6 @@ export interface RegistrationSettingsDto {
   mode: RegistrationMode | null;
   /** None or one way in. The server may hold a way this screen does not offer; it counts as no choice. */
   access_methods: RegistrationAccessMethod[];
-  /** The ways in a superadmin has turned on for the organisation, the only ones an event can choose. */
-  enabled_access_methods: RegistrationAccessMethod[];
   /** `not_used` when a superadmin switched the bot check off for the organisation, so the link and password forms have none. */
   bot_protection: "required" | "not_used";
   waitlist_enabled: boolean;

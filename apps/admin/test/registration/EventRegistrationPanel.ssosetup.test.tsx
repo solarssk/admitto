@@ -16,7 +16,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...(await importOriginal<typeof import("../../src/api/client.js")>()),
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
-    fetchRegistrationSsoProvider: (...args: unknown[]) => mocks.fetchRegistrationSsoProvider(...args),
+    fetchRegistrationReturnAddresses: (...args: unknown[]) => mocks.fetchRegistrationReturnAddresses(...args),
     saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
   };
 });
@@ -43,7 +43,7 @@ const css = () => readFileSync(join(__dirname, "../../src/registration/registrat
 
 async function renderPanel(saved: RegistrationSettingsDto, uris: RegistrationRedirectUriDto[] = [INSTANCE]) {
   api.fetchRegistrationSettings.mockResolvedValue(saved);
-  api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: uris });
+  api.fetchRegistrationReturnAddresses.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: uris });
   render(<EventRegistrationPanel eventId="evt-1" archived={false} refreshEvent={refreshEvent} />);
   await screen.findByLabelText("Own address");
 }
@@ -110,7 +110,7 @@ describe("the setup for IT in the Company SSO card", () => {
     await renderPanel(ssoSettings(), [INSTANCE]);
     expect(panel().textContent).not.toContain("summit.acme.example");
     api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: { ...OWN, status: "unchecked", verified: false } }));
-    api.fetchRegistrationSsoProvider.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: [INSTANCE, { ...EVENT, verified: false }] });
+    api.fetchRegistrationReturnAddresses.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: [INSTANCE, { ...EVENT, verified: false }] });
 
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "summit.acme.example" } });
     fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
@@ -124,12 +124,12 @@ describe("the setup for IT in the Company SSO card", () => {
   it("keeps the return addresses it has when they cannot be read again after the address was saved", async () => {
     api.saveCustomDomain.mockResolvedValue({ custom_domain: "summit.acme.example", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
     await renderPanel(ssoSettings(), [INSTANCE]);
-    api.fetchRegistrationSsoProvider.mockRejectedValue(new Error("down"));
+    api.fetchRegistrationReturnAddresses.mockRejectedValue(new Error("down"));
 
     fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "summit.acme.example" } });
     fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
 
-    await waitFor(() => expect(api.fetchRegistrationSsoProvider).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.fetchRegistrationReturnAddresses).toHaveBeenCalledTimes(2));
     expect(field("Return address").value).toBe(INSTANCE.uri);
   });
 

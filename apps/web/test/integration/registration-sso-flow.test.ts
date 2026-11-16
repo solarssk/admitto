@@ -13,7 +13,6 @@ import { codeChallengeS256 } from "@admitto/auth";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
-import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { handleSsoCallback, handleSsoStart } from "../../src/registration/sso-routes.js";
 import { verifyGuestSsoSession } from "../../src/registration/sso-session.js";
 import { createGuestSsoState } from "../../src/registration/sso-state.js";
@@ -178,7 +177,6 @@ describe("the start", () => {
     const archived = await addEvent("start-archived", { archived: true });
     const over = await addEvent("start-over", { date: PAST });
     const noPrivacy = await addEvent("start-notice", { legal: { privacy: false } });
-    await setEnabledAccessMethods(prisma, ["sso", "link"]);
     const unknown = await signature(await browse(h.app, new Jar(), startPath("reg118a-no-such-event")));
 
     for (const slug of [link, off, archived, over, noPrivacy, "Bad_Slug_With_Capitals", "a b"]) {

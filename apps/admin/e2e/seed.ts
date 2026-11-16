@@ -121,7 +121,6 @@ async function seedRegistrationForm(organizationId: string): Promise<{ slug: str
   }
   // The keys sit in system settings, one set for the instance; the secret is encrypted as the settings screen saves it.
   const system = [
-    { key: "registration_access_methods", value_json: JSON.stringify(["link"]) },
     {
       key: "registration_turnstile",
       value_json: JSON.stringify({

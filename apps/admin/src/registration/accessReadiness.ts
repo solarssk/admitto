@@ -37,11 +37,6 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     remedy: ASK_TO_CHOOSE,
     superadminRemedy: CHOOSE_IN_SETTINGS,
   },
-  access_method_enabled: {
-    title: "The chosen way is turned on",
-    met: "This way is turned on for the organisation.",
-    missing: "This way is not turned on for the organisation.",
-  },
   bot_protection: {
     title: "Bot protection",
     met: "Bot protection is set up.",

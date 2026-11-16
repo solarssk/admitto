@@ -20,7 +20,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     saveRegistrationSettings: (...args: unknown[]) => mocks.saveRegistrationSettings(...args),
     setRegistrationPassword: (...args: unknown[]) => mocks.setRegistrationPassword(...args),
     clearRegistrationPassword: (...args: unknown[]) => mocks.clearRegistrationPassword(...args),
-    fetchRegistrationSsoProvider: (...args: unknown[]) => mocks.fetchRegistrationSsoProvider(...args),
+    fetchRegistrationReturnAddresses: (...args: unknown[]) => mocks.fetchRegistrationReturnAddresses(...args),
     saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
     checkCustomDomain: (...args: unknown[]) => mocks.checkCustomDomain(...args),
   };

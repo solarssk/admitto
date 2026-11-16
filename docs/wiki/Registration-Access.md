@@ -11,7 +11,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 ## Before you start
 
 - You must be the Administrator of the event's organisation, or a Superadmin. An Operator cannot open this page.
-- Some things are set up for the whole instance, by a Superadmin: bot protection, which ways in are allowed, the list of identity providers for Company SSO (under **Identity**), email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
+- Some things are set up for the whole instance, by a Superadmin: bot protection, the list of identity providers for Company SSO (under **Identity**), email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
 - Only a Superadmin sets how guests get in (the access method, the event password and the identity provider), the address of the event for guests and the restriction to one company, on the **Registration** tab of **Event settings** (see **Set how guests get in**, **Give the event an address of its own** and **Restrict Company SSO to one company** below). Every Administrator of the event is warned on this page when the address stops working.
 - You write the legal texts and the questions yourself. See [Legal Texts and Consents](Legal-Texts-and-Consents) and [Registration Form Fields](Registration-Form-Fields).
 - An archived event keeps its settings. You can read them and copy the link, but you cannot change anything.
@@ -120,7 +120,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 - Use a claim that the identity provider vouches for, such as the tenant. Never use the end of an email address: it says where mail goes, not who the person is.
 - A change of the restriction counts at once, also for guests who have already signed in. A guest who does not match sees a message and cannot register.
 - Moving the event to another way removes the restriction.
-- A way that was chosen and that a Superadmin turned off later stays chosen, grey, with the same reason in its hover text. Nothing is deleted, and the **The chosen way is turned on** row of the checklist warns that guests cannot open the form.
+- Company SSO is grey while no identity provider is turned on. An event that already has it keeps it, and the **Identity provider** row of the checklist warns that guests cannot open the form.
 
 **Styled boxes**
 
@@ -144,7 +144,6 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 | Row | If it is not done |
 |---|---|
 | **Access method** | A Superadmin chooses **Link**, **Password** or **Company SSO** in **Event settings → Registration** |
-| **The chosen way is turned on** | No screen turns this on any more: the **Ways in** card was removed from External services. Link, Password and Company SSO are meant to be always available, so a row that is not done on your instance is a setup problem. Ask the person who runs the instance. Company SSO also needs an identity provider that is turned on (see **Identity provider** below) |
 | **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company SSO does not have this row. If bot protection is **Off** for your organisation, the row is grey, says "Off for this organisation" and does not block anything |
 | **Identity provider** | A Superadmin chooses it in **Event settings → Registration**. If the list is empty, one is set up under **Identity** first. Only a form with the company SSO has this row |
 | **Event password** | A Superadmin sets it in **Event settings → Registration** |

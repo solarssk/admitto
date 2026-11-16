@@ -1,4 +1,4 @@
-import type { RegistrationSsoProviderDto } from "../../src/api/types.js";
+import type { RegistrationReturnAddressesDto } from "../../src/api/types.js";
 
 /** The two providers the tests list as turned on. */
 export const SSO_PROVIDERS = [
@@ -10,7 +10,7 @@ export const SSO_PROVIDERS = [
  * The answer of the sso-provider route: the choice `providerId`, how it stands (`state`), the providers that can be chosen, and the
  * return address (a made-up instance address; `null` for an instance that has none).
  */
-export function ssoProviderDto(overrides: Partial<RegistrationSsoProviderDto> = {}): RegistrationSsoProviderDto {
+export function ssoProviderDto(overrides: Partial<RegistrationReturnAddressesDto> = {}): RegistrationReturnAddressesDto {
   const dto = {
     provider_id: null,
     state: "not_selected" as const,

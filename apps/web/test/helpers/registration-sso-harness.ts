@@ -5,7 +5,6 @@
  */
 import { encryptClientSecret } from "@admitto/auth";
 import type { PrismaClient } from "@admitto/db";
-import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { GUEST_SSO_CALLBACK_PATH, GUEST_SSO_SESSION_COOKIE } from "../../src/registration/sso-session.js";
 import { GUEST_SSO_FLOW_COOKIE_PREFIX, parseGuestSsoStateValue } from "../../src/registration/sso-state-value.js";
 import type { MockIdTokenOverrides, MockOidcIdp } from "./mock-oidc-idp.js";
@@ -38,7 +37,6 @@ export async function installProvider(prisma: PrismaClient, idp: MockOidcIdp, op
     enabled: options.enabled ?? true,
   };
   await prisma.identityProvider.upsert({ where: { id: PROVIDER_ID }, create: { id: PROVIDER_ID, ...data }, update: data });
-  await setEnabledAccessMethods(prisma, ["sso"]);
 }
 
 export async function removeProvider(prisma: PrismaClient): Promise<void> {

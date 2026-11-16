@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import { vi } from "vitest";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { createApp, type CreateAppOptions } from "../../src/app.js";
-import { setEnabledAccessMethods, ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
 import { patchTurnstileSettings, TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import type { GuestHostCacheOptions } from "../../src/guest-host/guest-host.js";
@@ -96,9 +95,8 @@ export function eventSeeder(prisma: PrismaClient, orgId: string) {
     await prisma.systemSettings.deleteMany({ where: { key: BOT_PROTECTION_SETTINGS_KEY } });
     if (on) {
       await patchTurnstileSettings(prisma, { siteKey: SITE_KEY, secretKey: "secret-key-for-tests" });
-      await setEnabledAccessMethods(prisma, ["link", "password"]);
     } else {
-      await prisma.systemSettings.deleteMany({ where: { key: { in: [TURNSTILE_SETTINGS_KEY, ACCESS_METHODS_SETTINGS_KEY] } } });
+      await prisma.systemSettings.deleteMany({ where: { key: { in: [TURNSTILE_SETTINGS_KEY] } } });
     }
   }
 

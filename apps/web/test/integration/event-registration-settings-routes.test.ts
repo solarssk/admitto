@@ -13,7 +13,6 @@ import {
   type RegistrationSettingsDto,
 } from "../../src/admin/event-registration-settings.js";
 import { setBotProtectionMode } from "../../src/registration/bot-protection-mode.js";
-import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { READINESS_KEYS, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
@@ -92,12 +91,10 @@ type Breaker = [key: RegistrationReadinessKey, breakIt: (eventId: string) => Pro
 
 const BREAKERS: Breaker[] = [
   ["access_method", (id) => prisma.eventRegistrationSettings.update({ where: { event_id: id }, data: { access_methods: [] } })],
-  ["access_method_enabled", () => setEnabledAccessMethods(prisma, [])],
   ["bot_protection", () => prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } })],
   [
     "password",
     async (id) => {
-      await setEnabledAccessMethods(prisma, ["link", "password"]);
       await prisma.eventRegistrationSettings.update({ where: { event_id: id }, data: { access_methods: ["password"] } });
     },
   ],
@@ -286,7 +283,7 @@ describe("reading the settings", () => {
     expect(body).toMatchObject({ ...defaultSettings(), password_set: false, guest_url: `https://tickets.example.com/r/${event.slug}` });
     expect(body.readiness.map((check) => check.key)).toEqual(
       READINESS_KEYS.filter(
-        (key) => key !== "password" && key !== "identity_provider" && key !== "access_method_enabled" && key !== "bot_protection_not_used",
+        (key) => key !== "password" && key !== "identity_provider" && key !== "bot_protection_not_used",
       ),
     );
     expect(body.readiness.find((check) => check.key === "access_method")).toEqual({ key: "access_method", ok: false });
@@ -342,7 +339,6 @@ describe("reading the settings", () => {
     expect(body).toEqual({
       mode: "approval",
       access_methods: ["link"],
-      enabled_access_methods: ["link", "password"],
       bot_protection: "required",
       waitlist_enabled: false,
       verify_email: false,
@@ -386,7 +382,6 @@ describe("reading the settings", () => {
       "ask_department",
       "bot_protection",
       "consent_keys",
-      "enabled_access_methods",
       "guest_url",
       "instance_host",
       "max_companions",
@@ -554,7 +549,7 @@ describe("turning registration on", () => {
 
   it("names every check that is missing, in the order of the vocabulary", async () => {
     const event = await addEvent("gate-everything");
-    for (const [, breakIt] of BREAKERS.filter(([key]) => key !== "access_method" && key !== "access_method_enabled")) await breakIt(event.id);
+    for (const [, breakIt] of BREAKERS.filter(([key]) => key !== "access_method")) await breakIt(event.id);
 
     const res = await put(event.id, { mode: "automatic" });
     const body = (await res.json()) as { error: string; blockers: string[] };
@@ -609,14 +604,12 @@ describe("turning registration on", () => {
 
   it("judges a save that turns registration on and changes its way in together, by the way in it is given", async () => {
     const event = await addEvent("gate-together");
-    // The system administrator has enabled the link and not the password.
-    await setEnabledAccessMethods(prisma, ["link"]);
-
+    // The password is judged by what it needs (a password nobody set), not by a list of enabled ways in.
     const refused = await put(event.id, { mode: "automatic", access_methods: ["password"] });
     const allowed = await put(event.id, { mode: "automatic", access_methods: ["link"] });
 
     expect(refused.status).toBe(409);
-    expect(await refused.json()).toEqual({ error: "registration_not_ready", blockers: ["access_method_enabled", "password"] });
+    expect(await refused.json()).toEqual({ error: "registration_not_ready", blockers: ["password"] });
     expect(allowed.status).toBe(200);
   });
 
@@ -697,7 +690,6 @@ describe("turning registration off", () => {
 describe("changing the way in or the consents of an event that has registration on", () => {
   it("is judged as turning it on is: a way in that needs a password nobody set is refused, and the event keeps the way it had", async () => {
     const event = await addEvent("on-password", { settings: { mode: "automatic" } });
-    await setEnabledAccessMethods(prisma, ["link", "password"]);
 
     const res = await put(event.id, { access_methods: ["password"] });
 
@@ -709,7 +701,6 @@ describe("changing the way in or the consents of an event that has registration 
 
   it("is let through when the new way in is ready", async () => {
     const event = await addEvent("on-password-set", { settings: { mode: "automatic" } });
-    await setEnabledAccessMethods(prisma, ["link", "password"]);
     await prisma.eventRegistrationSettings.update({ where: { event_id: event.id }, data: { password_hash: await hashPassword("test-password") } });
 
     const res = await put(event.id, { access_methods: ["password"] });
@@ -811,7 +802,6 @@ describe("the password when the way in changes", () => {
   const withPassword = async (label: string, settings: EventSeed["settings"] = {}) => {
     const hash = await hashPassword("test-password");
     const event = await addEvent(label, { settings: { access_methods: ["password"], password_hash: hash, ...settings } });
-    await setEnabledAccessMethods(prisma, ["link", "password"]);
     return { event, hash };
   };
 
@@ -866,7 +856,6 @@ describe("the password when the way in changes", () => {
   it("is kept when it was set before the way in was chosen: it waits for the password to be chosen", async () => {
     const hash = await hashPassword("test-password");
     const event = await addEvent("pw-waiting", { settings: { access_methods: ["link"], password_hash: hash } });
-    await setEnabledAccessMethods(prisma, ["link", "password"]);
 
     const res = await dto(await put(event.id, { access_methods: ["password"] }));
 
@@ -1014,7 +1003,6 @@ describe("what a save leaves behind", () => {
   it("holds no password, no hash and no address in the entry, whatever the event holds", async () => {
     const hash = await hashPassword("test-password");
     const event = await addEvent("audit-clean", { settings: { access_methods: ["password"], password_hash: hash } });
-    await setEnabledAccessMethods(prisma, ["link", "password"]);
 
     await put(event.id, { access_methods: ["link"], mode: "automatic" });
 
@@ -1157,7 +1145,6 @@ describe("the company sign-in as the way in, and its restriction to one company 
   });
 
   beforeEach(async () => {
-    await setEnabledAccessMethods(prisma, ["link", "password", "sso"]);
     await installCompanyProvider();
   });
 
@@ -1223,16 +1210,6 @@ describe("the company sign-in as the way in, and its restriction to one company 
       await prisma.identityProvider.delete({ where: { id: "reg118a-other" } });
       await installCompanyProvider();
     }
-  });
-
-  it("needs the way in to be turned on by the system", async () => {
-    await setEnabledAccessMethods(prisma, ["link"]);
-    const event = await addEvent("sso-not-enabled");
-
-    const res = await put(event.id, { access_methods: ["sso"], sso_provider_id: PROVIDER, mode: "approval" });
-
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "registration_not_ready", blockers: ["access_method_enabled"] });
   });
 
   it("saves the restriction, says it back, and audits the claim and the values that may register", async () => {
@@ -1475,7 +1452,6 @@ describe("the identity provider of an event with the company sign-in", () => {
     await makeProvider(SECOND);
     await makeProvider(OFF, { enabled: false });
     await makeProvider(NOT_OIDC, { provider_type: "cloudflare_access" });
-    await setEnabledAccessMethods(prisma, ["link", "password", "sso"]);
   });
 
   afterAll(async () => {
@@ -1810,24 +1786,11 @@ describe("the identity provider of an event with the company sign-in", () => {
   });
 });
 
-describe("the ways in that are turned on, in the answer (A3)", () => {
-  it.each([
-    [[], []],
-    [["sso", "link"], ["link", "sso"]],
-    [["link", "password", "sso"], ["link", "password", "sso"]],
-  ])("says %j is on as %j, in the order of the model, to an administrator", async (turnedOn, said) => {
-    await setEnabledAccessMethods(prisma, turnedOn);
+describe("the answer no longer lists enabled ways in", () => {
+  it("has no enabled_access_methods: link, password and Company SSO are always offered", async () => {
     const event = await addEvent("a3-enabled");
 
-    expect((await dto(await get(event.id))).enabled_access_methods).toEqual(said);
-    expect((await dto(await put(event.id, { waitlist_enabled: false }))).enabled_access_methods).toEqual(said);
-  });
-
-  it("lists a way in that is on, in the order of the model, apart from the readiness", async () => {
-    await setEnabledAccessMethods(prisma, ["link", "sso"]);
-    const event = await addEvent("a3-needs");
-
-    expect((await dto(await get(event.id))).enabled_access_methods).toEqual(["link", "sso"]);
+    expect(Object.keys(await dto(await get(event.id)))).not.toContain("enabled_access_methods");
   });
 });
 

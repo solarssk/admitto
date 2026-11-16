@@ -15,7 +15,7 @@ describe("the words of the checks", () => {
   it("are there for every check the server reports, in its order, and for no other", () => {
     const keys = serverKeys();
 
-    expect(keys).toHaveLength(13);
+    expect(keys).toHaveLength(12);
     expect(Object.keys(READINESS_COPY)).toEqual(keys);
   });
 
@@ -51,8 +51,6 @@ describe("the words of the checks", () => {
     }
     // A check without a place of its own for a superadmin reads the same for everybody.
     expect(remedyFor(READINESS_COPY.mail_provider, true)).toBe(READINESS_COPY.mail_provider.remedy);
-    // The list of enabled ways in has no screen any more (the server drops it in a later PR), so its check names no place to go to.
-    expect(remedy("access_method_enabled")).toBeUndefined();
     expect(remedy("legal_documents")?.link).toBe("legal");
     expect(remedy("form_questions")?.link).toBe("fields");
     expect(remedy("required_fields")?.link).toBe("fields");
@@ -68,10 +66,10 @@ describe("the words of the checks", () => {
     expect(words).not.toMatch(/turnstile|cloudflare|smtp|_/i);
   });
 
-  it("name the two rows about the access method, and never call it a way in", () => {
+  it("name the row about the access method, and never call it a way in", () => {
     expect(READINESS_COPY.access_method.title).toBe("Access method");
-    expect(READINESS_COPY.access_method_enabled.title).toBe("The chosen way is turned on");
-    expect(JSON.stringify([READINESS_COPY.access_method, READINESS_COPY.access_method_enabled])).not.toMatch(/way in/i);
+    expect(JSON.stringify(READINESS_COPY.access_method)).not.toMatch(/way in/i);
+    expect(Object.keys(READINESS_COPY)).not.toContain("access_method_enabled");
   });
 
   it("say the three access methods, and that the identity provider is chosen and turned on", () => {

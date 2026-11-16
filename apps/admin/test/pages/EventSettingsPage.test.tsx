@@ -80,7 +80,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     updateOpsConfig: vi.fn(),
     fetchEventItems: vi.fn(),
     fetchRegistrationSettings: vi.fn(),
-    fetchRegistrationSsoProvider: vi.fn(),
+    fetchRegistrationReturnAddresses: vi.fn(),
   };
 });
 
@@ -132,7 +132,7 @@ import {
   fetchEventLocation,
   fetchEventSettings,
   fetchRegistrationSettings,
-  fetchRegistrationSsoProvider,
+  fetchRegistrationReturnAddresses,
   fetchTicketTypes,
   fetchMapTileConfig,
   fetchTimezoneForCoordinates,
@@ -2510,7 +2510,7 @@ describe("EventSettingsPage tabs", () => {
     vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
     vi.mocked(archiveEvent).mockResolvedValueOnce(undefined);
     vi.mocked(fetchRegistrationSettings).mockResolvedValue({ ...registrationSettingsFixture(), access_methods: ["sso"] });
-    vi.mocked(fetchRegistrationSsoProvider).mockResolvedValue({ provider_id: null, state: "not_selected", providers: [], redirect_uri: null, redirect_uris: [] });
+    vi.mocked(fetchRegistrationReturnAddresses).mockResolvedValue({ provider_id: null, state: "not_selected", providers: [], redirect_uri: null, redirect_uris: [] });
     renderSettings("/admin/events/evt-1/settings?tab=registration");
     const name = (await screen.findByLabelText("Claim name")) as HTMLInputElement;
     fireEvent.change(name, { target: { value: "tid" } });
@@ -3185,7 +3185,7 @@ describe("EventSettingsPage Registration tab (superadmin-only)", () => {
 
   beforeEach(() => {
     vi.mocked(fetchRegistrationSettings).mockResolvedValue(registrationSettings);
-    vi.mocked(fetchRegistrationSsoProvider).mockResolvedValue({
+    vi.mocked(fetchRegistrationReturnAddresses).mockResolvedValue({
       provider_id: "idp-1",
       state: "ready",
       providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }],

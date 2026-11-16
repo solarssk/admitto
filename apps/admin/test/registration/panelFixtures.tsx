@@ -13,7 +13,7 @@ export const onSavingChange = vi.fn();
 export function resetPanelApi(): void {
   onDirtyChange.mockReset();
   onSavingChange.mockReset();
-  api.fetchRegistrationSsoProvider.mockResolvedValue({
+  api.fetchRegistrationReturnAddresses.mockResolvedValue({
     provider_id: "idp-1",
     state: "ready",
     providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }],
