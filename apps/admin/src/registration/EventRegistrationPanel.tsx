@@ -345,7 +345,10 @@ function EventRegistrationCards({
         ssoAvailable={settings.sso_providers.length > 0}
         botCheck={settings.bot_protection !== "not_used"}
         disabled={archived || saving}
-        onMethodChange={(method) => edit(methodEdit(method, base.sso_provider_id, settings.sso_providers))}
+        // Pressing the method that is chosen already changes nothing: not the provider, not the claim.
+        onMethodChange={(method) => {
+          if (method !== draft.method) edit(methodEdit(method, base.sso_provider_id, settings.sso_providers));
+        }}
         onPasswordChanged={passwordChanged}
         onArchived={archivedMeanwhile}
       />
