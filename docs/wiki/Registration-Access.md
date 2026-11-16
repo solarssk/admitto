@@ -144,7 +144,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 | Row | If it is not done |
 |---|---|
 | **Access method** | A Superadmin chooses **Link**, **Password** or **Company SSO** in **Event settings → Registration** |
-| **The chosen way is turned on** | No screen turns this on any more: the **Ways in** card was removed from External services, and a later release removes this row. Link, Password and Company SSO are meant to be always available, so a row that is not done on your instance is a setup problem. Ask the person who runs the instance. Company SSO also needs an identity provider that is turned on (see **Identity provider** below) |
+| **The chosen way is turned on** | No screen turns this on any more: the **Ways in** card was removed from External services. Link, Password and Company SSO are meant to be always available, so a row that is not done on your instance is a setup problem. Ask the person who runs the instance. Company SSO also needs an identity provider that is turned on (see **Identity provider** below) |
 | **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company SSO does not have this row. If bot protection is **Off** for your organisation, the row is grey, says "Off for this organisation" and does not block anything |
 | **Identity provider** | A Superadmin chooses it in **Event settings → Registration**. If the list is empty, one is set up under **Identity** first. Only a form with the company SSO has this row |
 | **Event password** | A Superadmin sets it in **Event settings → Registration** |
