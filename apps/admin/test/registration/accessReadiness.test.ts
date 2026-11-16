@@ -75,7 +75,7 @@ describe("the words of the checks", () => {
   });
 
   it("say the three access methods, and that the identity provider is chosen and turned on", () => {
-    expect(READINESS_COPY.access_method).toMatchObject({ met: "An access method is chosen.", missing: "Choose an access method: link, password or Company SSO." });
+    expect(READINESS_COPY.access_method).toMatchObject({ met: "An access method is chosen.", missing: "No access method is chosen yet. Guests cannot open the form." });
     expect(READINESS_COPY.identity_provider).toMatchObject({
       title: "Identity provider",
       met: "An identity provider is chosen and turned on.",

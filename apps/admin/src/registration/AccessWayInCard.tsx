@@ -11,7 +11,7 @@ import { EventPasswordDialog } from "./EventPasswordDialog.js";
 import { ADD_PROVIDER, NO_PROVIDER } from "./ssoProviderChoice.js";
 import "./registration-access.css";
 
-export const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
+const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
   { value: "link", label: "Link" },
   { value: "password", label: "Password" },
   { value: "sso", label: "Company SSO" },
@@ -19,7 +19,7 @@ export const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
 
 /** What the chosen method means, in one notice under the choice. */
 const BOT_CHECK = " A bot check protects the form.";
-export function methodNotice(method: AccessMethod, botCheck: boolean): string {
+function methodNotice(method: AccessMethod, botCheck: boolean): string {
   if (method === "sso") return "Guests sign in with the company's single sign-on (SSO), using their work account. Their email comes from that sign-in.";
   const text = method === "link" ? "Anyone who has the link can ask to join." : "Guests need the link and the event password to open the form.";
   return botCheck ? text + BOT_CHECK : text;

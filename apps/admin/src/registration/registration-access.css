@@ -298,20 +298,3 @@
 .access-provider .settings-card-intro a {
   text-decoration: underline;
 }
-
-/* The access method as the Access tab shows it, to read: the same segmented control as in Event settings, Registration, with nothing to
- * press. The chosen option stays as clear as when it can be pressed; the others are dimmed as a disabled control is. */
-.access-seg--read .seg-btn:disabled {
-  cursor: default;
-}
-
-.access-seg--read .seg-btn--active:disabled {
-  opacity: 1;
-}
-
-/* The identity provider under the notice: its icon, then its name. */
-.access-method-provider {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}

@@ -27,7 +27,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 **Read how guests get in**
 
-The **Access method** card on this tab only shows what is set: **Link**, **Password** or **Company SSO**, and for Company SSO the identity provider. A Superadmin sets it in **Event settings → Registration**. An Administrator who is not a Superadmin reads "Set by a superadmin in Event settings, Registration." The card shows the same choice as in Event settings, but nothing can be pressed. A Superadmin gets a **Change** button in the header of the card instead of that sentence. The checklist rows **Access method**, **Identity provider** and **Event password** say the same: ask a Superadmin, or, for a Superadmin, a link to Event settings.
+The **Access method** row of the **Setup checklist** on this tab says what is set, as text: "Link. Anyone who has the link can ask to join.", "Password. ..." or "Company SSO. Guests sign in with" and the name of the identity provider. It has no button. A Superadmin sets it in **Event settings → Registration**, and the row says so. When no method is chosen, the row is not done and says "No access method is chosen yet. Guests cannot open the form." The rows **Identity provider** and **Event password** tell an Administrator to ask a Superadmin, and send a Superadmin to Event settings.
 
 **Set how guests get in**
 
