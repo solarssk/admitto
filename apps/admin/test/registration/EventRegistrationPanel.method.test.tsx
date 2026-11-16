@@ -59,7 +59,7 @@ describe("the access method of an event, in Event settings", () => {
     await renderPanel(settings({ access_methods: [] }));
 
     expect([...document.querySelectorAll(".at-card__title")].map((title) => title.textContent)).toEqual(["Access method", "Company SSO", "Address for guests"]);
-    expect(within(methodCard()).getByText("Choose how guests open the registration form.")).toBeTruthy();
+    expect(within(methodCard()).getByText("Choose the access method for the registration form.")).toBeTruthy();
     expect(within(methodCard()).getByRole("radiogroup", { name: "Access method" }).classList.contains("access-seg")).toBe(true);
     expect(methodCard().querySelector(".at-notice")).toBeNull();
   });

@@ -21,7 +21,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   // The answer of the guest route to a password that does not open the event. A guest's page words it itself; it is mapped
   // here so that nothing that reads this map is left with a bare code.
   access_denied: "The event password did not work.",
-  access_method_superadmin_only: "Only a superadmin can change how guests open the form.",
+  access_method_superadmin_only: "Only a superadmin can change the access method.",
   bot_protection_superadmin_only: "Only a superadmin can change the bot protection of an event.",
   actor_mfa_required:
     "You need a confirmed authenticator app, passkey, or security key on your own account before you can reset another superadmin's two-factor or password, or revoke their sessions. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has one confirmed to do this instead.",

@@ -156,7 +156,7 @@ export function AccessWayInCard({
   return (
     <Card title="Access method">
       <div className="settings-card-stack">
-        <p className="settings-card-intro">Choose how guests open the registration form.</p>
+        <p className="settings-card-intro">Choose the access method for the registration form.</p>
         <Segmented
           className="access-seg"
           ariaLabel="Access method"
