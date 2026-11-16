@@ -50,7 +50,7 @@ export function AccessMethodSummary({
       variant="secondary"
       size="sm"
       icon={<i className="ti ti-pencil" aria-hidden="true" />}
-      onClick={() => navigate(`/admin/events/${encodeURIComponent(eventId)}/settings?tab=registration`)}
+      onClick={() => void navigate(`/admin/events/${encodeURIComponent(eventId)}/settings?tab=registration`)}
     >
       Change
     </Button>
