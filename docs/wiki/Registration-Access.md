@@ -27,7 +27,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 **Read how guests get in**
 
-The **Access method** card on this tab only shows what is set: **Link**, **Password** or **Company SSO**, and for Company SSO the identity provider. A Superadmin sets it in **Event settings → Registration**. An Administrator who is not a Superadmin reads "Set by a superadmin in Event settings, Registration." A Superadmin gets a link to that tab instead. The checklist rows **Access method**, **Identity provider** and **Event password** say the same: ask a Superadmin, or, for a Superadmin, a link to Event settings.
+The **Access method** card on this tab only shows what is set: **Link**, **Password** or **Company SSO**, and for Company SSO the identity provider. A Superadmin sets it in **Event settings → Registration**. An Administrator who is not a Superadmin reads "Set by a superadmin in Event settings, Registration." A Superadmin gets a **Change** link in the header of the card instead. The checklist rows **Access method**, **Identity provider** and **Event password** say the same: ask a Superadmin, or, for a Superadmin, a link to Event settings.
 
 **Set how guests get in**
 

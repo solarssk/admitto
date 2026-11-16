@@ -299,19 +299,9 @@
   text-decoration: underline;
 }
 
-/* The access method as the Access tab shows it, to read: its name, and under it what else is chosen. */
+/* The access method as the Access tab shows it, to read: a row of the page's kind, with no rule under it and no padding of its own, in a
+ * card that spaces its parts with a gap. The "Change" link of a superadmin is in the header of the card. */
 .access-method-read {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.access-method-read p {
-  margin: 0;
-  color: var(--text-muted);
-}
-
-/* A link inside a sentence is underlined, so that it is told from the text by more than its colour (axe: link-in-text-block). */
-.access-method-read + .settings-card-intro a {
-  text-decoration: underline;
+  padding: 0;
+  border-bottom: 0;
 }

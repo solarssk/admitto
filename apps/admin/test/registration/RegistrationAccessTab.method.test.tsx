@@ -51,18 +51,21 @@ describe("the access method on the Access tab: to read, set by a superadmin", ()
     await renderLoaded(settings());
 
     expect(within(summary()).getByText("Link", { selector: "strong" })).toBeTruthy();
+    expect(within(summary()).getByText("Anyone who has the link can ask to join.")).toBeTruthy();
     expect(within(summary()).getByText("Set by a superadmin in Event settings, Registration.")).toBeTruthy();
     expect(within(summary()).queryByRole("link")).toBeNull();
     expect(within(summary()).queryByRole("button")).toBeNull();
     expect(screen.queryByRole("radio", { name: "Password" })).toBeNull();
   });
 
-  it("gives a superadmin the way to Event settings, Registration, in place of the sentence", async () => {
+  it("gives a superadmin a Change link in the header of the card, in place of the sentence", async () => {
     assignments = [SUPERADMIN];
     await renderLoaded(settings({ access_methods: ["password"], password_set: true }));
 
     expect(within(summary()).getByText("Password", { selector: "strong" })).toBeTruthy();
-    expect(within(summary()).getByRole("link", { name: "Event settings, Registration" }).getAttribute("href")).toBe(SETTINGS_LINK);
+    const change = within(summary()).getByRole("link", { name: "Change" });
+    expect(change.getAttribute("href")).toBe(SETTINGS_LINK);
+    expect(change.closest(".at-card__actions")).not.toBeNull();
     expect(within(summary()).queryByText(/Set by a superadmin/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
   });

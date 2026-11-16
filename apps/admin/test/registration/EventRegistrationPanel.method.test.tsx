@@ -233,6 +233,34 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     expect((screen.getByLabelText("Claim name") as HTMLInputElement).value).toBe("");
   });
 
+  it("empties the greyed picker and sends no provider after Link, Company SSO and Link again", async () => {
+    await renderPanel(settings({ sso_providers: ONLY_ENTRA }));
+
+    fireEvent.click(radio("Company SSO"));
+    expect(trigger().getAttribute("aria-label")).toBe("Identity provider, Contoso Entra");
+    fireEvent.click(radio("Link"));
+
+    expect(trigger().disabled).toBe(true);
+    expect(trigger().getAttribute("aria-label")).toBe("Identity provider, none selected");
+    expect(isOff(saveButton())).toBe(true);
+    expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
+  });
+
+  it("brings the saved provider back when Company SSO is chosen again, sends nothing, and clears it for Link on save", async () => {
+    await renderPanel(ssoSettings());
+
+    fireEvent.click(radio("Link"));
+    expect(trigger().getAttribute("aria-label")).toBe("Identity provider, none selected");
+    fireEvent.click(radio("Company SSO"));
+    expect(trigger().getAttribute("aria-label")).toBe("Identity provider, Contoso Entra");
+    expect(isOff(saveButton())).toBe(true);
+
+    api.saveRegistrationSettings.mockResolvedValue(settings());
+    fireEvent.click(radio("Link"));
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["link"], expected_sso_provider_id: "idp-entra" }));
+  });
+
   it("takes the only provider by itself when Company SSO is chosen, and does not when there are two", async () => {
     await renderPanel(settings({ sso_providers: ONLY_ENTRA }));
 
