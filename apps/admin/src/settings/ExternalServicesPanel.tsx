@@ -408,7 +408,9 @@ export function ExternalServicesPanel() {
       !weatherDraft.apiKey.value.trim() &&
       (weatherDraft.apiKey.mode === "clear" || !data?.weather.api_key.configured),
   );
-  const apiKeyEmpty = weatherDraft?.apiKey.mode === "replace" && weatherDraft.apiKey.value.trim() === "";
+  // Only Open-Meteo has a key field; for MET Norway an open and empty key edit is hidden and is not sent (see `buildWeatherSaveBody`).
+  const apiKeyEmpty =
+    weatherDraft?.provider === "openmeteo" && weatherDraft.apiKey.mode === "replace" && weatherDraft.apiKey.value.trim() === "";
   const showMetNoContactNotice = Boolean(
     weatherDraft?.enabled &&
       weatherDraft.provider === "metno" &&

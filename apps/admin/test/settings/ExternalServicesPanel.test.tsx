@@ -906,6 +906,19 @@ describe("ExternalServicesPanel", () => {
     expect(mockSaveWeather).not.toHaveBeenCalled();
   });
 
+  it("does not block save for an open, empty key box once the provider is MET Norway, which has no key", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({ weather: { provider: "openmeteo", api_key: { configured: true, source: "organization" } } }),
+    );
+    await renderLoaded();
+    fireEvent.click(apiKeyButton("Change"));
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "MET Norway" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockSaveWeather).toHaveBeenCalled());
+    expect(screen.queryByText("Enter the API key, or choose Cancel to keep the saved one.")).toBeNull();
+  });
+
   it("blocks save when the saved API key is cleared on a commercial host", async () => {
     mockFetch.mockResolvedValueOnce(
       sampleResponse({
