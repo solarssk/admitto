@@ -1,7 +1,8 @@
 import { Link } from "react-router";
 import { Card } from "@admitto/ui";
-import type { RegistrationReadinessCheckDto } from "../api/types.js";
-import { readinessCopy, remedyFor, type ReadinessCopy, type ReadinessLink } from "./accessReadiness.js";
+import type { RegistrationReadinessCheckDto, RegistrationSettingsDto } from "../api/types.js";
+import type { AccessMethod } from "./accessSettings.js";
+import { ACCESS_METHOD_SET_BY, accessMethodDetail, readinessCopy, remedyFor, type ReadinessCopy, type ReadinessLink } from "./accessReadiness.js";
 import "./registration-access.css";
 
 /** Where a link of a missing check goes: another tab of this page (the address keeps its path), or the settings of the event. */
@@ -54,7 +55,25 @@ function rowLook(check: RegistrationReadinessCheckDto, copy: ReadinessCopy) {
   return check.ok ? ROW_LOOK.done : ROW_LOOK.todo;
 }
 
-function ReadinessRow({ eventId, check, superadmin }: Readonly<{ eventId: string; check: RegistrationReadinessCheckDto; superadmin: boolean }>) {
+/** What the row "Access method" says that is met: what is set, then who sets it. Static: the choice is made in Event settings. */
+interface AccessMethodState {
+  method: AccessMethod | null;
+  provider: RegistrationSettingsDto["sso_provider"];
+}
+
+/** The sentence of a row: what the access method is, for that row when it is met; else the words of the check for its state. */
+function rowSentence(ok: boolean, copy: ReadinessCopy, accessMethod: AccessMethodState | null): string {
+  if (accessMethod !== null) return accessMethodDetail(accessMethod.method, accessMethod.provider);
+  return ok ? copy.met : copy.missing;
+}
+
+function ReadinessRow({
+  eventId,
+  check,
+  superadmin,
+  accessMethod,
+}: Readonly<{ eventId: string; check: RegistrationReadinessCheckDto; superadmin: boolean; accessMethod: AccessMethodState }>) {
+  const states = check.key === "access_method" && check.ok;
   const copy = readinessCopy(check.key);
   const look = rowLook(check, copy);
   return (
@@ -67,7 +86,8 @@ function ReadinessRow({ eventId, check, superadmin }: Readonly<{ eventId: string
           <span className="sr-only">{look.prefix}</span>
           {copy.title}
         </strong>
-        <span className="overview-check__detail">{check.ok ? copy.met : copy.missing}</span>
+        <span className="overview-check__detail">{rowSentence(check.ok, copy, states ? accessMethod : null)}</span>
+        {states && <span className="overview-check__detail">{ACCESS_METHOD_SET_BY}</span>}
         {!check.ok && <ReadinessRemedy eventId={eventId} remedy={remedyFor(copy, superadmin)} />}
       </span>
     </li>
@@ -85,7 +105,12 @@ export function AccessReadinessCard({
   hideArchived,
   unsaved,
   superadmin,
+  method,
+  provider,
 }: Readonly<{
+  /** The access method the event has, and its identity provider: the row "Access method" says them, to read. */
+  method: AccessMethod | null;
+  provider: RegistrationSettingsDto["sso_provider"];
   eventId: string;
   /** A superadmin is sent to the settings that put a check right, anybody else is told to ask. */
   superadmin: boolean;
@@ -106,7 +131,7 @@ export function AccessReadinessCard({
         {unsaved && <p className="settings-card-intro">The checklist shows what is saved. Save your changes to update it.</p>}
         <ul className="access-checklist">
           {ordered.map((check) => (
-            <ReadinessRow key={check.key} eventId={eventId} check={check} superadmin={superadmin} />
+            <ReadinessRow key={check.key} eventId={eventId} check={check} superadmin={superadmin} accessMethod={{ method, provider }} />
           ))}
         </ul>
       </div>

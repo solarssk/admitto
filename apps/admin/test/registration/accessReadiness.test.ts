@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { READINESS_COPY, readinessCopy, remedyFor } from "../../src/registration/accessReadiness.js";
+import { accessMethodDetail, READINESS_COPY, readinessCopy, remedyFor } from "../../src/registration/accessReadiness.js";
 
 /** The checks the server reports, read from the file that holds them: the screen has words for each one, and for no other. */
 function serverKeys(): string[] {
@@ -51,8 +51,8 @@ describe("the words of the checks", () => {
     }
     // A check without a place of its own for a superadmin reads the same for everybody.
     expect(remedyFor(READINESS_COPY.mail_provider, true)).toBe(READINESS_COPY.mail_provider.remedy);
-    // A way in is turned on at one place, and the organiser is told which.
-    expect(remedy("access_method_enabled")).toEqual({ text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." });
+    // The list of enabled ways in has no screen any more (the server drops it in a later PR), so its check names no place to go to.
+    expect(remedy("access_method_enabled")).toBeUndefined();
     expect(remedy("legal_documents")?.link).toBe("legal");
     expect(remedy("form_questions")?.link).toBe("fields");
     expect(remedy("required_fields")?.link).toBe("fields");
@@ -75,7 +75,7 @@ describe("the words of the checks", () => {
   });
 
   it("say the three access methods, and that the identity provider is chosen and turned on", () => {
-    expect(READINESS_COPY.access_method).toMatchObject({ met: "An access method is chosen.", missing: "Choose an access method: link, password or Company SSO." });
+    expect(READINESS_COPY.access_method).toMatchObject({ met: "An access method is chosen.", missing: "No access method is chosen yet. Guests cannot open the form." });
     expect(READINESS_COPY.identity_provider).toMatchObject({
       title: "Identity provider",
       met: "An identity provider is chosen and turned on.",
@@ -89,5 +89,21 @@ describe("the words of the checks", () => {
     expect(copy.title).toBe("Other");
     expect(copy.missing).toBe("Something else that registration needs is missing.");
     expect(readinessCopy("bot_protection")).toBe(READINESS_COPY.bot_protection);
+  });
+});
+
+describe("accessMethodDetail: what the row Access method says is set", () => {
+  const entra = { display_name: "Contoso Entra", state: "ready" };
+
+  it.each([
+    ["the link", "link", null, "Link. Anyone who has the link can ask to join."],
+    ["the password", "password", null, "Password. Guests need the link and the event password to open the form."],
+    ["Company SSO with its provider", "sso", entra, "Company SSO. Guests sign in with Contoso Entra."],
+    ["Company SSO with a provider that is turned off", "sso", { ...entra, state: "disabled" }, "Company SSO. Guests sign in with Contoso Entra (turned off)."],
+    ["Company SSO with no provider chosen", "sso", null, "Company SSO. No identity provider is chosen yet."],
+    ["Company SSO with a provider that has no name any more", "sso", { display_name: null, state: "missing" }, "Company SSO. No identity provider is chosen yet."],
+    ["no method", null, null, "No access method is chosen yet. Guests cannot open the form."],
+  ] as const)("says it for %s", (_what, method, provider, expected) => {
+    expect(accessMethodDetail(method, provider)).toBe(expected);
   });
 });

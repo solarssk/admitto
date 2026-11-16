@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RegistrationSettingsDto, RoleAssignment } from "../../src/api/types.js";
+import { plain } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
 import { checks, settings, ssoChecks, ssoEventSettings } from "./accessData.js";
 import { card, renderLoaded, resetApi, saveButton } from "./accessFixtures.js";
@@ -34,7 +35,7 @@ const SUPERADMIN: RoleAssignment = { role: "superadmin", scope_type: "instance",
 const ORG_ADMIN: RoleAssignment = { role: "admin", scope_type: "organization", scope_id: "org-1" };
 const SETTINGS_LINK = "/admin/events/evt-1/settings?tab=registration";
 
-const summary = () => card("Access method");
+const row = () => Array.from(card("Setup checklist").querySelectorAll("li.access-check")).find((entry) => entry.textContent?.includes("Access method")) as HTMLElement;
 const rows = () => Array.from(card("Setup checklist").querySelectorAll("li.access-check"));
 
 beforeEach(() => {
@@ -46,51 +47,54 @@ afterEach(() => {
   cleanup();
 });
 
-describe("the access method on the Access tab: to read, set by a superadmin", () => {
-  it("shows the method, and tells an organiser that a superadmin sets it in Event settings, with no link and no control", async () => {
+describe("the row Access method of the checklist: what is set, to read", () => {
+  it("states the method and who sets it, as text, with no control, card or link", async () => {
     await renderLoaded(settings());
 
-    expect(within(summary()).getByText("Link", { selector: "strong" })).toBeTruthy();
-    expect(within(summary()).getByText("Set by a superadmin in Event settings, Registration.")).toBeTruthy();
-    expect(within(summary()).queryByRole("link")).toBeNull();
-    expect(within(summary()).queryByRole("button")).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Password" })).toBeNull();
+    expect(row().textContent).toContain("Link. Anyone who has the link can ask to join.");
+    expect(row().textContent).toContain("Set by a superadmin in Event settings, Registration.");
+    expect(within(row()).queryByRole("link")).toBeNull();
+    expect(within(row()).queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "Access method" })).toBeNull();
+    expect(screen.queryByText("Access method", { selector: ".at-card__title" })).toBeNull();
   });
 
-  it("gives a superadmin the way to Event settings, Registration, in place of the sentence", async () => {
+  it("says the same to a superadmin, as static text without a link", async () => {
     assignments = [SUPERADMIN];
     await renderLoaded(settings({ access_methods: ["password"], password_set: true }));
 
-    expect(within(summary()).getByText("Password", { selector: "strong" })).toBeTruthy();
-    expect(within(summary()).getByRole("link", { name: "Event settings, Registration" }).getAttribute("href")).toBe(SETTINGS_LINK);
-    expect(within(summary()).queryByText(/Set by a superadmin/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
+    expect(row().textContent).toContain("Password. Guests need the link and the event password to open the form.");
+    expect(row().textContent).toContain("Set by a superadmin in Event settings, Registration.");
+    expect(within(row()).queryByRole("link")).toBeNull();
   });
 
   it("says which identity provider guests sign in with for Company SSO, and marks one that is turned off", async () => {
     await renderLoaded(ssoEventSettings());
-    expect(within(summary()).getByText("Identity provider: Contoso Entra")).toBeTruthy();
+    expect(row().textContent).toContain("Company SSO. Guests sign in with Contoso Entra.");
     cleanup();
 
     await renderLoaded(ssoEventSettings({ sso_provider: { id: "idp-entra", state: "disabled", display_name: "Contoso Entra", kind: "entra" } }));
-    expect(within(summary()).getByText("Identity provider: Contoso Entra (turned off)")).toBeTruthy();
+    expect(row().textContent).toContain("Company SSO. Guests sign in with Contoso Entra (turned off).");
     cleanup();
 
     await renderLoaded(ssoEventSettings({ sso_provider_id: null, sso_provider: null }));
-    expect(within(summary()).getByText("No identity provider is chosen yet.")).toBeTruthy();
+    expect(row().textContent).toContain("Company SSO. No identity provider is chosen yet.");
   });
 
-  it("says that no access method is chosen when there is none, or more than one", async () => {
-    await renderLoaded(settings({ access_methods: [] }));
-    expect(within(summary()).getByText("Not chosen", { selector: "strong" })).toBeTruthy();
-    expect(within(summary()).getByText("No access method is chosen yet. Guests cannot open the form.")).toBeTruthy();
+  it("is the warning row, with who to ask and without the sentence about who sets it, when no access method is chosen", async () => {
+    await renderLoaded(settings({ access_methods: [], readiness: checks("access_method") }));
+
+    expect(row().textContent).toContain("No access method is chosen yet. Guests cannot open the form.");
+    expect(row().textContent).toContain("Ask a superadmin to choose it in Event settings, Registration.");
+    expect(row().textContent).not.toContain("Set by a superadmin");
+    expect(row().querySelector(".ti-alert-triangle")).not.toBeNull();
   });
 
   it("is free of axe violations", async () => {
     assignments = [SUPERADMIN];
     await renderLoaded(ssoEventSettings());
 
-    const result = await axe.run(summary(), { rules: { "color-contrast": { enabled: false } } });
+    const result = await axe.run(card("Setup checklist"), { rules: { "color-contrast": { enabled: false } } });
 
     expect(result.violations).toEqual([]);
   });
@@ -98,7 +102,7 @@ describe("the access method on the Access tab: to read, set by a superadmin", ()
 
 describe("the checklist rows that are put right in Event settings, Registration", () => {
   it.each([
-    ["access_method", "Choose an access method: link, password or Company SSO.", "Ask a superadmin to choose it in Event settings, Registration.", "Choose it in Event settings, Registration."],
+    ["access_method", "No access method is chosen yet. Guests cannot open the form.", "Ask a superadmin to choose it in Event settings, Registration.", "Choose it in Event settings, Registration."],
     ["password", "Set the password that guests will enter.", "Ask a superadmin to set it in Event settings, Registration.", "Set it in Event settings, Registration."],
   ] as const)("send an organiser to ask, and a superadmin to the settings, for %s", async (key, missing, ask, go) => {
     const readiness = key === "password" ? [{ key: "access_method", ok: true }, { key: "password", ok: false }] : checks(key);

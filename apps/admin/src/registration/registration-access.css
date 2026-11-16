@@ -222,7 +222,7 @@
 }
 
 /* The record: three read only fields side by side, one under another on a narrow screen. Grey and in a fixed-width font, so that they do not
- * look like something to type in; the button that copies a value is on the left of its field, as on the card of the ways in. */
+ * look like something to type in; the button that copies a value is on the left of its field. */
 .access-dns {
   display: grid;
   grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) minmax(0, 1fr);
@@ -296,22 +296,5 @@
 
 /* A link inside a sentence is underlined, so that it is told from the text by more than its colour (axe: link-in-text-block). */
 .access-provider .settings-card-intro a {
-  text-decoration: underline;
-}
-
-/* The access method as the Access tab shows it, to read: its name, and under it what else is chosen. */
-.access-method-read {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.access-method-read p {
-  margin: 0;
-  color: var(--text-muted);
-}
-
-/* A link inside a sentence is underlined, so that it is told from the text by more than its colour (axe: link-in-text-block). */
-.access-method-read + .settings-card-intro a {
   text-decoration: underline;
 }

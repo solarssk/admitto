@@ -12,7 +12,6 @@ import { AccessFormCard } from "./AccessFormCard.js";
 import { AccessModeCard } from "./AccessModeCard.js";
 import { AccessQuestionsCard } from "./AccessQuestionsCard.js";
 import { AccessReadinessCard, MissingChecks } from "./AccessReadinessCard.js";
-import { AccessMethodSummary } from "./AccessMethodSummary.js";
 import { GuestLinkField } from "./GuestLinkField.js";
 import { hasStopped, stoppedWarning } from "./ownAddress.js";
 import { useAccessForm, type AccessProblem } from "./useAccessForm.js";
@@ -95,8 +94,7 @@ export function RegistrationAccessForm({
       <AccessModeCard mode={draft.mode} canTurnOn={canTurnOn} unsaved={dirty} disabled={archived || saving} onChange={(mode) => form.edit({ mode })}>
         <GuestLinkField url={server.guest_url} registrationOn={server.mode !== null} />
       </AccessModeCard>
-      <AccessReadinessCard eventId={eventId} checks={server.readiness} hideArchived={archived} unsaved={dirty} superadmin={superadmin} />
-      <AccessMethodSummary eventId={eventId} method={chosenMethod(server.access_methods)} provider={server.sso_provider} isSuperadmin={superadmin} />
+      <AccessReadinessCard eventId={eventId} checks={server.readiness} hideArchived={archived} unsaved={dirty} superadmin={superadmin} method={chosenMethod(server.access_methods)} provider={server.sso_provider} />
       <AccessFormCard draft={draft} legalItems={form.legalItems} disabled={archived || saving} onChange={form.edit} />
       <AccessQuestionsCard fields={server.public_fields} />
       {problem && !confirmOffOpen && <ProblemMessage eventId={eventId} problem={problem} superadmin={superadmin} />}

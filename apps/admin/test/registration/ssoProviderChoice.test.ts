@@ -6,17 +6,19 @@ const ENTRA = { id: "idp-entra", state: "ready", display_name: "Contoso Entra", 
 const NOTHING_SAVED = { method: null, providerId: null };
 
 describe("methodEdit", () => {
-  it("takes the only provider with Company SSO while none is chosen", () => {
-    expect(methodEdit("sso", { sso_provider_id: null }, [PROVIDERS[0] as (typeof PROVIDERS)[number]])).toEqual({ method: "sso", sso_provider_id: "idp-entra" });
+  it.each([
+    ["the only provider there is, when the event has none saved", null, [PROVIDERS[0]], "idp-entra"],
+    ["the provider the event has saved, even when there are two", "idp-google", PROVIDERS, "idp-google"],
+    ["the saved provider rather than the only one", "idp-google", [PROVIDERS[0]], "idp-google"],
+    ["no provider when there are two and none is saved", null, PROVIDERS, null],
+    ["no provider when there is none", null, [], null],
+  ] as const)("gives Company SSO %s", (_what, saved, providers, expected) => {
+    expect(methodEdit("sso", saved, [...providers] as typeof PROVIDERS)).toEqual({ method: "sso", sso_provider_id: expected });
   });
 
-  it.each([
-    ["two providers", "sso", null, PROVIDERS],
-    ["a provider already chosen", "sso", "idp-google", [PROVIDERS[0]]],
-    ["no provider", "sso", null, []],
-    ["another method", "link", null, [PROVIDERS[0]]],
-  ] as const)("changes only the method for %s", (_what, method, chosen, providers) => {
-    expect(methodEdit(method, { sso_provider_id: chosen }, [...providers] as typeof PROVIDERS)).toEqual({ method });
+  it.each(["link", "password"] as const)("clears the provider in the form for %s, whatever is saved", (method) => {
+    expect(methodEdit(method, "idp-google", PROVIDERS)).toEqual({ method, sso_provider_id: null });
+    expect(methodEdit(method, null, [PROVIDERS[0] as (typeof PROVIDERS)[number]])).toEqual({ method, sso_provider_id: null });
   });
 });
 

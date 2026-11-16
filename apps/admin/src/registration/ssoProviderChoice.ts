@@ -16,10 +16,14 @@ const CHANGED = "Guests who are filling in the form will have to sign in again."
 export const NO_PROVIDER = "No identity provider is turned on.";
 export const ADD_PROVIDER = "Add one under Identity.";
 
-/** What choosing a method changes in the form: Company SSO with a single provider to use takes that provider, when none is chosen yet. */
-export function methodEdit(method: AccessMethod, draft: Pick<AccessDraft, "sso_provider_id">, providers: Providers): Partial<AccessDraft> {
+/**
+ * What choosing a method changes in the form. Only Company SSO has an identity provider: another method clears it in the form (the
+ * server clears it on save). Company SSO takes back the provider the event has saved, else the only provider there is, else none.
+ */
+export function methodEdit(method: AccessMethod, savedProviderId: string | null, providers: Providers): Partial<AccessDraft> {
+  if (method !== "sso") return { method, sso_provider_id: null };
   const only = providers.length === 1 ? providers[0] : undefined;
-  return method === "sso" && draft.sso_provider_id === null && only !== undefined ? { method, sso_provider_id: only.id } : { method };
+  return { method, sso_provider_id: savedProviderId ?? only?.id ?? null };
 }
 
 /**

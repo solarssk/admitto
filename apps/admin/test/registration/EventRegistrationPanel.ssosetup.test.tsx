@@ -86,7 +86,7 @@ describe("the setup for IT in the Company SSO card", () => {
     expect(toggle().getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("says, in the sentences of the card of the ways in, to enter the return address of the instance and that a gateway must let the callback through", async () => {
+  it("says, in the shared sentences, to enter the return address of the instance and that a gateway must let the callback through", async () => {
     await renderPanel(ssoSettings());
 
     expect(steps().map((step) => plain(step.querySelector("span")?.textContent ?? step.textContent))).toEqual([REDIRECT_HINT, GATEWAY_NOTE]);

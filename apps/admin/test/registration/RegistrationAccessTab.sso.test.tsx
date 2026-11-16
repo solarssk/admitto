@@ -44,14 +44,12 @@ afterEach(() => {
 });
 
 describe("the company SSO as the way in of an event, on the Access tab", () => {
-  it("is shown to read, with the identity provider, and has no control that changes it", async () => {
+  it("is stated in the checklist, with the identity provider, and has no control that changes it on this tab", async () => {
     await renderLoaded(ssoEventSettings());
 
-    const summary = card("Access method");
-    expect(within(summary).getByText("Company SSO", { selector: "strong" })).toBeTruthy();
-    expect(within(summary).getByText("Identity provider: Contoso Entra")).toBeTruthy();
-    expect(screen.queryByRole("radiogroup", { name: "Access method" })).toBeNull();
-    expect(within(summary).queryByRole("button")).toBeNull();
+    expect(card("Setup checklist").textContent).toContain("Company SSO. Guests sign in with Contoso Entra.");
+    expect(screen.queryByRole("radio", { name: "Company SSO" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
     expect(screen.queryByText("Event password")).toBeNull();
     expect(screen.queryByLabelText("Claim name")).toBeNull();
     expect(screen.queryByLabelText("Allowed values")).toBeNull();

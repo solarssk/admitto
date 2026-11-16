@@ -27,7 +27,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 **Read how guests get in**
 
-The **Access method** card on this tab only shows what is set: **Link**, **Password** or **Company SSO**, and for Company SSO the identity provider. A Superadmin sets it in **Event settings → Registration**. An Administrator who is not a Superadmin reads "Set by a superadmin in Event settings, Registration." A Superadmin gets a link to that tab instead. The checklist rows **Access method**, **Identity provider** and **Event password** say the same: ask a Superadmin, or, for a Superadmin, a link to Event settings.
+The **Access method** row of the **Setup checklist** on this tab says what is set, as text: "Link. Anyone who has the link can ask to join.", "Password. ..." or "Company SSO. Guests sign in with" and the name of the identity provider. It has no button. A Superadmin sets it in **Event settings → Registration**, and the row says so. When no method is chosen, the row is not done and says "No access method is chosen yet. Guests cannot open the form." The rows **Identity provider** and **Event password** tell an Administrator to ask a Superadmin, and send a Superadmin to Event settings.
 
 **Set how guests get in**
 
@@ -144,7 +144,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 | Row | If it is not done |
 |---|---|
 | **Access method** | A Superadmin chooses **Link**, **Password** or **Company SSO** in **Event settings → Registration** |
-| **The chosen way is turned on** | Ask a Superadmin to turn that way on: Organisation settings > External services > Ways in |
+| **The chosen way is turned on** | No screen turns this on any more: the **Ways in** card was removed from External services. Link, Password and Company SSO are meant to be always available, so a row that is not done on your instance is a setup problem. Ask the person who runs the instance. Company SSO also needs an identity provider that is turned on (see **Identity provider** below) |
 | **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company SSO does not have this row. If bot protection is **Off** for your organisation, the row is grey, says "Off for this organisation" and does not block anything |
 | **Identity provider** | A Superadmin chooses it in **Event settings → Registration**. If the list is empty, one is set up under **Identity** first. Only a form with the company SSO has this row |
 | **Event password** | A Superadmin sets it in **Event settings → Registration** |

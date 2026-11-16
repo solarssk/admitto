@@ -1485,30 +1485,6 @@ export interface SaveRegistrationTurnstileBody {
   bot_protection?: RegistrationBotProtection;
 }
 
-/** What a way in waits for when it is on but cannot be used: the Turnstile keys (`link`, `password`) or an enabled sign-in
- * provider (`sso`). */
-export type RegistrationAccessMethodBlocker = "bot_protection" | "identity_provider";
-
-/** One way in to the guest registration form, as the superadmin has set it. `enabled` is the switch; `available` is whether
- * a guest can use it right now (`enabled` and not `blocked_by` anything). */
-export interface RegistrationAccessMethodDto {
-  method: RegistrationAccessMethod;
-  enabled: boolean;
-  available: boolean;
-  blocked_by: RegistrationAccessMethodBlocker | null;
-}
-
-/** GET and PUT /api/admin/registration/access-methods: every way in, in the server's order (`link`, `password`, `sso`),
- * whether or not it is enabled. Superadmin only. */
-export interface RegistrationAccessMethodsDto {
-  methods: RegistrationAccessMethodDto[];
-}
-
-/** PUT: the whole list of enabled ways in. A way left out is turned off, `[]` turns all off. */
-export interface SaveRegistrationAccessMethodsBody {
-  methods: RegistrationAccessMethod[];
-}
-
 /** Where the choice of the identity provider for the company SSO stands: `ready` (it exists and is on), `not_selected`,
  * `missing` (the chosen one was deleted) or `disabled` (the chosen one is turned off). */
 export type RegistrationSsoProviderState = "ready" | "not_selected" | "missing" | "disabled";
@@ -1531,11 +1507,6 @@ export interface RegistrationRedirectUriDto {
   uri: string;
   host: "instance" | "event_domain";
   verified: boolean;
-}
-
-/** PUT: the provider to use, or `null` for none. Only a provider that is turned on can be chosen (422 `provider_not_available`). */
-export interface SaveRegistrationSsoProviderBody {
-  provider_id: string | null;
 }
 
 /** One legal text of an event (`/api/admin/events/:eventId/legal-documents`): the privacy notice, the event

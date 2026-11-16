@@ -23,8 +23,6 @@ const ASK_TO_CHOOSE = { text: "Ask a superadmin to choose it in Event settings, 
 const CHOOSE_IN_SETTINGS = { text: "Choose it in Event settings, Registration.", link: "registration_settings" } as const;
 
 const ASK_A_SUPERADMIN = { text: "Ask a superadmin to set it up." } as const;
-/** The ways in of the whole instance are turned on by a superadmin, on a card of their own. */
-const ASK_FOR_THE_WAY_IN = { text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." } as const;
 
 /**
  * The words of every check the server reports (`READINESS_KEYS` in `apps/web/src/registration/readiness.ts`; a test holds the two
@@ -35,7 +33,7 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
   access_method: {
     title: "Access method",
     met: "An access method is chosen.",
-    missing: "Choose an access method: link, password or Company SSO.",
+    missing: "No access method is chosen yet. Guests cannot open the form.",
     remedy: ASK_TO_CHOOSE,
     superadminRemedy: CHOOSE_IN_SETTINGS,
   },
@@ -43,7 +41,6 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     title: "The chosen way is turned on",
     met: "This way is turned on for the organisation.",
     missing: "This way is not turned on for the organisation.",
-    remedy: ASK_FOR_THE_WAY_IN,
   },
   bot_protection: {
     title: "Bot protection",
@@ -114,6 +111,20 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     remedy: { text: "Check the date and hours in Event settings.", link: "event_settings" },
   },
 };
+
+/** The sentence of the row "Access method" that tells what is set, in plain words, and nothing to press: only a superadmin changes it. */
+export const ACCESS_METHOD_SET_BY = "Set by a superadmin in Event settings, Registration.";
+
+export function accessMethodDetail(method: "link" | "password" | "sso" | null, provider: { display_name: string | null; state: string } | null): string {
+  if (method === "link") return "Link. Anyone who has the link can ask to join.";
+  if (method === "password") return "Password. Guests need the link and the event password to open the form.";
+  if (method === "sso") {
+    const name = provider?.display_name ?? null;
+    if (name === null) return "Company SSO. No identity provider is chosen yet.";
+    return `Company SSO. Guests sign in with ${name}${provider?.state === "disabled" ? " (turned off)" : ""}.`;
+  }
+  return READINESS_COPY.access_method.missing;
+}
 
 /** What to do about a missing check, for this person: a superadmin may have another place to go to. */
 export function remedyFor(copy: ReadinessCopy, superadmin: boolean): ReadinessCopy["remedy"] {

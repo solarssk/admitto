@@ -21,11 +21,11 @@ Open **Organisation settings**. Save one area at a time and verify the visible r
 | **General** | Instance behaviour and base configuration shown by the panel, including **Support contact** (used in the User-Agent for Nominatim and MET Norway requests) |
 | **Branding** | Organisation name, logo, colour palette and fonts |
 | **Mail** | The organisation-wide mail transport |
-| **External services** | Weather and Maps connections, the Cloudflare Turnstile keys for guest registration, and the ways in to its form |
+| **External services** | Weather and Maps connections, and the Cloudflare Turnstile keys for guest registration |
 | **Notifications** | Security alerts to admin staff |
 | **Security** | MFA, session policy, passkey sign-in, trusted script origins |
 | **Archiving** | Retention and completed-event controls. Switch between Active and Archived lists (paginated). Each row can show who created and who last archived the event, and when |
-| **Identity** | OIDC providers and Cloudflare Access |
+| **Identity** | OIDC providers and Cloudflare Access. Providers that are turned on can be chosen for Company SSO on each event, in Event settings, Registration. |
 | **Logs** | System, administration and security activity |
 | **Health check** | Core infrastructure and External integrations status |
 
@@ -67,25 +67,7 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - In Cloudflare, add the address of this instance to the hostnames of the widget.
 - Cloudflare sees each visitor's IP address and browser details when the form opens. Name it in your privacy notice. See [SUBPROCESSORS.md](https://github.com/solarssk/admitto/blob/main/docs/security/SUBPROCESSORS.md).
 - An administrator turns registration on for each event, on the **Access** tab of its **Registration** page. See [Registration Access](Registration-Access).
-
-**Ways in**
-
-- Turn **Link**, **Password** or **Company SSO** on to let organisers choose it for their events. An organiser picks one way for each event, on the **Access** tab of its **Registration** page.
-- A way that is off cannot be chosen. Turning one off closes the form of every event that uses it, at once: guests see a page that is not found.
-- Nothing is deleted when you turn a way off. Turn it on again and those forms open again.
-- While the bot check is **On**, a link or a password opens a form only while the Turnstile keys are ready. The card warns you when they are not. The company SSO needs no Turnstile keys.
-- While the bot check is **Off**, the link and the password need no keys. The Provider and the keys stay on the card, so you can keep them ready.
-- Save once for the whole tab. The change is recorded in **Logs**, on the **Audit** view, as "Guest registration access methods updated".
-
-**Company SSO**
-
-- With **Company SSO** on, pick the **Identity provider** guests sign in with. The list holds the OIDC providers that are turned on, by the name you gave them under **Identity**. A guest who signs in this way does not get an Admitto account.
-- The sentence under the picker says where the choice stands: no provider chosen yet, the chosen provider was deleted, the chosen provider is turned off, or ready. Unless it is ready, the forms of events that use the company SSO stay closed. Nothing is deleted.
-- The choice is saved with the one **Save** of the tab, and recorded in **Logs**, on the **Audit** view, as "Guest registration Company SSO provider updated". If the choice is refused, the switch is still saved and the provider stays as you left it.
-- **Return address** is the address to enter at the identity provider, in its list of allowed redirect (callback) addresses. After a guest signs in, the provider sends the guest back to this address. It is the same for every event that uses Company SSO on the address of the instance, so you enter it once. It comes from the Instance URL under **General**. Without that address the card says so.
-- An event with an address of its own for guests has one more **Return address for** the name of that address, in the form `https://<address>/sso/callback`. It is the same for all events that share that address, so you enter it once for each address. It is listed before the address passes its check, so that the sign-in works as soon as it does. See [Registration Access](Registration-Access).
-- If a gateway such as Cloudflare Access stands in front of Admitto, it must let the paths `/sso/callback`, `/r/*` and `/legal/*` through without asking for a sign-in.
-- A Superadmin restricts Company SSO to one company per event, on the **Registration** tab of **Event settings**. An organiser cannot change it. See [Registration Access](Registration-Access).
+- **Company SSO for guests.** Identity providers are set up under **Identity**. A Superadmin chooses the provider of each event in **Event settings → Registration**. At the identity provider, enter the return address `https://<address of this instance>/sso/callback` once for the whole instance (that tab also lists it, and an event's own address, under **Setup for your IT team**). If a gateway such as Cloudflare Access stands in front of Admitto, it must let `/sso/callback`, `/r/*` and `/legal/*` through without asking for a sign-in. See [Registration Access](Registration-Access).
 
 **Support contact and Test connection**
 

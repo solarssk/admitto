@@ -168,6 +168,9 @@ describe("RegistrationAccessTab: a read that fails", () => {
   });
 });
 
+/** The row "Access method" of the checklist. */
+const accessMethodRow = () => Array.from(card("Setup checklist").querySelectorAll("li.access-check")).find((row) => row.textContent?.includes("Access method")) as HTMLElement;
+
 describe("RegistrationAccessTab: the settings", () => {
   it("reads the settings and the legal texts of the event, with the signal that abandons them", async () => {
     await renderLoaded();
@@ -211,7 +214,7 @@ describe("RegistrationAccessTab: the settings", () => {
 
     expect(radio("With approval").getAttribute("aria-checked")).toBe("true");
     expect(radio("Off").getAttribute("aria-checked")).toBe("false");
-    expect(within(card("Access method")).getByText("Password", { selector: "strong" })).toBeTruthy();
+    expect(accessMethodRow().textContent).toContain("Password. Guests need the link and the event password to open the form.");
     expect(toggle("Waiting list").checked).toBe(false);
     expect(toggle("Confirm email addresses").checked).toBe(true);
     expect(toggle("Ask for the company").checked).toBe(true);
@@ -239,8 +242,8 @@ describe("RegistrationAccessTab: the settings", () => {
   it.each<[string[]]>([[[]], [["link", "password"]], [["sso", "link"]]])("shows no access method as chosen for %j, as the server counts none, and has nothing to save", async (methods) => {
     await renderLoaded(settings({ access_methods: methods as RegistrationSettingsDto["access_methods"], readiness: checks("access_method") }));
 
-    expect(within(card("Access method")).getByText("Not chosen", { selector: "strong" })).toBeTruthy();
-    expect(screen.queryByRole("radio", { name: "Link" })).toBeNull();
+    expect(accessMethodRow().textContent).toContain("No access method is chosen yet. Guests cannot open the form.");
+    expect(accessMethodRow().textContent).not.toContain("Set by a superadmin");
     expect(isOff(saveButton())).toBe(true);
   });
 
@@ -322,7 +325,7 @@ describe("RegistrationAccessTab: the checklist", () => {
     expect(rows[0]?.textContent).toContain("Publish the privacy notice, the terms and every consent you chose.");
     expect(rows[1]?.textContent).toContain("Email sending");
     expect(rows[1]?.textContent).toContain("Email sending is not set up for this event, so guests would get no email.");
-    expect(rows[2]?.textContent).toContain("An access method is chosen.");
+    expect(rows[2]?.textContent).toContain("Link. Anyone who has the link can ask to join.");
     expect(within(card("Setup checklist")).getByText("8 of 10 done")).toBeTruthy();
   });
 
@@ -364,7 +367,7 @@ describe("RegistrationAccessTab: the checklist", () => {
     expect(checklist.getAllByRole("link", { name: "Open the Fields tab." })).toHaveLength(2);
     expect(checklist.getByRole("link", { name: "Check the date and hours in Event settings." }).getAttribute("href")).toBe("/admin/events/evt-1/settings");
     expect(checklist.getAllByText("Ask a superadmin to set it up.")).toHaveLength(3);
-    expect(checklist.getByText("Ask a superadmin to turn it on in Organisation settings, External services, Ways in.")).toBeTruthy();
+    expect(checklist.queryByText(/Ways in/)).toBeNull();
 
     fireEvent.click(legal);
     expect(router.state.location.search).toBe("?tab=legal");
@@ -376,7 +379,7 @@ describe("RegistrationAccessTab: the checklist", () => {
     await renderLoaded(settings({ access_methods: [], readiness: checks("access_method") }));
 
     const row = checklistRows()[0] as HTMLElement;
-    expect(row.textContent).toContain("Choose an access method: link, password or Company SSO.");
+    expect(row.textContent).toContain("No access method is chosen yet. Guests cannot open the form.");
     expect(within(row).queryByRole("link")).toBeNull();
   });
 
