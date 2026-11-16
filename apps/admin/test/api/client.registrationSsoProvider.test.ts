@@ -19,8 +19,8 @@ afterEach(() => {
 });
 
 describe("fetchRegistrationReturnAddresses", () => {
-  it("reads the choice, the providers and the return address with the session, and hands the abort signal on", async () => {
-    const answer = ssoProviderDto({ provider_id: "idp-okta", state: "ready" });
+  it("reads the return addresses with the session, and hands the abort signal on", async () => {
+    const answer = ssoProviderDto();
     const fetchMock = stubFetch(200, answer);
     const controller = new AbortController();
 

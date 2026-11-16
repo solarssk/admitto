@@ -1,24 +1,12 @@
 import type { RegistrationReturnAddressesDto } from "../../src/api/types.js";
 
-/** The two providers the tests list as turned on. */
-export const SSO_PROVIDERS = [
-  { id: "idp-entra", display_name: "Company Entra ID" },
-  { id: "idp-okta", display_name: "Okta" },
-];
-
 /**
- * The answer of the sso-provider route: the choice `providerId`, how it stands (`state`), the providers that can be chosen, and the
- * return address (a made-up instance address; `null` for an instance that has none).
+ * The answer of the sso-provider route: the return address of the guests' company SSO (a made-up instance address; `null` for an
+ * instance that has none) and every address to list. Which provider an event uses is not part of it.
  */
 export function ssoProviderDto(overrides: Partial<RegistrationReturnAddressesDto> = {}): RegistrationReturnAddressesDto {
-  const dto = {
-    provider_id: null,
-    state: "not_selected" as const,
-    providers: SSO_PROVIDERS,
-    redirect_uri: "https://tickets.example.com/sso/callback" as string | null,
-    ...overrides,
-  };
+  const redirectUri = overrides.redirect_uri === undefined ? "https://tickets.example.com/sso/callback" : overrides.redirect_uri;
   // Unless a test lists the addresses itself, they are the instance's one, as the server lists them for an instance with no own address.
-  const instanceOnly = dto.redirect_uri === null ? [] : [{ uri: dto.redirect_uri, host: "instance" as const, verified: true }];
-  return { ...dto, redirect_uris: overrides.redirect_uris ?? instanceOnly };
+  const instanceOnly = redirectUri === null ? [] : [{ uri: redirectUri, host: "instance" as const, verified: true }];
+  return { redirect_uri: redirectUri, redirect_uris: overrides.redirect_uris ?? instanceOnly };
 }
