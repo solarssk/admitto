@@ -180,7 +180,7 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     pickProvider("Contoso Entra");
     fireEvent.click(saveButton());
 
-    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["sso"], sso_provider_id: "idp-entra" }));
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["sso"], sso_provider_id: "idp-entra", expected_sso_provider_id: null }));
     await waitFor(() => expect(isOff(saveButton())).toBe(true));
   });
 
@@ -195,7 +195,7 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     fireEvent.click(saveButton());
 
     await waitFor(() =>
-      expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["sso"], sso_provider_id: "idp-entra", sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }),
+      expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["sso"], sso_provider_id: "idp-entra", sso_claim_name: "tid", sso_claim_values: ["aaa-111"], expected_sso_provider_id: null }),
     );
     await waitFor(() => expect(isOff(saveButton())).toBe(true));
   });
@@ -207,7 +207,7 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     pickProvider("Contoso Google");
     fireEvent.click(saveButton());
 
-    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_provider_id: "idp-google" }));
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_provider_id: "idp-google", expected_sso_provider_id: "idp-entra" }));
   });
 
   it("takes the provider of the answer of a save, so that one that is turned off meanwhile is marked", async () => {
@@ -228,7 +228,7 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     fireEvent.click(radio("Link"));
     fireEvent.click(saveButton());
 
-    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["link"] }));
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["link"], expected_sso_provider_id: "idp-entra" }));
     await waitFor(() => expect(screen.getByLabelText("Claim name")).toHaveProperty("disabled", true));
     expect((screen.getByLabelText("Claim name") as HTMLInputElement).value).toBe("");
   });
@@ -315,6 +315,58 @@ describe("the identity provider of Company SSO, in Event settings", () => {
 
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalled());
     expect((await screen.findByRole("alert")).textContent).toBe("This identity provider is not available. Choose another one.");
+  });
+
+  it("sends the provider that was last read, not the one in the form, with every save", async () => {
+    await renderPanel(ssoSettings());
+    saved({ sso_provider_id: "idp-google", sso_provider: { ...ENTRA, id: "idp-google", display_name: "Contoso Google", kind: "google" } });
+
+    pickProvider("Contoso Google");
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_provider_id: "idp-google", expected_sso_provider_id: "idp-entra" }));
+  });
+
+  it("sends the provider of the answer of the last save as the one that was read", async () => {
+    await renderPanel(ssoSettings());
+    saved({ sso_provider_id: "idp-google", sso_provider: { ...ENTRA, id: "idp-google", display_name: "Contoso Google", kind: "google" } });
+    pickProvider("Contoso Google");
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(isOff(saveButton())).toBe(true));
+    api.saveRegistrationSettings.mockClear();
+    saved({ sso_provider_id: "idp-google", sso_claim_name: "tid", sso_claim_values: ["a"] });
+
+    fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid" } });
+    fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "a" } });
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["a"], expected_sso_provider_id: "idp-google" }));
+  });
+
+  it("saves nothing, reads again, shows what is saved now and says why, when somebody else changed the provider meanwhile", async () => {
+    await renderPanel(ssoSettings());
+    api.saveRegistrationSettings.mockRejectedValue(new ApiError(409, "sso_provider_changed"));
+    fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid" } });
+    fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "a" } });
+    api.fetchRegistrationSettings.mockClear();
+    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ sso_provider_id: "idp-google", sso_provider: { ...ENTRA, id: "idp-google", display_name: "Contoso Google", kind: "google" } }));
+
+    fireEvent.click(saveButton());
+
+    expect((await screen.findByRole("alert")).textContent).toBe("The identity provider of this event was changed meanwhile. Reload the page and check the restriction.");
+    await waitFor(() => expect(trigger().getAttribute("aria-label")).toBe("Identity provider, Contoso Google"));
+    expect((screen.getByLabelText("Claim name") as HTMLInputElement).value).toBe("");
+    expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(1);
+    expect(api.saveRegistrationSettings).toHaveBeenCalledTimes(1);
+    expect(isOff(saveButton())).toBe(true);
+
+    // The next save carries the provider that was read again.
+    api.saveRegistrationSettings.mockClear();
+    api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ sso_provider_id: "idp-google", sso_claim_name: "tid", sso_claim_values: ["a"] }));
+    fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid" } });
+    fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "a" } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["a"], expected_sso_provider_id: "idp-google" }));
   });
 
   it("is told when the server refuses a change of the access method because registration is not ready, and reads the settings again", async () => {

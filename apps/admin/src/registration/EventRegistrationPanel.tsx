@@ -238,6 +238,22 @@ function EventRegistrationCards({
     }
   }
 
+  /** Somebody else changed the provider of the event: nothing was saved. The settings are read again and the form takes them, so that
+   * the person sees what is saved now and decides again. A read that fails leaves the form as it is. */
+  async function startAgain() {
+    const mine = ++newestRead.current;
+    try {
+      const latest = await fetchRegistrationSettings(eventId);
+      if (mine !== newestRead.current) return;
+      const next = technicalOf(draftFromSettings(latest));
+      setSettings(latest);
+      setSaved(next);
+      setTyped(next);
+    } catch {
+      // What the cards show stays as it is, and so does the message that sent us here.
+    }
+  }
+
   /** The Retry of the return addresses: reads them again, busy while it works, and the answer replaces the failure. */
   async function retryReturnAddresses() {
     setRetryingAddresses(true);
@@ -283,7 +299,8 @@ function EventRegistrationCards({
     setSaving(true);
     setError(null);
     try {
-      const answer = await saveRegistrationSettings(eventId, patch);
+      // The provider the page last read, not the one in the form: a save made after somebody else changed it is refused.
+      const answer = await saveRegistrationSettings(eventId, { ...patch, expected_sso_provider_id: settings.sso_provider_id });
       // A read that started before this answer is older than it.
       newestRead.current += 1;
       // The answer says what these settings are now, and nothing else is the save's to say: the address, and what was read of it, stay as they are.
@@ -308,6 +325,7 @@ function EventRegistrationCards({
       }
       if (hasApiErrorCode(err, "event_archived")) archivedMeanwhile();
       // The provider was turned off or deleted, or registration lost something it needs, since the page was read: read it again.
+      else if (hasApiErrorCode(err, "sso_provider_changed")) void startAgain();
       else if (hasApiErrorCode(err, "sso_provider_not_available") || hasApiErrorCode(err, "registration_not_ready")) void refresh();
       setError(operatorApiErrorMessage(err, "Could not save the registration settings."));
     } finally {

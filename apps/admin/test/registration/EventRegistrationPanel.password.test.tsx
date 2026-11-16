@@ -568,7 +568,7 @@ describe("Event settings, Registration: leaving the password as the way in", () 
     expect(api.clearRegistrationPassword).not.toHaveBeenCalled();
     expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
     fireEvent.click(saveButton());
-    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["link"] }));
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["link"], expected_sso_provider_id: null }));
     await waitFor(() => expect(rowTitle()).toBeNull());
   });
 
