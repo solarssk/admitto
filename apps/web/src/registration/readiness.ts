@@ -32,7 +32,7 @@ import { evaluateLegalGate, type LegalGateRow } from "../legal/registration-gate
 import { SELECTABLE_ACCESS_METHODS, type SelectableAccessMethod } from "./access-methods.js";
 import { isRequiredFieldOffForm } from "./field-on-form.js";
 import type { FormQuestionType } from "./form-fields.js";
-import { getBotProtectionMode, type BotProtectionMode } from "./bot-protection-mode.js";
+import { botProtectionApplies, getBotProtectionMode, type BotProtectionMode } from "./bot-protection-mode.js";
 import { drawQuestions } from "./form-model.js";
 import { listSelectableSsoProviders, type SelectableSsoProvider } from "./sso-provider.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
@@ -89,6 +89,8 @@ export interface ReadinessInput {
     access_methods: readonly string[];
     consent_keys: readonly string[];
     password_set: boolean;
+    /** The event's own bot check switch: it counts only while the organisation's is on. */
+    bot_protection_enabled: boolean;
     /** The identity provider the event chose for the company sign-in, or null. */
     sso_provider_id: string | null;
   };
@@ -110,11 +112,11 @@ export function evaluateRegistrationReadiness({ settings, environment, event }: 
   const method = chosenAccessMethod(settings.access_methods);
   const checks: RegistrationReadinessCheck[] = [{ key: "access_method", ok: method !== null }];
   // A form behind the company sign-in needs no bot check: it stands behind a sign-in of the provider. The others do, unless the
-  // superadmin set bot protection to "not used": that is information for the organiser, never a blocker.
+  // superadmin set bot protection to "not used" for the organisation or for this event: that is information for the organiser, never a blocker.
   if (method === "sso") {
     checks.push({ key: "identity_provider", ok: environment.enabledSsoProviders.some((provider) => provider.id === settings.sso_provider_id) });
   }
-  else if (environment.botProtectionMode === "not_used") checks.push({ key: "bot_protection_not_used", ok: true });
+  else if (!botProtectionApplies(environment.botProtectionMode, settings.bot_protection_enabled)) checks.push({ key: "bot_protection_not_used", ok: true });
   else checks.push({ key: "bot_protection", ok: environment.botProtectionReady });
   if (method === "password") checks.push({ key: "password", ok: settings.password_set });
   checks.push(

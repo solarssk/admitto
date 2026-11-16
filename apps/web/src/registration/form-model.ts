@@ -40,7 +40,7 @@ import {
 import { legalDocumentPath } from "../legal/legal-documents.js";
 import { loadRequiredLegalDocuments, type RequiredLegalDocuments } from "../legal/registration-gate.js";
 import { resolveAccessMethodAvailability } from "./access-methods.js";
-import { getBotProtectionMode } from "./bot-protection-mode.js";
+import { botProtectionApplies, getBotProtectionMode } from "./bot-protection-mode.js";
 import { canBeMet, canDrawQuestion, controllersByKey, type FormQuestionType } from "./form-fields.js";
 import { restrictionOf, type ClaimRestriction } from "./sso-claim.js";
 import { resolveGuestSsoProvider } from "./sso-provider.js";
@@ -205,6 +205,7 @@ const EVENT_SELECT = {
       consent_keys: true,
       max_companions: true,
       styled_form_controls: true,
+      bot_protection_enabled: true,
       sso_claim_name: true,
       sso_claim_values: true,
       sso_provider_id: true,
@@ -361,7 +362,7 @@ async function loadOpenForm(
   access: GuestAccess,
 ): Promise<ResolvedRegistration> {
   const [availability, keys, botMode, legal, fields, contact, provider] = await Promise.all([
-    resolveAccessMethodAvailability(db),
+    resolveAccessMethodAvailability(db, settings.bot_protection_enabled),
     resolveTurnstileKeys(db),
     getBotProtectionMode(db),
     loadRequiredLegalDocuments(db, row.id, settings.consent_keys),
@@ -375,7 +376,7 @@ async function loadOpenForm(
   const questions = drawQuestions(fields, "guest");
   // The link and the password need the bot check unless the superadmin set it to "not used"; the company sign-in never does,
   // because the form stands behind a sign-in.
-  const needsChallenge = access.method !== "sso" && botMode === "required";
+  const needsChallenge = access.method !== "sso" && botProtectionApplies(botMode, settings.bot_protection_enabled);
   if (!way?.available || (provider && provider.state !== "ready") || (needsChallenge && keys.state !== "ready") || !paths || !questions) return NOT_FOUND;
   return {
     kind: "open",

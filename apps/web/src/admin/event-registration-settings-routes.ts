@@ -47,6 +47,9 @@ export const MAX_REGISTRATION_SETTINGS_BODY_BYTES = 4_096;
  *   moving an event away from that way in removes it. How guests open the form is technical: only a superadmin may change the way
  *   in (403 `access_method_superadmin_only`) or the provider (403 `sso_provider_superadmin_only`); a value sent as it already is,
  *   is no change. The other settings stay with the administrator of the event;
+ * - `bot_protection_enabled`: the bot check (Turnstile) of the link and password forms of this event, on by default. It counts only while the
+ *   organisation's own switch is on. Only a superadmin may change it (403 `bot_protection_superadmin_only`; a value sent as it already is,
+ *   is no change). Turning it on is judged like a change of the access method when registration is on (the keys must be saved);
  * - `expected_sso_provider_id`: the provider the caller's screen showed (an id or `null`). When it differs from the one stored, once the
  *   save holds its locks, nothing is saved and the answer is a 409 `sso_provider_changed`. Left out, no check is made.
  */
@@ -60,6 +63,7 @@ const putBodySchema = z
     ask_company: z.boolean().optional(),
     ask_department: z.boolean().optional(),
     styled_form_controls: z.boolean().optional(),
+    bot_protection_enabled: z.boolean().optional(),
     consent_keys: z.array(z.string().regex(LEGAL_CONSENT_KEY_PATTERN)).max(MAX_CONSENT_DOCUMENTS_PER_EVENT).optional(),
     sso_claim_name: z.string().trim().min(1).refine((name) => ssoClaimNameProblem(name) === null).nullable().optional(),
     // The provider of the company sign-in, a cuid of an identity provider: its existence and state are judged by the save.
@@ -130,6 +134,8 @@ export async function handlePutEventRegistrationSettings(c: Context, db: PrismaC
       return c.json({ error: "sso_claim_superadmin_only" }, 403);
     case "sso_provider_changed":
       return c.json({ error: "sso_provider_changed" }, 409);
+    case "bot_protection_superadmin_only":
+      return c.json({ error: "bot_protection_superadmin_only" }, 403);
     case "access_method_superadmin_only":
       return c.json({ error: "access_method_superadmin_only" }, 403);
     case "sso_provider_needs_sso":

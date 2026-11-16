@@ -22,6 +22,15 @@ export type BotProtectionMode = (typeof BOT_PROTECTION_MODES)[number];
 
 type ModeDb = PrismaClient | Prisma.TransactionClient;
 
+/**
+ * Whether the bot check applies to the link and password forms of one event: the organisation's switch is on (`required`) AND the
+ * event's own switch is on (`EventRegistrationSettings.bot_protection_enabled`, a superadmin's to turn off). Either one off means no
+ * Turnstile and no keys for that event. The company sign-in never has a check, whatever this says.
+ */
+export function botProtectionApplies(mode: BotProtectionMode, eventEnabled: boolean): boolean {
+  return mode === "required" && eventEnabled;
+}
+
 /** The mode, `required` for a missing, corrupt or unknown row: the check is never dropped by accident. */
 export async function getBotProtectionMode(db: ModeDb): Promise<BotProtectionMode> {
   const row = await db.systemSettings.findUnique({ where: { key: BOT_PROTECTION_SETTINGS_KEY } });

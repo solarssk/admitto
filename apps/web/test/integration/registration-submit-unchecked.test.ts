@@ -263,3 +263,101 @@ describe("the password without the check", () => {
     expect(store.keys.filter((key) => key.startsWith("registration:password:"))).toHaveLength(1);
   });
 });
+
+describe("the check switched off for one event, while the organisation's switch is on", () => {
+  const addOffEvent = (slug: string, extra: Record<string, unknown> = {}) =>
+    addLinkEvent(slug, { settings: { mode: "automatic", verify_email: true, access_methods: ["link"], bot_protection_enabled: false, ...extra } });
+
+  beforeEach(async () => {
+    await setBotProtectionMode(prisma, "required");
+  });
+
+  it("opens that event with no keys saved at all, no widget and nothing about Cloudflare, and keeps the check on the others", async () => {
+    const off = nextSlug("event-off");
+    const on = nextSlug("event-on");
+    await addOffEvent(off);
+    await addLinkEvent(on);
+    await seeder.setSystemKeys(false);
+    const h = harness({ prisma });
+
+    const res = await h.get(`/r/${off}`);
+
+    expect(res.status).toBe(200);
+    const doc = documentOf(await res.text());
+    expect(doc.querySelector(".cf-turnstile")).toBeNull();
+    expect(doc.querySelector("script[src]")).toBeNull();
+    expect(res.headers.get("content-security-policy") ?? "").not.toContain("challenges.cloudflare.com");
+    // The event that did not switch it off is the one 404 without the keys.
+    expect((await h.get(`/r/${on}`)).status).toBe(404);
+  });
+
+  it("takes a submission with no token, Cloudflare is never asked, while another event of the organisation still asks for one", async () => {
+    const off = nextSlug("event-off-post");
+    const on = nextSlug("event-on-post");
+    const offId = await addOffEvent(off);
+    const onId = await addLinkEvent(on);
+    const h = harness({ prisma });
+
+    const taken = await h.post(off, h.body(off, { challenge: undefined }));
+    const refused = await h.post(on, h.body(on, { challenge: undefined }));
+
+    expect(taken.status).toBe(200);
+    expect(await registrations(offId)).toBe(1);
+    expect(h.cf.mock).not.toHaveBeenCalled();
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual({ errors: { challenge: "The security check did not pass. Try again." } });
+    expect(await registrations(onId)).toBe(0);
+  });
+
+  it("asks for the token again the moment the event's switch is turned back on", async () => {
+    const slug = nextSlug("event-back-on");
+    const eventId = await addOffEvent(slug);
+    const h = harness({ prisma });
+    expect((await h.post(slug, h.body(slug, { challenge: undefined }))).status).toBe(200);
+
+    await prisma.eventRegistrationSettings.update({ where: { event_id: eventId }, data: { bot_protection_enabled: true } });
+    const res = await h.post(slug, h.body(slug, { challenge: undefined, email: "second@example.com" }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it("opens the password of that event with no token and turns a wrong one away with the one 403", async () => {
+    const slug = nextSlug("event-off-pw");
+    const eventId = await addOffEvent(slug, { access_methods: ["password"], password_hash: hash });
+    const h = harness({ prisma });
+
+    const wrong = await h.post(slug, h.body(slug, { challenge: undefined, password: WRONG }));
+    const right = await h.post(slug, h.body(slug, { challenge: undefined, password: PASSWORD }));
+
+    expect(wrong.status).toBe(403);
+    expect(right.status).toBe(200);
+    expect(await registrations(eventId)).toBe(1);
+  });
+
+  it("is held to the same ceilings as with the check: 600 a minute for the event, the same key", async () => {
+    const slug = nextSlug("event-off-ceiling");
+    const eventId = await addOffEvent(slug);
+    const store = new SelectiveStore();
+    const h = harness({ prisma, store });
+
+    expect((await h.post(slug, h.body(slug))).status).toBe(200);
+    expect(store.keys.filter((key) => key.includes("event"))).toEqual([`registration:event:${eventId}`]);
+    for (let i = 0; i < 599; i += 1) await store.inner.hit(`registration:event:${eventId}`, 60_000, 600); // NOSONAR - counts requests in order
+
+    const refused = await h.post(slug, h.body(slug));
+
+    expect(refused.status).toBe(429);
+  });
+
+  it("never gives the company sign-in a check, whatever the event's switch says", async () => {
+    const slug = nextSlug("event-sso");
+    await addLinkEvent(slug, { settings: { mode: "automatic", access_methods: ["sso"], bot_protection_enabled: true } });
+    await seeder.setSystemKeys(false);
+    const h = harness({ prisma });
+
+    const res = await h.get(`/r/${slug}`);
+
+    // Not the page of the form with a widget: the company sign-in has no check, and with no provider it is the one 404.
+    expect(documentOf(await res.text()).querySelector(".cf-turnstile")).toBeNull();
+  });
+});

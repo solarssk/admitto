@@ -307,6 +307,7 @@ describe("reading the settings", () => {
       ask_department: body.ask_department,
       consent_keys: body.consent_keys,
       styled_form_controls: body.styled_form_controls,
+      bot_protection_enabled: body.bot_protection_enabled,
       sso_claim_name: body.sso_claim_name,
       sso_claim_values: body.sso_claim_values,
       sso_provider_id: body.sso_provider_id,
@@ -347,6 +348,7 @@ describe("reading the settings", () => {
       ask_department: true,
       consent_keys: ["photos"],
       styled_form_controls: true,
+      bot_protection_enabled: true,
       sso_claim_name: null,
       sso_claim_values: [],
       sso_provider_id: null,
@@ -381,6 +383,7 @@ describe("reading the settings", () => {
       "ask_company",
       "ask_department",
       "bot_protection",
+      "bot_protection_enabled",
       "consent_keys",
       "guest_url",
       "instance_host",
@@ -1805,5 +1808,117 @@ describe("whether the bot check is used, in the answer (A3)", () => {
 
     expect((await dto(await get(event.id))).bot_protection).toBe(mode);
     expect((await dto(await put(event.id, { waitlist_enabled: false }))).bot_protection).toBe(mode);
+  });
+});
+
+describe("the bot check of one event (bot_protection_enabled)", () => {
+  afterEach(async () => {
+    await setBotProtectionMode(prisma, "required");
+    await seeder.setSystemKeys(true);
+  });
+
+  it("is on for an event that exists, and for one with no settings row", async () => {
+    const event = await addEvent("bp-default");
+    const bare = await addEvent("bp-bare", { settings: null });
+
+    expect((await dto(await get(event.id))).bot_protection_enabled).toBe(true);
+    expect((await dto(await get(bare.id))).bot_protection_enabled).toBe(true);
+    expect((await settingsRow(event.id))?.bot_protection_enabled).toBe(true);
+    expect(defaultSettings().bot_protection_enabled).toBe(true);
+  });
+
+  it("is turned off by a superadmin, says so in the answer, and is audited by name and value like any other setting", async () => {
+    const event = await addEvent("bp-off");
+
+    const res = await put(event.id, { bot_protection_enabled: false });
+
+    expect(res.status).toBe(200);
+    expect(await dto(res)).toMatchObject({ bot_protection_enabled: false, bot_protection: "required" });
+    expect((await settingsRow(event.id))?.bot_protection_enabled).toBe(false);
+    expect((await dto(await get(event.id))).bot_protection_enabled).toBe(false);
+    const audit = await auditOf(event.id);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.metadata).toMatchObject({ fields_changed: ["bot_protection_enabled"], bot_protection_enabled: false });
+  });
+
+  it("is refused to an administrator who changes it: 403 `bot_protection_superadmin_only`, nothing saved, nothing audited", async () => {
+    const event = await addEvent("bp-admin");
+
+    const res = await put(event.id, { bot_protection_enabled: false, waitlist_enabled: false }, cookies.admin);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "bot_protection_superadmin_only" });
+    expect(await settingsRow(event.id)).toMatchObject({ bot_protection_enabled: true, waitlist_enabled: true });
+    expect(await auditOf(event.id)).toHaveLength(0);
+  });
+
+  it("lets an administrator send the value that is there, and change the other settings", async () => {
+    const event = await addEvent("bp-admin-same", { settings: { bot_protection_enabled: false } });
+
+    const same = await put(event.id, { bot_protection_enabled: false, waitlist_enabled: false }, cookies.admin);
+
+    expect(same.status).toBe(200);
+    expect(await settingsRow(event.id)).toMatchObject({ bot_protection_enabled: false, waitlist_enabled: false });
+  });
+
+  it("refuses a value that is not a boolean, and an unknown field next to it, and writes nothing", async () => {
+    const event = await addEvent("bp-invalid");
+
+    for (const body of [{ bot_protection_enabled: "false" }, { bot_protection_enabled: null }, { bot_protection_enabled: 0 }]) {
+      expect((await put(event.id, body)).status).toBe(400);
+    }
+    expect((await settingsRow(event.id))?.bot_protection_enabled).toBe(true);
+  });
+
+  it("turns off for an event that is running without being judged ready: turning a check off never shuts a form", async () => {
+    const event = await addEvent("bp-off-running", { settings: { mode: "automatic" } });
+    await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
+
+    const res = await put(event.id, { bot_protection_enabled: false });
+
+    expect(res.status).toBe(200);
+    expect((await settingsRow(event.id))?.bot_protection_enabled).toBe(false);
+  });
+
+  it("turns on for a running event only when the keys are saved: 409 `registration_not_ready` with `bot_protection` otherwise", async () => {
+    const event = await addEvent("bp-on-running", { settings: { mode: "automatic", bot_protection_enabled: false } });
+    await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
+
+    const refused = await put(event.id, { bot_protection_enabled: true });
+
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: "registration_not_ready", blockers: ["bot_protection"] });
+    expect((await settingsRow(event.id))?.bot_protection_enabled).toBe(false);
+
+    await seeder.setSystemKeys(true);
+    const allowed = await put(event.id, { bot_protection_enabled: true });
+    expect(allowed.status).toBe(200);
+    expect((await settingsRow(event.id))?.bot_protection_enabled).toBe(true);
+  });
+
+  it("turns on for an event whose registration is off without any judgement", async () => {
+    const event = await addEvent("bp-on-off-event", { settings: { mode: null, bot_protection_enabled: false } });
+    await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
+
+    expect((await put(event.id, { bot_protection_enabled: true })).status).toBe(200);
+  });
+
+  it("makes the check an information row, not a blocker, when the event switched it off, with no keys saved", async () => {
+    const event = await addEvent("bp-info", { settings: { bot_protection_enabled: false } });
+    await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
+
+    const body = await dto(await get(event.id));
+
+    expect(body.readiness).toContainEqual({ key: "bot_protection_not_used", ok: true });
+    expect(body.readiness.map((check) => check.key)).not.toContain("bot_protection");
+    // The organisation's own switch is told apart: the answer still says it is on.
+    expect(body.bot_protection).toBe("required");
+  });
+
+  it("keeps saying what the organisation's switch is, so a screen can hide the event's switch while it is off", async () => {
+    await setBotProtectionMode(prisma, "not_used");
+    const event = await addEvent("bp-org-off");
+
+    expect(await dto(await get(event.id))).toMatchObject({ bot_protection: "not_used", bot_protection_enabled: true });
   });
 });

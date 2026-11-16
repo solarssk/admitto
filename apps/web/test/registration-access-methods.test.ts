@@ -85,6 +85,13 @@ describe("resolveAccessMethodAvailability", () => {
     }
   });
 
+  it("opens link and password with no keys at all for an event that switched its own bot protection off, and not for the others", async () => {
+    expect(byMethod(await resolveAccessMethodAvailability(fakeDb().db, false))).toEqual({ link: true, password: true, sso: true });
+    expect(byMethod(await resolveAccessMethodAvailability(fakeDb().db, true))).toEqual({ link: false, password: false, sso: true });
+    // With no argument the event's switch is on, as it is by default.
+    expect(byMethod(await resolveAccessMethodAvailability(fakeDb().db))).toEqual({ link: false, password: false, sso: true });
+  });
+
   it("keeps link and password closed when the saved secret cannot be read", async () => {
     const unreadable = JSON.stringify({ siteKey: "0x4AAAAAAAsite", secretEnc: encryptToString("s", "another-purpose") });
     const values = { [TURNSTILE_SETTINGS_KEY]: unreadable };

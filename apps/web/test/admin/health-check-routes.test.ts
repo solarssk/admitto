@@ -1634,12 +1634,12 @@ describe("collectAdminHealth", () => {
       expect(row.summary).toBe("Registration by link or password is on for 3 events, but the keys are not set");
     });
 
-    it("counts only events that are not archived, have a mode and offer a link or a password", async () => {
+    it("counts only events that are not archived, have a mode, offer a link or a password and have their own bot protection on", async () => {
       const count = vi.fn().mockResolvedValue(2);
       await captchaRow({ ...keys(null), eventRegistrationSettings: { count } });
       // SSO needs no challenge, so an event that offers only SSO is not waiting for the keys.
       expect(count).toHaveBeenCalledWith({
-        where: { mode: { not: null }, access_methods: { hasSome: ["link", "password"] }, event: { archived_at: null } },
+        where: { mode: { not: null }, access_methods: { hasSome: ["link", "password"] }, bot_protection_enabled: true, event: { archived_at: null } },
       });
     });
 

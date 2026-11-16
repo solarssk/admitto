@@ -57,6 +57,9 @@ export type SettingsValues = {
   consent_keys: string[];
   /** The guest form draws its date, time and phone boxes in the product's style, not the browser's (D-E9). */
   styled_form_controls: boolean;
+  /** The bot check of the link and password forms of this event. Only a superadmin changes it, and it counts only while the organisation's
+   * own switch (`bot_protection` of the answer) is on. */
+  bot_protection_enabled: boolean;
   /** The company sign-in only (D-C4): the one claim of the provider's token that a guest must hold, and the values that let
    * them register. Both are empty (`null` and `[]`) for no restriction; they move together. */
   sso_claim_name: string | null;
@@ -79,6 +82,7 @@ export function defaultSettings(): SettingsValues {
     ask_department: false,
     consent_keys: [],
     styled_form_controls: false,
+    bot_protection_enabled: true,
     sso_claim_name: null,
     sso_claim_values: [],
     sso_provider_id: null,
@@ -142,12 +146,13 @@ export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_met
  * - `sso_provider_needs_sso`: the save names a provider, and the way in it leaves the event with is another;
  * - `sso_provider_not_available`: the provider named is not one of the enabled OIDC providers (unknown, switched off, not OIDC);
  * - `access_method_superadmin_only`: the save changes the way in, and the caller is not a superadmin;
+ * - `bot_protection_superadmin_only`: the save turns the bot check of the event on or off, and the caller is not a superadmin;
  * - `sso_provider_superadmin_only`: the save changes the provider of the company sign-in, and the caller is not a superadmin;
  * - `not_ready`: the change needs the event to be ready, and these checks are not met.
  */
 export type SettingsUpdate =
   | { kind: "saved"; settings: RegistrationSettingsDto }
-  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" | "sso_provider_changed" | "sso_provider_needs_sso" | "sso_provider_not_available" | "sso_provider_superadmin_only" | "access_method_superadmin_only" }
+  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" | "sso_provider_changed" | "sso_provider_needs_sso" | "sso_provider_not_available" | "sso_provider_superadmin_only" | "access_method_superadmin_only" | "bot_protection_superadmin_only" }
   | { kind: "not_ready"; blockers: RegistrationReadinessKey[] };
 
 export interface SettingsOptions {
@@ -179,6 +184,7 @@ const SETTINGS_SELECT = {
   ask_department: true,
   consent_keys: true,
   styled_form_controls: true,
+  bot_protection_enabled: true,
   sso_claim_name: true,
   sso_claim_values: true,
   sso_provider_id: true,
@@ -204,6 +210,7 @@ function valuesOf(row: StoredRow): SettingsValues {
     ask_department: row.ask_department,
     consent_keys: [...row.consent_keys],
     styled_form_controls: row.styled_form_controls,
+    bot_protection_enabled: row.bot_protection_enabled,
     // Both or none, as the table checks; a row that holds one without the other reads as no restriction.
     sso_claim_name: row.sso_claim_values.length > 0 ? row.sso_claim_name : null,
     sso_claim_values: row.sso_claim_name === null ? [] : [...row.sso_claim_values],
@@ -288,6 +295,7 @@ function mergeSettings(current: SettingsValues, patch: RegistrationSettingsPatch
     ask_department: patch.ask_department ?? current.ask_department,
     consent_keys: patch.consent_keys === undefined ? current.consent_keys : [...new Set(patch.consent_keys)],
     styled_form_controls: patch.styled_form_controls ?? current.styled_form_controls,
+    bot_protection_enabled: patch.bot_protection_enabled ?? current.bot_protection_enabled,
     ...claimAfter(current, patch, accessMethods.includes("sso")),
     sso_provider_id: providerAfter(current, patch, accessMethods.includes("sso")),
   };
@@ -320,7 +328,9 @@ function needsReadiness(before: SettingsValues, after: SettingsValues): boolean 
   return (
     !sameMembers(before.access_methods, after.access_methods) ||
     !sameMembers(before.consent_keys, after.consent_keys) ||
-    before.sso_provider_id !== after.sso_provider_id
+    before.sso_provider_id !== after.sso_provider_id ||
+    // Turning the bot check on can shut a form that has no keys; turning it off never does.
+    (!before.bot_protection_enabled && after.bot_protection_enabled)
   );
 }
 
@@ -341,7 +351,7 @@ function changesProvider(before: SettingsValues, after: SettingsValues): boolean
   return after.access_methods.includes("sso") && before.sso_provider_id !== after.sso_provider_id;
 }
 
-type Refusal = Extract<SettingsUpdate["kind"], "consent_not_published" | "access_method_superadmin_only" | `sso_${string}`>;
+type Refusal = Extract<SettingsUpdate["kind"], "consent_not_published" | "access_method_superadmin_only" | "bot_protection_superadmin_only" | `sso_${string}`>;
 
 /**
  * Holds the row of the provider the save ends with (the one it names, or the one the event keeps) `FOR KEY SHARE`: a provider that is
@@ -373,6 +383,8 @@ function refusalOf(args: {
   if (patch.consent_keys?.some((key) => !published.includes(key))) return "consent_not_published";
   // How guests open the form is technical: a superadmin's to change (an event admin may send the value that is there).
   if (!canChange && !sameMembers(before.access_methods, after.access_methods)) return "access_method_superadmin_only";
+  // The bot check of an event is technical too: only a superadmin turns it on or off for the event.
+  if (!canChange && before.bot_protection_enabled !== after.bot_protection_enabled) return "bot_protection_superadmin_only";
   // A restriction is sent for the company sign-in only: one sent with another way in is refused, not dropped without a word.
   if (patch.sso_claim_name && !after.access_methods.includes("sso")) return "sso_claim_needs_sso";
   // Who may let in the people of one company is a superadmin's to say (the administrator of the event only keeps what is there).
