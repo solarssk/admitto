@@ -12,7 +12,7 @@ export const api = {
   clearRegistrationPassword: vi.fn(),
   fetchLegalDocuments: vi.fn(),
   fetchRegistrationCounts: vi.fn(),
-  fetchRegistrationSsoProvider: vi.fn(),
+  fetchRegistrationReturnAddresses: vi.fn(),
   saveCustomDomain: vi.fn(),
   checkCustomDomain: vi.fn(),
 };

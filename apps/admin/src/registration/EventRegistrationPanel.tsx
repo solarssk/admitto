@@ -3,7 +3,7 @@ import { Card, HintLabel, Notice, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchRegistrationSettings,
-  fetchRegistrationSsoProvider,
+  fetchRegistrationReturnAddresses,
   saveRegistrationSettings,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -49,7 +49,7 @@ interface Loaded {
 async function readBoth(eventId: string, signal: AbortSignal): Promise<Loaded> {
   const settings = await fetchRegistrationSettings(eventId, signal);
   try {
-    return { settings, redirectUris: (await fetchRegistrationSsoProvider(signal)).redirect_uris, redirectUrisFailed: false };
+    return { settings, redirectUris: (await fetchRegistrationReturnAddresses(signal)).redirect_uris, redirectUrisFailed: false };
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) throw err;
     return { settings, redirectUris: [], redirectUrisFailed: true };
@@ -228,7 +228,7 @@ function EventRegistrationCards({
    * address move with a change. A read that fails leaves what the cards show as it is. */
   async function refresh() {
     const mine = ++newestRead.current;
-    const [latest, addresses] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchRegistrationSsoProvider()]);
+    const [latest, addresses] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchRegistrationReturnAddresses()]);
     // A save that started meanwhile, or a newer read, has made this snapshot old.
     if (mine !== newestRead.current) return;
     if (latest.status === "fulfilled") setSettings(latest.value);
@@ -258,7 +258,7 @@ function EventRegistrationCards({
   async function retryReturnAddresses() {
     setRetryingAddresses(true);
     try {
-      setReturnAddresses((await fetchRegistrationSsoProvider()).redirect_uris);
+      setReturnAddresses((await fetchRegistrationReturnAddresses()).redirect_uris);
       setReturnAddressesFailed(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) redirectToLogin();

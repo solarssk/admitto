@@ -12,7 +12,6 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { encryptToString, signDomainCheck, verifyDomainCheck } from "@admitto/crypto";
 import { hashToken } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
-import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/mock-oidc-idp.js";
@@ -96,7 +95,6 @@ beforeEach(async () => {
   h = harness({ prisma, store: new SelectiveStore(), eventStaticMapService: { getForEvent } as never });
   await installProvider(prisma, idp);
   // Both ways in are on, so the events with the company sign-in and the one with the public link are open.
-  await setEnabledAccessMethods(prisma, ["sso", "link"]);
   await prisma.registrationSsoState.deleteMany();
   await setDomain(ids.a, HOST_A, true);
   await setDomain(ids.b, HOST_B, true);

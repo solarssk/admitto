@@ -4,9 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createApp } from "../../src/app.js";
-import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { patchTurnstileSettings, TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
-import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { renderRegistrationNotFound } from "../../src/registration-page-security.js";
 import { REGISTRATION_STYLED_CONTROLS_SCRIPT } from "../../src/registration/form-controls-script.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
@@ -84,9 +82,8 @@ async function addField(eventId: string, data: Partial<Prisma.EventCustomFieldUn
 async function setSystemKeys(on: boolean) {
   if (on) {
     await patchTurnstileSettings(prisma, { siteKey: SITE_KEY, secretKey: "secret-key-for-tests" });
-    await setEnabledAccessMethods(prisma, ["link"]);
   } else {
-    await prisma.systemSettings.deleteMany({ where: { key: { in: [TURNSTILE_SETTINGS_KEY, ACCESS_METHODS_SETTINGS_KEY] } } });
+    await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
   }
 }
 
@@ -602,13 +599,9 @@ describe("the one 404", () => {
     for (const answer of answers) expect(answer).toEqual(answers[0]);
   });
 
-  it("is also the answer when the event is open but the Turnstile keys are gone, or the method is switched off", async () => {
+  it("is also the answer when the event is open but the Turnstile keys are gone", async () => {
     try {
       await setSystemKeys(false);
-      expect(await (await get("/r/reg94b-open")).text()).toBe(notFound.html);
-      await patchTurnstileSettings(prisma, { siteKey: SITE_KEY, secretKey: "secret-key-for-tests" });
-      expect(await (await get("/r/reg94b-open")).text()).toBe(notFound.html);
-      await setEnabledAccessMethods(prisma, ["password", "sso"]);
       expect(await (await get("/r/reg94b-open")).text()).toBe(notFound.html);
     } finally {
       await setSystemKeys(true);

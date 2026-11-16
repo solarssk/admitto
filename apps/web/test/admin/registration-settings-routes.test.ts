@@ -21,18 +21,14 @@ vi.mock("../../src/admin/instance-org.js", () => ({ resolveInstanceOrganizationI
 
 import {
   handleDeleteRegistrationTurnstile,
-  handleGetRegistrationAccessMethods,
   handleGetRegistrationSsoProvider,
   handleGetRegistrationTurnstile,
   handlePostRegistrationTurnstileTest,
-  handlePutRegistrationAccessMethods,
-  handlePutRegistrationSsoProvider,
   handlePutRegistrationTurnstile,
 } from "../../src/admin/registration-settings-routes.js";
 import { readRedirectUris } from "../../src/admin/registration-settings-routes.js";
-import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
-import { SSO_PROVIDER_SETTINGS_KEY, ssoProviderKind } from "../../src/registration/sso-provider.js";
+import { ssoProviderKind } from "../../src/registration/sso-provider.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { memorySystemSettings } from "../helpers/memory-system-settings.js";
 
@@ -85,10 +81,7 @@ function makeApp(db: PrismaClient, baseUrl: () => Promise<string> = async () => 
   app.put("/turnstile", (c) => handlePutRegistrationTurnstile(c, db));
   app.post("/turnstile/test", (c) => handlePostRegistrationTurnstileTest(c, db));
   app.delete("/turnstile", (c) => handleDeleteRegistrationTurnstile(c, db));
-  app.get("/access-methods", (c) => handleGetRegistrationAccessMethods(c, db));
-  app.put("/access-methods", (c) => handlePutRegistrationAccessMethods(c, db));
   app.get("/sso-provider", (c) => handleGetRegistrationSsoProvider(c, db, baseUrl));
-  app.put("/sso-provider", (c) => handlePutRegistrationSsoProvider(c, db, baseUrl));
   return app;
 }
 
@@ -108,10 +101,7 @@ describe("who may call the registration settings routes", () => {
     ["PUT", "/turnstile", { bot_protection: "not_used" }],
     ["POST", "/turnstile/test", {}],
     ["DELETE", "/turnstile", undefined],
-    ["GET", "/access-methods", undefined],
-    ["PUT", "/access-methods", { methods: ["link"] }],
     ["GET", "/sso-provider", undefined],
-    ["PUT", "/sso-provider", { provider_id: "idp-1" }],
   ];
 
   it.each(requests)("%s %s is forbidden for anyone who is not a superadmin, and touches nothing", async (method, path, body) => {
@@ -463,80 +453,6 @@ describe("testing the Turnstile secret key", () => {
   });
 });
 
-describe("access methods", () => {
-  it("are all off to start with", async () => {
-    const res = await makeApp(memoryDb().db).request("/access-methods");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      methods: [
-        { method: "link", enabled: false, available: false, blocked_by: null },
-        { method: "password", enabled: false, available: false, blocked_by: null },
-        { method: "sso", enabled: false, available: false, blocked_by: null },
-      ],
-    });
-  });
-
-  it("can be enabled, and say what an enabled method still waits for (the link: bot protection; SSO: nothing)", async () => {
-    const { db, rows } = memoryDb();
-    const res = await sendJson(makeApp(db), "PUT", "/access-methods", { methods: ["sso", "link", "link"] });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      methods: [
-        { method: "link", enabled: true, available: false, blocked_by: "bot_protection" },
-        { method: "password", enabled: false, available: false, blocked_by: null },
-        // The identity provider is the event's own: the system has nothing more to wait for.
-        { method: "sso", enabled: true, available: true, blocked_by: null },
-      ],
-    });
-    expect(rows().get(ACCESS_METHODS_SETTINGS_KEY)).toBe('["link","sso"]');
-    expect(writeAdminAuditLog.mock.calls[0]![1]).toMatchObject({
-      actionType: "registration_access_methods_updated",
-      metadata: { methods: ["link", "sso"] },
-    });
-  });
-
-  it("make link and password available once the Turnstile keys are saved, and SSO with the provider chosen for guests", async () => {
-    const { db } = memoryDb({ providers: [{ id: "idp-1", display_name: "Company IdP", enabled: true }] });
-    const app = makeApp(db);
-    await sendJson(app, "PUT", "/turnstile", { site_key: SITE_KEY, secret_key: SECRET });
-    await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-1" });
-    const res = await sendJson(app, "PUT", "/access-methods", { methods: ["link", "password", "sso"] });
-    const body = (await res.json()) as { methods: Array<{ available: boolean }> };
-    expect(body.methods.map((entry) => entry.available)).toEqual([true, true, true]);
-  });
-
-  it("are written without the keys lock, which only the Turnstile keys need", async () => {
-    const { db, executeRaw } = memoryDb();
-    await sendJson(makeApp(db), "PUT", "/access-methods", { methods: ["link"] });
-    expect(executeRaw).not.toHaveBeenCalled();
-  });
-
-  it("can all be turned off again", async () => {
-    const { db } = memoryDb();
-    const app = makeApp(db);
-    await sendJson(app, "PUT", "/access-methods", { methods: ["link"] });
-    const res = await sendJson(app, "PUT", "/access-methods", { methods: [] });
-    const body = (await res.json()) as { methods: Array<{ enabled: boolean }> };
-    expect(body.methods.every((entry) => !entry.enabled)).toBe(true);
-  });
-
-  it.each([
-    ["an unknown method", { methods: ["link", "email"] }],
-    ["a method in the wrong case", { methods: ["Link"] }],
-    ["a non-array", { methods: "link" }],
-    ["too many entries", { methods: ["link", "password", "sso", "link"] }],
-    ["no list", {}],
-    ["an unknown field", { methods: [], extra: true }],
-    ["a prototype key", { methods: ["__proto__"] }],
-  ])("refuses %s and writes nothing", async (_name, body) => {
-    const { db, rows } = memoryDb();
-    const res = await sendJson(makeApp(db), "PUT", "/access-methods", body);
-    expect(res.status).toBe(400);
-    expect(rows().size).toBe(0);
-    expect(writeAdminAuditLog).not.toHaveBeenCalled();
-  });
-});
-
 describe("the return addresses of the guests' sign-in (D-C6)", () => {
   it("leaves out a row that has no address of its own, lists the others sorted, and none of the instance's while the instance has none", async () => {
     const { db, eventRegistrationSettings } = memoryDb();
@@ -553,133 +469,27 @@ describe("the return addresses of the guests' sign-in (D-C6)", () => {
   });
 });
 
-describe("the identity provider guests sign in with (D-C4)", () => {
+describe("the return addresses of the guests' sign-in, as the one route answers them", () => {
   const company = { id: "idp-1", display_name: "Company IdP", issuer: "https://login.microsoftonline.com/tenant-a/v2.0", enabled: true };
-  const other = { id: "idp-2", display_name: "Other IdP", issuer: "https://idp.example.com", enabled: true };
-  const off = { id: "idp-off", display_name: "Switched off", enabled: false };
-  const saml = { id: "idp-saml", display_name: "Not OIDC", enabled: true, provider_type: "cloudflare_access" };
 
-  it("starts with no choice, and lists the enabled OIDC providers by id, name and kind and nothing else", async () => {
-    const res = await makeApp(memoryDb({ providers: [company, off, saml, other] }).db).request("/sso-provider");
+  it("answers the return addresses and nothing of an identity provider: the provider is the event's own choice", async () => {
+    const { db, systemSettings } = memoryDb({ providers: [company] });
+    const res = await makeApp(db).request("/sso-provider");
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      provider_id: null,
-      state: "not_selected",
-      providers: [
-        { id: "idp-1", display_name: "Company IdP", kind: "entra" },
-        { id: "idp-2", display_name: "Other IdP", kind: "generic" },
-      ],
       redirect_uri: `${INSTANCE_URL}/sso/callback`,
       redirect_uris: [{ uri: `${INSTANCE_URL}/sso/callback`, host: "instance", verified: true }],
     });
+    expect(systemSettings.findUnique).not.toHaveBeenCalled();
   });
 
-  it("gives a null return address, on the read and on the write, while the instance has no address, and still answers", async () => {
+  it("gives a null return address while the instance has no address, and still answers", async () => {
     const noAddress = () => Promise.reject(new Error("no instance url"));
-    const app = makeApp(memoryDb({ providers: [company] }).db, noAddress);
+    const res = await makeApp(memoryDb().db, noAddress).request("/sso-provider");
 
-    const read = await app.request("/sso-provider");
-    const write = await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-1" });
-
-    expect(read.status).toBe(200);
-    expect(await read.json()).toMatchObject({ provider_id: null, redirect_uri: null, redirect_uris: [] });
-    expect(write.status).toBe(200);
-    expect(await write.json()).toMatchObject({ provider_id: "idp-1", state: "ready", redirect_uri: null });
-  });
-
-  it("gives the same return address on the write as on the read", async () => {
-    const app = makeApp(memoryDb({ providers: [company] }).db);
-
-    const write = await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-1" });
-
-    expect(await write.json()).toMatchObject({ redirect_uri: `${INSTANCE_URL}/sso/callback` });
-  });
-
-  it("chooses an enabled provider, saves its id and nothing of it, and audits the ids before and after", async () => {
-    const { db, rows } = memoryDb({ providers: [company, other] });
-    const app = makeApp(db);
-
-    const first = await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-1" });
-    const second = await sendJson(app, "PUT", "/sso-provider", { provider_id: "idp-2" });
-
-    expect(first.status).toBe(200);
-    expect(await first.json()).toMatchObject({ provider_id: "idp-1", state: "ready" });
-    expect(await second.json()).toMatchObject({ provider_id: "idp-2", state: "ready" });
-    expect(rows().get(SSO_PROVIDER_SETTINGS_KEY)).toBe('"idp-2"');
-    expect(writeAdminAuditLog.mock.calls.map((call) => call[1])).toEqual([
-      expect.objectContaining({
-        actionType: "registration_sso_provider_updated",
-        organizationId: "org-instance",
-        actorUserId: "user-1",
-        metadata: { provider_id: "idp-1", previous_provider_id: null },
-      }),
-      expect.objectContaining({
-        actionType: "registration_sso_provider_updated",
-        metadata: { provider_id: "idp-2", previous_provider_id: "idp-1" },
-      }),
-    ]);
-  });
-
-  it("removes the choice with null", async () => {
-    const { db, rows } = memoryDb({ providers: [company], values: { [SSO_PROVIDER_SETTINGS_KEY]: '"idp-1"' } });
-
-    const res = await sendJson(makeApp(db), "PUT", "/sso-provider", { provider_id: null });
-
-    expect(await res.json()).toMatchObject({ provider_id: null, state: "not_selected" });
-    expect(rows().has(SSO_PROVIDER_SETTINGS_KEY)).toBe(false);
-    expect(writeAdminAuditLog.mock.calls[0]![1]).toMatchObject({ metadata: { provider_id: null, previous_provider_id: "idp-1" } });
-  });
-
-  it.each([
-    ["one that does not exist", "idp-nowhere"],
-    ["one that is switched off", "idp-off"],
-    ["one that is not an OIDC provider", "idp-saml"],
-  ])("refuses %s with one answer, and writes and audits nothing", async (_name, providerId) => {
-    const { db, rows } = memoryDb({ providers: [company, off, saml] });
-
-    const res = await sendJson(makeApp(db), "PUT", "/sso-provider", { provider_id: providerId });
-
-    expect(res.status).toBe(422);
-    expect(await res.json()).toEqual({ error: "provider_not_available" });
-    expect(rows().size).toBe(0);
-    expect(writeAdminAuditLog).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["no field", {}],
-    ["a number", { provider_id: 7 }],
-    ["an empty id", { provider_id: "" }],
-    ["an id that is a blank", { provider_id: "   " }],
-    ["an unknown field", { provider_id: "idp-1", enabled: true }],
-  ])("refuses %s with a 400 and writes nothing", async (_name, body) => {
-    const { db, rows } = memoryDb({ providers: [company] });
-
-    const res = await sendJson(makeApp(db), "PUT", "/sso-provider", body);
-
-    expect(res.status).toBe(400);
-    expect(rows().size).toBe(0);
-    expect(writeAdminAuditLog).not.toHaveBeenCalled();
-  });
-
-  it("says where the choice stands when the provider was switched off or deleted since, and keeps the choice", async () => {
-    const values = { [SSO_PROVIDER_SETTINGS_KEY]: '"idp-off"' };
-
-    const switchedOff = await makeApp(memoryDb({ providers: [company, off], values }).db).request("/sso-provider");
-    const deleted = await makeApp(memoryDb({ providers: [company], values }).db).request("/sso-provider");
-
-    expect(await switchedOff.json()).toMatchObject({ provider_id: "idp-off", state: "disabled" });
-    expect(await deleted.json()).toMatchObject({ provider_id: "idp-off", state: "missing" });
-  });
-
-  it("saves nothing when the audit entry cannot be written", async () => {
-    const { db, rows } = memoryDb({ providers: [company] });
-    writeAdminAuditLog.mockRejectedValueOnce(new Error("audit table unavailable"));
-
-    const res = await sendJson(makeApp(db), "PUT", "/sso-provider", { provider_id: "idp-1" });
-
-    expect(res.status).toBe(500);
-    expect(rows().has(SSO_PROVIDER_SETTINGS_KEY)).toBe(false);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ redirect_uri: null, redirect_uris: [] });
   });
 });
 

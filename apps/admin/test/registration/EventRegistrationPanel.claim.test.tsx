@@ -20,7 +20,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...(await importOriginal<typeof import("../../src/api/client.js")>()),
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
     saveRegistrationSettings: (...args: unknown[]) => mocks.saveRegistrationSettings(...args),
-    fetchRegistrationSsoProvider: (...args: unknown[]) => mocks.fetchRegistrationSsoProvider(...args),
+    fetchRegistrationReturnAddresses: (...args: unknown[]) => mocks.fetchRegistrationReturnAddresses(...args),
     saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
     checkCustomDomain: (...args: unknown[]) => mocks.checkCustomDomain(...args),
   };
@@ -112,7 +112,7 @@ describe("the Company SSO card", () => {
   });
 
   it("reads the provider from the settings of the event, and still works, when the return addresses cannot be read", async () => {
-    api.fetchRegistrationSsoProvider.mockRejectedValue(new ApiError(500, "internal_error"));
+    api.fetchRegistrationReturnAddresses.mockRejectedValue(new ApiError(500, "internal_error"));
     await renderPanel(ssoSettings());
 
     expect(within(ssoCard()).getByRole("button", { name: "Identity provider, Contoso Entra" })).toBeTruthy();
@@ -120,14 +120,14 @@ describe("the Company SSO card", () => {
   });
 
   it("says that the return addresses could not be read, with a Retry that reads them again, and never says that the instance has no address", async () => {
-    api.fetchRegistrationSsoProvider.mockRejectedValueOnce(new ApiError(500, "internal_error"));
+    api.fetchRegistrationReturnAddresses.mockRejectedValueOnce(new ApiError(500, "internal_error"));
     await renderPanel(ssoSettings());
     fireEvent.click(within(ssoCard()).getByRole("button", { name: "Setup for your IT team" }));
 
     expect(within(ssoCard()).getByText("Could not read the return addresses.")).toBeTruthy();
     expect(within(ssoCard()).queryByText(/has no return address|not set/)).toBeNull();
     expect(within(ssoCard()).queryByLabelText("Return address")).toBeNull();
-    api.fetchRegistrationSsoProvider.mockResolvedValue({
+    api.fetchRegistrationReturnAddresses.mockResolvedValue({
       provider_id: "idp-1",
       state: "ready",
       providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }],
@@ -139,19 +139,19 @@ describe("the Company SSO card", () => {
 
     await waitFor(() => expect((within(ssoCard()).getByLabelText("Return address") as HTMLInputElement).value).toBe("https://admitto.example.com/sso/callback"));
     expect(within(ssoCard()).queryByText("Could not read the return addresses.")).toBeNull();
-    expect(api.fetchRegistrationSsoProvider).toHaveBeenCalledTimes(2);
+    expect(api.fetchRegistrationReturnAddresses).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the failure, and the Retry, when the Retry fails too, and sends a lost session to the sign-in", async () => {
-    api.fetchRegistrationSsoProvider.mockRejectedValue(new ApiError(500, "internal_error"));
+    api.fetchRegistrationReturnAddresses.mockRejectedValue(new ApiError(500, "internal_error"));
     await renderPanel(ssoSettings());
     fireEvent.click(within(ssoCard()).getByRole("button", { name: "Setup for your IT team" }));
 
     fireEvent.click(within(ssoCard()).getByRole("button", { name: "Retry reading the return addresses" }));
-    await waitFor(() => expect(api.fetchRegistrationSsoProvider).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.fetchRegistrationReturnAddresses).toHaveBeenCalledTimes(2));
     expect(within(ssoCard()).getByText("Could not read the return addresses.")).toBeTruthy();
 
-    api.fetchRegistrationSsoProvider.mockRejectedValue(new ApiError(401, "unauthorized"));
+    api.fetchRegistrationReturnAddresses.mockRejectedValue(new ApiError(401, "unauthorized"));
     fireEvent.click(within(ssoCard()).getByRole("button", { name: "Retry reading the return addresses" }));
     await waitFor(() => expect(goToLogin).toHaveBeenCalled());
   });
@@ -489,7 +489,7 @@ describe("reading the tab", () => {
   });
 
   it("hands a lost session to the sign-in when the name of the provider cannot be read for want of one", async () => {
-    api.fetchRegistrationSsoProvider.mockRejectedValue(new ApiError(401, "unauthorized"));
+    api.fetchRegistrationReturnAddresses.mockRejectedValue(new ApiError(401, "unauthorized"));
     api.fetchRegistrationSettings.mockResolvedValue(ssoSettings());
     render(<EventRegistrationPanel eventId="evt-1" archived={false} refreshEvent={refreshEvent} />);
 

@@ -320,13 +320,13 @@ describe("RegistrationAccessTab: the checklist", () => {
     await renderLoaded(settings({ readiness: checks("mail_provider", "legal_documents") }));
 
     const rows = checklistRows();
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(9);
     expect(rows[0]?.textContent).toContain("Legal texts");
     expect(rows[0]?.textContent).toContain("Publish the privacy notice, the terms and every consent you chose.");
     expect(rows[1]?.textContent).toContain("Email sending");
     expect(rows[1]?.textContent).toContain("Email sending is not set up for this event, so guests would get no email.");
     expect(rows[2]?.textContent).toContain("Link. Anyone who has the link can ask to join.");
-    expect(within(card("Setup checklist")).getByText("8 of 10 done")).toBeTruthy();
+    expect(within(card("Setup checklist")).getByText("7 of 9 done")).toBeTruthy();
   });
 
   it("says in words, not by colour alone, which check is done and which is to do", async () => {
@@ -341,22 +341,22 @@ describe("RegistrationAccessTab: the checklist", () => {
     await renderLoaded(settings({ readiness: notUsedChecks("mail_provider") }));
 
     const rows = checklistRows();
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(9);
     const info = rows.at(-1) as HTMLElement;
     expect(info.textContent).toContain("Bot protection");
     expect(info.textContent).toContain("Off for this organisation. The link and password forms have no bot check.");
     expect(info.querySelector(".sr-only")?.textContent).toBe("Off: ");
     expect(info.querySelector(".overview-check__icon--neutral")).not.toBeNull();
     expect(info.querySelector(".ti-minus")).not.toBeNull();
-    // Nine tasks, one of them not done, and the information row is not one of them.
-    expect(within(card("Setup checklist")).getByText("8 of 9 done")).toBeTruthy();
+    // Eight tasks, one of them not done, and the information row is not one of them.
+    expect(within(card("Setup checklist")).getByText("7 of 8 done")).toBeTruthy();
     expect(rows[0]?.textContent).toContain("Email sending");
     expect(within(info).queryByRole("link")).toBeNull();
   });
 
   it("sends a missing check to the tab that puts it right, and a superadmin's to the superadmin", async () => {
     api.fetchRegistrationSettings.mockResolvedValue(
-      settings({ readiness: checks("legal_documents", "form_questions", "required_fields", "bot_protection", "mail_provider", "instance_url", "access_method_enabled", "event_not_ended") }),
+      settings({ readiness: checks("legal_documents", "form_questions", "required_fields", "bot_protection", "mail_provider", "instance_url", "event_not_ended") }),
     );
     const { router } = renderAccess();
     await loaded();
@@ -385,9 +385,9 @@ describe("RegistrationAccessTab: the checklist", () => {
 
   it("does not say again that the event is archived, which the page above says, and says it for an event that is not archived as far as the page knows", async () => {
     await renderLoaded(settings({ readiness: checks("event_not_archived") }), { withEvent: archivedEvent });
-    expect(checklistRows()).toHaveLength(9);
+    expect(checklistRows()).toHaveLength(8);
     expect(screen.queryByText("Event status")).toBeNull();
-    expect(within(card("Setup checklist")).getByText("9 of 9 done")).toBeTruthy();
+    expect(within(card("Setup checklist")).getByText("8 of 8 done")).toBeTruthy();
 
     cleanup();
     await renderLoaded(settings({ readiness: checks("event_not_archived") }));

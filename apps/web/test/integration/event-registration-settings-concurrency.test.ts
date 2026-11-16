@@ -6,7 +6,6 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { acquireEventCapacityLock, lockRegistrationQueue } from "@admitto/tickets";
 import { acquireEventCustomFieldsLock } from "../../src/admin/event-custom-fields-routes.js";
 import { updateEventRegistrationSettings } from "../../src/admin/event-registration-settings.js";
-import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { createStaffSession, removeStaff, setOrgMail } from "../helpers/registration-settings-fixtures.js";
 import { ORIGIN, eventSeeder, harness, type EventSeed } from "../helpers/registration-submit-harness.js";
@@ -174,7 +173,6 @@ afterAll(async () => {
 describe("two saves at once", () => {
   it("run one after the other: the one that waits judges what the first left, and is refused for it", async () => {
     const event = await addEvent("two-saves");
-    await setEnabledAccessMethods(prisma, ["link", "password"]);
     const first = pausingClient(prisma, "eventRegistrationSettings", "findUnique");
     const enabling = updateEventRegistrationSettings(first.client, { eventId: event.id, patch: { mode: "automatic" }, actor: actor() });
     await first.reached;

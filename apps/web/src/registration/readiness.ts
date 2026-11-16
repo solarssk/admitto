@@ -7,12 +7,12 @@
  * The answer is a list of checks, each a fixed key and whether it is met. It is never a sentence: a key is for the screen
  * to word, and an answer that names no more than a key can hold no text an organiser typed, no address and no exception.
  * A check that does not apply is not in the list (no `password` check for an event whose way in is the link, no
- * `access_method_enabled` check while no way in is chosen), so a key that is there is always one the organiser can act on.
+ * `identity_provider` check for any way in but the company sign-in), so a key that is there is always one the organiser can act on.
  *
  * What it promises, pinned to the public page by registration-readiness.test.ts:
  *  - An event that is ready opens its form: `resolveRegistration` (./form-model.ts) finds it `open`.
  *  - Each key that closes the form is a condition of the page itself: the way in (`access_method`,
- *    `access_method_enabled`, `bot_protection` for the link and the password (`bot_protection_not_used`, which is always met, when
+ *    `bot_protection` for the link and the password (`bot_protection_not_used`, which is always met, when
  *    the superadmin set bot protection to "not used"), `identity_provider` for the company sign-in (the event's own provider is chosen and enabled),
  *    `password`), the texts (`legal_documents`), the questions (`form_questions`)
  *    and the event (`event_not_archived`, `event_not_ended`). The rules behind them are the page's own functions, not
@@ -29,12 +29,7 @@ import { resolveMailConfig } from "@admitto/mailer-config";
 import type { RegistrantFormField } from "@admitto/tickets";
 import { resolveInstanceBaseUrl } from "../instance-base-url.js";
 import { evaluateLegalGate, type LegalGateRow } from "../legal/registration-gate.js";
-import {
-  resolveAccessMethodAvailability,
-  SELECTABLE_ACCESS_METHODS,
-  type AccessMethodAvailability,
-  type SelectableAccessMethod,
-} from "./access-methods.js";
+import { SELECTABLE_ACCESS_METHODS, type SelectableAccessMethod } from "./access-methods.js";
 import { isRequiredFieldOffForm } from "./field-on-form.js";
 import type { FormQuestionType } from "./form-fields.js";
 import { getBotProtectionMode, type BotProtectionMode } from "./bot-protection-mode.js";
@@ -45,7 +40,6 @@ import { resolveTurnstileKeys } from "./turnstile-settings.js";
 /** The vocabulary of the checks, in the order they are listed. */
 export const READINESS_KEYS = [
   "access_method",
-  "access_method_enabled",
   "bot_protection",
   "bot_protection_not_used",
   "identity_provider",
@@ -68,8 +62,6 @@ export interface RegistrationReadinessCheck {
 
 /** What the system, not the event, decides. */
 export interface ReadinessEnvironment {
-  /** Every way in, with whether the system administrator enabled it and whether it can be used now. */
-  availability: readonly AccessMethodAvailability[];
   /** The Turnstile keys are saved and the secret reads back. */
   botProtectionReady: boolean;
   /** What the superadmin set (./bot-protection-mode.ts): with `not_used` the link and the password need no keys. */
@@ -117,10 +109,6 @@ export function chosenAccessMethod(methods: readonly string[]): SelectableAccess
 export function evaluateRegistrationReadiness({ settings, environment, event }: ReadinessInput): RegistrationReadinessCheck[] {
   const method = chosenAccessMethod(settings.access_methods);
   const checks: RegistrationReadinessCheck[] = [{ key: "access_method", ok: method !== null }];
-  if (method !== null) {
-    const entry = environment.availability.find((candidate) => candidate.method === method);
-    checks.push({ key: "access_method_enabled", ok: entry?.enabled === true });
-  }
   // A form behind the company sign-in needs no bot check: it stands behind a sign-in of the provider. The others do, unless the
   // superadmin set bot protection to "not used": that is information for the organiser, never a blocker.
   if (method === "sso") {
@@ -189,8 +177,7 @@ async function instanceBaseUrlOrNull(db: PrismaClient, env: NodeJS.ProcessEnv): 
 }
 
 /**
- * Reads what the system decides, with the same functions the public page and the worker use: which ways in are enabled
- * and the Turnstile keys (the page's), the mail provider of the event and the address of the instance (the worker's, which
+ * Reads what the system decides, with the same functions the public page and the worker use: the Turnstile keys (the page's), the mail provider of the event and the address of the instance (the worker's, which
  * sends no registration mail without them). Nothing in the answer is a key, a secret or an address of a guest.
  */
 export async function loadReadinessEnvironment(
@@ -198,8 +185,7 @@ export async function loadReadinessEnvironment(
   eventId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ReadinessEnvironment> {
-  const [availability, keys, botProtectionMode, enabledSsoProviders, mailConfigured, instanceBaseUrl] = await Promise.all([
-    resolveAccessMethodAvailability(db),
+  const [keys, botProtectionMode, enabledSsoProviders, mailConfigured, instanceBaseUrl] = await Promise.all([
     resolveTurnstileKeys(db),
     getBotProtectionMode(db),
     listSelectableSsoProviders(db),
@@ -207,7 +193,6 @@ export async function loadReadinessEnvironment(
     instanceBaseUrlOrNull(db, env),
   ]);
   return {
-    availability,
     botProtectionReady: keys.state === "ready",
     botProtectionMode,
     enabledSsoProviders,

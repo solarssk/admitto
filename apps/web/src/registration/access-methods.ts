@@ -1,23 +1,16 @@
 /**
- * Which ways of reaching the registration form the system administrator has made available
- * (D-C1, D-A6): public link, event password, SSO. The list is empty until a superadmin decides,
- * and an event can pick only a method that is available.
- *
- * "Available" is stricter than "enabled". A method the administrator enabled is available only when
- * what it needs is there: link and password need the Turnstile keys (the password form mails
- * addresses too, D-C2) unless the superadmin set bot protection to "not used" (./bot-protection-mode.ts). SSO needs nothing of the
- * system: the identity provider is the event's own (./sso-provider.ts, judged for the event by the page and by the readiness), and it
- * needs no Turnstile, because the form stands behind a sign-in. Turning a method off, or losing what
- * it needs, closes the form of every event that uses it; nothing is deleted. Callers decide
+ * Whether each way of reaching the registration form can be used right now (D-C1, D-A6): public link, event password, SSO. All
+ * three are always offered; nobody turns one on or off for the organisation. What a way needs decides:
+ * link and password need the Turnstile keys (the password form mails addresses too, D-C2) unless the superadmin set bot protection
+ * to "not used" (./bot-protection-mode.ts). SSO needs nothing of the system: the identity provider is the event's own
+ * (./sso-provider.ts, judged for the event by the page and by the readiness), and it needs no Turnstile, because the form stands
+ * behind a sign-in. Losing what a way needs closes the form of every event that uses it; nothing is deleted. Callers decide
  * availability from `resolveAccessMethodAvailability` at request time, never from a cached copy.
  */
 
 import { REGISTRATION_ACCESS_METHOD, type Prisma, type PrismaClient, type RegistrationAccessMethod } from "@admitto/db";
 import { getBotProtectionMode } from "./bot-protection-mode.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
-
-/** SystemSettings.key of the JSON array of enabled method names. */
-export const ACCESS_METHODS_SETTINGS_KEY = "registration_access_methods";
 
 /** The methods an event can choose in this release: every one the model has. */
 export const SELECTABLE_ACCESS_METHODS = ["link", "password", "sso"] as const satisfies readonly RegistrationAccessMethod[];
@@ -26,68 +19,26 @@ export type SelectableAccessMethod = (typeof SELECTABLE_ACCESS_METHODS)[number];
 
 type AccessMethodsDb = PrismaClient | Prisma.TransactionClient;
 
-/** What a method waits for when it is enabled but not available. */
+/** What a method waits for when it is not available. */
 export type AccessMethodBlocker = "bot_protection" | "identity_provider";
 
 export interface AccessMethodAvailability {
   method: RegistrationAccessMethod;
-  enabled: boolean;
   available: boolean;
   blockedBy: AccessMethodBlocker | null;
 }
 
-/** The known methods that appear in `value`, once each, in the canonical order. Anything else
- * (an unknown name, a duplicate, a value that is not an array) is dropped. */
-function knownMethods(value: unknown): RegistrationAccessMethod[] {
-  if (!Array.isArray(value)) return [];
-  return REGISTRATION_ACCESS_METHOD.filter((method) => value.includes(method));
-}
-
-/** The methods the system administrator enabled. Empty by default and for a corrupt row. */
-export async function getEnabledAccessMethods(db: AccessMethodsDb): Promise<RegistrationAccessMethod[]> {
-  const row = await db.systemSettings.findUnique({ where: { key: ACCESS_METHODS_SETTINGS_KEY } });
-  if (!row) return [];
-  try {
-    return knownMethods(JSON.parse(row.value_json));
-  } catch {
-    return [];
-  }
-}
-
-/** Replaces the enabled methods. Unknown names and duplicates are dropped; `[]` turns all off. */
-export async function setEnabledAccessMethods(
-  db: AccessMethodsDb,
-  methods: readonly string[],
-): Promise<RegistrationAccessMethod[]> {
-  const enabled = knownMethods(methods);
-  const value_json = JSON.stringify(enabled);
-  await db.systemSettings.upsert({
-    where: { key: ACCESS_METHODS_SETTINGS_KEY },
-    create: { key: ACCESS_METHODS_SETTINGS_KEY, value_json },
-    update: { value_json },
-  });
-  return enabled;
-}
-
 /** The rule itself, apart from the lookups. The company sign-in is never blocked here: its provider belongs to the event. */
-export function computeAccessMethodAvailability(input: {
-  enabled: readonly RegistrationAccessMethod[];
-  botProtectionReady: boolean;
-}): AccessMethodAvailability[] {
+export function computeAccessMethodAvailability(input: { botProtectionReady: boolean }): AccessMethodAvailability[] {
   return REGISTRATION_ACCESS_METHOD.map((method) => {
-    const enabled = input.enabled.includes(method);
     const ready = method === "sso" || input.botProtectionReady;
-    return { method, enabled, available: enabled && ready, blockedBy: enabled && !ready ? "bot_protection" : null };
+    return { method, available: ready, blockedBy: ready ? null : "bot_protection" };
   });
 }
 
-/** Every method, in the canonical order, with whether the administrator enabled it and whether it
- * can be used right now. */
+/** Every method, in the canonical order, with whether it can be used right now. */
 export async function resolveAccessMethodAvailability(db: AccessMethodsDb): Promise<AccessMethodAvailability[]> {
-  const [enabled, keys, mode] = await Promise.all([getEnabledAccessMethods(db), resolveTurnstileKeys(db), getBotProtectionMode(db)]);
-  return computeAccessMethodAvailability({
-    enabled,
-    // With the check not used there is nothing to wait for.
-    botProtectionReady: mode === "not_used" || keys.state === "ready",
-  });
+  const [keys, mode] = await Promise.all([resolveTurnstileKeys(db), getBotProtectionMode(db)]);
+  // With the check not used there is nothing to wait for.
+  return computeAccessMethodAvailability({ botProtectionReady: mode === "not_used" || keys.state === "ready" });
 }

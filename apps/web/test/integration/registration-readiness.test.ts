@@ -2,7 +2,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { getEventRegistrationSettings } from "../../src/admin/event-registration-settings.js";
-import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { setBotProtectionMode } from "../../src/registration/bot-protection-mode.js";
 import { resolveRegistration } from "../../src/registration/form-model.js";
 import { READINESS_KEYS, readinessBlockers, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
@@ -60,11 +59,10 @@ async function createProvider(id: string, enabled: boolean): Promise<void> {
   });
 }
 
-/** An identity provider and the company sign-in turned on by the system, with the parts a row may take away. */
-async function ssoSystem(options: { providerEnabled?: boolean; wayEnabled?: boolean; keys?: boolean } = {}): Promise<void> {
-  const { providerEnabled = true, wayEnabled = true, keys = true } = options;
+/** An identity provider, with the parts a row may take away. */
+async function ssoSystem(options: { providerEnabled?: boolean; keys?: boolean } = {}): Promise<void> {
+  const { providerEnabled = true, keys = true } = options;
   await createProvider(PROVIDER_ID, providerEnabled);
-  await setEnabledAccessMethods(prisma, wayEnabled ? ["link", "sso"] : ["link"]);
   if (!keys) await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
 }
 
@@ -94,8 +92,6 @@ type Row = {
   blockers: RegistrationReadinessKey[];
 };
 
-const bothWays = () => setEnabledAccessMethods(prisma, ["link", "password"]);
-
 const ROWS: Row[] = [
   { name: "an event that has everything", page: "open", blockers: [] },
   { name: "an event that has everything, in the mode of approval", seed: { settings: { mode: "approval" } }, page: "open", blockers: [] },
@@ -115,11 +111,9 @@ const ROWS: Row[] = [
     blockers: ["identity_provider"],
   },
   { name: "the company sign-in, with the chosen provider switched off", seed: { settings: COMPANY }, system: () => ssoSystem({ providerEnabled: false }), page: "not_found", blockers: ["identity_provider"] },
-  { name: "the company sign-in, which the system administrator has not enabled", seed: { settings: COMPANY }, system: () => ssoSystem({ wayEnabled: false }), page: "not_found", blockers: ["access_method_enabled"] },
   { name: "the company sign-in next to the link", seed: { settings: { access_methods: ["sso", "link"] } }, system: () => ssoSystem(), page: "not_found", blockers: ["access_method"] },
   { name: "a link, whatever the state of the identity provider", system: () => ssoSystem({ providerEnabled: false }), page: "open", blockers: [] },
-  { name: "two ways in", seed: { settings: { access_methods: ["link", "password"] } }, system: bothWays, page: "not_found", blockers: ["access_method"] },
-  { name: "a link that the system administrator has not enabled", system: () => setEnabledAccessMethods(prisma, []), page: "not_found", blockers: ["access_method_enabled"] },
+  { name: "two ways in", seed: { settings: { access_methods: ["link", "password"] } }, page: "not_found", blockers: ["access_method"] },
   {
     name: "no Turnstile keys",
     system: () => prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } }),
@@ -145,34 +139,18 @@ const ROWS: Row[] = [
     page: "not_found",
     blockers: ["password"],
   },
-  {
-    name: "bot protection not used, and a link the system administrator has not enabled: still closed",
-    system: async () => {
-      await setBotProtectionMode(prisma, "not_used");
-      await setEnabledAccessMethods(prisma, []);
-    },
-    page: "not_found",
-    blockers: ["access_method_enabled"],
-  },
-  {
-    name: "a password that the system administrator has not enabled, and nobody set",
-    seed: { settings: { access_methods: ["password"] } },
-    system: () => setEnabledAccessMethods(prisma, ["link"]),
-    page: "not_found",
-    blockers: ["access_method_enabled", "password"],
-  },
-  { name: "a password nobody set", seed: { settings: { access_methods: ["password"] } }, system: bothWays, page: "not_found", blockers: ["password"] },
+  { name: "a password nobody set", seed: { settings: { access_methods: ["password"] } }, page: "not_found", blockers: ["password"] },
   {
     name: "a password that is set",
     seed: { settings: { access_methods: ["password"], password_hash: "$argon2id$not-checked-here" } },
-    system: bothWays,
+   
     page: "open",
     blockers: [],
   },
   {
     name: "a password nobody set, on an event that is over: as good as off, and not closed",
     seed: { date: PAST, settings: { access_methods: ["password"] } },
-    system: bothWays,
+   
     page: "not_found",
     blockers: ["password", "event_not_ended"],
   },

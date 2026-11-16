@@ -115,7 +115,6 @@ vi.mock("@admitto/auth", async (importOriginal) => {
 import { canManageInstance } from "@admitto/auth";
 import type { Context } from "hono";
 import { readAdminBuildMeta } from "../../src/admin/admin-build-meta.js";
-import { ACCESS_METHODS_SETTINGS_KEY } from "../../src/registration/access-methods.js";
 import { BOT_PROTECTION_SETTINGS_KEY } from "../../src/registration/bot-protection-mode.js";
 import {
   canCreateUploadDir,
@@ -1600,14 +1599,10 @@ describe("collectAdminHealth", () => {
       return { row, report };
     }
 
-    // The settings table answers two keys here: the access methods the administrator enabled (both challenged
-    // ones by default), and the Turnstile keys for anything else.
-    const keys = (value: string | null, enabledMethods: string[] = ["link", "password"]) => ({
+    // The settings table answers the Turnstile keys.
+    const keys = (value: string | null) => ({
       systemSettings: {
-        findUnique: vi.fn(async ({ where }: { where: { key: string } }) => {
-          if (where.key === ACCESS_METHODS_SETTINGS_KEY) return { key: where.key, value_json: JSON.stringify(enabledMethods) };
-          return value === null ? null : { key: where.key, value_json: value };
-        }),
+        findUnique: vi.fn(async ({ where }: { where: { key: string } }) => (value === null ? null : { key: where.key, value_json: value })),
       },
     });
     const events = (count: number) => ({ eventRegistrationSettings: { count: vi.fn().mockResolvedValue(count) } });
@@ -1648,28 +1643,12 @@ describe("collectAdminHealth", () => {
       });
     });
 
-    it("looks only at the challenged methods the administrator turned on, and at no event when none is on", async () => {
-      const count = vi.fn().mockResolvedValue(2);
-      const { row } = await captchaRow({ ...keys(null, ["password", "sso"]), eventRegistrationSettings: { count } });
-      expect(row.status).toBe("degraded");
-      expect(count).toHaveBeenCalledWith({
-        where: { mode: { not: null }, access_methods: { hasSome: ["password"] }, event: { archived_at: null } },
-      });
-
-      count.mockClear();
-      const off = await captchaRow({ ...keys(null, ["sso"]), eventRegistrationSettings: { count } });
-      expect(off.row.status).toBe("not_configured");
-      expect(off.row.summary).toBe("Not configured");
-      expect(count).not.toHaveBeenCalled();
-    });
-
     it("says it is not used, and warns of nothing, when the superadmin set bot protection to not used, keys or no keys", async () => {
       const count = vi.fn().mockResolvedValue(2);
       const notUsed = (value: string | null) => ({
         systemSettings: {
           findUnique: vi.fn(async ({ where }: { where: { key: string } }) => {
             if (where.key === BOT_PROTECTION_SETTINGS_KEY) return { key: where.key, value_json: '"not_used"' };
-            if (where.key === ACCESS_METHODS_SETTINGS_KEY) return { key: where.key, value_json: '["link","password"]' };
             return value === null ? null : { key: where.key, value_json: value };
           }),
         },
