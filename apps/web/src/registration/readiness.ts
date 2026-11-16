@@ -13,7 +13,7 @@
  *  - An event that is ready opens its form: `resolveRegistration` (./form-model.ts) finds it `open`.
  *  - Each key that closes the form is a condition of the page itself: the way in (`access_method`,
  *    `access_method_enabled`, `bot_protection` for the link and the password (`bot_protection_not_used`, which is always met, when
- *    the superadmin set bot protection to "not used"), `identity_provider` for the company sign-in,
+ *    the superadmin set bot protection to "not used"), `identity_provider` for the company sign-in (the event's own provider is chosen and enabled),
  *    `password`), the texts (`legal_documents`), the questions (`form_questions`)
  *    and the event (`event_not_archived`, `event_not_ended`). The rules behind them are the page's own functions, not
  *    copies: `resolveAccessMethodAvailability`, `evaluateLegalGate`, `drawQuestions`, `isOver`.
@@ -39,7 +39,7 @@ import { isRequiredFieldOffForm } from "./field-on-form.js";
 import type { FormQuestionType } from "./form-fields.js";
 import { getBotProtectionMode, type BotProtectionMode } from "./bot-protection-mode.js";
 import { drawQuestions } from "./form-model.js";
-import { resolveGuestSsoProvider } from "./sso-provider.js";
+import { listSelectableSsoProviders, type SelectableSsoProvider } from "./sso-provider.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
 
 /** The vocabulary of the checks, in the order they are listed. */
@@ -74,8 +74,9 @@ export interface ReadinessEnvironment {
   botProtectionReady: boolean;
   /** What the superadmin set (./bot-protection-mode.ts): with `not_used` the link and the password need no keys. */
   botProtectionMode: BotProtectionMode;
-  /** The identity provider chosen for guests (./sso-provider.ts) exists and is enabled. */
-  identityProviderReady: boolean;
+  /** The identity providers an event may choose for the company sign-in: the enabled OIDC ones (./sso-provider.ts). The event's own
+   * choice is judged against them (`identity_provider`). */
+  enabledSsoProviders: readonly SelectableSsoProvider[];
   /** A mail provider resolves for the event, as it does for the worker. */
   mailConfigured: boolean;
   /** The address guests' links point to (the one the worker uses), or null when none is known. */
@@ -92,7 +93,13 @@ export interface EventReadinessFacts {
 
 export interface ReadinessInput {
   /** The settings as they stand or would be saved. `password_set` is whether a password is stored, never the password. */
-  settings: { access_methods: readonly string[]; consent_keys: readonly string[]; password_set: boolean };
+  settings: {
+    access_methods: readonly string[];
+    consent_keys: readonly string[];
+    password_set: boolean;
+    /** The identity provider the event chose for the company sign-in, or null. */
+    sso_provider_id: string | null;
+  };
   environment: ReadinessEnvironment;
   event: EventReadinessFacts;
 }
@@ -116,7 +123,9 @@ export function evaluateRegistrationReadiness({ settings, environment, event }: 
   }
   // A form behind the company sign-in needs no bot check: it stands behind a sign-in of the provider. The others do, unless the
   // superadmin set bot protection to "not used": that is information for the organiser, never a blocker.
-  if (method === "sso") checks.push({ key: "identity_provider", ok: environment.identityProviderReady });
+  if (method === "sso") {
+    checks.push({ key: "identity_provider", ok: environment.enabledSsoProviders.some((provider) => provider.id === settings.sso_provider_id) });
+  }
   else if (environment.botProtectionMode === "not_used") checks.push({ key: "bot_protection_not_used", ok: true });
   else checks.push({ key: "bot_protection", ok: environment.botProtectionReady });
   if (method === "password") checks.push({ key: "password", ok: settings.password_set });
@@ -189,11 +198,11 @@ export async function loadReadinessEnvironment(
   eventId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ReadinessEnvironment> {
-  const [availability, keys, botProtectionMode, provider, mailConfigured, instanceBaseUrl] = await Promise.all([
+  const [availability, keys, botProtectionMode, enabledSsoProviders, mailConfigured, instanceBaseUrl] = await Promise.all([
     resolveAccessMethodAvailability(db),
     resolveTurnstileKeys(db),
     getBotProtectionMode(db),
-    resolveGuestSsoProvider(db),
+    listSelectableSsoProviders(db),
     succeeds(() => resolveMailConfig(eventId, db, env)),
     instanceBaseUrlOrNull(db, env),
   ]);
@@ -201,7 +210,7 @@ export async function loadReadinessEnvironment(
     availability,
     botProtectionReady: keys.state === "ready",
     botProtectionMode,
-    identityProviderReady: provider.state === "ready",
+    enabledSsoProviders,
     mailConfigured,
     instanceBaseUrl,
   };

@@ -8,11 +8,10 @@ import { JSDOM } from "jsdom";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { setSsoProviderId } from "../../src/registration/sso-provider.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { GUEST_SSO_SESSION_COOKIE as SESSION, GUEST_SSO_SESSION_TTL_MS, signGuestSsoSession } from "../../src/registration/sso-session.js";
 import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/mock-oidc-idp.js";
-import { Jar, PROVIDER_ID, installProvider, removeProvider, walk } from "../helpers/registration-sso-harness.js";
+import { Jar, PROVIDER_ID, SSO_EVENT_SETTINGS, installProvider, removeProvider, walk } from "../helpers/registration-sso-harness.js";
 import {
   ORIGIN,
   SelectiveStore,
@@ -41,10 +40,14 @@ async function addEvent(label: string, seed: Parameters<typeof seeder.addEvent>[
   const slug = `reg118a-sub-${label}-${(counter += 1)}`;
   eventIds.set(
     slug,
-    await seeder.addEvent(slug, { ...seed, settings: { access_methods: ["sso"], mode: "approval", verify_email: true, ...seed.settings } }),
+    await seeder.addEvent(slug, { ...seed, settings: { ...SSO_EVENT_SETTINGS, mode: "approval", verify_email: true, ...seed.settings } }),
   );
   return slug;
 }
+
+/** The event takes another provider for the company sign-in. */
+const chooseProvider = (slug: string, providerId: string) =>
+  prisma.eventRegistrationSettings.update({ where: { event_id: eventIds.get(slug)! }, data: { sso_provider_id: providerId } });
 
 /** A guest who signed in through the whole flow. */
 async function signedIn(slug: string, token: Parameters<typeof walk>[4] = {}): Promise<Jar> {
@@ -193,7 +196,7 @@ describe("the page of an event with the company sign-in", () => {
     }
   });
 
-  it("shows the sign-in page again once the provider chosen for guests is another one", async () => {
+  it("shows the sign-in page again once the provider chosen for the event is another one", async () => {
     const slug = await addEvent("page-provider");
     const jar = await signedIn(slug);
     await prisma.identityProvider.create({
@@ -209,14 +212,14 @@ describe("the page of an event with the company sign-in", () => {
       },
     });
     try {
-      await setSsoProviderId(prisma, "reg118a-second-idp");
+      await chooseProvider(slug, "reg118a-second-idp");
 
       const document = await dom(await page(slug, jar));
 
       expect(document.querySelector("#reg-sign-in")).not.toBeNull();
       expect(document.querySelector("form")).toBeNull();
     } finally {
-      await setSsoProviderId(prisma, PROVIDER_ID);
+      await chooseProvider(slug, PROVIDER_ID);
       await prisma.identityProvider.delete({ where: { id: "reg118a-second-idp" } });
     }
   });
@@ -400,11 +403,11 @@ describe("POST /r/:slug without a sign-in that checks out", () => {
       },
     });
     try {
-      await setSsoProviderId(prisma, "reg118a-post-idp");
+      await chooseProvider(slug, "reg118a-post-idp");
 
       expect((await post(slug, jar)).status).toBe(401);
     } finally {
-      await setSsoProviderId(prisma, PROVIDER_ID);
+      await chooseProvider(slug, PROVIDER_ID);
       await prisma.identityProvider.delete({ where: { id: "reg118a-post-idp" } });
     }
   });

@@ -1696,6 +1696,14 @@ export interface RegistrationSettingsDto {
   sso_claim_name: string | null;
   /** The values of that claim that may register, exactly as the provider sends them. Empty for no restriction. */
   sso_claim_values: string[];
+  /** The company SSO only: the id of the identity provider guests of this event sign in with, or null while none is chosen
+   * (and always null for another way in). */
+  sso_provider_id: string | null;
+  /** The provider the event chose, with its name, kind and state; null while none is chosen. A provider that was deleted
+   * (or is not an OIDC one) has no name and no kind. */
+  sso_provider: EventSsoProviderDto | null;
+  /** What an event may choose for the company SSO: the enabled OIDC providers. Id, name and kind only. */
+  sso_providers: Array<{ id: string; display_name: string; kind: "entra" | "google" | "generic" }>;
   password_set: boolean;
   guest_url: string | null;
   /** The host name of this instance (where an own address is pointed), or null while it has no address. */
@@ -1704,6 +1712,15 @@ export interface RegistrationSettingsDto {
   own_address: RegistrationOwnAddressDto | null;
   readiness: RegistrationReadinessCheckDto[];
   public_fields: RegistrationPublicFieldDto[];
+}
+
+/** The identity provider an event chose for the company SSO. `state`: `ready` (enabled), `disabled` (switched off: the form stays
+ * closed) or `missing` (deleted, or not an OIDC provider: no name, no kind). */
+export interface EventSsoProviderDto {
+  id: string;
+  state: "ready" | "disabled" | "missing";
+  display_name: string | null;
+  kind: "entra" | "google" | "generic" | null;
 }
 
 /** How the event's own address for guests stands, for every administrator of the event to read. `verified`: a check found it
@@ -1744,6 +1761,14 @@ export interface SaveRegistrationSettingsBody {
    * `sso_claim_superadmin_only`). */
   sso_claim_name?: string | null;
   sso_claim_values?: string[];
+  /** The company SSO only: the id of an enabled identity provider, or `null` to remove the choice. Refused for another way in
+   * (422 `sso_provider_needs_sso`) and for a provider that is unknown, off or not OIDC (422 `sso_provider_not_available`). Only a
+   * superadmin may change it (403 `sso_provider_superadmin_only`), and only a superadmin changes `access_methods` (403
+   * `access_method_superadmin_only`); a value sent as it already is, is no change. */
+  sso_provider_id?: string | null;
+  /** The provider the screen showed (`sso_provider_id` of the settings it read). When it differs from the one stored, nothing is saved
+   * (409 `sso_provider_changed`); left out, no check is made. */
+  expected_sso_provider_id?: string | null;
 }
 
 /** What the request list is asked for; a left-out filter selects every request. */

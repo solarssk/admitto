@@ -1,11 +1,13 @@
 /**
- * Which identity provider guests sign in with (D-C4): one for the instance, chosen by a superadmin among the OIDC providers
- * that staff sign in with too. The choice is a `SystemSettings` row holding the id of the provider; it is not a copy of any
- * of the provider's settings, so the endpoints, the client and its secret stay where staff manage them.
+ * Which identity provider guests sign in with (D-C4): each event that uses the company sign-in names one, among the OIDC providers
+ * that staff sign in with too (`EventRegistrationSettings.sso_provider_id`; it is not a copy of any of the provider's settings, so
+ * the endpoints, the client and its secret stay where staff manage them). The `SystemSettings` row of the single provider for the
+ * whole instance (`getSsoProviderId` and the functions around it) is the earlier model: it stays for the superadmin's old screen
+ * and for the backfill of the column, and the form of a guest no longer reads it.
  *
- * The company sign-in is available only while the chosen provider exists and is enabled. Disabling or deleting it closes the
- * form of every event that uses the sign-in and deletes nothing, as turning any way in off does (./access-methods.ts). The
- * lookup is made at request time, never cached.
+ * The company sign-in is available to an event only while its provider exists and is enabled. Disabling or deleting it closes the
+ * form of every event that uses it and deletes nothing, as turning any way in off does (./access-methods.ts). The lookup is made
+ * at request time, never cached.
  */
 import { findEnabledOidcProviders, findOidcProviderById } from "@admitto/auth";
 import type { IdentityProvider, Prisma, PrismaClient } from "@admitto/db";
@@ -56,14 +58,31 @@ export function ssoProviderState(id: string | null, provider: { enabled: boolean
   return provider.enabled ? "ready" : "disabled";
 }
 
-/** The chosen provider with its state. The provider's secret is part of the row, so a caller that answers a request from it
- * picks the fields it needs and never passes the row on. */
-export async function resolveGuestSsoProvider(db: ProviderDb): Promise<GuestSsoProvider> {
-  const id = await getSsoProviderId(db);
-  if (id === null) return { state: "not_selected" };
-  const provider = await findOidcProviderById(db, id);
+/** The provider with this id (the one an event chose) and its state. The provider's secret is part of the row, so a caller that
+ * answers a request from it picks the fields it needs and never passes the row on. Reads nothing of `SystemSettings`. */
+export async function resolveGuestSsoProvider(db: ProviderDb, providerId: string | null): Promise<GuestSsoProvider> {
+  if (providerId === null) return { state: "not_selected" };
+  const provider = await findOidcProviderById(db, providerId);
   if (!provider) return { state: "missing" };
   return provider.enabled ? { state: "ready", provider } : { state: "disabled" };
+}
+
+/**
+ * The provider an event chose, as an organiser may see it: the id, the name staff gave it, its kind and where it stands. Null for
+ * no choice. A provider that is gone, or is not an OIDC one, keeps its id and has neither name nor kind. No endpoint, no client, no secret.
+ */
+export type EventSsoProviderDto = {
+  id: string;
+  state: Exclude<GuestSsoProviderState, "not_selected">;
+  display_name: string | null;
+  kind: SsoProviderKind | null;
+};
+
+export async function loadEventSsoProvider(db: ProviderDb, providerId: string | null): Promise<EventSsoProviderDto | null> {
+  if (providerId === null) return null;
+  const provider = await findOidcProviderById(db, providerId);
+  if (!provider) return { id: providerId, state: "missing", display_name: null, kind: null };
+  return { id: providerId, state: provider.enabled ? "ready" : "disabled", display_name: provider.display_name, kind: ssoProviderKind(provider.issuer) };
 }
 
 export type SsoProviderKind = "entra" | "google" | "generic";
@@ -80,8 +99,10 @@ export function ssoProviderKind(issuer: string): SsoProviderKind {
   return host === "accounts.google.com" ? "google" : "generic";
 }
 
-/** What a superadmin may choose among: the enabled OIDC providers, by id, the name staff gave them and their kind. */
-export async function listSelectableSsoProviders(db: ProviderDb): Promise<{ id: string; display_name: string; kind: SsoProviderKind }[]> {
+export type SelectableSsoProvider = { id: string; display_name: string; kind: SsoProviderKind };
+
+/** What can be chosen: the enabled OIDC providers, by id, the name staff gave them and their kind. */
+export async function listSelectableSsoProviders(db: ProviderDb): Promise<SelectableSsoProvider[]> {
   const providers = await findEnabledOidcProviders(db);
   return providers.map((provider) => ({ id: provider.id, display_name: provider.display_name, kind: ssoProviderKind(provider.issuer) }));
 }

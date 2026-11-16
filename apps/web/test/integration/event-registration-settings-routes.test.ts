@@ -14,7 +14,6 @@ import {
 } from "../../src/admin/event-registration-settings.js";
 import { setBotProtectionMode } from "../../src/registration/bot-protection-mode.js";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
-import { SSO_PROVIDER_SETTINGS_KEY, setSsoProviderId } from "../../src/registration/sso-provider.js";
 import { READINESS_KEYS, type RegistrationReadinessKey } from "../../src/registration/readiness.js";
 import { TURNSTILE_SETTINGS_KEY } from "../../src/registration/turnstile-settings.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
@@ -60,7 +59,9 @@ const settingsPath = (eventId: string) => `/api/admin/events/${eventId}/registra
 
 const get = (eventId: string, cookie = cookies.admin) => app.request(settingsPath(eventId), { headers: { Cookie: cookie } });
 
-const put = (eventId: string, body: unknown, cookie = cookies.admin) =>
+// A superadmin by default: how guests open the form is technical (the way in, the provider, the restriction), and only they change it. A test of
+// what an administrator of the event may or may not do passes `cookies.admin` on purpose.
+const put = (eventId: string, body: unknown, cookie = cookies.superadmin) =>
   app.request(settingsPath(eventId), { method: "PUT", headers: { ...jsonHeaders, Cookie: cookie }, body: JSON.stringify(body) });
 
 const dto = async (res: Response) => (await res.json()) as RegistrationSettingsDto;
@@ -311,6 +312,7 @@ describe("reading the settings", () => {
       styled_form_controls: body.styled_form_controls,
       sso_claim_name: body.sso_claim_name,
       sso_claim_values: body.sso_claim_values,
+      sso_provider_id: body.sso_provider_id,
     }).toEqual(defaultSettings());
   });
 
@@ -351,6 +353,10 @@ describe("reading the settings", () => {
       styled_form_controls: true,
       sso_claim_name: null,
       sso_claim_values: [],
+      sso_provider_id: null,
+      sso_provider: null,
+      // Whatever providers other files of this worker left enabled: the list is checked on its own below.
+      sso_providers: expect.any(Array),
       password_set: false,
       guest_url: `https://tickets.example.com/r/${event.slug}`,
       instance_host: "tickets.example.com",
@@ -391,6 +397,9 @@ describe("reading the settings", () => {
       "readiness",
       "sso_claim_name",
       "sso_claim_values",
+    "sso_provider",
+    "sso_provider_id",
+    "sso_providers",
       "styled_form_controls",
       "verify_email",
       "waitlist_enabled",
@@ -989,7 +998,7 @@ describe("what a save leaves behind", () => {
 
     const [entry, ...rest] = await auditOf(event.id);
     expect(rest).toEqual([]);
-    expect(entry).toMatchObject({ organization_id: ORG, actor_user_id: adminId, action_type: "registration_settings_changed" });
+    expect(entry).toMatchObject({ organization_id: ORG, actor_user_id: superadminId, action_type: "registration_settings_changed" });
     expect(entry!.metadata).toEqual({
       event_id: event.id,
       event_title: "Audit Summit",
@@ -1079,7 +1088,7 @@ describe("the switch for the styled boxes of the guest form", () => {
 
     const [entry, ...rest] = await auditOf(event.id);
     expect(rest).toEqual([]);
-    expect(entry).toMatchObject({ organization_id: ORG, actor_user_id: adminId, action_type: "registration_settings_changed" });
+    expect(entry).toMatchObject({ organization_id: ORG, actor_user_id: superadminId, action_type: "registration_settings_changed" });
     expect(entry!.metadata).toEqual({
       event_id: event.id,
       event_title: "Styled Summit",
@@ -1129,30 +1138,27 @@ describe("a required field that the form does not ask", () => {
 describe("the company sign-in as the way in, and its restriction to one company (D-C4)", () => {
   const PROVIDER = "reg118a-idp";
 
-  beforeAll(async () => {
-    await prisma.identityProvider.deleteMany({ where: { id: PROVIDER } });
-    await prisma.identityProvider.create({
-      data: {
-        id: PROVIDER,
-        issuer: "https://idp.example.com/",
-        client_id: "reg118a-client",
-        authorization_endpoint: "https://idp.example.com/authorize",
-        token_endpoint: "https://idp.example.com/token",
-        jwks_uri: "https://idp.example.com/jwks",
-        display_name: "Company IdP",
-        enabled: true,
-      },
-    });
-  });
+  /** The enabled provider the events below choose (made again by every test: one of them deletes it). */
+  const installCompanyProvider = () => {
+    const data = {
+      issuer: "https://idp.example.com/",
+      client_id: "reg118a-client",
+      authorization_endpoint: "https://idp.example.com/authorize",
+      token_endpoint: "https://idp.example.com/token",
+      jwks_uri: "https://idp.example.com/jwks",
+      display_name: "Company IdP",
+      enabled: true,
+    };
+    return prisma.identityProvider.upsert({ where: { id: PROVIDER }, create: { id: PROVIDER, ...data }, update: data });
+  };
 
   afterAll(async () => {
-    await prisma.systemSettings.deleteMany({ where: { key: SSO_PROVIDER_SETTINGS_KEY } });
     await prisma.identityProvider.deleteMany({ where: { id: PROVIDER } });
   });
 
   beforeEach(async () => {
     await setEnabledAccessMethods(prisma, ["link", "password", "sso"]);
-    await setSsoProviderId(prisma, PROVIDER);
+    await installCompanyProvider();
   });
 
   const claim = { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b"] };
@@ -1161,11 +1167,11 @@ describe("the company sign-in as the way in, and its restriction to one company 
     await prisma.systemSettings.deleteMany({ where: { key: TURNSTILE_SETTINGS_KEY } });
     const event = await addEvent("sso-ready");
 
-    const res = await put(event.id, { access_methods: ["sso"], mode: "automatic" });
+    const res = await put(event.id, { access_methods: ["sso"], sso_provider_id: PROVIDER, mode: "automatic" });
     const body = await dto(res);
 
     expect(res.status).toBe(200);
-    expect(body).toMatchObject({ mode: "automatic", access_methods: ["sso"] });
+    expect(body).toMatchObject({ mode: "automatic", access_methods: ["sso"], sso_provider_id: PROVIDER });
     expect(body.readiness.map((check) => check.key)).toEqual(
       READINESS_KEYS.filter((key) => key !== "password" && key !== "bot_protection" && key !== "bot_protection_not_used"),
     );
@@ -1173,21 +1179,49 @@ describe("the company sign-in as the way in, and its restriction to one company 
     expect((await settingsRow(event.id))?.access_methods).toEqual(["sso"]);
   });
 
-  it("is not ready while no provider is chosen, was switched off or deleted, and the answer names the one key and nothing else", async () => {
+  it("is not ready while the event has chosen no provider, and the answer names the one key and nothing else", async () => {
     const event = await addEvent("sso-no-provider");
-    for (const breakIt of [
-      () => setSsoProviderId(prisma, null),
-      () => prisma.identityProvider.update({ where: { id: PROVIDER }, data: { enabled: false } }),
-      () => setSsoProviderId(prisma, "reg118a-gone"),
-    ]) {
-      await breakIt();
-      const res = await put(event.id, { access_methods: ["sso"], mode: "approval" });
 
-      expect(res.status).toBe(409);
-      expect(await res.json()).toEqual({ error: "registration_not_ready", blockers: ["identity_provider"] });
-      expect((await settingsRow(event.id))?.mode).toBeNull();
+    const res = await put(event.id, { access_methods: ["sso"], mode: "approval" });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "registration_not_ready", blockers: ["identity_provider"] });
+    expect((await settingsRow(event.id))?.mode).toBeNull();
+  });
+
+  it("is not ready once the provider the event chose was switched off or deleted, while another provider is enabled", async () => {
+    await prisma.identityProvider.create({
+      data: {
+        id: "reg118a-other",
+        issuer: "https://other.example.com/",
+        client_id: "reg118a-other",
+        authorization_endpoint: "https://other.example.com/authorize",
+        token_endpoint: "https://other.example.com/token",
+        jwks_uri: "https://other.example.com/jwks",
+        display_name: "Other IdP",
+        enabled: true,
+      },
+    });
+    try {
+      const event = await addEvent("sso-provider-gone", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+      const notReady = { error: "registration_not_ready", blockers: ["identity_provider"] };
+
+      await prisma.identityProvider.update({ where: { id: PROVIDER }, data: { enabled: false } });
+      const off = await put(event.id, { mode: "approval" });
+      expect(off.status).toBe(409);
+      expect(await off.json()).toEqual(notReady);
+      expect(await dto(await get(event.id))).toMatchObject({ sso_provider: { id: PROVIDER, state: "disabled", display_name: "Company IdP" } });
+
       await prisma.identityProvider.update({ where: { id: PROVIDER }, data: { enabled: true } });
-      await setSsoProviderId(prisma, PROVIDER);
+      await prisma.identityProvider.delete({ where: { id: PROVIDER } });
+      const gone = await put(event.id, { mode: "approval" });
+      expect(gone.status).toBe(409);
+      expect(await gone.json()).toEqual(notReady);
+      expect(await dto(await get(event.id))).toMatchObject({ sso_provider_id: null, sso_provider: null });
+      expect((await settingsRow(event.id))?.mode).toBeNull();
+    } finally {
+      await prisma.identityProvider.delete({ where: { id: "reg118a-other" } });
+      await installCompanyProvider();
     }
   });
 
@@ -1195,7 +1229,7 @@ describe("the company sign-in as the way in, and its restriction to one company 
     await setEnabledAccessMethods(prisma, ["link"]);
     const event = await addEvent("sso-not-enabled");
 
-    const res = await put(event.id, { access_methods: ["sso"], mode: "approval" });
+    const res = await put(event.id, { access_methods: ["sso"], sso_provider_id: PROVIDER, mode: "approval" });
 
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "registration_not_ready", blockers: ["access_method_enabled"] });
@@ -1312,16 +1346,17 @@ describe("the company sign-in as the way in, and its restriction to one company 
 describe("who may change the restriction of the company sign-in (A3)", () => {
   const claim = { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b"] };
   const none = { sso_claim_name: null, sso_claim_values: [] };
+  const asAdmin = (eventId: string, body: unknown) => put(eventId, body, cookies.admin);
   // Registration stays off in these events, so none of it waits for the provider to be set up.
   const withClaim = (label: string) => addEvent(label, { settings: { access_methods: ["sso"], ...claim } });
 
-  it("refuses an administrator who sets a restriction with the move to the company sign-in: 403, nothing saved, nothing audited", async () => {
+  it("refuses an administrator who sets a restriction with the move to the company sign-in: 403 (the way in is the first thing refused), nothing saved, nothing audited", async () => {
     const event = await addEvent("a3-set");
 
-    const res = await put(event.id, { access_methods: ["sso"], ...claim });
+    const res = await asAdmin(event.id, { access_methods: ["sso"], ...claim });
 
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "sso_claim_superadmin_only" });
+    expect(await res.json()).toEqual({ error: "access_method_superadmin_only" });
     expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["link"], ...none });
     expect(await auditOf(event.id)).toHaveLength(0);
   });
@@ -1329,10 +1364,10 @@ describe("who may change the restriction of the company sign-in (A3)", () => {
   it("refuses an administrator who changes or removes the restriction that is there, and keeps it", async () => {
     const event = await withClaim("a3-change");
 
-    const changed = await put(event.id, { sso_claim_name: "groups", sso_claim_values: ["staff"] });
-    const widened = await put(event.id, { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b", "tenant-c"] });
-    const renamed = await put(event.id, { sso_claim_name: "groups", sso_claim_values: claim.sso_claim_values });
-    const removed = await put(event.id, none);
+    const changed = await asAdmin(event.id, { sso_claim_name: "groups", sso_claim_values: ["staff"] });
+    const widened = await asAdmin(event.id, { sso_claim_name: "tid", sso_claim_values: ["tenant-a", "tenant-b", "tenant-c"] });
+    const renamed = await asAdmin(event.id, { sso_claim_name: "groups", sso_claim_values: claim.sso_claim_values });
+    const removed = await asAdmin(event.id, none);
 
     for (const res of [changed, widened, renamed, removed]) {
       expect(res.status).toBe(403);
@@ -1345,7 +1380,7 @@ describe("who may change the restriction of the company sign-in (A3)", () => {
   it("refuses the claim together with another change, and saves none of it", async () => {
     const event = await withClaim("a3-together");
 
-    const res = await put(event.id, { waitlist_enabled: false, sso_claim_name: "tid", sso_claim_values: ["other"] });
+    const res = await asAdmin(event.id, { waitlist_enabled: false, sso_claim_name: "tid", sso_claim_values: ["other"] });
 
     expect(res.status).toBe(403);
     expect(await settingsRow(event.id)).toMatchObject({ waitlist_enabled: true, ...claim });
@@ -1354,8 +1389,8 @@ describe("who may change the restriction of the company sign-in (A3)", () => {
   it("lets an administrator save other settings of an event that has a restriction, with no word of it or with it as it is", async () => {
     const event = await withClaim("a3-other");
 
-    const without = await put(event.id, { waitlist_enabled: false });
-    const same = await put(event.id, { ask_company: true, sso_claim_name: "tid", sso_claim_values: ["tenant-b", "tenant-a"] });
+    const without = await asAdmin(event.id, { waitlist_enabled: false });
+    const same = await asAdmin(event.id, { ask_company: true, sso_claim_name: "tid", sso_claim_values: ["tenant-b", "tenant-a"] });
 
     expect(without.status).toBe(200);
     // The same two values in another order are the same restriction.
@@ -1364,7 +1399,7 @@ describe("who may change the restriction of the company sign-in (A3)", () => {
     expect((await settingsRow(event.id))?.sso_claim_values).toEqual(expect.arrayContaining(claim.sso_claim_values));
   });
 
-  it("lets an administrator move to the company sign-in with no restriction, and away from it, which takes the restriction away", async () => {
+  it("lets a superadmin move to the company sign-in with no restriction, and away from it, which takes the restriction away", async () => {
     const plain = await addEvent("a3-move-in");
     const restricted = await withClaim("a3-move-out");
 
@@ -1411,6 +1446,370 @@ describe("who may change the restriction of the company sign-in (A3)", () => {
   });
 });
 
+describe("the identity provider of an event with the company sign-in", () => {
+  const PROVIDER = "reg-sso-a-idp";
+  const SECOND = "reg-sso-a-second";
+  const OFF = "reg-sso-a-off";
+  const NOT_OIDC = "reg-sso-a-cf";
+  const claim = { sso_claim_name: "tid", sso_claim_values: ["tenant-a"] };
+  const ISSUER = "https://login.microsoftonline.com/tenant-guid/v2.0";
+
+  const makeProvider = (id: string, extra: { enabled?: boolean; provider_type?: string } = {}) =>
+    prisma.identityProvider.create({
+      data: {
+        id,
+        issuer: id === PROVIDER ? ISSUER : `https://${id}.example.com/`,
+        client_id: `${id}-client`,
+        authorization_endpoint: `https://${id}.example.com/authorize`,
+        token_endpoint: `https://${id}.example.com/token`,
+        jwks_uri: `https://${id}.example.com/jwks`,
+        display_name: `Name of ${id}`,
+        enabled: true,
+        ...extra,
+      },
+    });
+
+  beforeEach(async () => {
+    await prisma.identityProvider.deleteMany({ where: { id: { in: [PROVIDER, SECOND, OFF, NOT_OIDC] } } });
+    await makeProvider(PROVIDER);
+    await makeProvider(SECOND);
+    await makeProvider(OFF, { enabled: false });
+    await makeProvider(NOT_OIDC, { provider_type: "cloudflare_access" });
+    await setEnabledAccessMethods(prisma, ["link", "password", "sso"]);
+  });
+
+  afterAll(async () => {
+    await prisma.identityProvider.deleteMany({ where: { id: { in: [PROVIDER, SECOND, OFF, NOT_OIDC] } } });
+  });
+
+  const providerOf = async (eventId: string) => (await settingsRow(eventId))?.sso_provider_id ?? null;
+
+  it("is saved with the move to the company sign-in, said back with its name and kind, and audited by id", async () => {
+    const event = await addEvent("idp-save");
+
+    const res = await put(event.id, { access_methods: ["sso"], sso_provider_id: PROVIDER });
+    const body = await dto(res);
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({
+      sso_provider_id: PROVIDER,
+      sso_provider: { id: PROVIDER, state: "ready", display_name: `Name of ${PROVIDER}`, kind: "entra" },
+    });
+    expect(await providerOf(event.id)).toBe(PROVIDER);
+    const [entry] = await auditOf(event.id);
+    expect(entry?.metadata).toMatchObject({ fields_changed: ["access_methods", "sso_provider_id"], sso_provider_id: PROVIDER });
+  });
+
+  it("offers an organiser the enabled OIDC providers, by id, name and kind, and no endpoint, client, secret or issuer", async () => {
+    const event = await addEvent("idp-list");
+
+    const text = JSON.stringify(await (await get(event.id)).json());
+    const body = JSON.parse(text) as RegistrationSettingsDto;
+
+    expect(body.sso_providers.filter((provider) => provider.id.startsWith("reg-sso-a-")).map((provider) => provider.id).sort()).toEqual([PROVIDER, SECOND]);
+    expect(body.sso_providers.find((provider) => provider.id === PROVIDER)).toEqual({ id: PROVIDER, display_name: `Name of ${PROVIDER}`, kind: "entra" });
+    for (const secret of [ISSUER, "tenant-guid", "-client", "/authorize", "/jwks", "client_secret"]) expect(text).not.toContain(secret);
+  });
+
+  it.each([
+    ["one that does not exist", "reg-sso-a-nobody"],
+    ["one that is switched off", OFF],
+    ["one that is not an OIDC provider", NOT_OIDC],
+  ])("refuses %s with 422, saves nothing and audits nothing", async (_label, id) => {
+    const event = await addEvent("idp-refused");
+
+    const res = await put(event.id, { access_methods: ["sso"], sso_provider_id: id });
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: "sso_provider_not_available" });
+    expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["link"], sso_provider_id: null });
+    expect(await auditOf(event.id)).toHaveLength(0);
+  });
+
+  it("refuses a provider for an event whose way in is another, in the same request or already: 422, and null is no change", async () => {
+    const event = await addEvent("idp-needs-sso");
+
+    for (const body of [{ sso_provider_id: PROVIDER }, { access_methods: ["password"], sso_provider_id: PROVIDER }]) {
+      const res = await put(event.id, body);
+      expect(res.status).toBe(422);
+      expect(await res.json()).toEqual({ error: "sso_provider_needs_sso" });
+    }
+    const none = await put(event.id, { sso_provider_id: null });
+    expect(none.status).toBe(200);
+    expect(await auditOf(event.id)).toHaveLength(0);
+  });
+
+  it("clears the provider with the move away from the company sign-in, and does not bring it back with the move back", async () => {
+    const event = await addEvent("idp-away", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+
+    const away = await dto(await put(event.id, { access_methods: ["link"] }));
+    const back = await dto(await put(event.id, { access_methods: ["sso"] }));
+
+    expect(away).toMatchObject({ access_methods: ["link"], sso_provider_id: null, sso_provider: null });
+    expect(back).toMatchObject({ access_methods: ["sso"], sso_provider_id: null, sso_provider: null });
+    const [entry] = await auditOf(event.id);
+    expect(entry?.metadata).toMatchObject({ fields_changed: ["access_methods", "sso_provider_id"], sso_provider_id: null });
+  });
+
+  it("removes the choice with null, and moves it to another provider, as a change of the event", async () => {
+    const event = await addEvent("idp-change", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+
+    expect((await dto(await put(event.id, { sso_provider_id: SECOND }))).sso_provider_id).toBe(SECOND);
+    expect((await dto(await put(event.id, { sso_provider_id: null }))).sso_provider).toBeNull();
+    expect(await providerOf(event.id)).toBeNull();
+    expect((await auditOf(event.id)).map((row) => (row.metadata as { sso_provider_id: unknown }).sso_provider_id)).toEqual([SECOND, null]);
+  });
+
+  it("saves nothing, and audits nothing, when the provider is as it was, and lets a provider that was switched off since stay", async () => {
+    const event = await addEvent("idp-same", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+    await prisma.identityProvider.update({ where: { id: PROVIDER }, data: { enabled: false } });
+
+    const same = await put(event.id, { sso_provider_id: PROVIDER, waitlist_enabled: false });
+
+    expect(same.status).toBe(200);
+    expect(await dto(same)).toMatchObject({ sso_provider: { id: PROVIDER, state: "disabled" } });
+    expect((await auditOf(event.id)).map((row) => (row.metadata as { fields_changed: string[] }).fields_changed)).toEqual([["waitlist_enabled"]]);
+  });
+
+  it("counts as a change of the way in for an event that has registration on: it must be ready, and other changes are not held up", async () => {
+    const event = await addEvent("idp-on", { settings: { mode: "automatic", access_methods: ["sso"], sso_provider_id: PROVIDER } });
+    await setMail(false);
+    try {
+      const held = await put(event.id, { sso_provider_id: SECOND });
+      expect(held.status).toBe(409);
+      expect(await held.json()).toEqual({ error: "registration_not_ready", blockers: ["mail_provider"] });
+      expect(await providerOf(event.id)).toBe(PROVIDER);
+
+      expect((await put(event.id, { waitlist_enabled: false })).status).toBe(200);
+    } finally {
+      await setMail(true);
+    }
+    expect((await put(event.id, { sso_provider_id: SECOND })).status).toBe(200);
+    expect(await providerOf(event.id)).toBe(SECOND);
+  });
+
+  describe("who may change how guests open the form (the way in, the provider)", () => {
+    const technical = (label: string, settings: Record<string, unknown> = {}) =>
+      addEvent(label, { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER, ...settings } });
+
+    it("refuses an administrator who changes the way in: 403 `access_method_superadmin_only`, nothing saved, nothing audited", async () => {
+      const event = await addEvent("idp-way");
+
+      const res = await put(event.id, { access_methods: ["password"], waitlist_enabled: false }, cookies.admin);
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "access_method_superadmin_only" });
+      expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["link"], waitlist_enabled: true });
+      expect(await auditOf(event.id)).toHaveLength(0);
+    });
+
+    it("refuses an administrator who changes the provider, limited to one company or not: 403 `sso_provider_superadmin_only`, nothing saved", async () => {
+      for (const settings of [{}, { sso_claim_name: "tid", sso_claim_values: ["tenant-a"] }]) {
+        const event = await technical("idp-admin-provider", settings);
+
+        const moved = await put(event.id, { sso_provider_id: SECOND }, cookies.admin);
+        const removed = await put(event.id, { sso_provider_id: null }, cookies.admin);
+
+        for (const res of [moved, removed]) {
+          expect(res.status).toBe(403);
+          expect(await res.json()).toEqual({ error: "sso_provider_superadmin_only" });
+        }
+        expect(await providerOf(event.id)).toBe(PROVIDER);
+        expect(await auditOf(event.id)).toHaveLength(0);
+      }
+    });
+
+    it("refuses an administrator who sets the provider with the move to the company sign-in: the way in is refused first", async () => {
+      const event = await addEvent("idp-first");
+
+      const res = await put(event.id, { access_methods: ["sso"], sso_provider_id: PROVIDER }, cookies.admin);
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "access_method_superadmin_only" });
+    });
+
+    it("lets an administrator send the way in and the provider as they are, and change everything else", async () => {
+      const event = await technical("idp-same-values");
+
+      const res = await put(
+        event.id,
+        { access_methods: ["sso"], sso_provider_id: PROVIDER, waitlist_enabled: false, mode: "automatic", ask_company: true },
+        cookies.admin,
+      );
+
+      expect(res.status).toBe(200);
+      expect(await settingsRow(event.id)).toMatchObject({ mode: "automatic", waitlist_enabled: false, ask_company: true, sso_provider_id: PROVIDER });
+    });
+
+    it("lets a superadmin change the way in and the provider, and moves an event away from the company sign-in with the provider", async () => {
+      const event = await technical("idp-super");
+
+      expect((await put(event.id, { sso_provider_id: SECOND }, cookies.superadmin)).status).toBe(200);
+      expect(await providerOf(event.id)).toBe(SECOND);
+      expect((await put(event.id, { access_methods: ["link"] }, cookies.superadmin)).status).toBe(200);
+      expect(await settingsRow(event.id)).toMatchObject({ access_methods: ["link"], sso_provider_id: null });
+    });
+  });
+
+  it.each([
+    ["a number", 7],
+    ["an empty string", ""],
+    ["a very long text", "x".repeat(65)],
+    ["a list", [PROVIDER]],
+  ])("refuses %s as the provider with 400", async (_label, value) => {
+    const event = await addEvent("idp-shape");
+
+    const res = await put(event.id, { access_methods: ["sso"], sso_provider_id: value });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("judges the provider as it is in the transaction: switched off after the environment was read, turning registration on is 409", async () => {
+    const event = await addEvent("idp-switched-off-meanwhile", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+    let reads = 0;
+    const provider = new Proxy(prisma.identityProvider, {
+      get(model, key) {
+        if (key !== "findMany") return Reflect.get(model, key);
+        return async (args: Parameters<typeof model.findMany>[0]) => {
+          const rows = await model.findMany(args);
+          reads += 1;
+          // The first read is the one of the environment, before the transaction: the provider is switched off right after it.
+          if (reads === 1) await model.update({ where: { id: PROVIDER }, data: { enabled: false } });
+          return rows;
+        };
+      },
+    });
+    const racing = new Proxy(prisma, {
+      get(client, key) {
+        if (key === "identityProvider") return provider;
+        const value: unknown = Reflect.get(client, key);
+        return typeof value === "function" ? value.bind(client) : value;
+      },
+    });
+
+    const result = await updateEventRegistrationSettings(racing, { eventId: event.id, patch: { mode: "automatic" }, actor: actorOf(superadminId) });
+
+    expect(result).toEqual({ kind: "not_ready", blockers: ["identity_provider"] });
+    expect((await settingsRow(event.id))?.mode).toBeNull();
+  });
+
+  describe("the provider the screen showed (`expected_sso_provider_id`)", () => {
+    const withProvider = (label: string) => addEvent(label, { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+    const claim = { sso_claim_name: "tid", sso_claim_values: ["tenant-a"] };
+
+    it("saves when it is the provider the event has, with or without another change", async () => {
+      const event = await withProvider("idp-expected-same");
+
+      const res = await put(event.id, { expected_sso_provider_id: PROVIDER, ...claim });
+
+      expect(res.status).toBe(200);
+      expect(await settingsRow(event.id)).toMatchObject({ sso_provider_id: PROVIDER, ...claim });
+    });
+
+    it("answers 409 `sso_provider_changed` when the event has another provider now, and saves and audits nothing", async () => {
+      const event = await withProvider("idp-expected-other");
+      await prisma.eventRegistrationSettings.update({ where: { event_id: event.id }, data: { sso_provider_id: SECOND } });
+
+      const res = await put(event.id, { expected_sso_provider_id: PROVIDER, waitlist_enabled: false, ...claim });
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "sso_provider_changed" });
+      expect(await settingsRow(event.id)).toMatchObject({ sso_provider_id: SECOND, waitlist_enabled: true, sso_claim_name: null });
+      expect(await auditOf(event.id)).toHaveLength(0);
+    });
+
+    it("tells a provider from none, both ways", async () => {
+      const chosen = await withProvider("idp-expected-null-vs-set");
+      const none = await addEvent("idp-expected-none", { settings: { access_methods: ["sso"] } });
+
+      const staleNone = await put(chosen.id, { expected_sso_provider_id: null, waitlist_enabled: false });
+      const staleSet = await put(none.id, { expected_sso_provider_id: PROVIDER, waitlist_enabled: false });
+      const sameNone = await put(none.id, { expected_sso_provider_id: null, waitlist_enabled: false });
+
+      expect([staleNone.status, staleSet.status, sameNone.status]).toEqual([409, 409, 200]);
+      expect(await settingsRow(chosen.id)).toMatchObject({ waitlist_enabled: true });
+    });
+
+    it("makes no check when it is left out, and refuses a value that is not an id with 400", async () => {
+      const event = await withProvider("idp-expected-absent");
+
+      expect((await put(event.id, { waitlist_enabled: false })).status).toBe(200);
+      for (const value of [7, "", "x".repeat(65)]) {
+        expect((await put(event.id, { expected_sso_provider_id: value })).status).toBe(400);
+      }
+    });
+  });
+
+  it("keeps the other changes of a save when the provider the event keeps is deleted after the settings were read: 200, and no provider", async () => {
+    const event = await addEvent("idp-deleted-meanwhile", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+    let deleted = false;
+    const racing = new Proxy(prisma, {
+      get(client, key) {
+        if (key !== "$transaction") {
+          const value: unknown = Reflect.get(client, key);
+          return typeof value === "function" ? value.bind(client) : value;
+        }
+        return (run: (tx: unknown) => Promise<unknown>, options: unknown) =>
+          client.$transaction(
+            (tx) =>
+              run(
+                new Proxy(tx, {
+                  get(inner, name) {
+                    const value: unknown = Reflect.get(inner, name);
+                    if (name !== "eventRegistrationSettings") return typeof value === "function" ? value.bind(inner) : value;
+                    // The settings are read (the row, then the password count): the provider is deleted right after, before it is held.
+                    return new Proxy(inner.eventRegistrationSettings, {
+                      get(model, method) {
+                        if (method !== "count") return Reflect.get(model, method);
+                        return async (args: Parameters<typeof model.count>[0]) => {
+                          const count = await model.count(args);
+                          if (!deleted) {
+                            deleted = true;
+                            await prisma.identityProvider.delete({ where: { id: PROVIDER } });
+                          }
+                          return count;
+                        };
+                      },
+                    });
+                  },
+                }),
+              ),
+            options as never,
+          );
+      },
+    });
+
+    const result = await updateEventRegistrationSettings(racing as PrismaClient, {
+      eventId: event.id,
+      patch: { waitlist_enabled: false },
+      actor: actorOf(superadminId),
+    });
+
+    expect(deleted).toBe(true);
+    expect(result.kind).toBe("saved");
+    expect(result.kind === "saved" ? result.settings : null).toMatchObject({ waitlist_enabled: false, sso_provider_id: null, sso_provider: null });
+    expect(await settingsRow(event.id)).toMatchObject({ waitlist_enabled: false, sso_provider_id: null });
+    expect((await auditOf(event.id)).map((row) => (row.metadata as { fields_changed: string[] }).fields_changed)).toEqual([["waitlist_enabled"]]);
+  });
+
+  it("refuses a delete of the provider while a save that chose it is under way, instead of failing the write on its key", async () => {
+    const event = await addEvent("idp-race");
+    let pending: Promise<Response> | null = null;
+    await prisma.$transaction(async (tx) => {
+      await tx.identityProvider.delete({ where: { id: PROVIDER } });
+      pending = Promise.resolve(put(event.id, { access_methods: ["sso"], sso_provider_id: PROVIDER }));
+      // The save finds the provider (the delete is not committed) and waits for the lock on it.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+
+    const res = await pending!;
+
+    // The delete went through and the save, which waited for it, found the provider gone: a 422, never "no such event".
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: "sso_provider_not_available" });
+  });
+});
+
 describe("the ways in that are turned on, in the answer (A3)", () => {
   it.each([
     [[], []],
@@ -1424,9 +1823,8 @@ describe("the ways in that are turned on, in the answer (A3)", () => {
     expect((await dto(await put(event.id, { waitlist_enabled: false }))).enabled_access_methods).toEqual(said);
   });
 
-  it("lists a way in that is on even when what it needs is missing: the screen shows the readiness apart", async () => {
+  it("lists a way in that is on, in the order of the model, apart from the readiness", async () => {
     await setEnabledAccessMethods(prisma, ["link", "sso"]);
-    await prisma.systemSettings.deleteMany({ where: { key: SSO_PROVIDER_SETTINGS_KEY } });
     const event = await addEvent("a3-needs");
 
     expect((await dto(await get(event.id))).enabled_access_methods).toEqual(["link", "sso"]);

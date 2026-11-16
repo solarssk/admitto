@@ -43,7 +43,7 @@ import { resolveAccessMethodAvailability } from "./access-methods.js";
 import { getBotProtectionMode } from "./bot-protection-mode.js";
 import { canBeMet, canDrawQuestion, controllersByKey, type FormQuestionType } from "./form-fields.js";
 import { restrictionOf, type ClaimRestriction } from "./sso-claim.js";
-import { getSsoProviderId } from "./sso-provider.js";
+import { resolveGuestSsoProvider } from "./sso-provider.js";
 import { resolveTurnstileKeys } from "./turnstile-settings.js";
 
 /** An event slug as the create-event form allows it (lowercase letters, digits, `_` and `-`, up to 80).
@@ -207,6 +207,7 @@ const EVENT_SELECT = {
       styled_form_controls: true,
       sso_claim_name: true,
       sso_claim_values: true,
+      sso_provider_id: true,
       custom_domain: true,
       custom_domain_verified_at: true,
     },
@@ -338,14 +339,14 @@ function drawCompanion(fields: readonly RegistrantFormField[], maxCompanions: nu
 }
 
 /** The way in the event offers: the one method of `access_methods` (one in this release, D-C1), with what it needs. Null for
- * the password when the event has none, and for the company sign-in while no provider is chosen for guests: as good as off. */
-async function accessOf(db: PrismaClient, settings: SettingsRow): Promise<GuestAccess | null> {
+ * the password when the event has none, and for the company sign-in while the event has chosen no provider: as good as off. */
+function accessOf(settings: SettingsRow): GuestAccess | null {
   if (settings.access_methods.length !== 1) return null;
   const method = settings.access_methods[0];
   if (method === "link") return { method };
   if (method === "password") return settings.password_hash ? { method, passwordHash: settings.password_hash } : null;
   if (method !== "sso") return null;
-  const providerId = await getSsoProviderId(db);
+  const providerId = settings.sso_provider_id;
   if (providerId === null) return null;
   return { method, providerId, restriction: restrictionOf(settings.sso_claim_name, settings.sso_claim_values) };
 }
@@ -359,13 +360,15 @@ async function loadOpenForm(
   event: FormEvent,
   access: GuestAccess,
 ): Promise<ResolvedRegistration> {
-  const [availability, keys, botMode, legal, fields, contact] = await Promise.all([
+  const [availability, keys, botMode, legal, fields, contact, provider] = await Promise.all([
     resolveAccessMethodAvailability(db),
     resolveTurnstileKeys(db),
     getBotProtectionMode(db),
     loadRequiredLegalDocuments(db, row.id, settings.consent_keys),
     loadRegistrantFormFields(db, row.id),
     loadContact(db, row.id),
+    // The company sign-in stands on the event's own provider: gone, or switched off, the form is closed like any other way in that is not available.
+    access.method === "sso" ? resolveGuestSsoProvider(db, access.providerId) : null,
   ]);
   const way = availability.find((entry) => entry.method === access.method);
   const paths = legalPaths(row.slug, legal);
@@ -373,7 +376,7 @@ async function loadOpenForm(
   // The link and the password need the bot check unless the superadmin set it to "not used"; the company sign-in never does,
   // because the form stands behind a sign-in.
   const needsChallenge = access.method !== "sso" && botMode === "required";
-  if (!way?.available || (needsChallenge && keys.state !== "ready") || !paths || !questions) return NOT_FOUND;
+  if (!way?.available || (provider && provider.state !== "ready") || (needsChallenge && keys.state !== "ready") || !paths || !questions) return NOT_FOUND;
   return {
     kind: "open",
     eventId: row.id,
@@ -453,7 +456,7 @@ export async function resolveRegistration(db: PrismaClient, slug: string, now: D
   const { row, settings, mode } = live;
   // `access_methods` holds exactly one method in this release (D-C1). An event whose way in is the password and that has none,
   // or the company sign-in with no provider chosen, is as good as off, over or not.
-  const access = await accessOf(db, settings);
+  const access = accessOf(settings);
   if (!access) return NOT_FOUND;
 
   const event = toFormEvent(row);

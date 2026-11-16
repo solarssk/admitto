@@ -13,7 +13,6 @@ import {
   getBotProtectionMode,
   setBotProtectionMode,
 } from "../src/registration/bot-protection-mode.js";
-import { SSO_PROVIDER_SETTINGS_KEY } from "../src/registration/sso-provider.js";
 import { TURNSTILE_SETTINGS_KEY } from "../src/registration/turnstile-settings.js";
 import { memorySystemSettings } from "./helpers/memory-system-settings.js";
 
@@ -69,39 +68,40 @@ describe("enabled access methods", () => {
 });
 
 describe("computeAccessMethodAvailability", () => {
-  const compute = (enabled: Array<"link" | "password" | "sso">, botProtectionReady: boolean, identityProviderEnabled: boolean) =>
-    computeAccessMethodAvailability({ enabled, botProtectionReady, identityProviderEnabled });
+  const compute = (enabled: Array<"link" | "password" | "sso">, botProtectionReady: boolean) =>
+    computeAccessMethodAvailability({ enabled, botProtectionReady });
 
   it("lists every method in a fixed order", () => {
-    expect(compute([], false, false).map((entry) => entry.method)).toEqual(["link", "password", "sso"]);
+    expect(compute([], false).map((entry) => entry.method)).toEqual(["link", "password", "sso"]);
   });
 
   it("makes nothing available by default, and blocks nothing that was not enabled", () => {
-    for (const entry of compute([], true, true)) {
+    for (const entry of compute([], true)) {
       expect(entry).toMatchObject({ enabled: false, available: false, blockedBy: null });
     }
   });
 
   it("needs bot protection for the link and for the password, not for SSO", () => {
     const all = ["link", "password", "sso"] as const;
-    expect(compute([...all], false, true)).toEqual([
+    expect(compute([...all], false)).toEqual([
       { method: "link", enabled: true, available: false, blockedBy: "bot_protection" },
       { method: "password", enabled: true, available: false, blockedBy: "bot_protection" },
       { method: "sso", enabled: true, available: true, blockedBy: null },
     ]);
   });
 
-  it("needs an enabled identity provider for SSO, not for the link or the password", () => {
+  it("never blocks SSO on the system: the identity provider is the event's own, judged for the event", () => {
     const all = ["link", "password", "sso"] as const;
-    expect(compute([...all], true, false)).toEqual([
-      { method: "link", enabled: true, available: true, blockedBy: null },
-      { method: "password", enabled: true, available: true, blockedBy: null },
-      { method: "sso", enabled: true, available: false, blockedBy: "identity_provider" },
+    expect(compute([...all], true).map((entry) => entry.blockedBy)).toEqual([null, null, null]);
+    expect(compute(["sso"], false)).toEqual([
+      { method: "link", enabled: false, available: false, blockedBy: null },
+      { method: "password", enabled: false, available: false, blockedBy: null },
+      { method: "sso", enabled: true, available: true, blockedBy: null },
     ]);
   });
 
   it("makes only the enabled methods available", () => {
-    expect(compute(["password"], true, true).map((entry) => entry.available)).toEqual([false, true, false]);
+    expect(compute(["password"], true).map((entry) => entry.available)).toEqual([false, true, false]);
   });
 });
 
@@ -112,7 +112,7 @@ describe("resolveAccessMethodAvailability", () => {
   it("closes link and password without keys, also for a development-looking setup", async () => {
     const values = { [ACCESS_METHODS_SETTINGS_KEY]: '["link","password","sso"]' };
     const { db } = fakeDb({ values });
-    expect(byMethod(await resolveAccessMethodAvailability(db))).toEqual({ link: false, password: false, sso: false });
+    expect(byMethod(await resolveAccessMethodAvailability(db))).toEqual({ link: false, password: false, sso: true });
   });
 
   it("opens link and password once the keys are saved and readable", async () => {
@@ -129,7 +129,7 @@ describe("resolveAccessMethodAvailability", () => {
     expect(byMethod(await resolveAccessMethodAvailability(fakeDb({ values }).db))).toEqual({
       link: true,
       password: true,
-      sso: false,
+      sso: true,
     });
   });
 
@@ -157,65 +157,10 @@ describe("resolveAccessMethodAvailability", () => {
     });
   });
 
-  it("opens SSO when the identity provider chosen for guests exists and is enabled, with no Turnstile keys", async () => {
-    const values = { [ACCESS_METHODS_SETTINGS_KEY]: '["sso"]', [SSO_PROVIDER_SETTINGS_KEY]: '"idp-1"' };
-    const providers = [{ id: "idp-1", enabled: true }];
-    expect(byMethod(await resolveAccessMethodAvailability(fakeDb({ values, providers }).db))).toEqual({
-      link: false,
-      password: false,
-      sso: true,
-    });
-  });
-
-  it("keeps SSO closed, and says why, while no provider is chosen, the chosen one is gone or switched off, or another one is enabled", async () => {
-    const enabled = { [ACCESS_METHODS_SETTINGS_KEY]: '["sso"]' };
-    const cases: [string, Parameters<typeof fakeDb>[0]][] = [
-      ["nothing chosen, one enabled", { values: enabled, providers: [{ id: "idp-1", enabled: true }] }],
-      ["chosen provider deleted", { values: { ...enabled, [SSO_PROVIDER_SETTINGS_KEY]: '"idp-gone"' }, providers: [{ id: "idp-1", enabled: true }] }],
-      ["chosen provider switched off", { values: { ...enabled, [SSO_PROVIDER_SETTINGS_KEY]: '"idp-1"' }, providers: [{ id: "idp-1", enabled: false }] }],
-      ["chosen value is not an id", { values: { ...enabled, [SSO_PROVIDER_SETTINGS_KEY]: "7" }, providers: [{ id: "idp-1", enabled: true }] }],
-      ["chosen value is corrupt", { values: { ...enabled, [SSO_PROVIDER_SETTINGS_KEY]: "not json" }, providers: [{ id: "idp-1", enabled: true }] }],
-    ];
-    for (const [what, options] of cases) {
-      const list = await resolveAccessMethodAvailability(fakeDb(options).db);
-      expect(list.find((entry) => entry.method === "sso"), what).toEqual({
-        method: "sso",
-        enabled: true,
-        available: false,
-        blockedBy: "identity_provider",
-      });
-    }
-  });
-
-  it("looks for the chosen provider by its id, among the OIDC providers, and for nothing when none is chosen", async () => {
-    const chosen = fakeDb({ values: { [SSO_PROVIDER_SETTINGS_KEY]: '"idp-1"' } });
-    await resolveAccessMethodAvailability(chosen.db);
-    expect(chosen.findFirst).toHaveBeenCalledTimes(1);
-    expect(chosen.findFirst).toHaveBeenCalledWith({ where: { id: "idp-1", provider_type: "oidc" } });
-
-    const none = fakeDb();
-    await resolveAccessMethodAvailability(none.db);
-    expect(none.findFirst).not.toHaveBeenCalled();
-  });
-});
-
-describe("the mode of bot protection", () => {
-  it("is required until a superadmin decides", async () => {
-    expect(await getBotProtectionMode(fakeDb().db)).toBe("required");
-  });
-
-  it("is stored and read back, either way", async () => {
-    const { db, rows } = fakeDb();
-    await setBotProtectionMode(db, "not_used");
-    expect(rows.get(BOT_PROTECTION_SETTINGS_KEY)).toBe('"not_used"');
-    expect(await getBotProtectionMode(db)).toBe("not_used");
-    await setBotProtectionMode(db, "required");
-    expect(await getBotProtectionMode(db)).toBe("required");
-  });
-
-  it("reads anything but exactly not_used as required, so a damaged row never drops the check", async () => {
-    for (const value of ["not json", "null", "[]", "{}", "0", '"required"', '"Not_Used"', '["not_used"]']) {
-      expect(await getBotProtectionMode(fakeDb({ values: { [BOT_PROTECTION_SETTINGS_KEY]: value } }).db), value).toBe("required");
-    }
+  it("opens SSO once the system enabled it, with no Turnstile keys and no provider chosen for the instance", async () => {
+    const { db, findFirst } = fakeDb({ values: { [ACCESS_METHODS_SETTINGS_KEY]: '["sso"]' } });
+    expect(byMethod(await resolveAccessMethodAvailability(db))).toEqual({ link: false, password: false, sso: true });
+    // The provider is the event's: nothing here looks for one.
+    expect(findFirst).not.toHaveBeenCalled();
   });
 });

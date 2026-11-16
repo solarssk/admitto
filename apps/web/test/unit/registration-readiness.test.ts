@@ -21,11 +21,13 @@ import {
  */
 const PUBLISHED = new Date("2026-10-20T10:00:00Z");
 
+const PROVIDER = { id: "idp-1", display_name: "Example sign-in", kind: "generic" as const };
+
 const environment = (overrides: Partial<ReadinessEnvironment> = {}): ReadinessEnvironment => ({
-  availability: computeAccessMethodAvailability({ enabled: ["link", "password"], botProtectionReady: true, identityProviderEnabled: false }),
+  availability: computeAccessMethodAvailability({ enabled: ["link", "password"], botProtectionReady: true }),
   botProtectionReady: true,
   botProtectionMode: "required",
-  identityProviderReady: true,
+  enabledSsoProviders: [PROVIDER],
   mailConfigured: true,
   instanceBaseUrl: "https://events.example.com",
   ...overrides,
@@ -43,7 +45,7 @@ const eventFacts = (overrides: Partial<EventReadinessFacts> = {}): EventReadines
 });
 
 const ready = (overrides: Partial<ReadinessInput> = {}): ReadinessInput => ({
-  settings: { access_methods: ["link"], consent_keys: [], password_set: false },
+  settings: { access_methods: ["link"], consent_keys: [], password_set: false, sso_provider_id: null },
   environment: environment(),
   event: eventFacts(),
   ...overrides,
@@ -73,7 +75,7 @@ describe("a ready event", () => {
   });
 
   it("lists the password check, and only that one more, when the way in is the password", () => {
-    const input = ready({ settings: { access_methods: ["password"], consent_keys: [], password_set: true } });
+    const input = ready({ settings: { access_methods: ["password"], consent_keys: [], password_set: true, sso_provider_id: null } });
 
     expect(keysOf(input)).toEqual(READINESS_KEYS.filter((key) => key !== "identity_provider" && key !== "bot_protection_not_used"));
     expect(blockersOf(input)).toEqual([]);
@@ -97,15 +99,15 @@ describe("bot protection set to not used (A2)", () => {
 
   it("is not held up by missing Turnstile keys, for the link and for the password", () => {
     expect(blockersOf(notUsed())).toEqual([]);
-    expect(blockersOf(notUsed({ settings: { access_methods: ["password"], consent_keys: [], password_set: true } }))).toEqual([]);
+    expect(blockersOf(notUsed({ settings: { access_methods: ["password"], consent_keys: [], password_set: true, sso_provider_id: null } }))).toEqual([]);
   });
 
   it("keeps the other checks: a password that is not set still blocks", () => {
-    expect(blockersOf(notUsed({ settings: { access_methods: ["password"], consent_keys: [], password_set: false } }))).toEqual(["password"]);
+    expect(blockersOf(notUsed({ settings: { access_methods: ["password"], consent_keys: [], password_set: false, sso_provider_id: null } }))).toEqual(["password"]);
   });
 
   it("says nothing about bot protection for the company sign-in", () => {
-    const input = notUsed({ settings: { access_methods: ["sso"], consent_keys: [], password_set: false } });
+    const input = notUsed({ settings: { access_methods: ["sso"], consent_keys: [], password_set: false, sso_provider_id: null } });
 
     expect(keysOf(input)).not.toContain("bot_protection_not_used");
     expect(keysOf(input)).toContain("identity_provider");
@@ -115,9 +117,9 @@ describe("bot protection set to not used (A2)", () => {
 describe("the company sign-in (D-C4)", () => {
   const sso = (overrides: Partial<ReadinessInput> = {}) =>
     ready({
-      settings: { access_methods: ["sso"], consent_keys: [], password_set: false },
+      settings: { access_methods: ["sso"], consent_keys: [], password_set: false, sso_provider_id: "idp-1" },
       environment: environment({
-        availability: computeAccessMethodAvailability({ enabled: ["sso"], botProtectionReady: true, identityProviderEnabled: true }),
+        availability: computeAccessMethodAvailability({ enabled: ["sso"], botProtectionReady: true }),
       }),
       ...overrides,
     });
@@ -138,22 +140,33 @@ describe("the company sign-in (D-C4)", () => {
     expect(blockersOf({ ...input, environment: { ...input.environment, botProtectionReady: false } })).toEqual([]);
   });
 
-  it("is held up by an identity provider that is not chosen, deleted or switched off", () => {
+  it("is held up by an identity provider that the event has not chosen, that is deleted, or that is switched off", () => {
     const input = sso();
+    const withProvider = (sso_provider_id: string | null, enabledSsoProviders: ReadinessEnvironment["enabledSsoProviders"]) =>
+      blockersOf({
+        ...input,
+        settings: { ...input.settings, sso_provider_id },
+        environment: { ...input.environment, enabledSsoProviders },
+      });
 
-    expect(blockersOf({ ...input, environment: { ...input.environment, identityProviderReady: false } })).toEqual(["identity_provider"]);
+    expect(withProvider("idp-1", [PROVIDER])).toEqual([]);
+    expect(withProvider(null, [PROVIDER])).toEqual(["identity_provider"]);
+    // Deleted or switched off: the provider is not among the enabled ones.
+    expect(withProvider("idp-1", [])).toEqual(["identity_provider"]);
+    // Another provider is enabled, but it is not the event's.
+    expect(withProvider("idp-1", [{ ...PROVIDER, id: "idp-2" }])).toEqual(["identity_provider"]);
   });
 
   it("needs the system to have turned the way in on", () => {
     const off = environment({
-      availability: computeAccessMethodAvailability({ enabled: ["link"], botProtectionReady: true, identityProviderEnabled: true }),
+      availability: computeAccessMethodAvailability({ enabled: ["link"], botProtectionReady: true }),
     });
 
     expect(blockersOf(sso({ environment: off }))).toEqual(["access_method_enabled"]);
   });
 
   it("does not ask the link or the password for the identity provider, whatever state it is in", () => {
-    const input = ready({ environment: environment({ identityProviderReady: false }) });
+    const input = ready({ environment: environment({ enabledSsoProviders: [] }) });
 
     expect(keysOf(input)).not.toContain("identity_provider");
     expect(blockersOf(input)).toEqual([]);
@@ -162,24 +175,24 @@ describe("the company sign-in (D-C4)", () => {
 
 describe("each check alone", () => {
   const rows: [RegistrationReadinessKey, ReadinessInput][] = [
-    ["access_method", ready({ settings: { access_methods: [], consent_keys: [], password_set: false } })],
-    ["access_method", ready({ settings: { access_methods: ["link", "password"], consent_keys: [], password_set: true } })],
-    ["access_method", ready({ settings: { access_methods: ["sso", "link"], consent_keys: [], password_set: false } })],
+    ["access_method", ready({ settings: { access_methods: [], consent_keys: [], password_set: false, sso_provider_id: null } })],
+    ["access_method", ready({ settings: { access_methods: ["link", "password"], consent_keys: [], password_set: true, sso_provider_id: null } })],
+    ["access_method", ready({ settings: { access_methods: ["sso", "link"], consent_keys: [], password_set: false, sso_provider_id: null } })],
     [
       "access_method_enabled",
       ready({
         environment: environment({
-          availability: computeAccessMethodAvailability({ enabled: ["password"], botProtectionReady: true, identityProviderEnabled: false }),
+          availability: computeAccessMethodAvailability({ enabled: ["password"], botProtectionReady: true }),
         }),
       }),
     ],
     ["bot_protection", ready({ environment: environment({ botProtectionReady: false }) })],
-    ["password", ready({ settings: { access_methods: ["password"], consent_keys: [], password_set: false } })],
+    ["password", ready({ settings: { access_methods: ["password"], consent_keys: [], password_set: false, sso_provider_id: null } })],
     ["legal_documents", ready({ event: eventFacts({ legalRows: [] }) })],
     [
       "legal_documents",
       ready({
-        settings: { access_methods: ["link"], consent_keys: ["photos"], password_set: false },
+        settings: { access_methods: ["link"], consent_keys: ["photos"], password_set: false, sso_provider_id: null },
       }),
     ],
     ["form_questions", ready({ event: eventFacts({ fields: [field({ type: "select", required: true, options: [] })] }) })],
@@ -196,7 +209,7 @@ describe("each check alone", () => {
 
   it("names the blockers in the order of the vocabulary when several are missing at once", () => {
     const broken = ready({
-      settings: { access_methods: ["password"], consent_keys: [], password_set: false },
+      settings: { access_methods: ["password"], consent_keys: [], password_set: false, sso_provider_id: null },
       environment: environment({ botProtectionReady: false, mailConfigured: false, instanceBaseUrl: null }),
       event: eventFacts({ legalRows: [], ended: true, archived: true }),
     });
@@ -208,7 +221,7 @@ describe("each check alone", () => {
   });
 
   it("says nothing about whether the chosen way in is enabled while none is chosen", () => {
-    const input = ready({ settings: { access_methods: [], consent_keys: [], password_set: false } });
+    const input = ready({ settings: { access_methods: [], consent_keys: [], password_set: false, sso_provider_id: null } });
 
     expect(keysOf(input)).not.toContain("access_method_enabled");
     expect(blockersOf(input)).toEqual(["access_method"]);
@@ -217,7 +230,7 @@ describe("each check alone", () => {
   it("holds a published consent as met and a draft one as missing", () => {
     const withConsent = (published_at: Date | null) =>
       ready({
-        settings: { access_methods: ["link"], consent_keys: ["photos"], password_set: false },
+        settings: { access_methods: ["link"], consent_keys: ["photos"], password_set: false, sso_provider_id: null },
         event: eventFacts({
           legalRows: [...eventFacts().legalRows, { kind: "consent", key: "photos", title: "Photos", published_at }],
         }),

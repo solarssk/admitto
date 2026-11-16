@@ -8,7 +8,6 @@ import type { PrismaClient } from "@admitto/db";
 import { setEnabledAccessMethods } from "../../src/registration/access-methods.js";
 import { GUEST_SSO_CALLBACK_PATH, GUEST_SSO_SESSION_COOKIE } from "../../src/registration/sso-session.js";
 import { GUEST_SSO_FLOW_COOKIE_PREFIX, parseGuestSsoStateValue } from "../../src/registration/sso-state-value.js";
-import { SSO_PROVIDER_SETTINGS_KEY, setSsoProviderId } from "../../src/registration/sso-provider.js";
 import type { MockIdTokenOverrides, MockOidcIdp } from "./mock-oidc-idp.js";
 import { ORIGIN } from "./registration-submit-harness.js";
 
@@ -19,29 +18,30 @@ export const flowCookieName = (state: string): string => parseGuestSsoStateValue
 
 export const PROVIDER_ID = "reg118a-guest-idp";
 
-/** The identity provider row that points at the mock, enabled, and chosen for guests; the company sign-in switched on. */
+/** What the settings of an event of the company sign-in hold besides the way in: the provider of the event, the one `installProvider` makes. */
+export const SSO_EVENT_SETTINGS = { access_methods: ["sso"], sso_provider_id: PROVIDER_ID };
+
+/**
+ * The identity provider row that points at the mock, and the company sign-in switched on by the system. The row is upserted, not
+ * deleted and made again, so an event that chose it keeps its choice (deleting a provider sets the choice of every event null).
+ */
 export async function installProvider(prisma: PrismaClient, idp: MockOidcIdp, options: { enabled?: boolean } = {}): Promise<void> {
-  await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
-  await prisma.identityProvider.create({
-    data: {
-      id: PROVIDER_ID,
-      provider_type: "oidc",
-      issuer: idp.issuer,
-      client_id: "test-oidc-client",
-      client_secret_enc: encryptClientSecret("mock-secret"),
-      authorization_endpoint: idp.authorizeEndpoint,
-      token_endpoint: idp.tokenEndpoint,
-      jwks_uri: idp.jwksUri,
-      display_name: "Guest IdP",
-      enabled: options.enabled ?? true,
-    },
-  });
-  await setSsoProviderId(prisma, PROVIDER_ID);
+  const data = {
+    provider_type: "oidc",
+    issuer: idp.issuer,
+    client_id: "test-oidc-client",
+    client_secret_enc: encryptClientSecret("mock-secret"),
+    authorization_endpoint: idp.authorizeEndpoint,
+    token_endpoint: idp.tokenEndpoint,
+    jwks_uri: idp.jwksUri,
+    display_name: "Guest IdP",
+    enabled: options.enabled ?? true,
+  };
+  await prisma.identityProvider.upsert({ where: { id: PROVIDER_ID }, create: { id: PROVIDER_ID, ...data }, update: data });
   await setEnabledAccessMethods(prisma, ["sso"]);
 }
 
 export async function removeProvider(prisma: PrismaClient): Promise<void> {
-  await prisma.systemSettings.deleteMany({ where: { key: SSO_PROVIDER_SETTINGS_KEY } });
   await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
 }
 
