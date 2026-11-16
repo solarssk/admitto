@@ -29,7 +29,7 @@ import { lockAndLoadLegalGateRows, loadLegalGateRows, publishedConsentKeys } fro
 import type { SelectableAccessMethod } from "../registration/access-methods.js";
 import type { BotProtectionMode } from "../registration/bot-protection-mode.js";
 import { isOver } from "../registration/form-model.js";
-import { loadEventSsoProvider, type EventSsoProviderDto, type SelectableSsoProvider } from "../registration/sso-provider.js";
+import { listSelectableSsoProviders, loadEventSsoProvider, type EventSsoProviderDto, type SelectableSsoProvider } from "../registration/sso-provider.js";
 import {
   evaluateRegistrationReadiness,
   loadReadinessEnvironment,
@@ -127,6 +127,9 @@ export type RegistrationSettingsDto = SettingsValues & {
 /** A change to the settings: only what is there is changed. */
 export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_methods">> & {
   access_methods?: SelectableAccessMethod[];
+  /** The provider the caller's screen showed. Sent, and different from the one stored when the save holds its locks: nothing is saved
+   * (`sso_provider_changed`), so a restriction set on the screen is never applied to a provider chosen meanwhile by someone else. */
+  expected_sso_provider_id?: string | null;
 };
 
 /**
@@ -137,6 +140,7 @@ export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_met
  * - `sso_claim_needs_sso`: the save sets a restriction of the company sign-in, and the way in it leaves the event with is
  *   another;
  * - `sso_claim_superadmin_only`: the save changes the restriction of the company sign-in, and the caller is not a superadmin;
+ * - `sso_provider_changed`: the save carries the provider its screen showed (`expected_sso_provider_id`), and the event has another now;
  * - `sso_provider_needs_sso`: the save names a provider, and the way in it leaves the event with is another;
  * - `sso_provider_not_available`: the provider named is not one of the enabled OIDC providers (unknown, switched off, not OIDC);
  * - `access_method_superadmin_only`: the save changes the way in, and the caller is not a superadmin;
@@ -145,7 +149,7 @@ export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_met
  */
 export type SettingsUpdate =
   | { kind: "saved"; settings: RegistrationSettingsDto }
-  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" | "sso_provider_needs_sso" | "sso_provider_not_available" | "sso_provider_superadmin_only" | "access_method_superadmin_only" }
+  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" | "sso_provider_changed" | "sso_provider_needs_sso" | "sso_provider_not_available" | "sso_provider_superadmin_only" | "access_method_superadmin_only" }
   | { kind: "not_ready"; blockers: RegistrationReadinessKey[] };
 
 export interface SettingsOptions {
@@ -341,6 +345,22 @@ function changesProvider(before: SettingsValues, after: SettingsValues): boolean
 
 type Refusal = Extract<SettingsUpdate["kind"], "consent_not_published" | "access_method_superadmin_only" | `sso_${string}`>;
 
+/**
+ * Holds the row of the provider the save ends with (the one it names, or the one the event keeps) `FOR KEY SHARE`: a provider that is
+ * deleted after the checks would fail the write on its foreign key, and the catch at the end would read that as "no such event"; held,
+ * a delete waits for this save (a switch-off, which changes no key, does not). A provider the event keeps that was deleted since the
+ * settings were read is no provider: the settings are read as having none (the form is closed, the readiness says so), and the rest of the
+ * save goes through. One the save names that is gone is left to the checks (422).
+ */
+async function holdProvider(tx: Prisma.TransactionClient, stored: StoredSettings, patch: RegistrationSettingsPatch): Promise<StoredSettings> {
+  const id = patch.sso_provider_id === undefined ? stored.values.sso_provider_id : patch.sso_provider_id;
+  if (id === null) return stored;
+  const held = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "IdentityProvider" WHERE "id" = ${id} FOR KEY SHARE`;
+  const named = patch.sso_provider_id !== undefined && patch.sso_provider_id !== stored.values.sso_provider_id;
+  if (held.length > 0 || named) return stored;
+  return { ...stored, values: { ...stored.values, sso_provider_id: null } };
+}
+
 /** What, if anything, refuses the patch before the readiness is looked at: a consent the event has not published; the company sign-in's restriction and provider. */
 function refusalOf(args: {
   patch: RegistrationSettingsPatch;
@@ -351,6 +371,7 @@ function refusalOf(args: {
   canChange: boolean;
 }): Refusal | null {
   const { patch, before, after, published, provider, canChange } = args;
+  if (patch.expected_sso_provider_id !== undefined && patch.expected_sso_provider_id !== before.sso_provider_id) return "sso_provider_changed";
   if (patch.consent_keys?.some((key) => !published.includes(key))) return "consent_not_published";
   // How guests open the form is technical: a superadmin's to change (an event admin may send the value that is there).
   if (!canChange && !sameMembers(before.access_methods, after.access_methods)) return "access_method_superadmin_only";
@@ -486,7 +507,7 @@ type SaveRequest = {
 };
 
 async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest): Promise<SettingsUpdate> {
-  const { eventId, patch, actor, environment } = request;
+  const { eventId, patch, actor } = request;
   // The locks first, in the one order: the event's questions, then its texts. A question that is saved meanwhile waits for
   // this transaction and finds the mode it leaves, and a text that is withdrawn meanwhile finds the consents it keeps.
   await acquireEventCustomFieldsLock(tx, eventId);
@@ -495,12 +516,11 @@ async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest):
   if (!event) return { kind: "not_found" };
   if (event.archived_at !== null) return { kind: "archived" };
 
-  const stored = await readStoredSettings(tx, eventId);
+  const stored = await holdProvider(tx, await readStoredSettings(tx, eventId), patch);
   const after = mergeSettings(stored.values, patch);
-  // A provider that is deleted after the checks below would fail the write on its foreign key, and the catch at the end would read that as
-  // "no such event": held `FOR KEY SHARE`, a delete waits for this save (a switch-off, which changes no key, does not).
-  if (patch.sso_provider_id) await tx.$queryRaw`SELECT "id" FROM "IdentityProvider" WHERE "id" = ${patch.sso_provider_id} FOR KEY SHARE`;
   const ssoProvider = await loadEventSsoProvider(tx, after.sso_provider_id);
+  // The list of providers is read again here, in the transaction: the one read with the rest of the environment, before the locks, may be older than a switch-off.
+  const environment = { ...request.environment, enabledSsoProviders: await listSelectableSsoProviders(tx) };
   const refusal = refusalOf({ patch, before: stored.values, after, published: publishedConsentKeys(legalRows), provider: ssoProvider, canChange: request.canChangeSsoClaim });
   if (refusal) return { kind: refusal };
 

@@ -1664,6 +1664,134 @@ describe("the identity provider of an event with the company sign-in", () => {
     expect(res.status).toBe(400);
   });
 
+  it("judges the provider as it is in the transaction: switched off after the environment was read, turning registration on is 409", async () => {
+    const event = await addEvent("idp-switched-off-meanwhile", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+    let reads = 0;
+    const provider = new Proxy(prisma.identityProvider, {
+      get(model, key) {
+        if (key !== "findMany") return Reflect.get(model, key);
+        return async (args: Parameters<typeof model.findMany>[0]) => {
+          const rows = await model.findMany(args);
+          reads += 1;
+          // The first read is the one of the environment, before the transaction: the provider is switched off right after it.
+          if (reads === 1) await model.update({ where: { id: PROVIDER }, data: { enabled: false } });
+          return rows;
+        };
+      },
+    });
+    const racing = new Proxy(prisma, {
+      get(client, key) {
+        if (key === "identityProvider") return provider;
+        const value: unknown = Reflect.get(client, key);
+        return typeof value === "function" ? value.bind(client) : value;
+      },
+    });
+
+    const result = await updateEventRegistrationSettings(racing, { eventId: event.id, patch: { mode: "automatic" }, actor: actorOf(superadminId) });
+
+    expect(result).toEqual({ kind: "not_ready", blockers: ["identity_provider"] });
+    expect((await settingsRow(event.id))?.mode).toBeNull();
+  });
+
+  describe("the provider the screen showed (`expected_sso_provider_id`)", () => {
+    const withProvider = (label: string) => addEvent(label, { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+    const claim = { sso_claim_name: "tid", sso_claim_values: ["tenant-a"] };
+
+    it("saves when it is the provider the event has, with or without another change", async () => {
+      const event = await withProvider("idp-expected-same");
+
+      const res = await put(event.id, { expected_sso_provider_id: PROVIDER, ...claim });
+
+      expect(res.status).toBe(200);
+      expect(await settingsRow(event.id)).toMatchObject({ sso_provider_id: PROVIDER, ...claim });
+    });
+
+    it("answers 409 `sso_provider_changed` when the event has another provider now, and saves and audits nothing", async () => {
+      const event = await withProvider("idp-expected-other");
+      await prisma.eventRegistrationSettings.update({ where: { event_id: event.id }, data: { sso_provider_id: SECOND } });
+
+      const res = await put(event.id, { expected_sso_provider_id: PROVIDER, waitlist_enabled: false, ...claim });
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "sso_provider_changed" });
+      expect(await settingsRow(event.id)).toMatchObject({ sso_provider_id: SECOND, waitlist_enabled: true, sso_claim_name: null });
+      expect(await auditOf(event.id)).toHaveLength(0);
+    });
+
+    it("tells a provider from none, both ways", async () => {
+      const chosen = await withProvider("idp-expected-null-vs-set");
+      const none = await addEvent("idp-expected-none", { settings: { access_methods: ["sso"] } });
+
+      const staleNone = await put(chosen.id, { expected_sso_provider_id: null, waitlist_enabled: false });
+      const staleSet = await put(none.id, { expected_sso_provider_id: PROVIDER, waitlist_enabled: false });
+      const sameNone = await put(none.id, { expected_sso_provider_id: null, waitlist_enabled: false });
+
+      expect([staleNone.status, staleSet.status, sameNone.status]).toEqual([409, 409, 200]);
+      expect(await settingsRow(chosen.id)).toMatchObject({ waitlist_enabled: true });
+    });
+
+    it("makes no check when it is left out, and refuses a value that is not an id with 400", async () => {
+      const event = await withProvider("idp-expected-absent");
+
+      expect((await put(event.id, { waitlist_enabled: false })).status).toBe(200);
+      for (const value of [7, "", "x".repeat(65)]) {
+        expect((await put(event.id, { expected_sso_provider_id: value })).status).toBe(400);
+      }
+    });
+  });
+
+  it("keeps the other changes of a save when the provider the event keeps is deleted after the settings were read: 200, and no provider", async () => {
+    const event = await addEvent("idp-deleted-meanwhile", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+    let deleted = false;
+    const racing = new Proxy(prisma, {
+      get(client, key) {
+        if (key !== "$transaction") {
+          const value: unknown = Reflect.get(client, key);
+          return typeof value === "function" ? value.bind(client) : value;
+        }
+        return (run: (tx: unknown) => Promise<unknown>, options: unknown) =>
+          client.$transaction(
+            (tx) =>
+              run(
+                new Proxy(tx, {
+                  get(inner, name) {
+                    const value: unknown = Reflect.get(inner, name);
+                    if (name !== "eventRegistrationSettings") return typeof value === "function" ? value.bind(inner) : value;
+                    // The settings are read (the row, then the password count): the provider is deleted right after, before it is held.
+                    return new Proxy(inner.eventRegistrationSettings, {
+                      get(model, method) {
+                        if (method !== "count") return Reflect.get(model, method);
+                        return async (args: Parameters<typeof model.count>[0]) => {
+                          const count = await model.count(args);
+                          if (!deleted) {
+                            deleted = true;
+                            await prisma.identityProvider.delete({ where: { id: PROVIDER } });
+                          }
+                          return count;
+                        };
+                      },
+                    });
+                  },
+                }),
+              ),
+            options as never,
+          );
+      },
+    });
+
+    const result = await updateEventRegistrationSettings(racing as PrismaClient, {
+      eventId: event.id,
+      patch: { waitlist_enabled: false },
+      actor: actorOf(superadminId),
+    });
+
+    expect(deleted).toBe(true);
+    expect(result.kind).toBe("saved");
+    expect(result.kind === "saved" ? result.settings : null).toMatchObject({ waitlist_enabled: false, sso_provider_id: null, sso_provider: null });
+    expect(await settingsRow(event.id)).toMatchObject({ waitlist_enabled: false, sso_provider_id: null });
+    expect((await auditOf(event.id)).map((row) => (row.metadata as { fields_changed: string[] }).fields_changed)).toEqual([["waitlist_enabled"]]);
+  });
+
   it("refuses a delete of the provider while a save that chose it is under way, instead of failing the write on its key", async () => {
     const event = await addEvent("idp-race");
     let pending: Promise<Response> | null = null;

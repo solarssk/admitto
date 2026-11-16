@@ -46,7 +46,9 @@ export const MAX_REGISTRATION_SETTINGS_BODY_BYTES = 4_096;
  *   Sent for an event whose way in is not the company sign-in it is a 422 `sso_provider_needs_sso`; `null` removes the choice, and
  *   moving an event away from that way in removes it. How guests open the form is technical: only a superadmin may change the way
  *   in (403 `access_method_superadmin_only`) or the provider (403 `sso_provider_superadmin_only`); a value sent as it already is,
- *   is no change. The other settings stay with the administrator of the event.
+ *   is no change. The other settings stay with the administrator of the event;
+ * - `expected_sso_provider_id`: the provider the caller's screen showed (an id or `null`). When it differs from the one stored, once the
+ *   save holds its locks, nothing is saved and the answer is a 409 `sso_provider_changed`. Left out, no check is made.
  */
 const putBodySchema = z
   .object({
@@ -62,6 +64,7 @@ const putBodySchema = z
     sso_claim_name: z.string().trim().min(1).refine((name) => ssoClaimNameProblem(name) === null).nullable().optional(),
     // The provider of the company sign-in, a cuid of an identity provider: its existence and state are judged by the save.
     sso_provider_id: z.string().trim().min(1).max(64).nullable().optional(),
+    expected_sso_provider_id: z.string().trim().min(1).max(64).nullable().optional(),
     sso_claim_values: z
       .array(
         z
@@ -125,6 +128,8 @@ export async function handlePutEventRegistrationSettings(c: Context, db: PrismaC
       return c.json({ error: "sso_claim_needs_sso" }, 422);
     case "sso_claim_superadmin_only":
       return c.json({ error: "sso_claim_superadmin_only" }, 403);
+    case "sso_provider_changed":
+      return c.json({ error: "sso_provider_changed" }, 409);
     case "access_method_superadmin_only":
       return c.json({ error: "access_method_superadmin_only" }, 403);
     case "sso_provider_needs_sso":
