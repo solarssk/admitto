@@ -341,6 +341,22 @@ function changesProvider(before: SettingsValues, after: SettingsValues): boolean
 
 type Refusal = Extract<SettingsUpdate["kind"], "consent_not_published" | "access_method_superadmin_only" | `sso_${string}`>;
 
+/**
+ * Holds the row of the provider the save ends with (the one it names, or the one the event keeps) `FOR KEY SHARE`: a provider that is
+ * deleted after the checks would fail the write on its foreign key, and the catch at the end would read that as "no such event"; held,
+ * a delete waits for this save (a switch-off, which changes no key, does not). A provider the event keeps that was deleted since the
+ * settings were read is no provider: the settings are read as having none (the form is closed, the readiness says so), and the rest of the
+ * save goes through. One the save names that is gone is left to the checks (422).
+ */
+async function holdProvider(tx: Prisma.TransactionClient, stored: StoredSettings, patch: RegistrationSettingsPatch): Promise<StoredSettings> {
+  const id = patch.sso_provider_id === undefined ? stored.values.sso_provider_id : patch.sso_provider_id;
+  if (id === null) return stored;
+  const held = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "IdentityProvider" WHERE "id" = ${id} FOR KEY SHARE`;
+  const named = patch.sso_provider_id !== undefined && patch.sso_provider_id !== stored.values.sso_provider_id;
+  if (held.length > 0 || named) return stored;
+  return { ...stored, values: { ...stored.values, sso_provider_id: null } };
+}
+
 /** What, if anything, refuses the patch before the readiness is looked at: a consent the event has not published; the company sign-in's restriction and provider. */
 function refusalOf(args: {
   patch: RegistrationSettingsPatch;
@@ -495,11 +511,8 @@ async function saveSettings(tx: Prisma.TransactionClient, request: SaveRequest):
   if (!event) return { kind: "not_found" };
   if (event.archived_at !== null) return { kind: "archived" };
 
-  const stored = await readStoredSettings(tx, eventId);
+  const stored = await holdProvider(tx, await readStoredSettings(tx, eventId), patch);
   const after = mergeSettings(stored.values, patch);
-  // A provider that is deleted after the checks below would fail the write on its foreign key, and the catch at the end would read that as
-  // "no such event": held `FOR KEY SHARE`, a delete waits for this save (a switch-off, which changes no key, does not).
-  if (patch.sso_provider_id) await tx.$queryRaw`SELECT "id" FROM "IdentityProvider" WHERE "id" = ${patch.sso_provider_id} FOR KEY SHARE`;
   const ssoProvider = await loadEventSsoProvider(tx, after.sso_provider_id);
   // The list of providers is read again here, in the transaction: the one read with the rest of the environment, before the locks, may be older than a switch-off.
   const environment = { ...request.environment, enabledSsoProviders: await listSelectableSsoProviders(tx) };
