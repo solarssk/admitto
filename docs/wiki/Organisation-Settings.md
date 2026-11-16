@@ -45,6 +45,7 @@ Shared outbound connections. They are configured in this tab, not through deploy
 
 - Enable it and choose the provider: MET Norway or Open-Meteo.
 - The forecast horizon is about 9 days (MET Norway) or up to 16 days (Open-Meteo).
+- Open-Meteo's API key is write-only, like the secret key of Bot protection: the box shows "Not set" or a mask, and **Set**, **Change** or **Clear** change it. Save once for the whole tab.
 - Open-Meteo's free host is for non-commercial use. Commercial deployments need a customer API key, a self-hosted base URL, MET Norway, or weather disabled.
 
 **Maps**
