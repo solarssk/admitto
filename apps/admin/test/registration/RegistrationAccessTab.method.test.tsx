@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RegistrationSettingsDto, RoleAssignment } from "../../src/api/types.js";
+import { plain } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
 import { checks, settings, ssoChecks, ssoEventSettings } from "./accessData.js";
 import { card, renderLoaded, resetApi, saveButton } from "./accessFixtures.js";
@@ -50,24 +51,25 @@ describe("the access method on the Access tab: to read, set by a superadmin", ()
   it("shows the method, and tells an organiser that a superadmin sets it in Event settings, with no link and no control", async () => {
     await renderLoaded(settings());
 
-    expect(within(summary()).getByText("Link", { selector: "strong" })).toBeTruthy();
-    expect(within(summary()).getByText("Anyone who has the link can ask to join.")).toBeTruthy();
-    expect(within(summary()).getByText("Set by a superadmin in Event settings, Registration.")).toBeTruthy();
+    expect(within(summary()).getByRole("radio", { name: "Link" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(summary()).getAllByRole("radio").every((radio) => (radio as HTMLButtonElement).disabled)).toBe(true);
+    expect(plain(within(summary()).getByText(/^Anyone who has the link can ask to join\./).textContent)).toBe("Anyone who has the link can ask to join. A bot check protects the form.");
+    expect(within(summary()).getByText("Set by a superadmin in Event settings, Registration.").className).toBe("at-hint");
     expect(within(summary()).queryByRole("link")).toBeNull();
-    expect(within(summary()).queryByRole("button")).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Password" })).toBeNull();
+    expect(within(summary()).queryByRole("button", { name: "Change" })).toBeNull();
   });
 
-  it("gives a superadmin a Change link in the header of the card, in place of the sentence", async () => {
+  it("gives a superadmin a Change button with a pencil in the header of the card, in place of the sentence, that opens Event settings", async () => {
     assignments = [SUPERADMIN];
-    await renderLoaded(settings({ access_methods: ["password"], password_set: true }));
+    const { router } = await renderLoaded(settings({ access_methods: ["password"], password_set: true }));
 
-    expect(within(summary()).getByText("Password", { selector: "strong" })).toBeTruthy();
-    const change = within(summary()).getByRole("link", { name: "Change" });
-    expect(change.getAttribute("href")).toBe(SETTINGS_LINK);
+    expect(within(summary()).getByRole("radio", { name: "Password" }).getAttribute("aria-checked")).toBe("true");
+    const change = within(summary()).getByRole("button", { name: "Change" });
     expect(change.closest(".at-card__actions")).not.toBeNull();
+    expect(change.querySelector(".ti-pencil")).not.toBeNull();
     expect(within(summary()).queryByText(/Set by a superadmin/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
+    fireEvent.click(change);
+    expect(router.state.location.pathname + router.state.location.search).toBe(SETTINGS_LINK);
   });
 
   it("says which identity provider guests sign in with for Company SSO, and marks one that is turned off", async () => {
@@ -85,8 +87,8 @@ describe("the access method on the Access tab: to read, set by a superadmin", ()
 
   it("says that no access method is chosen when there is none, or more than one", async () => {
     await renderLoaded(settings({ access_methods: [] }));
-    expect(within(summary()).getByText("Not chosen", { selector: "strong" })).toBeTruthy();
-    expect(within(summary()).getByText("No access method is chosen yet. Guests cannot open the form.")).toBeTruthy();
+    expect(within(summary()).getAllByRole("radio").map((radio) => radio.getAttribute("aria-checked"))).toEqual(["false", "false", "false"]);
+    expect(summary().querySelector(".at-notice--warning")?.textContent).toBe("No access method is chosen yet. Guests cannot open the form.");
   });
 
   it("is free of axe violations", async () => {

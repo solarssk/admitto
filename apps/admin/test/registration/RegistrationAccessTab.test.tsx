@@ -211,7 +211,7 @@ describe("RegistrationAccessTab: the settings", () => {
 
     expect(radio("With approval").getAttribute("aria-checked")).toBe("true");
     expect(radio("Off").getAttribute("aria-checked")).toBe("false");
-    expect(within(card("Access method")).getByText("Password", { selector: "strong" })).toBeTruthy();
+    expect(within(card("Access method")).getByRole("radio", { name: "Password" }).getAttribute("aria-checked")).toBe("true");
     expect(toggle("Waiting list").checked).toBe(false);
     expect(toggle("Confirm email addresses").checked).toBe(true);
     expect(toggle("Ask for the company").checked).toBe(true);
@@ -239,8 +239,7 @@ describe("RegistrationAccessTab: the settings", () => {
   it.each<[string[]]>([[[]], [["link", "password"]], [["sso", "link"]]])("shows no access method as chosen for %j, as the server counts none, and has nothing to save", async (methods) => {
     await renderLoaded(settings({ access_methods: methods as RegistrationSettingsDto["access_methods"], readiness: checks("access_method") }));
 
-    expect(within(card("Access method")).getByText("Not chosen", { selector: "strong" })).toBeTruthy();
-    expect(screen.queryByRole("radio", { name: "Link" })).toBeNull();
+    expect(within(card("Access method")).getAllByRole("radio").map((radio) => radio.getAttribute("aria-checked"))).toEqual(["false", "false", "false"]);
     expect(isOff(saveButton())).toBe(true);
   });
 

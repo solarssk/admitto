@@ -299,9 +299,19 @@
   text-decoration: underline;
 }
 
-/* The access method as the Access tab shows it, to read: a row of the page's kind, with no rule under it and no padding of its own, in a
- * card that spaces its parts with a gap. The "Change" link of a superadmin is in the header of the card. */
-.access-method-read {
-  padding: 0;
-  border-bottom: 0;
+/* The access method as the Access tab shows it, to read: the same segmented control as in Event settings, Registration, with nothing to
+ * press. The chosen option stays as clear as when it can be pressed; the others are dimmed as a disabled control is. */
+.access-seg--read .seg-btn:disabled {
+  cursor: default;
+}
+
+.access-seg--read .seg-btn--active:disabled {
+  opacity: 1;
+}
+
+/* The identity provider under the notice: its icon, then its name. */
+.access-method-provider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }

@@ -48,10 +48,11 @@ describe("the company SSO as the way in of an event, on the Access tab", () => {
     await renderLoaded(ssoEventSettings());
 
     const summary = card("Access method");
-    expect(within(summary).getByText("Company SSO", { selector: "strong" })).toBeTruthy();
+    expect(within(summary).getByRole("radio", { name: "Company SSO" }).getAttribute("aria-checked")).toBe("true");
     expect(within(summary).getByText("Identity provider: Contoso Entra")).toBeTruthy();
-    expect(screen.queryByRole("radiogroup", { name: "Access method" })).toBeNull();
-    expect(within(summary).queryByRole("button")).toBeNull();
+    // The choice is shown as in Event settings, but nothing can be pressed: every option is off, and the one button is the way there.
+    expect(within(summary).getAllByRole("radio").every((radio) => (radio as HTMLButtonElement).disabled)).toBe(true);
+    expect(within(summary).getAllByRole("button").filter((button) => button.getAttribute("role") !== "radio").map((button) => button.textContent)).toEqual(["Change"]);
     expect(screen.queryByText("Event password")).toBeNull();
     expect(screen.queryByLabelText("Claim name")).toBeNull();
     expect(screen.queryByLabelText("Allowed values")).toBeNull();
