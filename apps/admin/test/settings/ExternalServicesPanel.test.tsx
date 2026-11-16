@@ -61,6 +61,16 @@ function el<T extends HTMLElement>(id: string): T {
   return node as T;
 }
 
+/** The row of the weather API key: a locked value with Set (or Change) and Clear, as the Secret key of Bot protection. */
+const apiKeyRow = () => screen.getByText("API key").closest(".mail-secret-field") as HTMLElement;
+const apiKeyButton = (name: string) => within(apiKeyRow()).getByRole("button", { name });
+
+/** Opens the box of the API key and types a value into it. */
+function typeApiKey(value: string) {
+  fireEvent.click(within(apiKeyRow()).getByRole("button", { name: /^(Set|Change)$/ }));
+  fireEvent.change(el<HTMLInputElement>("external-weather-api-key"), { target: { value } });
+}
+
 function sampleResponse(
   overrides: {
     weather?: Partial<ExternalServicesResponse["weather"]>;
@@ -242,7 +252,7 @@ describe("ExternalServicesPanel", () => {
     fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
     fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     expect(document.getElementById("external-weather-base-url")).toBeTruthy();
-    expect(document.getElementById("external-weather-api-key")).toBeTruthy();
+    expect(apiKeyRow().textContent).toContain("Not set");
     expect(screen.getByText(/non-commercial/i)).toBeTruthy();
   });
 
@@ -355,9 +365,7 @@ describe("ExternalServicesPanel", () => {
     fireEvent.change(el<HTMLInputElement>("external-weather-base-url"), {
       target: { value: "https://api.open-meteo.com" },
     });
-    fireEvent.change(el<HTMLInputElement>("external-weather-api-key"), {
-      target: { value: "org-token" },
-    });
+    typeApiKey("org-token");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(mockSaveWeather).toHaveBeenCalledWith(
@@ -370,7 +378,7 @@ describe("ExternalServicesPanel", () => {
     });
   });
 
-  it("saves with clearApiKey when Clear organisation API key is checked", async () => {
+  it("saves with an empty apiKey when Clear is chosen on the saved API key", async () => {
     mockFetch.mockResolvedValueOnce(
       sampleResponse({
         weather: {
@@ -383,7 +391,7 @@ describe("ExternalServicesPanel", () => {
     await renderLoaded();
     fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
     fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
-    fireEvent.click(el<HTMLInputElement>("external-weather-clear-api-key"));
+    fireEvent.click(apiKeyButton("Clear"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(mockSaveWeather).toHaveBeenCalledWith(
@@ -479,9 +487,7 @@ describe("ExternalServicesPanel", () => {
     fireEvent.change(el<HTMLInputElement>("external-weather-base-url"), {
       target: { value: "https://api.open-meteo.com" },
     });
-    fireEvent.change(el<HTMLInputElement>("external-weather-api-key"), {
-      target: { value: "probe-key" },
-    });
+    typeApiKey("probe-key");
     fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
     await waitFor(() => {
       expect(mockTestWeather).toHaveBeenCalledWith({
@@ -560,9 +566,7 @@ describe("ExternalServicesPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      // Two alerts, not a duplicate bug: the save-time summary list (all validation problems
-      // at once) and the API key field's own inline error (Input's error prop, live-announced
-      // as the user edits that field) both legitimately report the same problem here.
+      // The save-time summary list names the missing key.
       expect(screen.getAllByRole("alert").some((el) => /API key/i.test(el.textContent ?? ""))).toBe(true);
     });
     expect(mockSaveWeather).not.toHaveBeenCalled();
@@ -750,8 +754,7 @@ describe("ExternalServicesPanel", () => {
     await renderLoaded();
     fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
     fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
-    const clear = el<HTMLInputElement>("external-weather-clear-api-key");
-    fireEvent.click(clear);
+    fireEvent.click(apiKeyButton("Clear"));
     fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
     await waitFor(() => {
       expect(mockTestWeather).toHaveBeenCalledWith(
@@ -868,7 +871,7 @@ describe("ExternalServicesPanel", () => {
     });
   });
 
-  it("restores the API key field when Clear organisation API key is unchecked", async () => {
+  it("shows a saved API key as a mask, never its value, and goes back to it when Cancel is chosen", async () => {
     mockFetch.mockResolvedValueOnce(
       sampleResponse({
         weather: {
@@ -880,12 +883,59 @@ describe("ExternalServicesPanel", () => {
     await renderLoaded();
     fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
     fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
-    const clear = el<HTMLInputElement>("external-weather-clear-api-key");
-    fireEvent.click(clear);
-    expect(clear.checked).toBe(true);
-    fireEvent.click(clear);
-    expect(clear.checked).toBe(false);
-    expect(el<HTMLInputElement>("external-weather-api-key").disabled).toBe(false);
+    expect(apiKeyRow().textContent).toContain("•••••••• set");
+    fireEvent.click(apiKeyButton("Clear"));
+    expect(el<HTMLInputElement>("external-weather-api-key").disabled).toBe(true);
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(false);
+    fireEvent.click(within(apiKeyRow()).getByRole("button", { name: "Cancel" }));
+    expect(document.getElementById("external-weather-api-key")).toBeNull();
+    expect(apiKeyRow().textContent).toContain("•••••••• set");
+    expect(isOff(screen.getByRole("button", { name: "Save" }))).toBe(true);
+  });
+
+  it("blocks save when the box of the API key is open and empty, and says to cancel to keep the saved one", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({ weather: { provider: "openmeteo", api_key: { configured: true, source: "organization" } } }),
+    );
+    await renderLoaded();
+    fireEvent.click(apiKeyButton("Change"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("Enter the API key, or choose Cancel to keep the saved one.").length).toBeGreaterThan(0);
+    });
+    expect(mockSaveWeather).not.toHaveBeenCalled();
+  });
+
+  it("does not block save for an open, empty key box once the provider is MET Norway, which has no key", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({ weather: { provider: "openmeteo", api_key: { configured: true, source: "organization" } } }),
+    );
+    await renderLoaded();
+    fireEvent.click(apiKeyButton("Change"));
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "MET Norway" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockSaveWeather).toHaveBeenCalled());
+    expect(screen.queryByText("Enter the API key, or choose Cancel to keep the saved one.")).toBeNull();
+  });
+
+  it("blocks save when the saved API key is cleared on a commercial host", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({
+        weather: {
+          provider: "openmeteo",
+          base_url: "https://customer-api.open-meteo.com",
+          api_key: { configured: true, source: "organization" },
+        },
+      }),
+    );
+    await renderLoaded();
+    fireEvent.click(apiKeyButton("Clear"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("API key is required for customer-api.open-meteo.com.").length).toBeGreaterThan(0);
+    });
+    expect(mockSaveWeather).not.toHaveBeenCalled();
   });
 
   it("maps remaining weather and maps probe codes to operator-safe toast copy", async () => {
