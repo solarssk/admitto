@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Turn guest registration on or off for an event, see how guests get in, set what the form asks, and copy the link you give to guests. You do this on the **Access** tab of the event's **Registration** page. The page is in the event menu, after **Overview**.
+Turn guest registration on or off for an event, see the access method, set what the form asks, and copy the link you give to guests. You do this on the **Access** tab of the event's **Registration** page. The page is in the event menu, after **Overview**.
 
 Registration is off for every event until you turn it on. Until then, the address of the form answers "not found".
 
@@ -12,7 +12,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 - You must be the Administrator of the event's organisation, or a Superadmin. An Operator cannot open this page.
 - Some things are set up for the whole instance, by a Superadmin: bot protection, the list of identity providers for Company SSO (under **Identity**), email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
-- Only a Superadmin sets how guests get in (the access method, the event password and the identity provider), the address of the event for guests and the restriction to one company, on the **Registration** tab of **Event settings** (see **Set how guests get in**, **Give the event an address of its own** and **Restrict Company SSO to one company** below). Every Administrator of the event is warned on this page when the address stops working.
+- Only a Superadmin sets the access method (with the event password and the identity provider), the address of the event for guests and the restriction to one company, on the **Registration** tab of **Event settings** (see **Set the access method**, **Give the event an address of its own** and **Restrict Company SSO to one company** below). Every Administrator of the event is warned on this page when the address stops working.
 - You write the legal texts and the questions yourself. See [Legal Texts and Consents](Legal-Texts-and-Consents) and [Registration Form Fields](Registration-Form-Fields).
 - An archived event keeps its settings. You can read them and copy the link, but you cannot change anything.
 
@@ -25,11 +25,11 @@ Registration is off for every event until you turn it on. Until then, the addres
 3. Put each missing row right. The table under **Important decisions** says where.
 4. Come back to the tab. The checklist shows the settings that are saved, so save your changes first to see it update.
 
-**Read how guests get in**
+**Read the access method**
 
 The **Access method** row of the **Setup checklist** on this tab says what is set, as text: "Link. Anyone who has the link can ask to join.", "Password. ..." or "Company SSO. Guests sign in with" and the name of the identity provider. It has no button. A Superadmin sets it in **Event settings → Registration**, and the row says so. When no method is chosen, the row is not done and says "No access method is chosen yet. Guests cannot open the form." The rows **Identity provider** and **Event password** tell an Administrator to ask a Superadmin, and send a Superadmin to Event settings.
 
-**Set how guests get in**
+**Set the access method**
 
 A Superadmin does this, in **Event settings → Registration**, on the **Access method** card. The tab has one **Save** at the bottom for the method, the identity provider and the restriction. The event password is saved at once, apart from **Save**.
 
@@ -166,7 +166,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 - Guests confirm their address with a link in an email. The link works for 24 hours.
 - A request that is not confirmed in that time is deleted.
 - The guest's confirmation email replaces the "received" email.
-- With the company SSO this switch has no effect: the address comes from the identity provider, so no confirmation link is sent. The switch is greyed out and keeps its setting for the other ways in.
+- With the company SSO this switch has no effect: the address comes from the identity provider, so no confirmation link is sent. The switch is greyed out and keeps its setting for the other access methods.
 
 **The address for guests: what the check can find**
 
@@ -223,7 +223,7 @@ When you turn registration off:
 | A phone question shows the browser's box although the styled boxes are on | The question asks for digits only, or sets a shortest or longest length. A country code would break that rule. Remove the rule if the question should take a country |
 | A guest sees "This event is not open to your company account." | The sign-in does not hold one of your allowed values. Ask a Superadmin to check the claim and the values in **Event settings**, **Registration** |
 | A guest sees "Your company account did not give us a verified email address" | The identity provider sent no email address, or says the address is not verified. A Superadmin maps the email claim of the provider |
-| Saving says "Only a superadmin can change how guests open the form" or "Only a superadmin can change the restriction to one company" | How guests get in and the restriction to one company are a Superadmin's to set, in **Event settings → Registration**. Ask a Superadmin to change it |
+| Saving says "Only a superadmin can change the access method" or "Only a superadmin can change the restriction to one company" | The access method and the restriction to one company are a Superadmin's to set, in **Event settings → Registration**. Ask a Superadmin to change it |
 | The restriction says "The restriction to one company works with Company SSO only" | Choose **Company SSO** under **Access method** in **Event settings → Registration**, or clear both fields |
 | There is no link under **Link for guests** | The address of the instance is not set. Ask a Superadmin |
 | The tab warns that the address of the event stopped working | Ask a Superadmin or your IT team. The card under **Address for guests** names the reason |

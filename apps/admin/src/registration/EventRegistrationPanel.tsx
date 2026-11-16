@@ -26,7 +26,7 @@ import { methodEdit } from "./ssoProviderChoice.js";
 import { eventReturnAddress, SsoItSetup } from "./SsoItSetup.js";
 import "./registration-access.css";
 
-const PANEL_HINT = "How guests open the registration form, and the address they use. Only a superadmin can change these.";
+const PANEL_HINT = "The access method of the registration form, and the address guests use. Only a superadmin can change these.";
 
 const NOT_USED_NOTE = "This event does not use Company SSO, so these fields are off. To use it, choose Company SSO under Access method, above.";
 
