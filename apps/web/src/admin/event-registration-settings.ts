@@ -127,6 +127,9 @@ export type RegistrationSettingsDto = SettingsValues & {
 /** A change to the settings: only what is there is changed. */
 export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_methods">> & {
   access_methods?: SelectableAccessMethod[];
+  /** The provider the caller's screen showed. Sent, and different from the one stored when the save holds its locks: nothing is saved
+   * (`sso_provider_changed`), so a restriction set on the screen is never applied to a provider chosen meanwhile by someone else. */
+  expected_sso_provider_id?: string | null;
 };
 
 /**
@@ -137,6 +140,7 @@ export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_met
  * - `sso_claim_needs_sso`: the save sets a restriction of the company sign-in, and the way in it leaves the event with is
  *   another;
  * - `sso_claim_superadmin_only`: the save changes the restriction of the company sign-in, and the caller is not a superadmin;
+ * - `sso_provider_changed`: the save carries the provider its screen showed (`expected_sso_provider_id`), and the event has another now;
  * - `sso_provider_needs_sso`: the save names a provider, and the way in it leaves the event with is another;
  * - `sso_provider_not_available`: the provider named is not one of the enabled OIDC providers (unknown, switched off, not OIDC);
  * - `access_method_superadmin_only`: the save changes the way in, and the caller is not a superadmin;
@@ -145,7 +149,7 @@ export type RegistrationSettingsPatch = Partial<Omit<SettingsValues, "access_met
  */
 export type SettingsUpdate =
   | { kind: "saved"; settings: RegistrationSettingsDto }
-  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" | "sso_provider_needs_sso" | "sso_provider_not_available" | "sso_provider_superadmin_only" | "access_method_superadmin_only" }
+  | { kind: "not_found" | "archived" | "consent_not_published" | "sso_claim_needs_sso" | "sso_claim_superadmin_only" | "sso_provider_changed" | "sso_provider_needs_sso" | "sso_provider_not_available" | "sso_provider_superadmin_only" | "access_method_superadmin_only" }
   | { kind: "not_ready"; blockers: RegistrationReadinessKey[] };
 
 export interface SettingsOptions {
@@ -367,6 +371,7 @@ function refusalOf(args: {
   canChange: boolean;
 }): Refusal | null {
   const { patch, before, after, published, provider, canChange } = args;
+  if (patch.expected_sso_provider_id !== undefined && patch.expected_sso_provider_id !== before.sso_provider_id) return "sso_provider_changed";
   if (patch.consent_keys?.some((key) => !published.includes(key))) return "consent_not_published";
   // How guests open the form is technical: a superadmin's to change (an event admin may send the value that is there).
   if (!canChange && !sameMembers(before.access_methods, after.access_methods)) return "access_method_superadmin_only";

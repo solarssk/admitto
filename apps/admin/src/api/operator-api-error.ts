@@ -177,6 +177,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   sso_claim_needs_sso:
     "The restriction to one company works with Company SSO only. Choose Company SSO under How guests open the form, or leave the restriction out.",
   sso_claim_superadmin_only: "Only a superadmin can change the restriction to one company.",
+  sso_provider_changed: "The identity provider of this event was changed meanwhile. Reload the page and check the restriction.",
   sso_provider_needs_sso: "Choose Company SSO first.",
   sso_provider_not_available: "This identity provider is not available. Choose another one.",
   sso_provider_superadmin_only: "Only a superadmin can change the identity provider.",

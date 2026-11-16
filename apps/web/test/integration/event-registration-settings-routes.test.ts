@@ -1693,6 +1693,53 @@ describe("the identity provider of an event with the company sign-in", () => {
     expect((await settingsRow(event.id))?.mode).toBeNull();
   });
 
+  describe("the provider the screen showed (`expected_sso_provider_id`)", () => {
+    const withProvider = (label: string) => addEvent(label, { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
+    const claim = { sso_claim_name: "tid", sso_claim_values: ["tenant-a"] };
+
+    it("saves when it is the provider the event has, with or without another change", async () => {
+      const event = await withProvider("idp-expected-same");
+
+      const res = await put(event.id, { expected_sso_provider_id: PROVIDER, ...claim });
+
+      expect(res.status).toBe(200);
+      expect(await settingsRow(event.id)).toMatchObject({ sso_provider_id: PROVIDER, ...claim });
+    });
+
+    it("answers 409 `sso_provider_changed` when the event has another provider now, and saves and audits nothing", async () => {
+      const event = await withProvider("idp-expected-other");
+      await prisma.eventRegistrationSettings.update({ where: { event_id: event.id }, data: { sso_provider_id: SECOND } });
+
+      const res = await put(event.id, { expected_sso_provider_id: PROVIDER, waitlist_enabled: false, ...claim });
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "sso_provider_changed" });
+      expect(await settingsRow(event.id)).toMatchObject({ sso_provider_id: SECOND, waitlist_enabled: true, sso_claim_name: null });
+      expect(await auditOf(event.id)).toHaveLength(0);
+    });
+
+    it("tells a provider from none, both ways", async () => {
+      const chosen = await withProvider("idp-expected-null-vs-set");
+      const none = await addEvent("idp-expected-none", { settings: { access_methods: ["sso"] } });
+
+      const staleNone = await put(chosen.id, { expected_sso_provider_id: null, waitlist_enabled: false });
+      const staleSet = await put(none.id, { expected_sso_provider_id: PROVIDER, waitlist_enabled: false });
+      const sameNone = await put(none.id, { expected_sso_provider_id: null, waitlist_enabled: false });
+
+      expect([staleNone.status, staleSet.status, sameNone.status]).toEqual([409, 409, 200]);
+      expect(await settingsRow(chosen.id)).toMatchObject({ waitlist_enabled: true });
+    });
+
+    it("makes no check when it is left out, and refuses a value that is not an id with 400", async () => {
+      const event = await withProvider("idp-expected-absent");
+
+      expect((await put(event.id, { waitlist_enabled: false })).status).toBe(200);
+      for (const value of [7, "", "x".repeat(65)]) {
+        expect((await put(event.id, { expected_sso_provider_id: value })).status).toBe(400);
+      }
+    });
+  });
+
   it("keeps the other changes of a save when the provider the event keeps is deleted after the settings were read: 200, and no provider", async () => {
     const event = await addEvent("idp-deleted-meanwhile", { settings: { access_methods: ["sso"], sso_provider_id: PROVIDER } });
     let deleted = false;
