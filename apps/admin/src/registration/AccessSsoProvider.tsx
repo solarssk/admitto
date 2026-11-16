@@ -9,7 +9,7 @@ import { ADD_PROVIDER, NO_PROVIDER, PROVIDER_HINT, providerNotice, providerOptio
 import "./registration-access.css";
 
 /**
- * The identity provider guests of this event sign in with, and how that choice stands. The picker is half of the card. Without a
+ * The identity provider guests of this event sign in with, and how that choice stands. The picker is a column of the grid of the Company SSO fields, beside the claim name. Without a
  * provider to pick, it says where to add one. While the event does not use Company SSO the picker is grey and says nothing more
  * (the card says why).
  */
@@ -37,27 +37,25 @@ export function AccessSsoProvider({
   const notice = providerNotice({ providers, current, chosenId: value, saved });
   return (
     <div className="access-provider">
-      <div className="access-provider__field">
-        <SearchableSelect
-          id="access-sso-provider"
-          label="Identity provider"
-          placeholder="Choose a provider"
-          searchPlaceholder="Search providers"
-          emptyLabel={NO_PROVIDER}
-          value={value ?? ""}
-          options={options}
-          disabled={disabled || options.length === 0}
-          describedBy="access-sso-provider-note"
-          hint={keepLastWords(PROVIDER_HINT)}
-          onChange={onChange}
-        />
-      </div>
+      <SearchableSelect
+        id="access-sso-provider"
+        label="Identity provider"
+        placeholder="Choose a provider"
+        searchPlaceholder="Search providers"
+        emptyLabel={NO_PROVIDER}
+        value={value ?? ""}
+        options={options}
+        disabled={disabled || options.length === 0}
+        describedBy="access-sso-provider-note"
+        hint={keepLastWords(PROVIDER_HINT)}
+        onChange={onChange}
+      />
       {options.length === 0 && (
         <p className="settings-card-intro">
           {NO_PROVIDER} <Link to={IDENTITY_PROVIDERS_ROUTE}>{ADD_PROVIDER}</Link>
         </p>
       )}
-      {showNotice && (
+      {showNotice && notice !== null && (
         <Notice variant={notice.variant} id="access-sso-provider-note">
           {keepLastWords(notice.text)}
         </Notice>

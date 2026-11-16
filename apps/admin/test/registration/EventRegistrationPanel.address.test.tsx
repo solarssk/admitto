@@ -315,7 +315,11 @@ describe("the address card", () => {
     expect(row.closest(".mail-transport-section > .mail-field-row")).not.toBeNull();
     expect(within(row).getAllByRole("button").map((control) => control.textContent)).toEqual(["Set address", "Check now", "Remove"]);
     expect(css()).toMatch(/\.access-address__row \{[^}]*display: flex;[^}]*flex-wrap: wrap;/);
-    expect(css()).toMatch(/\.access-address__row > \.access-address__field \{[^}]*max-width: calc\(50% - var\(--space-3\)\);/);
+    // The whole row is half of the card; the field gives way and the buttons keep their width, and wrap under the field when they do not fit.
+    expect(css()).toMatch(/\.access-address__row \{[^}]*max-width: 50%;/);
+    expect(css()).toMatch(/\.access-address__row > \.access-address__field \{[^}]*flex: 1 1 0;[^}]*min-width: min\(8rem, 100%\);/);
+    expect(css()).toMatch(/\.access-address__row > \.at-btn \{[^}]*flex: none;/);
+    expect(css()).toMatch(/@media \(max-width: 640px\) \{\s*\.access-address__row \{[^}]*max-width: none;/);
     cleanup();
 
     await renderPanel(settings());

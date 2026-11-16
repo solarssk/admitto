@@ -246,7 +246,7 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     expect(trigger().getAttribute("aria-label")).toBe("Identity provider, none selected");
   });
 
-  it("says that the form stays closed until a provider is chosen, and that guests sign in with the one that is", async () => {
+  it("says that the form stays closed until a provider is chosen, and says nothing once one that is turned on is", async () => {
     await renderPanel(settings());
     fireEvent.click(radio("Company SSO"));
 
@@ -254,8 +254,7 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     expect(ssoCard().querySelector(".access-provider .at-notice--warning")).not.toBeNull();
 
     pickProvider("Contoso Entra");
-    expect(noticeText()).toBe("Guests of this event sign in with this provider.");
-    expect(ssoCard().querySelector(".access-provider .at-notice--info")).not.toBeNull();
+    expect(ssoCard().querySelector(".access-provider .at-notice")).toBeNull();
   });
 
   it("keeps a provider that was turned off in the list, marked, and says how to open the form again", async () => {
@@ -280,7 +279,7 @@ describe("the identity provider of Company SSO, in Event settings", () => {
 
     pickProvider("Contoso Google");
 
-    expect(noticeText()).toBe("Guests of this event sign in with this provider. Guests who are filling in the form will have to sign in again.");
+    expect(noticeText()).toBe("Guests who are filling in the form will have to sign in again.");
     pickProvider("Contoso Entra");
     expect(noticeText()).not.toMatch(/sign in again/);
   });

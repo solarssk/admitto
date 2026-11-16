@@ -8,7 +8,6 @@ type Providers = RegistrationSettingsDto["sso_providers"];
 /** The words of the choice of the identity provider of an event. */
 export const PROVIDER_HINT = "The provider guests sign in with. Providers are set up under Identity.";
 export const PROVIDER_TURNED_OFF = " (turned off)";
-const READY = "Guests of this event sign in with this provider.";
 const NOT_CHOSEN = "Choose an identity provider. Until you do, the form stays closed.";
 const GONE = "The identity provider that was chosen no longer exists, so the form stays closed. Choose another one.";
 const CHANGED = "Guests who are filling in the form will have to sign in again.";
@@ -42,9 +41,10 @@ export interface ProviderNotice {
 }
 
 /** How the choice in the form stands: ready, not made, turned off or gone. A provider that is off or gone keeps the form closed. */
-function standOf(providers: Providers, current: EventSsoProviderDto | null, chosenId: string | null): ProviderNotice {
+/** How the choice in the form stands, when it needs a word: nothing for a provider that is turned on. */
+function standOf(providers: Providers, current: EventSsoProviderDto | null, chosenId: string | null): ProviderNotice | null {
   if (chosenId === null) return { variant: "warning", text: NOT_CHOSEN };
-  if (providers.some((provider) => provider.id === chosenId)) return { variant: "info", text: READY };
+  if (providers.some((provider) => provider.id === chosenId)) return null;
   if (current !== null && current.id === chosenId && current.state === "disabled") {
     const name = current.display_name ?? "This provider";
     return { variant: "warning", text: `${name} is turned off, so the form stays closed. Choose another provider or turn it on under Identity.` };
@@ -58,9 +58,10 @@ export function providerNotice(args: {
   current: EventSsoProviderDto | null;
   chosenId: string | null;
   saved: { method: AccessMethod | null; providerId: string | null };
-}): ProviderNotice {
+}): ProviderNotice | null {
   const { providers, current, chosenId, saved } = args;
   const stand = standOf(providers, current, chosenId);
   const moves = saved.method === "sso" && saved.providerId !== null && chosenId !== null && chosenId !== saved.providerId;
-  return moves ? { ...stand, text: `${stand.text} ${CHANGED}` } : stand;
+  if (!moves) return stand;
+  return stand === null ? { variant: "info", text: CHANGED } : { ...stand, text: `${stand.text} ${CHANGED}` };
 }

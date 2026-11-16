@@ -58,9 +58,17 @@ describe("the Company SSO card", () => {
     expect(trigger.disabled).toBe(false);
     expect(trigger.querySelector("i")?.className).toContain("ti-brand-azure");
     expect(within(ssoCard()).getByText("The provider guests sign in with. Providers are set up under Identity.", { normalizer: plain })).toBeTruthy();
+    // The provider and the claim name are the first two fields of the same grid, so they stand in one row.
     const parts = [...(ssoCard().querySelector(".mail-transport-section") as HTMLElement).children];
     expect(parts[0]?.className).toBe("access-provider");
-    expect(claimName()).toBeTruthy();
+    expect(parts[1]?.contains(claimName())).toBe(true);
+  });
+
+  it("shows two made-up GUIDs as the placeholder of the allowed values, not as a value", async () => {
+    await renderPanel(ssoSettings());
+
+    expect(claimValues()?.value).toBe("");
+    expect(claimValues()?.placeholder).toBe("3f2c1a9e-5b7d-4c1e-9a2f-0123456789ab\n7b0e4d21-8a3c-4f6d-b1e5-9876543210fe");
   });
 
   it("says that no identity provider is chosen yet when the event has none, and shows the way to Identity when none is turned on", async () => {

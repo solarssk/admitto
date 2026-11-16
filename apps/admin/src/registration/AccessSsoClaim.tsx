@@ -8,6 +8,8 @@ import "./registration-access.css";
 
 const INTRO =
   "You can let only the people of one company register. When a guest signs in, the identity provider sends facts about the guest, called claims. Name one claim and list the values that may register. With Microsoft Entra ID, the claim is usually tid and the value is the tenant ID of the company. Leave both fields empty for no restriction.";
+/** Two made-up values, one on each line, to show the shape: the tenant ID of Microsoft Entra ID is a GUID. */
+const VALUES_EXAMPLE = "3f2c1a9e-5b7d-4c1e-9a2f-0123456789ab\n7b0e4d21-8a3c-4f6d-b1e5-9876543210fe";
 const MATCH_HINT =
   "A value must match exactly, with capital letters as they are. Never use the end of an email address here: it says where mail goes, not who the person is. A change counts at once, also for guests who have already signed in.";
 
@@ -63,6 +65,7 @@ export function AccessSsoClaim({
             // One value on each line stays on its line: a long GUID scrolls sideways and never looks like two values.
             wrap="off"
             value={values}
+            placeholder={VALUES_EXAMPLE}
             disabled={disabled}
             spellCheck={false}
             aria-invalid={errors.values ? true : undefined}

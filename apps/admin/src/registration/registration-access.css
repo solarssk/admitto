@@ -122,23 +122,28 @@
   display: contents;
 }
 
-/* The field, Set address, Check now and Remove stand in one row; on a narrow screen the buttons wrap under the field. The field takes
- * half of the card. */
+/* The field, Set address, Check now and Remove stand in one row that is half of the card, as the rows of the Weather card are. The field
+ * is what gives way (it shrinks to 8rem, so that all four fit in the half of the card at 1280px); the buttons keep their width. When they do not fit, the buttons wrap under the field
+ * and never leave the card. On a narrow screen the row takes the whole card. */
 .access-address__row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  max-width: 50%;
 }
 
 .access-address__row > .access-address__field {
-  flex: 1 1 14rem;
-  max-width: calc(50% - var(--space-3));
-  min-width: min(14rem, 100%);
+  flex: 1 1 0;
+  min-width: min(8rem, 100%);
+}
+
+.access-address__row > .at-btn {
+  flex: none;
 }
 
 @media (max-width: 640px) {
-  .access-address__row > .access-address__field {
+  .access-address__row {
     max-width: none;
   }
 }
@@ -276,19 +281,13 @@
   overflow-wrap: anywhere;
 }
 
-/* The identity provider of Company SSO: the picker is half of the card, with the icon of the provider's kind; on a narrow screen it takes the width. */
+/* The identity provider of Company SSO: the picker is one column of the grid of the Company SSO fields, beside the claim name, with its
+ * notice under it; on a narrow screen the grid is one column. */
 .access-provider {
-  /* In the grid of the Company SSO fields the provider takes a row of its own, and its picker the half of it. */
-  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   min-width: 0;
-}
-
-.access-provider__field {
-  max-width: calc(50% - var(--space-3));
-  min-width: min(14rem, 100%);
 }
 
 .access-provider .settings-card-intro,
@@ -299,12 +298,6 @@
 /* A link inside a sentence is underlined, so that it is told from the text by more than its colour (axe: link-in-text-block). */
 .access-provider .settings-card-intro a {
   text-decoration: underline;
-}
-
-@media (max-width: 640px) {
-  .access-provider__field {
-    max-width: none;
-  }
 }
 
 /* The access method as the Access tab shows it, to read: its name, and under it what else is chosen. */
