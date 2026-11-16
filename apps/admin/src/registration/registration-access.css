@@ -122,24 +122,28 @@
   display: contents;
 }
 
-/* The field, Set address, Check now and Remove stand in one row; on a narrow screen the buttons wrap under the field. The field takes
- * half of the card. */
+/* The field and Set address together are the half of the card, with an address or without one. Check now and Remove come after them, to
+ * the right, and may reach past the half. The buttons keep their width; when the row is too narrow they wrap under the field and never
+ * leave the card. On a narrow screen the field takes what is left of its line. */
 .access-address__row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .access-address__row > .access-address__field {
-  flex: 1 1 14rem;
-  max-width: calc(50% - var(--space-3));
-  min-width: min(14rem, 100%);
+  flex: 0 1 calc(50% - 7rem);
+  min-width: min(8rem, 100%);
+}
+
+.access-address__row > .at-btn {
+  flex: none;
 }
 
 @media (max-width: 640px) {
   .access-address__row > .access-address__field {
-    max-width: none;
+    flex: 1 1 10rem;
   }
 }
 
@@ -274,4 +278,40 @@
 .access-address__status .overview-check__body,
 .access-address__status .overview-check__detail {
   overflow-wrap: anywhere;
+}
+
+/* The identity provider of Company SSO: the picker is one column of the grid of the Company SSO fields, beside the claim name, with its
+ * notice under it; on a narrow screen the grid is one column. */
+.access-provider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.access-provider .settings-card-intro,
+.access-provider .at-notice {
+  overflow-wrap: anywhere;
+}
+
+/* A link inside a sentence is underlined, so that it is told from the text by more than its colour (axe: link-in-text-block). */
+.access-provider .settings-card-intro a {
+  text-decoration: underline;
+}
+
+/* The access method as the Access tab shows it, to read: its name, and under it what else is chosen. */
+.access-method-read {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.access-method-read p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* A link inside a sentence is underlined, so that it is told from the text by more than its colour (axe: link-in-text-block). */
+.access-method-read + .settings-card-intro a {
+  text-decoration: underline;
 }

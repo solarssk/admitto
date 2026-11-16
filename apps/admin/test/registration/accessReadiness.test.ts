@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { READINESS_COPY, readinessCopy } from "../../src/registration/accessReadiness.js";
+import { READINESS_COPY, readinessCopy, remedyFor } from "../../src/registration/accessReadiness.js";
 
 /** The checks the server reports, read from the file that holds them: the screen has words for each one, and for no other. */
 function serverKeys(): string[] {
@@ -42,40 +42,44 @@ describe("the words of the checks", () => {
     for (const key of ["bot_protection", "mail_provider", "instance_url"] as const) {
       expect(remedy(key), key).toEqual({ text: "Ask a superadmin to set it up." });
     }
-    // The company SSO is set up on the card of the ways in, and the organiser is told which.
-    expect(remedy("identity_provider")).toEqual({ text: "Ask a superadmin to choose the identity provider in Organisation settings, External services, Ways in." });
+    // How guests open the form is set in Event settings, by a superadmin: the others are told to ask, a superadmin is sent there.
+    for (const key of ["access_method", "identity_provider", "password"] as const) {
+      expect(remedy(key)?.text, key).toMatch(/^Ask a superadmin to (choose|set) it in Event settings, Registration\.$/);
+      expect(remedyFor(READINESS_COPY[key], true)?.link, key).toBe("registration_settings");
+      expect(remedyFor(READINESS_COPY[key], true)?.text, key).toMatch(/^(Choose|Set) it in Event settings, Registration\.$/);
+      expect(remedyFor(READINESS_COPY[key], false), key).toBe(READINESS_COPY[key].remedy);
+    }
+    // A check without a place of its own for a superadmin reads the same for everybody.
+    expect(remedyFor(READINESS_COPY.mail_provider, true)).toBe(READINESS_COPY.mail_provider.remedy);
     // A way in is turned on at one place, and the organiser is told which.
     expect(remedy("access_method_enabled")).toEqual({ text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." });
     expect(remedy("legal_documents")?.link).toBe("legal");
     expect(remedy("form_questions")?.link).toBe("fields");
     expect(remedy("required_fields")?.link).toBe("fields");
     expect(remedy("event_not_ended")?.link).toBe("event_settings");
-    // What is put right on the Access tab itself is said in the sentence: nothing to send the person to.
-    expect(remedy("access_method")).toBeUndefined();
-    expect(remedy("password")).toBeUndefined();
   });
 
   it("are plain: no dash that stands for a pause, no code and no name of a service", () => {
     const words = Object.values(READINESS_COPY)
-      .flatMap((copy) => [copy.title, copy.met, copy.missing, copy.remedy?.text ?? ""])
+      .flatMap((copy) => [copy.title, copy.met, copy.missing, copy.remedy?.text ?? "", copy.superadminRemedy?.text ?? ""])
       .join("\n");
 
     expect(words).not.toMatch(/[\u2013\u2014]/);
     expect(words).not.toMatch(/turnstile|cloudflare|smtp|_/i);
   });
 
-  it("name the two rows about the way guests open the form, and never call it a way in", () => {
-    expect(READINESS_COPY.access_method.title).toBe("How guests open the form");
+  it("name the two rows about the access method, and never call it a way in", () => {
+    expect(READINESS_COPY.access_method.title).toBe("Access method");
     expect(READINESS_COPY.access_method_enabled.title).toBe("The chosen way is turned on");
     expect(JSON.stringify([READINESS_COPY.access_method, READINESS_COPY.access_method_enabled])).not.toMatch(/way in/i);
   });
 
-  it("say the three ways in, and that the company SSO is not set up and keeps the form closed", () => {
-    expect(READINESS_COPY.access_method.missing).toBe("Choose how guests open the form: with a link, with a password or with company SSO.");
+  it("say the three access methods, and that the identity provider is chosen and turned on", () => {
+    expect(READINESS_COPY.access_method).toMatchObject({ met: "An access method is chosen.", missing: "Choose an access method: link, password or Company SSO." });
     expect(READINESS_COPY.identity_provider).toMatchObject({
-      title: "Company SSO",
-      met: "Company SSO is set up.",
-      missing: "Company SSO is not set up, so the form stays closed.",
+      title: "Identity provider",
+      met: "An identity provider is chosen and turned on.",
+      missing: "Choose an identity provider for Company SSO. If the list is empty, ask a superadmin to set one up under Identity.",
     });
   });
 

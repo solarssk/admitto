@@ -32,6 +32,8 @@ export interface AccessDraft {
   sso_claim_name: string;
   /** The values of that claim that may register, as typed: one on each line. Empty for no restriction. */
   sso_claim_values: string;
+  /** The company SSO only: the id of the identity provider guests of the event sign in with, or null while none is chosen. */
+  sso_provider_id: string | null;
 }
 
 /** The way in an event has chosen, when it is exactly one that this screen offers. Any other state is no choice, as it is to the server. */
@@ -54,6 +56,7 @@ export function draftFromSettings(settings: RegistrationSettingsDto): AccessDraf
     styled_form_controls: settings.styled_form_controls,
     sso_claim_name: settings.sso_claim_name ?? "",
     sso_claim_values: settings.sso_claim_values.join("\n"),
+    sso_provider_id: settings.sso_provider_id,
   };
 }
 
@@ -133,13 +136,21 @@ function claimPatch(draft: AccessDraft, base: AccessDraft): Pick<SaveRegistratio
 }
 
 /**
- * What a save sends: the settings that differ between the form and the settings it was made from (`base`), and no others. A
- * setting the person did not touch is not sent, so a save never writes back what somebody else changed in the meantime.
+ * The identity provider of the company SSO, when it changed. Only the company SSO has one: the server clears it when the way in
+ * changes to another, so none is sent then.
+ */
+function providerPatch(draft: AccessDraft, base: AccessDraft): Pick<SaveRegistrationSettingsBody, "sso_provider_id"> {
+  return draft.method === "sso" && draft.sso_provider_id !== base.sso_provider_id ? { sso_provider_id: draft.sso_provider_id } : {};
+}
+
+/**
+ * What a save of the Access tab sends: the settings that differ between the form and the settings it was made from (`base`), and no
+ * others. A setting the person did not touch is not sent, so a save never writes back what somebody else changed in the meantime.
+ * How guests open the form is a superadmin's (`technicalPatch`) and is never sent from here.
  */
 export function settingsPatch(draft: AccessDraft, base: AccessDraft): SaveRegistrationSettingsBody {
   const patch: SaveRegistrationSettingsBody = {};
   if (draft.mode !== base.mode) patch.mode = draft.mode;
-  if (draft.method !== base.method) patch.access_methods = draft.method === null ? [] : [draft.method];
   if (draft.waitlist_enabled !== base.waitlist_enabled) patch.waitlist_enabled = draft.waitlist_enabled;
   if (draft.verify_email !== base.verify_email) patch.verify_email = draft.verify_email;
   if (draft.ask_company !== base.ask_company) patch.ask_company = draft.ask_company;
@@ -147,7 +158,17 @@ export function settingsPatch(draft: AccessDraft, base: AccessDraft): SaveRegist
   if (draft.companion !== base.companion) patch.max_companions = draft.companion ? 1 : 0;
   if (!sameKeys(draft.consent_keys, base.consent_keys)) patch.consent_keys = draft.consent_keys;
   if (draft.styled_form_controls !== base.styled_form_controls) patch.styled_form_controls = draft.styled_form_controls;
-  return { ...patch, ...claimPatch(draft, base) };
+  return patch;
+}
+
+/**
+ * What a save of Event settings, Registration sends: the access method, the identity provider and the restriction, when they differ
+ * from the settings the form was made from. Only a superadmin sends them (the server refuses others), and the Access tab never does.
+ */
+export function technicalPatch(draft: AccessDraft, base: AccessDraft): SaveRegistrationSettingsBody {
+  const patch: SaveRegistrationSettingsBody = {};
+  if (draft.method !== base.method) patch.access_methods = draft.method === null ? [] : [draft.method];
+  return { ...patch, ...claimPatch(draft, base), ...providerPatch(draft, base) };
 }
 
 /** The keys of the checks that are not met. */

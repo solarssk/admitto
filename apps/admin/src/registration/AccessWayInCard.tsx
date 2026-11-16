@@ -2,13 +2,13 @@ import { useId, useState } from "react";
 import { Button, Card, Notice, useToast } from "@admitto/ui";
 import { ApiError, clearRegistrationPassword } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventDto } from "../api/types.js";
-import { ArchivedGuard } from "../components/ArchivedGuard.js";
+import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
 import type { AccessMethod } from "./accessSettings.js";
 import { EventPasswordDialog } from "./EventPasswordDialog.js";
+import { ADD_PROVIDER, NO_PROVIDER } from "./ssoProviderChoice.js";
 import "./registration-access.css";
 
 const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
@@ -17,18 +17,13 @@ const METHOD_OPTIONS: ReadonlyArray<SegmentedOption<AccessMethod>> = [
   { value: "sso", label: "Company SSO" },
 ];
 
-/** What the chosen way means, in one notice under the choice. */
+/** What the chosen method means, in one notice under the choice. */
 const BOT_CHECK = " A bot check protects the form.";
 function methodNotice(method: AccessMethod, botCheck: boolean): string {
   if (method === "sso") return "Guests sign in with the company's single sign-on (SSO), using their work account. Their email comes from that sign-in.";
   const text = method === "link" ? "Anyone who has the link can ask to join." : "Guests need the link and the event password to open the form.";
   return botCheck ? text + BOT_CHECK : text;
 }
-
-/** Why a way is off, in the tooltip of its button: the superadmin is told where to turn it on, the organiser to ask. */
-const NOT_TURNED_ON = "This way is not turned on for your organisation.";
-const REASON_FOR_SUPERADMIN = `${NOT_TURNED_ON} Turn it on in Organisation settings, External services, Ways in.`;
-const REASON_FOR_ORGANISER = `${NOT_TURNED_ON} Ask a superadmin to turn it on.`;
 
 /** The shared password of the event: whether one is set, and the buttons to set, change or remove it. It never shows the password. */
 function EventPasswordRow({
@@ -37,7 +32,7 @@ function EventPasswordRow({
   disabled,
   onSet,
   onRemove,
-}: Readonly<{ event: EventDto; passwordSet: boolean; disabled: boolean; onSet: () => void; onRemove: () => void }>) {
+}: Readonly<{ event: ArchivedGuardEvent; passwordSet: boolean; disabled: boolean; onSet: () => void; onRemove: () => void }>) {
   const id = useId();
   return (
     <div className="settings-row settings-row--switch access-password">
@@ -72,10 +67,10 @@ function EventPasswordRow({
 }
 
 /**
- * How guests open the form: with the link, with a password that the organiser sets, or by signing in with the company's identity
- * provider (which can be limited to the people of one company). One way in at a time. The password has
- * its own requests (it is not one of the settings that the Save of the page sends): it is set, changed and removed from here, and
- * the page learns of it through `onPasswordChanged`.
+ * How guests open the form, the access method: the link, a password that the organiser sets, or a sign-in with an identity provider
+ * (Company SSO, which can be limited to the people of one company). One at a time. The password has its own requests (it is not one
+ * of the settings that the Save of the page sends): it is set, changed and removed from here, and the page learns of it through
+ * `onPasswordChanged`.
  */
 export function AccessWayInCard({
   eventId,
@@ -83,26 +78,23 @@ export function AccessWayInCard({
   method,
   savedMethod,
   passwordSet,
-  enabledMethods,
+  ssoAvailable,
   botCheck,
-  isSuperadmin,
   disabled,
   onMethodChange,
   onPasswordChanged,
   onArchived,
 }: Readonly<{
   eventId: string;
-  event: EventDto;
+  event: ArchivedGuardEvent;
   /** The way in the form holds now, and the one that is saved. */
   method: AccessMethod | null;
   savedMethod: AccessMethod | null;
   passwordSet: boolean;
-  /** The ways in a superadmin has turned on for the organisation. The others cannot be chosen. */
-  enabledMethods: readonly AccessMethod[];
+  /** An identity provider is turned on. Company SSO is greyed while there is none. */
+  ssoAvailable: boolean;
   /** The organisation checks guests for bots on the link and password forms (a superadmin has not switched it off). */
   botCheck: boolean;
-  /** A superadmin is told where to turn a way in on. */
-  isSuperadmin: boolean;
   disabled: boolean;
   onMethodChange: (method: AccessMethod) => void;
   onPasswordChanged: (isSet: boolean) => void;
@@ -110,10 +102,10 @@ export function AccessWayInCard({
   onArchived: () => void;
 }>) {
   const { addToast } = useToast();
-  // A way that is not turned on is greyed, also the one the event has chosen: it stays chosen, nothing is removed. Its reason is a tooltip.
-  const reason = isSuperadmin ? REASON_FOR_SUPERADMIN : REASON_FOR_ORGANISER;
+  // Company SSO is greyed while no identity provider is turned on, also when the event has chosen it: it stays chosen, nothing is removed.
+  const reason = `${NO_PROVIDER} ${ADD_PROVIDER}`;
   const options = METHOD_OPTIONS.map((option) =>
-    enabledMethods.includes(option.value) ? option : { ...option, disabled: true, tooltip: reason },
+    option.value === "sso" && !ssoAvailable ? { ...option, disabled: true, tooltip: reason } : option,
   );
   // The way the person pressed while a password is set: it waits for the answer of the dialog, and the choice stays as it was until then.
   const [leaving, setLeaving] = useState<AccessMethod | null>(null);
@@ -162,12 +154,12 @@ export function AccessWayInCard({
   }
 
   return (
-    <Card title="How guests open the form">
+    <Card title="Access method">
       <div className="settings-card-stack">
         <p className="settings-card-intro">Choose how guests open the registration form.</p>
         <Segmented
           className="access-seg"
-          ariaLabel="How guests open the form"
+          ariaLabel="Access method"
           options={options}
           value={method}
           disabled={disabled}

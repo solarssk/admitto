@@ -8,6 +8,7 @@ import {
   missingChecks,
   parseClaim,
   settingsPatch,
+  technicalPatch,
   type AccessDraft,
 } from "../../src/registration/accessSettings.js";
 import { checks, legalAnswer, settings, texts } from "./accessData.js";
@@ -46,7 +47,12 @@ describe("draftFromSettings", () => {
       styled_form_controls: true,
       sso_claim_name: "",
       sso_claim_values: "",
+      sso_provider_id: null,
     });
+  });
+
+  it("holds the identity provider of the event", () => {
+    expect(draftFromSettings(settings({ access_methods: ["sso"], sso_provider_id: "idp-a" })).sso_provider_id).toBe("idp-a");
   });
 
   it("holds the restriction of the company SSO as it is typed: the name, and the values one on each line", () => {
@@ -84,7 +90,6 @@ describe("settingsPatch", () => {
   it.each<[string, Partial<AccessDraft>, object]>([
     ["the mode", { mode: "automatic" }, { mode: "automatic" }],
     ["turning off", { mode: null }, { mode: null }],
-    ["the way in", { method: "password" }, { access_methods: ["password"] }],
     ["the waiting list", { waitlist_enabled: false }, { waitlist_enabled: false }],
     ["the check of the address", { verify_email: false }, { verify_email: false }],
     ["the company", { ask_company: true }, { ask_company: true }],
@@ -97,6 +102,13 @@ describe("settingsPatch", () => {
     expect(settingsPatch({ ...from, ...change }, from)).toEqual(patch);
   });
 
+  it("never holds how guests open the form: the method, the identity provider and the restriction are a superadmin's, from Event settings", () => {
+    const sso = base({ method: "sso", sso_provider_id: "idp-a", sso_claim_name: "tid", sso_claim_values: "aaa" });
+    expect(settingsPatch({ ...sso, method: "password", sso_provider_id: "idp-b", sso_claim_name: "oid", sso_claim_values: "bbb" }, sso)).toEqual({});
+    expect(settingsPatch(base({ method: null }), base({ method: "link" }))).toEqual({});
+    expect(settingsPatch({ ...sso, sso_provider_id: "idp-b" }, sso)).toEqual({});
+  });
+
   it("holds the changed settings and no others when several changed", () => {
     expect(settingsPatch(base({ waitlist_enabled: false, ask_company: true, consent_keys: ["photo"] }), base())).toEqual({
       waitlist_enabled: false,
@@ -107,10 +119,6 @@ describe("settingsPatch", () => {
 
   it("sends a person to bring as none when it was taken away", () => {
     expect(settingsPatch(base({ companion: false }), base({ companion: true }))).toEqual({ max_companions: 0 });
-  });
-
-  it("sends no way in as an empty list", () => {
-    expect(settingsPatch(base({ method: null }), base({ method: "link" }))).toEqual({ access_methods: [] });
   });
 
   it("does not count the order of the consents as a change, and does count a consent that was added or taken off", () => {
@@ -138,32 +146,32 @@ describe("parseClaim", () => {
   });
 });
 
-describe("the restriction of the company SSO in a save", () => {
+describe("technicalPatch: the access method, the identity provider and the restriction of the company SSO", () => {
   const sso = (overrides: Partial<AccessDraft> = {}) => base({ method: "sso", ...overrides });
 
   it("sends the name and the values together when either changed, with no empty and no repeated value", () => {
-    expect(settingsPatch(sso({ sso_claim_name: "tid", sso_claim_values: "aaa\n\nbbb\naaa" }), sso())).toEqual({
+    expect(technicalPatch(sso({ sso_claim_name: "tid", sso_claim_values: "aaa\n\nbbb\naaa" }), sso())).toEqual({
       sso_claim_name: "tid",
       sso_claim_values: ["aaa", "bbb"],
     });
-    expect(settingsPatch(sso({ sso_claim_name: "tid", sso_claim_values: "aaa\nccc" }), sso({ sso_claim_name: "tid", sso_claim_values: "aaa" }))).toEqual({
+    expect(technicalPatch(sso({ sso_claim_name: "tid", sso_claim_values: "aaa\nccc" }), sso({ sso_claim_name: "tid", sso_claim_values: "aaa" }))).toEqual({
       sso_claim_name: "tid",
       sso_claim_values: ["aaa", "ccc"],
     });
   });
 
   it("sends null and an empty list to take the restriction away", () => {
-    expect(settingsPatch(sso(), sso({ sso_claim_name: "tid", sso_claim_values: "aaa" }))).toEqual({ sso_claim_name: null, sso_claim_values: [] });
+    expect(technicalPatch(sso(), sso({ sso_claim_name: "tid", sso_claim_values: "aaa" }))).toEqual({ sso_claim_name: null, sso_claim_values: [] });
   });
 
   it("sends nothing for a restriction that only differs in spaces, in the order of the values or in an empty line", () => {
     const saved = sso({ sso_claim_name: "tid", sso_claim_values: "aaa\nbbb" });
 
-    expect(settingsPatch(sso({ sso_claim_name: " tid ", sso_claim_values: "bbb\n\naaa \n" }), saved)).toEqual({});
+    expect(technicalPatch(sso({ sso_claim_name: " tid ", sso_claim_values: "bbb\n\naaa \n" }), saved)).toEqual({});
   });
 
   it("sends the way in and the restriction in one save when the event moves to the company SSO", () => {
-    expect(settingsPatch(sso({ sso_claim_name: "tid", sso_claim_values: "aaa" }), base({ method: "link" }))).toEqual({
+    expect(technicalPatch(sso({ sso_claim_name: "tid", sso_claim_values: "aaa" }), base({ method: "link" }))).toEqual({
       access_methods: ["sso"],
       sso_claim_name: "tid",
       sso_claim_values: ["aaa"],
@@ -173,9 +181,25 @@ describe("the restriction of the company SSO in a save", () => {
   it("sends no restriction for another way in, whatever is typed, since the server refuses one and clears it when the way in changes", () => {
     const typed = { sso_claim_name: "tid", sso_claim_values: "aaa" };
 
-    expect(settingsPatch(base({ method: "link", ...typed }), base({ method: "link" }))).toEqual({});
-    expect(settingsPatch(base({ method: "password", ...typed }), sso(typed))).toEqual({ access_methods: ["password"] });
-    expect(settingsPatch(base({ method: null, ...typed }), sso(typed))).toEqual({ access_methods: [] });
+    expect(technicalPatch(base({ method: "link", ...typed }), base({ method: "link" }))).toEqual({});
+    expect(technicalPatch(base({ method: "password", ...typed }), sso(typed))).toEqual({ access_methods: ["password"] });
+    expect(technicalPatch(base({ method: null, ...typed }), sso(typed))).toEqual({ access_methods: [] });
+  });
+
+  it("sends the provider only for Company SSO, and only when it changed", () => {
+    const withProvider = sso({ sso_provider_id: "idp-a" });
+    expect(technicalPatch({ ...withProvider, sso_provider_id: "idp-b" }, withProvider)).toEqual({ sso_provider_id: "idp-b" });
+    expect(technicalPatch({ ...withProvider, sso_provider_id: null }, withProvider)).toEqual({ sso_provider_id: null });
+    expect(technicalPatch(withProvider, withProvider)).toEqual({});
+    // A move to Company SSO sends the way and the provider together.
+    expect(technicalPatch({ ...base(), method: "sso", sso_provider_id: "idp-a" }, base())).toEqual({ access_methods: ["sso"], sso_provider_id: "idp-a" });
+    // The server clears the provider when the way changes to another, so none is sent.
+    expect(technicalPatch({ ...withProvider, method: "link", sso_provider_id: "idp-b" }, withProvider)).toEqual({ access_methods: ["link"] });
+  });
+
+  it("sends the access method as a list of one, and none as an empty list", () => {
+    expect(technicalPatch(base({ method: "password" }), base({ method: "link" }))).toEqual({ access_methods: ["password"] });
+    expect(technicalPatch(base({ method: null }), base({ method: "link" }))).toEqual({ access_methods: [] });
   });
 });
 

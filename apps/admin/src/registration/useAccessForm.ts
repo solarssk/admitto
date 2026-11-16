@@ -133,11 +133,5 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     setProblem(null);
   }
 
-  /** The password was set or removed by its own request: the form says so now, and the checklist is read again. */
-  function passwordChanged(isSet: boolean) {
-    setServer((current) => ({ ...current, password_set: isSet }));
-    void refresh();
-  }
-
-  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, submit: () => void submit(), cancelTurnOff, passwordChanged, eventArchived };
+  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, submit: () => void submit(), cancelTurnOff };
 }
