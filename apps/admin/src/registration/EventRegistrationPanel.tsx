@@ -299,8 +299,9 @@ function EventRegistrationCards({
     setSaving(true);
     setError(null);
     try {
-      // The provider the page last read, not the one in the form: a save made after somebody else changed it is refused.
-      const answer = await saveRegistrationSettings(eventId, { ...patch, expected_sso_provider_id: settings.sso_provider_id });
+      // The provider the form was made from (the baseline of the draft), not the one a later read found and not the one picked: a read that
+      // finds another provider does not change what the person saw, so a save made after somebody else changed it is refused.
+      const answer = await saveRegistrationSettings(eventId, { ...patch, expected_sso_provider_id: saved.sso_provider_id });
       // A read that started before this answer is older than it.
       newestRead.current += 1;
       // The answer says what these settings are now, and nothing else is the save's to say: the address, and what was read of it, stay as they are.

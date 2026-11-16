@@ -327,6 +327,24 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_provider_id: "idp-google", expected_sso_provider_id: "idp-entra" }));
   });
 
+  it("keeps sending the provider the form was made from when a later read finds another one, so the save is refused and not applied to it", async () => {
+    await renderPanel(ssoSettings());
+    // Somebody else moves the event to Google; the address card reads the settings again.
+    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ sso_provider_id: "idp-google", sso_provider: { ...ENTRA, id: "idp-google", display_name: "Contoso Google", kind: "google" } }));
+    api.saveCustomDomain.mockResolvedValue({ custom_domain: "events.example.com", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
+    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "events.example.com" } });
+    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    api.saveRegistrationSettings.mockRejectedValue(new ApiError(409, "sso_provider_changed"));
+
+    fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid" } });
+    fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "a" } });
+    await waitFor(() => expect(isOff(saveButton())).toBe(false));
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["a"], expected_sso_provider_id: "idp-entra" }));
+  });
+
   it("sends the provider of the answer of the last save as the one that was read", async () => {
     await renderPanel(ssoSettings());
     saved({ sso_provider_id: "idp-google", sso_provider: { ...ENTRA, id: "idp-google", display_name: "Contoso Google", kind: "google" } });
