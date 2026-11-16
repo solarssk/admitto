@@ -3,7 +3,7 @@ import { Button, useToast } from "@admitto/ui";
 import "./registration-access.css";
 
 /**
- * One value to hand to IT: a read only box in the style of the return address on the card of the ways in (the field of the link for guests),
+ * One value to hand to IT: a read only box in the style of the link for guests,
  * grey and in a fixed-width font, with the button that copies it in a frame on its left. Every value has the frame and the button; the
  * button is off while there is no value yet (a grey example shows instead), so that all the boxes of a record look alike.
  */

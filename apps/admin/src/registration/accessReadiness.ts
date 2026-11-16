@@ -23,8 +23,6 @@ const ASK_TO_CHOOSE = { text: "Ask a superadmin to choose it in Event settings, 
 const CHOOSE_IN_SETTINGS = { text: "Choose it in Event settings, Registration.", link: "registration_settings" } as const;
 
 const ASK_A_SUPERADMIN = { text: "Ask a superadmin to set it up." } as const;
-/** The ways in of the whole instance are turned on by a superadmin, on a card of their own. */
-const ASK_FOR_THE_WAY_IN = { text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." } as const;
 
 /**
  * The words of every check the server reports (`READINESS_KEYS` in `apps/web/src/registration/readiness.ts`; a test holds the two
@@ -43,7 +41,6 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     title: "The chosen way is turned on",
     met: "This way is turned on for the organisation.",
     missing: "This way is not turned on for the organisation.",
-    remedy: ASK_FOR_THE_WAY_IN,
   },
   bot_protection: {
     title: "Bot protection",

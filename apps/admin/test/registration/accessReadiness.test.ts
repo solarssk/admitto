@@ -51,8 +51,8 @@ describe("the words of the checks", () => {
     }
     // A check without a place of its own for a superadmin reads the same for everybody.
     expect(remedyFor(READINESS_COPY.mail_provider, true)).toBe(READINESS_COPY.mail_provider.remedy);
-    // A way in is turned on at one place, and the organiser is told which.
-    expect(remedy("access_method_enabled")).toEqual({ text: "Ask a superadmin to turn it on in Organisation settings, External services, Ways in." });
+    // The list of enabled ways in has no screen any more (the server drops it in a later PR), so its check names no place to go to.
+    expect(remedy("access_method_enabled")).toBeUndefined();
     expect(remedy("legal_documents")?.link).toBe("legal");
     expect(remedy("form_questions")?.link).toBe("fields");
     expect(remedy("required_fields")?.link).toBe("fields");

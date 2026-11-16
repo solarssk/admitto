@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, fetchRegistrationSsoProvider, saveRegistrationSsoProvider } from "../../src/api/client.js";
-import { ssoProviderDto } from "../settings/accessMethodsFixtures.js";
+import { ApiError, fetchRegistrationSsoProvider } from "../../src/api/client.js";
+import { ssoProviderDto } from "../settings/ssoProviderFixtures.js";
 
 /** A fetch that answers once with `body` and `status`. */
 function stubFetch(status: number, body: unknown) {
@@ -37,37 +37,5 @@ describe("fetchRegistrationSsoProvider", () => {
 
     expect(failure).toBeInstanceOf(ApiError);
     expect(failure).toMatchObject({ status: 403, code: "forbidden" });
-  });
-});
-
-describe("saveRegistrationSsoProvider", () => {
-  it("PUTs the provider as JSON with the proof of the same origin, and returns the answer", async () => {
-    const answer = ssoProviderDto({ provider_id: "idp-okta", state: "ready" });
-    const fetchMock = stubFetch(200, answer);
-
-    expect(await saveRegistrationSsoProvider({ provider_id: "idp-okta" })).toEqual(answer);
-
-    expect(fetchMock.mock.calls[0]![0]).toBe("/api/admin/registration/sso-provider");
-    const init = fetchMock.mock.calls[0]![1] as RequestInit;
-    expect(init).toMatchObject({ method: "PUT", credentials: "same-origin" });
-    expect(init.headers).toMatchObject({ "Content-Type": "application/json", Origin: window.location.origin });
-    expect(JSON.parse(String(init.body))).toEqual({ provider_id: "idp-okta" });
-  });
-
-  it("sends null as null, which takes the choice away", async () => {
-    const fetchMock = stubFetch(200, ssoProviderDto());
-
-    await saveRegistrationSsoProvider({ provider_id: null });
-
-    expect(String((fetchMock.mock.calls[0]![1] as RequestInit).body)).toBe('{"provider_id":null}');
-  });
-
-  it("fails with the code of a provider that is not available", async () => {
-    stubFetch(422, { error: "provider_not_available" });
-
-    const failure = await failureOf(saveRegistrationSsoProvider({ provider_id: "nobody" }));
-
-    expect(failure).toBeInstanceOf(ApiError);
-    expect(failure).toMatchObject({ status: 422, code: "provider_not_available" });
   });
 });

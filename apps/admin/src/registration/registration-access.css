@@ -222,7 +222,7 @@
 }
 
 /* The record: three read only fields side by side, one under another on a narrow screen. Grey and in a fixed-width font, so that they do not
- * look like something to type in; the button that copies a value is on the left of its field, as on the card of the ways in. */
+ * look like something to type in; the button that copies a value is on the left of its field. */
 .access-dns {
   display: grid;
   grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) minmax(0, 1fr);

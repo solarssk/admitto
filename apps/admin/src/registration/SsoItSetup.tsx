@@ -1,5 +1,5 @@
 import type { RegistrationRedirectUriDto } from "../api/types.js";
-import { EVENT_ADDRESS_HINT, GATEWAY_NOTE, REDIRECT_HINT, UNVERIFIED_NOTE } from "../settings/registrationSsoTexts.js";
+import { EVENT_ADDRESS_HINT, GATEWAY_NOTE, REDIRECT_HINT, UNVERIFIED_NOTE } from "./registrationSsoTexts.js";
 import { RetryHint } from "../components/RetryHint.js";
 import { keepLastWords } from "../utils/keep-last-words.js";
 import { ItPanel, RecordField } from "./ItSetup.js";
@@ -73,7 +73,7 @@ function InstanceAddress({
 }
 
 /**
- * What the organisation's IT department does for the company SSO of this event, as the card of the ways in says it: the return addresses
+ * What the organisation's IT department does for the company SSO of this event: the return addresses
  * to enter at the identity provider (the instance's, and the event's own when it has one), the gateway, and the claim that was set above.
  */
 export function SsoItSetup({
