@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { accessMethodDetail, READINESS_COPY, readinessCopy, remedyFor } from "../../src/registration/accessReadiness.js";
+import { accessMethodDetail, botProtectionOffText, READINESS_COPY, readinessCopy, remedyFor } from "../../src/registration/accessReadiness.js";
 
 /** The checks the server reports, read from the file that holds them: the screen has words for each one, and for no other. */
 function serverKeys(): string[] {
@@ -24,6 +24,9 @@ describe("the words of the checks", () => {
 
     expect(info.map(([key]) => key)).toEqual(["bot_protection_not_used"]);
     expect(READINESS_COPY.bot_protection_not_used.met).toBe("Off. The link and password forms have no bot check.");
+    // The row names who turned it off, from the switch of the organisation.
+    expect(botProtectionOffText("not_used")).toBe("Off for this organisation. The link and password forms have no bot check.");
+    expect(botProtectionOffText("required")).toBe("Off for this event. The link and password forms of this event have no bot check.");
     expect(READINESS_COPY.bot_protection_not_used.remedy).toBeUndefined();
   });
 

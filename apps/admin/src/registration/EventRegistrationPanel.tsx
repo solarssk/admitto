@@ -20,6 +20,7 @@ import { AccessAddressCard } from "./AccessAddressCard.js";
 import { AccessSsoClaim } from "./AccessSsoClaim.js";
 import { AccessSsoProvider } from "./AccessSsoProvider.js";
 import { AccessWayInCard } from "./AccessWayInCard.js";
+import { EventBotProtectionCard } from "./EventBotProtectionCard.js";
 import { claimErrors, draftFromSettings, parseClaim, technicalPatch, type AccessDraft } from "./accessSettings.js";
 import { ownAddressOf } from "./ownAddress.js";
 import { methodEdit } from "./ssoProviderChoice.js";
@@ -174,10 +175,10 @@ function SsoClaimCard({
 }
 
 /** What this tab edits besides the address: how guests open the form, with the identity provider and the restriction of Company SSO. */
-type Technical = Pick<AccessDraft, "method" | "sso_provider_id" | "sso_claim_name" | "sso_claim_values">;
+type Technical = Pick<AccessDraft, "method" | "bot_protection_enabled" | "sso_provider_id" | "sso_claim_name" | "sso_claim_values">;
 
 function technicalOf(draft: AccessDraft): Technical {
-  return { method: draft.method, sso_provider_id: draft.sso_provider_id, sso_claim_name: draft.sso_claim_name, sso_claim_values: draft.sso_claim_values };
+  return { method: draft.method, bot_protection_enabled: draft.bot_protection_enabled, sso_provider_id: draft.sso_provider_id, sso_claim_name: draft.sso_claim_name, sso_claim_values: draft.sso_claim_values };
 }
 
 function EventRegistrationCards({
@@ -352,6 +353,14 @@ function EventRegistrationCards({
         onPasswordChanged={passwordChanged}
         onArchived={archivedMeanwhile}
       />
+      {settings.bot_protection === "required" && (
+        <EventBotProtectionCard
+          enabled={draft.bot_protection_enabled}
+          usesSso={draft.method === "sso"}
+          disabled={archived || saving}
+          onChange={(enabled) => edit({ bot_protection_enabled: enabled })}
+        />
+      )}
       <SsoClaimCard
         usesSso={draft.method === "sso"}
         archived={archived}

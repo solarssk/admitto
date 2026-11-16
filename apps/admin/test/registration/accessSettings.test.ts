@@ -45,6 +45,7 @@ describe("draftFromSettings", () => {
       companion: true,
       consent_keys: ["photo"],
       styled_form_controls: true,
+      bot_protection_enabled: true,
       sso_claim_name: "",
       sso_claim_values: "",
       sso_provider_id: null,

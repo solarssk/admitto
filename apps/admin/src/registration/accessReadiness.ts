@@ -121,6 +121,16 @@ export function accessMethodDetail(method: "link" | "password" | "sso" | null, p
   return READINESS_COPY.access_method.missing;
 }
 
+/**
+ * The sentence of the information row about the bot check, which is off for the organisation or for this event: the organisation's
+ * switch is told apart from the event's, so a reader knows who turned it off.
+ */
+export function botProtectionOffText(organisation: "required" | "not_used"): string {
+  return organisation === "not_used"
+    ? "Off for this organisation. The link and password forms have no bot check."
+    : "Off for this event. The link and password forms of this event have no bot check.";
+}
+
 /** What to do about a missing check, for this person: a superadmin may have another place to go to. */
 export function remedyFor(copy: ReadinessCopy, superadmin: boolean): ReadinessCopy["remedy"] {
   return superadmin ? (copy.superadminRemedy ?? copy.remedy) : copy.remedy;
