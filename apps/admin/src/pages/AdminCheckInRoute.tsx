@@ -39,7 +39,6 @@ export function AdminCheckInRoute() {
             <Button
               type="button"
               variant="secondary"
-              size="sm"
               icon={<i className={`ti ti-camera${useCamera ? "-off" : ""}`} />}
               onClick={() => setUseCamera((v) => !v)}
             >
@@ -48,7 +47,6 @@ export function AdminCheckInRoute() {
             <Button
               type="button"
               variant="secondary"
-              size="sm"
               aria-pressed={scanSoundMuted}
               aria-label={scanSoundMuteLabel(scanSoundMuted)}
               title={scanSoundMuteTitle(scanSoundMuted)}

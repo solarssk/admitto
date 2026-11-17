@@ -62,6 +62,16 @@ describe("AdminCheckInRoute header (#378)", () => {
     expect(screen.queryByText(/Warsaw/)).toBeNull();
   });
 
+  it("gives the header buttons the default size, as every other page header does (#1900)", () => {
+    useConnectionState.mockReturnValue({ state: "connected", reportApiError: vi.fn() });
+    outletContext.mockReturnValue({ event: DEMO_EVENT });
+    renderRoute();
+
+    const buttons = document.querySelectorAll(".at-pageheader__actions .at-btn");
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) expect(button.className).not.toContain("at-btn--sm");
+  });
+
   // The connection indicator itself is CheckinConnectionBanner/CheckinConnectionLiveRegion,
   // rendered by CheckInPage — see ConnectionBanner.test.tsx.
 });

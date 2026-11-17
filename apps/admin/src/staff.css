@@ -2840,8 +2840,17 @@ html:not(.icons-ready) .ti {
    enough to stay beside the "Check-in" title on mobile too, instead of the shared
    PageHeader's default stack-below-full-width (components.css) — same reasoning as
    .reports-pageheader / .event-settings-pageheader. Operator's header reuses this same
-   .checkin-pageheader class (CheckInPage.tsx) so both surfaces match. */
+   .checkin-pageheader class (CheckInPage.tsx) so both surfaces match. The buttons are the
+   default size, as in every other page header; under 768px they are compacted by this
+   rule, the way .attendees-pageheader and .settings-pageheader do it (the icons stay: the
+   mute and torch buttons have nothing else). */
 @media (max-width: 767px) {
+  .checkin-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
   .checkin-pageheader .at-pageheader__row {
     flex-direction: row;
     align-items: flex-start;
