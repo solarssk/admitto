@@ -77,7 +77,7 @@ export const GUEST_PAGE_PRODUCT_CSS = [
   "@media (pointer: coarse) {",
   "  .at-inputgroup:has(.at-inputgroup__icon--action) > .at-input { font-size: 16px; flex: none; width: calc((100% - var(--control-h)) / 0.875); height: calc(var(--control-h) / 0.875); padding-left: calc(var(--pad-control-x) / 0.875); transform: scale(0.875); transform-origin: left center; }",
   "}",
-  ".at-check { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; font-size: var(--fs-body); color: var(--text-secondary); }",
+  ".at-check { position: relative; display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; font-size: var(--fs-body); color: var(--text-secondary); }",
   ".at-check input { position: absolute; opacity: 0; width: 0; height: 0; }",
   ".at-check__box { width: 1rem; height: 1rem; border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-card); display: grid; place-items: center; transition: background var(--dur-fast), border-color var(--dur-fast); flex: none; }",
   ".at-check__box svg { width: 12px; height: 12px; stroke: var(--text-on-primary); stroke-width: 3.5; opacity: 0; }",
