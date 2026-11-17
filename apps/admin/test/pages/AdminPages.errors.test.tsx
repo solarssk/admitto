@@ -150,6 +150,12 @@ const emptyReport = {
   by_operator: [],
 };
 
+// Export is off until someone has checked in, so the export tests need one admitted attendee.
+const reportWithAttendee = {
+  ...emptyReport,
+  summary: { ...emptyReport.summary, total_attendees: 1, admitted: 1, admission_rate_pct: 100 },
+};
+
 const archivedEvent = {
   id: "evt-arch",
   title: "Archived Summit",
@@ -677,7 +683,7 @@ describe("ReportsPage operator errors", () => {
   });
 
   it("toasts export failure without leaking internals", async () => {
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
@@ -687,9 +693,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
@@ -722,7 +728,7 @@ describe("ReportsPage operator errors", () => {
       assign: vi.fn(),
       pathname: "/admin/events/evt-1/reports",
     });
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new ApiError(401, "unauthenticated"));
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
@@ -732,9 +738,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
       expect(window.location.assign).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Freports");
@@ -742,7 +748,7 @@ describe("ReportsPage operator errors", () => {
   });
 
   it("toasts a generic export failure for a non-API error (e.g. a network failure)", async () => {
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new TypeError("Failed to fetch"));
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
@@ -752,9 +758,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
@@ -763,7 +769,7 @@ describe("ReportsPage operator errors", () => {
 
   it("exports the PDF report by opening the print URL in a new tab", async () => {
     vi.stubGlobal("open", vi.fn());
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
         <Routes>
@@ -772,9 +778,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /PDF/ }));
     expect(window.open).toHaveBeenCalledWith(
       "/api/admin/events/evt-1/reports/export?format=pdf",

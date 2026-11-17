@@ -412,6 +412,61 @@ describe("AttendeesPage export and header Send tickets", () => {
     });
   });
 
+  it("leaves no divider under 'Send tickets' when a wallet platform is on but the event is not configured", async () => {
+    useOutletContextMock.mockReturnValue({
+      event: { ...defaultOutletContext.event, wallet_enabled: true, wallet_apple_enabled: true, wallet_configured: false },
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      expect.stringMatching(/^Import/),
+      expect.stringMatching(/^Send tickets/),
+    ]);
+    expect(menu.querySelector(".more-actions-menu__divider")).toBeNull();
+  });
+
+  it("disables Export with a reason when there are no attendees, and enables it when there are some", async () => {
+    setListItems([]);
+    const { unmount } = renderPage();
+    const exportButton = await screen.findByRole("button", { name: "Export" });
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect((exportButton as HTMLButtonElement).disabled).toBe(true);
+    });
+    expect(exportButton.getAttribute("aria-describedby")).not.toBeNull();
+    expect(document.getElementById(exportButton.getAttribute("aria-describedby") ?? "")?.textContent).toBe(
+      "No attendees to export.",
+    );
+    fireEvent.click(exportButton);
+    expect(screen.queryByRole("menuitem", { name: /^XLSX/ })).toBeNull();
+    unmount();
+
+    setListItems([sampleRow]);
+    renderPage();
+    const enabled = await screen.findByRole("button", { name: "Export" });
+    await waitFor(() => {
+      expect((enabled as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(enabled);
+    expect(screen.getByRole("menuitem", { name: /^XLSX/ })).toBeTruthy();
+  });
+
+  it("disables the Export items of the More menu on a narrow screen when there are no attendees", async () => {
+    mockMatchMedia(false);
+    setListItems([]);
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    await waitFor(() => {
+      expect((screen.getByRole("menuitem", { name: /^Export XLSX/ }) as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
   it("hides the header 'Push updates' item when wallet platforms are enabled but not configured (bot review)", async () => {
     useOutletContextMock.mockReturnValue({
       event: {

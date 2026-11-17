@@ -764,6 +764,8 @@ interface HeaderMoreMenuProps {
   onSendTickets: () => void;
   isDesktop: boolean;
   exportingFormat: ExportFormat | null;
+  /** True while the list the export would cover is empty (no attendees, or none match the filters). */
+  nothingToExport: boolean;
   onExport: (format: ExportFormat) => void;
   walletPlatforms: EnabledWalletPlatforms;
   /** Whether the event actually has a wallet template + decryptable API key - distinct from
@@ -800,6 +802,7 @@ function HeaderMoreMenu({
   onSendTickets,
   isDesktop,
   exportingFormat,
+  nothingToExport,
   onExport,
   walletPlatforms,
   walletConfigured,
@@ -859,8 +862,9 @@ function HeaderMoreMenu({
            * (same convention as BulkMoreActionsMenu's wallet section, AttendeesTable.tsx). Push
            * updates needs a wallet platform to still be on AND the event configured; Refresh status
            * only reads from the provider, so it needs only the event's credentials - it stays
-           * available with the Wallet switch off (bot review). */}
-          {(walletPlatforms.any || walletConfigured) && (
+           * available with the Wallet switch off (bot review). Every item needs the event configured, so the
+           * group, and its divider, is shown only then (a platform on alone would leave a divider with nothing under it). */}
+          {walletConfigured && (
             <>
               <hr className="more-actions-menu__divider" />
               {walletPlatforms.any && walletConfigured && (
@@ -929,7 +933,8 @@ function HeaderMoreMenu({
                   icon={format.icon}
                   label={`Export ${format.label}`}
                   hint={format.hint}
-                  disabled={exportingFormat !== null}
+                  disabled={exportingFormat !== null || nothingToExport}
+                  tooltip={nothingToExport ? NOTHING_TO_EXPORT_TOOLTIP : undefined}
                   onClick={() => {
                     setOpen(false);
                     onExport(format.key);
@@ -948,8 +953,11 @@ type ExportFormat = "xlsx" | "csv" | "pdf";
 
 interface ExportMenuProps {
   exportingFormat: ExportFormat | null;
+  nothingToExport: boolean;
   onExport: (format: ExportFormat) => void;
 }
+
+const NOTHING_TO_EXPORT_TOOLTIP = "No attendees to export.";
 
 const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: string }[] = [
   { key: "xlsx", label: "XLSX", icon: "table", hint: "Excel workbook" },
@@ -958,27 +966,42 @@ const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: st
 ];
 
 /** Single "Export" entry point — opens a small menu for XLSX/CSV/PDF, replacing three separate buttons. */
-function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
+function ExportMenu({ exportingFormat, nothingToExport, onExport }: Readonly<ExportMenuProps>) {
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
+  // The menu can be open before the first answer: when that answer is an empty list, it closes.
+  useEffect(() => {
+    if (nothingToExport) setOpen(false);
+  }, [nothingToExport, setOpen]);
 
   return (
     <div className="attendees-export-menu" ref={rootRef}>
-      <Button
-        ref={triggerRef}
-        type="button"
-        variant="secondary"
-        icon={<i className="ti ti-download" aria-hidden="true" />}
-        hasMenu
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={exportingFormat !== null}
-        loading={exportingFormat !== null}
-        onClick={() => setOpen((o) => !o)}
+      {/* Export is not an edit, so an archived event still exports: no event is passed, only the reason. */}
+      <ArchivedGuard
+        event={null}
+        reasonId="export-attendees-reason"
+        disabled={nothingToExport}
+        tooltip={NOTHING_TO_EXPORT_TOOLTIP}
       >
-        Export
-      </Button>
+        {(guard) => (
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="secondary"
+            icon={<i className="ti ti-download" aria-hidden="true" />}
+            hasMenu
+            aria-haspopup="menu"
+            aria-expanded={open}
+            {...guard}
+            disabled={guard.disabled || exportingFormat !== null}
+            loading={exportingFormat !== null}
+            onClick={() => setOpen((o) => !o)}
+          >
+            Export
+          </Button>
+        )}
+      </ArchivedGuard>
       {open && (
         <div className="attendees-export-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           {EXPORT_FORMATS.map((format) => (
@@ -989,7 +1012,7 @@ function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
               className="attendees-export-menu__item"
               onClick={() => {
                 close();
-                onExport(format.key);
+                if (!nothingToExport) onExport(format.key);
               }}
             >
               <span className="attendees-export-menu__item-icon">
@@ -1382,6 +1405,14 @@ export function AttendeesPage() {
     return params;
   }, [customFields, customFieldSelectValues, customFieldTextQueries]);
 
+  // Which filters a list answer is for, so a zero total is only trusted for the filters it was read with.
+  const listFilterKey = useMemo(
+    () =>
+      JSON.stringify([searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, mailStatusFilter, customFieldParams, showErased]),
+    [searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, mailStatusFilter, customFieldParams, showErased],
+  );
+  const [totalFilterKey, setTotalFilterKey] = useState("");
+
   const loadList = useCallback(async () => {
     if (!eventId) return;
 
@@ -1423,6 +1454,7 @@ export function AttendeesPage() {
       }
       setItems(data.items);
       setTotal(data.total);
+      setTotalFilterKey(listFilterKey);
       setErasedCount(data.erased_count ?? 0);
       setLoadError(null);
     } catch (err) {
@@ -1445,6 +1477,7 @@ export function AttendeesPage() {
     mailStatusFilter,
     customFieldParams,
     showErased,
+    listFilterKey,
     sortBy,
     sortDir,
     reportApiError,
@@ -2236,6 +2269,11 @@ export function AttendeesPage() {
     mailStatusFilter.length === 0 &&
     Object.keys(customFieldParams).length === 0;
 
+  // The export covers the filtered list, so a filter that matches nobody leaves nothing to export too. Not before the
+  // first answer (the total is still 0) and not after a failed load (the list is not known to be empty).
+  // `total` belongs to the filters that were loaded with it: while a changed set is awaiting its answer, the old zero says nothing.
+  const nothingToExport = hasLoadedOnce && !listFailure.error && total === 0 && totalFilterKey === listFilterKey;
+
   // How many of the selection the bulk "Revoke check-in" confirm dialog would actually affect,
   // not the raw selection size — matches the bulk bar's own menu-item hint (PO review).
   const revokableCheckInCount = items.filter(
@@ -2318,6 +2356,7 @@ export function AttendeesPage() {
               }}
               isDesktop={isDesktop}
               exportingFormat={exportingFormat}
+              nothingToExport={nothingToExport}
               onExport={(format) => void handleExport(format)}
               walletPlatforms={walletPlatforms}
               walletConfigured={event.wallet_configured}
@@ -2333,7 +2372,7 @@ export function AttendeesPage() {
             {/* Hidden below 768px — its 3 formats fold into HeaderMoreMenu's own panel there
              * instead (above), so only "+ Add"/"More" remain as standalone buttons, which is
              * few enough to sit beside the "Attendees" title (attendees.css). */}
-            {isDesktop && <ExportMenu exportingFormat={exportingFormat} onExport={(format) => void handleExport(format)} />}
+            {isDesktop && <ExportMenu exportingFormat={exportingFormat} nothingToExport={nothingToExport} onExport={(format) => void handleExport(format)} />}
           </>
         }
       />

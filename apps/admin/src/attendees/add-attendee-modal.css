@@ -132,9 +132,17 @@
   line-height: 1.4;
 }
 
-/* The layout of the fields is attendee-fields-grid.css. */
+/* The layout of the fields of an attendee form is attendee-fields-grid.css. Every other dialog that uses this class
+   (New event, Invite user, Edit user, Edit template, Fix maps link) has no grid, so its fields are a column with the
+   standard gap. */
 .add-attendee-modal__fields {
   position: relative;
+}
+
+.add-attendee-modal__fields:not(.attendee-fields-grid) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 /* Drawn over the fields while they load. The fields themselves are hidden (.at-loading-hold), and

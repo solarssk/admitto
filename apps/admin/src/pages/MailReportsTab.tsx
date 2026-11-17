@@ -1,4 +1,5 @@
 import { Card, EmptyState } from "@admitto/ui";
+import { useReportEmpty } from "../reports/useReportEmpty.js";
 import type { EventMailReportsResponse } from "../api/types.js";
 import { BreakdownRows, pctOf, type BreakdownRow } from "./ReportsPage.js";
 import {
@@ -154,12 +155,23 @@ function EventJourneyFunnel({ funnel }: Readonly<{ funnel: EventMailReportsRespo
   );
 }
 
+/** Nothing to show or export: no email was sent. The tab draws only its empty state, and the page switches Export off, by this one answer. */
+export function isMailReportEmpty(data: EventMailReportsResponse): boolean {
+  return data.delivery.total_attempts === 0;
+}
+
 /** The mail report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
  * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
-export function MailReport({ data, isActive }: Readonly<{ data: EventMailReportsResponse; isActive: boolean }>) {
+export function MailReport({
+  data,
+  isActive,
+  onEmptyChange,
+}: Readonly<{ data: EventMailReportsResponse; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
+  const empty = isMailReportEmpty(data);
+  useReportEmpty(onEmptyChange, empty);
   return (
     <>
-      {data.delivery.total_attempts === 0 ? (
+      {empty ? (
         <EmptyState
           icon={<i className="ti ti-mail-off" aria-hidden="true" />}
           title="No emails sent yet"
@@ -253,28 +265,28 @@ export function MailReport({ data, isActive }: Readonly<{ data: EventMailReports
               </div>
             </Card>
           </div>
+
+          <div className="wallets-panels">
+            <Card title="Admission rate by email status" className="wallets-card--centered">
+              <ReportsAdmissionCompare
+                description="Check-in rate compared between attendees email reached and attendees it didn’t."
+                withLabel="Reached by email"
+                withGroup={data.admission_by_email.reached}
+                withoutLabel="Not reached by email"
+                withoutGroup={data.admission_by_email.not_reached}
+                isActive={isActive}
+              />
+            </Card>
+            <Card title="Event journey" className="wallets-card--centered">
+              <p className="wallets-description">
+                How many attendees reached each stage of the event: got a ticket email, installed a wallet pass, and
+                attended. The wallet-installed count is permanent - it stays even if they later remove the pass.
+              </p>
+              <EventJourneyFunnel funnel={data.funnel} />
+            </Card>
+          </div>
         </>
       )}
-
-      <div className="wallets-panels">
-        <Card title="Admission rate by email status" className="wallets-card--centered">
-          <ReportsAdmissionCompare
-            description="Check-in rate compared between attendees email reached and attendees it didn’t."
-            withLabel="Reached by email"
-            withGroup={data.admission_by_email.reached}
-            withoutLabel="Not reached by email"
-            withoutGroup={data.admission_by_email.not_reached}
-            isActive={isActive}
-          />
-        </Card>
-        <Card title="Event journey" className="wallets-card--centered">
-          <p className="wallets-description">
-            How many attendees reached each stage of the event: got a ticket email, installed a wallet pass, and
-            attended. The wallet-installed count is permanent - it stays even if they later remove the pass.
-          </p>
-          <EventJourneyFunnel funnel={data.funnel} />
-        </Card>
-      </div>
     </>
   );
 }

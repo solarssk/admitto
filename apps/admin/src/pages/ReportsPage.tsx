@@ -25,7 +25,7 @@ import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { isEventArchived } from "../components/ArchivedGuard.js";
+import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { panelView, usePanelLoad } from "../hooks/usePanelLoad.js";
@@ -100,39 +100,54 @@ const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: st
 interface ReportsExportMenuProps {
   readonly exportingCsv: boolean;
   readonly disabled: boolean;
-  readonly isDesktop: boolean;
+  /** The active tab has nothing to export: the button is off, with the reason. */
+  readonly nothingToExport: boolean;
   readonly onExport: (format: ExportFormat) => void;
 }
 
-/** Single "Export report" entry point for CSV/PDF, replacing two separate buttons - same
+/** Single "Export" entry point for CSV/PDF, replacing two separate buttons - same
  * useDropdownMenu-backed pattern as the Attendees list's own Export menu. The trigger is the
  * button that holds the keyboard focus once the menu has closed on a click, so it is the one
  * that shows a CSV export at work (`loading`: a spinner, and the menu stays shut until the file
  * is in, as on Attendees); `disabled` is only for a report that is not there to export.
- * Label shortens to "Export" below desktop (same isDesktop-driven pattern as Attendees'
- * "+ Add attendee"/"Send tickets") so it keeps sitting beside the title instead of forcing the
- * header to stack (reports-pageheader override in reports-page.css). */
-function ReportsExportMenu({ exportingCsv, disabled, isDesktop, onExport }: Readonly<ReportsExportMenuProps>) {
+ * The label is "Export" at every width, as on Attendees: the page is already Reports, and the short word keeps the button
+ * beside the title instead of forcing the header to stack (reports-pageheader override in reports-page.css). */
+function ReportsExportMenu({ exportingCsv, disabled, nothingToExport, onExport }: Readonly<ReportsExportMenuProps>) {
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
+  // The menu can be open while the tab is still reading: when it turns out empty, the menu closes.
+  useEffect(() => {
+    if (nothingToExport) setOpen(false);
+  }, [nothingToExport, setOpen]);
 
   return (
     <div className="reports-export-menu" ref={rootRef}>
-      <Button
-        ref={triggerRef}
-        type="button"
-        variant="secondary"
-        icon={<i className="ti ti-download" aria-hidden="true" />}
-        hasMenu
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={disabled}
-        loading={exportingCsv}
-        onClick={() => setOpen((current) => !current)}
+      {/* Export is not an edit, so no event is passed: only the reason is shown (as on the Attendees Export). */}
+      <ArchivedGuard
+        event={null}
+        reasonId="export-reason"
+        disabled={nothingToExport}
+        tooltip="Nothing to export yet."
       >
-        {isDesktop ? "Export report" : "Export"}
-      </Button>
+        {(guard) => (
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="secondary"
+            icon={<i className="ti ti-download" aria-hidden="true" />}
+            hasMenu
+            aria-haspopup="menu"
+            aria-expanded={open}
+            {...guard}
+            disabled={guard.disabled || disabled}
+            loading={exportingCsv}
+            onClick={() => setOpen((current) => !current)}
+          >
+            Export
+          </Button>
+        )}
+      </ArchivedGuard>
       {open && (
         <div className="reports-export-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           {EXPORT_FORMATS.map((format) => (
@@ -143,7 +158,7 @@ function ReportsExportMenu({ exportingCsv, disabled, isDesktop, onExport }: Read
               className="reports-export-menu__item"
               onClick={() => {
                 close();
-                onExport(format.key);
+                if (!nothingToExport) onExport(format.key);
               }}
             >
               <span className="reports-export-menu__item-icon">
@@ -776,8 +791,13 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const walletsTabAvailable = walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung;
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
-  const isDesktop = useIsDesktop();
   const exportAbortRef = useRef<AbortController | null>(null);
+
+  // Whether each tab's report has nothing to export, as that tab says once its read is in (a tab not read yet is not empty:
+  // the export is a request of its own). Event day is read below, from its own summary.
+  const [walletsEmpty, setWalletsEmpty] = useState(false);
+  const [customFieldsEmpty, setCustomFieldsEmpty] = useState(false);
+  const [mailEmpty, setMailEmpty] = useState(false);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<ReportsTab>(() => reportsTabFromSearch(searchParams));
@@ -995,6 +1015,15 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     ? pctOf(liveAdmitted, data.summary.total_attendees)
     : 0;
   const liveNoShowRatePct = data ? pctOf(liveNoShows, data.summary.total_attendees) : 0;
+  // Event day shows only its empty state, and Export is off, until someone has checked in (no attendees is the same).
+  const eventDayEmpty = liveAdmitted === 0;
+  // What each export would hold; a tab is empty by the same answer that makes it draw only its empty state.
+  const tabIsEmpty: Record<ReportsTab, boolean> = {
+    eventday: view === "ready" && eventDayEmpty,
+    wallets: walletsEmpty,
+    customfields: customFieldsEmpty,
+    mail: mailEmpty,
+  };
 
   return (
     <div className="screen reports-page">
@@ -1011,7 +1040,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
             // day's state while one of them is active would disable the button for a fetch that
             // has nothing to do with what it's about to export.
             disabled={activeTab === "eventday" && view !== "ready"}
-            isDesktop={isDesktop}
+            nothingToExport={tabIsEmpty[activeTab]}
             onExport={handleExport}
           />
         }
@@ -1031,7 +1060,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
       {customFieldsTabVisited && (
         // Same display:contents reasoning as the Wallets wrapper below.
         <div style={{ display: activeTab === "customfields" ? "contents" : "none" }}>
-          <CustomFieldsReportsTab eventId={eventId} isActive={activeTab === "customfields"} />
+          <CustomFieldsReportsTab eventId={eventId} isActive={activeTab === "customfields"} onEmptyChange={setCustomFieldsEmpty} />
         </div>
       )}
 
@@ -1044,14 +1073,19 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
         // exactly as the rows were before this wrapper existed. display:none when hidden still
         // works the normal way (contents has no "hidden" state of its own to toggle).
         <div style={{ display: activeTab === "wallets" ? "contents" : "none" }}>
-          <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} isActive={activeTab === "wallets"} />
+          <WalletsReportsTab
+            eventId={eventId}
+            walletPlatforms={walletPlatforms}
+            isActive={activeTab === "wallets"}
+            onEmptyChange={setWalletsEmpty}
+          />
         </div>
       )}
 
       {mailTabVisited && (
         // Same display:contents reasoning as the Wallets/Custom fields wrappers above.
         <div style={{ display: activeTab === "mail" ? "contents" : "none" }}>
-          <MailReportsTab eventId={eventId} isActive={activeTab === "mail"} />
+          <MailReportsTab eventId={eventId} isActive={activeTab === "mail"} onEmptyChange={setMailEmpty} />
         </div>
       )}
 
@@ -1073,7 +1107,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
           {view === "ready" && (
             // What replaces the placeholder fades in; the wrapper is a column of its own with the section's rhythm.
             <div className="reports-eventday__ready at-fade-in">
-              {liveAdmitted === 0 && (
+              {eventDayEmpty && (
                 <EmptyState
                   icon={<i className="ti ti-chart-bar-off" aria-hidden="true" />}
                   title="No check-ins yet"
@@ -1081,7 +1115,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
                 />
               )}
 
-              {data && liveAdmitted > 0 && (
+              {data && !eventDayEmpty && (
                 <>
                 <div className="reports-stats-grid">
                   <Card>

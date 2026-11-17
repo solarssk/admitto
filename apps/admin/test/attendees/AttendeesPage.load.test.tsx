@@ -422,11 +422,12 @@ describe("AttendeesPage header actions on mobile (PO review — header must neve
 
   it("exports from the mobile More menu and closes it before starting the download", async () => {
     mockMatchMedia(false);
-    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    // An empty list has nothing to export (its items are disabled), so the list has a row.
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("a1", "Ada")], total: 1, page: 1, pageSize: 25 });
     exportAttendees.mockResolvedValue(undefined);
 
     renderPage();
-    await screen.findByText(/No attendees yet/i);
+    await screen.findByText("Ada");
 
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Export CSV/ }));

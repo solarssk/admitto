@@ -180,7 +180,7 @@ type EventSettingsRow = {
 function serializeEventSettings(
   event: EventSettingsRow,
   deletability: { isDeletable: boolean; deletionBlockers: EventDeletionBlocker[] },
-  revokeCounts: { admittedCount: number; issuedItemsCount: number },
+  revokeCounts: { admittedCount: number; issuedItemsCount: number; exportableAttendeeCount: number },
   installedWalletPassCount: number,
   issuedWalletPassCount: number,
   installedWalletPassCountByPlatform: { apple: number; google: number; samsung: number },
@@ -216,6 +216,7 @@ function serializeEventSettings(
     deletion_blockers: deletability.deletionBlockers,
     admitted_count: revokeCounts.admittedCount,
     issued_items_count: revokeCounts.issuedItemsCount,
+    exportable_attendee_count: revokeCounts.exportableAttendeeCount,
     installed_wallet_pass_count: installedWalletPassCount,
     issued_wallet_pass_count: issuedWalletPassCount,
     installed_wallet_pass_count_by_platform: installedWalletPassCountByPlatform,
@@ -291,8 +292,8 @@ async function loadDeletability(
 async function loadRevokeCounts(
   db: PrismaClient,
   eventId: string,
-): Promise<{ admittedCount: number; issuedItemsCount: number }> {
-  const [admittedCount, issuedItemsCount] = await Promise.all([
+): Promise<{ admittedCount: number; issuedItemsCount: number; exportableAttendeeCount: number }> {
+  const [admittedCount, issuedItemsCount, exportableAttendeeCount] = await Promise.all([
     db.attendee.count({
       where: {
         event_id: eventId,
@@ -309,8 +310,10 @@ async function loadRevokeCounts(
         attendee: { status: { in: ADMITTABLE_STATUS_LIST }, erased_at: null },
       },
     }),
+    // The same rows the personal data export holds (handleExportEventPii): erased attendees are left out.
+    db.attendee.count({ where: { event_id: eventId, erased_at: null } }),
   ]);
-  return { admittedCount, issuedItemsCount };
+  return { admittedCount, issuedItemsCount, exportableAttendeeCount };
 }
 
 /** Live count backing the "this will push to N installed wallet passes" confirm dialog shown

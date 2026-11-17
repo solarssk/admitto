@@ -239,7 +239,7 @@ describe("MailReportsTab", () => {
     expect(reportApiError).toHaveBeenCalledWith(403);
   });
 
-  it("shows an EmptyState for the delivery cards when no email has ever been sent, but still renders the attendee-level cards (bot review)", async () => {
+  it("shows only the empty state, with no zero cards under it, when no email has ever been sent", async () => {
     fetchEventMailReports.mockResolvedValue(
       fixture({
         delivery: { total_attempts: 0, successful: 0, successful_pct: 0, by_status: [] },
@@ -249,12 +249,11 @@ describe("MailReportsTab", () => {
     renderWithToast(<MailReportsTab eventId="evt-1" isActive />);
 
     expect(await screen.findByText("No emails sent yet")).toBeTruthy();
-    // admission_by_email and funnel don't depend on any email having been sent (an event can have
-    // wallet installs and check-ins with zero mail activity) - the empty state used to hide the
-    // whole tab, including these two cards, even though their own data was already there.
-    expect(screen.queryByText("Email delivery")).toBeNull();
-    expect(screen.getByText("Admission rate by email status")).toBeTruthy();
-    expect(screen.getByText("Event journey")).toBeTruthy();
+    // The other report tabs that have nothing to show draw only their empty state; the admission
+    // and journey cards under it were all zeros and looked like a broken report.
+    for (const title of ["Email delivery", "Admission rate by email status", "Event journey"]) {
+      expect(screen.queryByText(title)).toBeNull();
+    }
   });
 
   it("falls back to the raw status string and a neutral color for a status this tab doesn't have a label for", async () => {
