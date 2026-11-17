@@ -383,6 +383,25 @@ describe("OptionsEditor: a list of suggestions (no attendee counts)", () => {
     expect(screen.queryByText(/currently have this value/)).toBeNull();
   });
 
+  it("moves the focus to the next suggestion when one is removed, so that the dialog does not scroll back to its top", () => {
+    render(<ControlledSuggestions initial={suggestionRows("Vegan", "Halal", "Kosher")} />);
+    const [vegan, , kosher] = screen.getAllByLabelText("Suggestion text") as HTMLInputElement[];
+    const remove = screen.getAllByRole("button", { name: "Remove suggestion" });
+    remove[1]!.focus();
+    fireEvent.click(remove[1]!);
+    expect(screen.getAllByLabelText("Suggestion text")).toEqual([vegan, kosher]);
+    expect(document.activeElement).toBe(kosher);
+  });
+
+  it("moves the focus to the one before when the last suggestion is removed, and to + Add when none is left", () => {
+    render(<ControlledSuggestions initial={suggestionRows("Vegan", "Halal")} />);
+    const [vegan] = screen.getAllByLabelText("Suggestion text") as HTMLInputElement[];
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove suggestion" })[1]!);
+    expect(document.activeElement).toBe(vegan);
+    fireEvent.click(screen.getByRole("button", { name: "Remove suggestion" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "+ Add suggestion" }));
+  });
+
   it("does not warn about a rename or a blanked row, which touches no attendee", () => {
     const { container } = render(
       <OptionsEditor rows={[{ key: "s0", text: "Vegan food", originalText: "Vegan" }]} usageCounts={null} showUsage={false} noun="suggestion" onChange={vi.fn()} />,

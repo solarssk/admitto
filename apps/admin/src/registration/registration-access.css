@@ -57,6 +57,12 @@
   font-size: var(--fs-xs);
 }
 
+/* A sentence of what to do next (not a link) reads in the colour of the sentence above it, not the darker one it would inherit (#1894).
+ * A link keeps the link colour. */
+span.access-check__remedy {
+  color: var(--text-secondary);
+}
+
 /* What a refused save says is missing: the message, then a list that names each check and what to do. A message stands alone, so its
  * lines are balanced (a lone last word is the fault that readability.md names). */
 .access-problem {

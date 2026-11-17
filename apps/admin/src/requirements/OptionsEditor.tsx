@@ -148,6 +148,7 @@ export function OptionsEditor({
   const usageSlow = useDelayedLoading(usageLoading, SLOW_NOTICE_MS);
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const addRef = useRef<HTMLButtonElement>(null);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   const onChangeRef = useRef(onChange);
@@ -160,6 +161,12 @@ export function OptionsEditor({
 
   function removeRow(key: string) {
     setConfirmingKey(null);
+    // The control that was pressed goes with its row, and focus that falls to the page makes the dialog scroll back to its top (#1912):
+    // move it first, to the next row's text, else the one before, else "+ Add". Rows keep their keys, so that field is not remounted.
+    const at = rows.findIndex((r) => r.key === key);
+    const neighbour = rows[at + 1] ?? rows[at - 1];
+    const next = neighbour ? listRef.current?.querySelector<HTMLInputElement>(`input[data-key="${neighbour.key}"]`) : addRef.current;
+    next?.focus({ preventScroll: true });
     onChange(rows.filter((r) => r.key !== key));
   }
 
@@ -414,6 +421,7 @@ export function OptionsEditor({
       </div>
       <button
         type="button"
+        ref={addRef}
         className="options-editor__add"
         disabled={disabled || (max !== undefined && rows.length >= max)}
         onClick={addRow}

@@ -114,6 +114,9 @@ export async function loadPublishedLegalPage(
 /** The ticket page's look, with a column wide enough to read and the text left aligned. Only the
  * elements sanitize-legal-html.ts lets through are styled. */
 const LEGAL_PAGE_CSS = `
+/* The card sits at the top with the same space above it on every tab. The ticket page's shell centres a card in the window, which put a
+ * short text in the middle and a long one at the top, so the card jumped when the tab changed (#1916). */
+body.ticket-page--legal { align-items: start; padding-top: 48px; }
 .ticket--legal { width: min(760px, 100%); }
 .ticket__body--legal { padding: 24px 32px 32px; text-align: left; }
 .legal__tabs { display: flex; flex-wrap: wrap; gap: 0 4px; padding: 0 16px; border-bottom: 1px solid var(--border, #e6e7e9); }
@@ -138,10 +141,12 @@ const LEGAL_PAGE_CSS = `
 .legal__content hr { margin: 2em 0; border: 0; border-top: 1px solid var(--border, #e6e7e9); }
 .legal__content a { color: var(--primary, #066fd1); text-underline-offset: 2px; }
 @media (max-width: 480px) {
+  body.ticket-page--legal { padding-top: 20px; }
   .ticket__body--legal { padding: 20px 16px 24px; }
   .legal__tabs { padding: 0 8px; }
 }
 @media print {
+  body.ticket-page--legal { padding-top: 0; }
   .legal__tabs { display: none; }
   .ticket--legal { width: 100%; }
   .ticket__body--legal { padding: 0; }
@@ -188,7 +193,7 @@ export function renderLegalDocumentPage(page: PublishedLegalPage, theme?: Brandi
   ${renderAdmittoFaviconLink()}
   <style>${buildTicketPageStyles(theme)}${LEGAL_PAGE_CSS}</style>
 </head>
-<body class="ticket-page">
+<body class="ticket-page ticket-page--legal">
   <article class="ticket ticket--legal">
     <header class="ticket__top">
       <div class="ticket__brand">${brand}</div>

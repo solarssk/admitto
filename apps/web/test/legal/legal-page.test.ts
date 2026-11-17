@@ -35,6 +35,19 @@ describe("renderLegalDocumentPage", () => {
     expect(html).toContain('<meta name="viewport"');
   });
 
+  it("keeps the card at the top, with the same space above it for a short text and a long one, so that it does not jump between tabs", () => {
+    const short = renderLegalDocumentPage(PAGE);
+    const long = renderLegalDocumentPage({ ...PAGE, contentHtml: "<p>Long text.</p>".repeat(200) });
+    for (const html of [short, long]) {
+      expect(html).toContain('<body class="ticket-page ticket-page--legal">');
+      // The ticket page's own rule centres; the legal rule comes after it and takes the vertical centring back.
+      expect(html.indexOf("body.ticket-page--legal { align-items: start; padding-top: 48px; }")).toBeGreaterThan(html.indexOf("place-items: center"));
+      expect(html).toContain("@media (max-width: 480px) {\n  body.ticket-page--legal { padding-top: 20px; }");
+      expect(html).toContain("@media print {\n  body.ticket-page--legal { padding-top: 0; }");
+    }
+    expect(short.slice(short.indexOf("<style>"), short.indexOf("</style>"))).toBe(long.slice(long.indexOf("<style>"), long.indexOf("</style>")));
+  });
+
   it("escapes the title and the event name", () => {
     const html = renderLegalDocumentPage({
       ...PAGE,
