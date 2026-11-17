@@ -96,6 +96,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Respect reduced-motion preferences when opening font styles, and preserve autocomplete sizing and setup retry colours without forced CSS overrides ([#1846](https://github.com/solarssk/admitto/pull/1846)).
 - Stop the whole app from freezing when Redis accepts a connection but never answers; the rate limiter now gives up after two seconds and counts in memory ([#1925](https://github.com/solarssk/admitto/pull/1925))
 - Fix the New event window, which lost the space between its fields, and turn off Export and Export personal data when there is nothing to export ([#1946](https://github.com/solarssk/admitto/pull/1946))
+- Keep the window in place when a suggestion is removed in Edit custom field, keep the public legal text card at the top on every tab, and show the last line of a Setup checklist row in the same grey
 
 ### Security
 
