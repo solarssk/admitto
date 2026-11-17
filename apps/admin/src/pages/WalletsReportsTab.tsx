@@ -14,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
+import { useReportEmpty } from "../reports/useReportEmpty.js";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type { EventWalletReportsResponse } from "../api/types.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
@@ -767,7 +768,8 @@ function registrationCountBreakdownRows(
 
 /** The wallet report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
  * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
-export function WalletsReport({ data, walletPlatforms, isActive }: Readonly<{ data: EventWalletReportsResponse; walletPlatforms: EnabledWalletPlatforms; isActive: boolean }>) {
+export function WalletsReport({ data, walletPlatforms, isActive, onEmptyChange }: Readonly<{ data: EventWalletReportsResponse; walletPlatforms: EnabledWalletPlatforms; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
+  useReportEmpty(onEmptyChange, data.adoption.got_pass === 0);
   if (data.adoption.got_pass === 0) {
     return (
       <EmptyState

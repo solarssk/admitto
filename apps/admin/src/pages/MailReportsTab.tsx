@@ -1,4 +1,5 @@
 import { Card, EmptyState } from "@admitto/ui";
+import { useReportEmpty } from "../reports/useReportEmpty.js";
 import type { EventMailReportsResponse } from "../api/types.js";
 import { BreakdownRows, pctOf, type BreakdownRow } from "./ReportsPage.js";
 import {
@@ -156,7 +157,12 @@ function EventJourneyFunnel({ funnel }: Readonly<{ funnel: EventMailReportsRespo
 
 /** The mail report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
  * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
-export function MailReport({ data, isActive }: Readonly<{ data: EventMailReportsResponse; isActive: boolean }>) {
+export function MailReport({
+  data,
+  isActive,
+  onEmptyChange,
+}: Readonly<{ data: EventMailReportsResponse; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
+  useReportEmpty(onEmptyChange, data.delivery.total_attempts === 0);
   return (
     <>
       {data.delivery.total_attempts === 0 ? (

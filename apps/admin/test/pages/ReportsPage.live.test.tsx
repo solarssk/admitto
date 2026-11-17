@@ -19,6 +19,8 @@ import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-
 const fetchEventReports = vi.fn();
 const fetchTicketTypes = vi.fn();
 const fetchEventWalletReports = vi.fn();
+const fetchEventMailReports = vi.fn();
+const fetchEventCustomFieldReports = vi.fn();
 const exportEventReportsCsv = vi.fn();
 const exportEventWalletReportsCsv = vi.fn();
 const exportEventMailReportsCsv = vi.fn();
@@ -109,6 +111,8 @@ vi.mock("../../src/api/client.js", () => ({
   exportEventReportsCsv: (...args: unknown[]) => exportEventReportsCsv(...args),
   eventReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf`,
   fetchEventWalletReports: (...args: unknown[]) => fetchEventWalletReports(...args),
+  fetchEventMailReports: (...args: unknown[]) => fetchEventMailReports(...args),
+  fetchEventCustomFieldReports: (...args: unknown[]) => fetchEventCustomFieldReports(...args),
   exportEventWalletReportsCsv: (...args: unknown[]) => exportEventWalletReportsCsv(...args),
   eventWalletReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf&report=wallets`,
   exportEventMailReportsCsv: (...args: unknown[]) => exportEventMailReportsCsv(...args),
@@ -188,9 +192,9 @@ const liveEvent: StreamCheckinEvent = {
   deviceLabel: null,
 };
 
-function renderPage() {
+function renderPage(search = "") {
   return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+    <MemoryRouter initialEntries={[`/admin/events/evt-1/reports${search}`]}>
       <Routes>
         <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
       </Routes>
@@ -1267,5 +1271,62 @@ describe("ReportsPage: the export", () => {
 
     expect(document.activeElement).toBe(trigger);
     expect(screen.getByText("Export failed.")).toBeTruthy();
+  });
+});
+
+describe("ReportsPage: Export report is off while the tab has nothing to export", () => {
+  const exportButton = () => screen.getByRole("button", { name: /Export/ }) as HTMLButtonElement;
+  const reason = () => document.getElementById(exportButton().getAttribute("aria-describedby") ?? "")?.textContent;
+
+  beforeEach(() => {
+    fetchEventReports.mockReset();
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+  });
+
+  it("Event day: off for an event with no attendees, on with attendees", async () => {
+    fetchEventReports.mockResolvedValueOnce(
+      reportFixture(0, { summary: { ...reportFixture(0).summary, total_attendees: 0, no_shows: 0 } }),
+    );
+    const { unmount } = renderPage();
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(reason()).toBe("Nothing to export yet.");
+    unmount();
+
+    renderPage();
+    await waitFor(() => expect(admittedValue()).toBe("5"));
+    expect(exportButton().disabled).toBe(false);
+  });
+
+  it("Wallets: off while no pass was issued, on once there is one", async () => {
+    const empty = walletFixture();
+    empty.adoption = { got_pass: 0, got_pass_pct: 0, confirmed: 0, confirmed_pct: 0 };
+    fetchEventWalletReports.mockResolvedValueOnce(empty);
+    const { unmount } = renderPage("?tab=wallets");
+    await screen.findByText("No wallet passes yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(reason()).toBe("Nothing to export yet.");
+    unmount();
+
+    fetchEventWalletReports.mockResolvedValueOnce(walletFixture());
+    renderPage("?tab=wallets");
+    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("No wallet passes yet")).toBeNull());
+    expect(exportButton().disabled).toBe(false);
+  });
+
+  it("Mail: off while no email was sent", async () => {
+    fetchEventMailReports.mockResolvedValueOnce({ delivery: { total_attempts: 0 } });
+    renderPage("?tab=mail");
+    await screen.findByText("No emails sent yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(reason()).toBe("Nothing to export yet.");
+  });
+
+  it("Custom fields: off while the event has no custom field", async () => {
+    fetchEventCustomFieldReports.mockResolvedValueOnce({ fields: [], total_attendees: 0 });
+    renderPage("?tab=customfields");
+    await screen.findByText("No custom fields yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(reason()).toBe("Nothing to export yet.");
   });
 });

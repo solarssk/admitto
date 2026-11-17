@@ -38,11 +38,17 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
   eventId,
   walletPlatforms,
   isActive,
-}: Readonly<{ eventId: string; walletPlatforms: EnabledWalletPlatforms; isActive: boolean }>) {
+  onEmptyChange,
+}: Readonly<{
+  eventId: string;
+  walletPlatforms: EnabledWalletPlatforms;
+  isActive: boolean;
+  onEmptyChange?: (empty: boolean) => void;
+}>) {
   const load = useReportFetch(readWalletReport, eventId, "Could not load wallet report.");
   return (
     <ReportTab label="Wallet report" errorTitle="Could not load wallet report" load={load} placeholder={WalletsReportsSkeleton}>
-      {([report, { WalletsReport }]) => <WalletsReport data={report} walletPlatforms={walletPlatforms} isActive={isActive} />}
+      {([report, { WalletsReport }]) => <WalletsReport data={report} walletPlatforms={walletPlatforms} isActive={isActive} onEmptyChange={onEmptyChange} />}
     </ReportTab>
   );
 });
@@ -50,7 +56,8 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
 export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
   eventId,
   isActive,
-}: Readonly<{ eventId: string; isActive: boolean }>) {
+  onEmptyChange,
+}: Readonly<{ eventId: string; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
   const load = useReportFetch(readCustomFieldReport, eventId, "Could not load custom field report.");
   return (
     <ReportTab
@@ -59,7 +66,7 @@ export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
       load={load}
       placeholder={CustomFieldsReportsSkeleton}
     >
-      {([report, { CustomFieldsReport }]) => <CustomFieldsReport data={report} isActive={isActive} />}
+      {([report, { CustomFieldsReport }]) => <CustomFieldsReport data={report} isActive={isActive} onEmptyChange={onEmptyChange} />}
     </ReportTab>
   );
 });
@@ -67,11 +74,12 @@ export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
 export const MailReportsTab = memo(function MailReportsTab({
   eventId,
   isActive,
-}: Readonly<{ eventId: string; isActive: boolean }>) {
+  onEmptyChange,
+}: Readonly<{ eventId: string; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
   const load = useReportFetch(readMailReport, eventId, "Could not load mail report.");
   return (
     <ReportTab label="Mail report" errorTitle="Could not load mail report" load={load} placeholder={MailReportsSkeleton}>
-      {([report, { MailReport }]) => <MailReport data={report} isActive={isActive} />}
+      {([report, { MailReport }]) => <MailReport data={report} isActive={isActive} onEmptyChange={onEmptyChange} />}
     </ReportTab>
   );
 });

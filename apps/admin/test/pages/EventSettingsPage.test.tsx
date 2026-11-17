@@ -176,6 +176,7 @@ const activeEvent = {
   deletion_blockers: ["attendees"] as string[],
   admitted_count: 0,
   issued_items_count: 0,
+  exportable_attendee_count: 3,
   installed_wallet_pass_count: 0,
   issued_wallet_pass_count: 0,
   installed_wallet_pass_count_by_platform: { apple: 0, google: 0, samsung: 0 },
@@ -4577,6 +4578,26 @@ describe("EventSettingsPage first load on the loading standard", () => {
 });
 
 describe("EventSettingsPage Danger zone: Export personal data", () => {
+  it("disables Export personal data, with the reason in the row, when the event has no attendees", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, exportable_attendee_count: 0 });
+    renderSettings("/admin/events/evt-1/settings?tab=danger-zone");
+    const button = (await screen.findByRole("button", { name: "Export personal data" })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByText("This event has no attendees yet.")).toBeTruthy();
+    expect(screen.queryByText(/Downloads every attendee/)).toBeNull();
+    expect(document.getElementById(button.getAttribute("aria-describedby") ?? "")?.textContent).toBe(
+      "No attendees to export",
+    );
+  });
+
+  it("keeps Export personal data on, with the download sentence, when the event has attendees", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, exportable_attendee_count: 2 });
+    renderSettings("/admin/events/evt-1/settings?tab=danger-zone");
+    const button = (await screen.findByRole("button", { name: "Export personal data" })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(screen.getByText(/Downloads every attendee/)).toBeTruthy();
+  });
+
   it("shows the button busy, as 'Exporting…', while the file is made: it keeps its focus and ignores a second click", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
     const file = deferred<Response>();

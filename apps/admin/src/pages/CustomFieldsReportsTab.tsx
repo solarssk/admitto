@@ -1,6 +1,7 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { Cell, Pie, PieChart, PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, EmptyState } from "@admitto/ui";
+import { useReportEmpty } from "../reports/useReportEmpty.js";
 import { CUSTOM_FIELD_NOT_ANSWERED_KEY } from "@admitto/shared";
 import type { EventCustomFieldReportsResponse } from "../api/types.js";
 import { BreakdownRows, type BreakdownRow } from "./ReportsPage.js";
@@ -194,7 +195,12 @@ function CustomFieldCard({
 
 /** The custom field report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
  * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
-export function CustomFieldsReport({ data, isActive }: Readonly<{ data: EventCustomFieldReportsResponse; isActive: boolean }>) {
+export function CustomFieldsReport({
+  data,
+  isActive,
+  onEmptyChange,
+}: Readonly<{ data: EventCustomFieldReportsResponse; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
+  useReportEmpty(onEmptyChange, data.fields.length === 0);
   if (data.fields.length === 0) {
     return (
       <EmptyState

@@ -247,6 +247,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       resolved_header_image_url: string | null;
       admitted_count: number;
       issued_items_count: number;
+      exportable_attendee_count: number;
     };
     expect(body.id).toBe(EVENT_SET);
     expect(body.title).toBe("Settings Event");
@@ -268,6 +269,9 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.resolved_header_image_url).toBeNull();
     expect(body.admitted_count).toBe(0);
     expect(body.issued_items_count).toBe(0);
+    expect(body.exportable_attendee_count).toBe(
+      await prisma.attendee.count({ where: { event_id: EVENT_SET, erased_at: null } }),
+    );
   });
 
   it("normalizes legacy event and audit timezones in the settings response", async () => {
@@ -337,7 +341,15 @@ describe("GET /api/admin/events/:eventId/settings", () => {
         headers: { Cookie: adminCookie },
       });
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { admitted_count: number; issued_items_count: number };
+      const body = (await res.json()) as {
+        admitted_count: number;
+        issued_items_count: number;
+        exportable_attendee_count: number;
+      };
+      expect(body.exportable_attendee_count).toBe(
+        await prisma.attendee.count({ where: { event_id: EVENT_SET, erased_at: null } }),
+      );
+      expect(body.exportable_attendee_count).toBeGreaterThanOrEqual(1);
       expect(body.admitted_count).toBe(1);
       expect(body.issued_items_count).toBe(1);
     } finally {

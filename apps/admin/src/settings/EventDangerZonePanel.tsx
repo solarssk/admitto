@@ -18,6 +18,12 @@ function computeSuperadminTooltip(
   return undefined;
 }
 
+function describeExportPii(attendeeCount: number): string {
+  return attendeeCount > 0
+    ? "Downloads every attendee's personal data as a CSV file (a simple spreadsheet). Saved in the history log."
+    : "This event has no attendees yet.";
+}
+
 function describeRevokeCheckins(admittedCount: number): string {
   return admittedCount > 0
     ? `Reverses check-in for all ${admittedCount} currently checked-in attendee${pluralSuffix(admittedCount)}. They can check in again afterwards.`
@@ -89,6 +95,11 @@ export function EventDangerZonePanel({
   deleting: boolean;
   onOpenDelete: () => void;
 }>) {
+  const exportPiiTooltip = computeSuperadminTooltip(
+    isSa,
+    event.exportable_attendee_count === 0,
+    "No attendees to export",
+  );
   const revokeCheckinsTooltip = computeSuperadminTooltip(
     isSa,
     event.admitted_count === 0,
@@ -118,16 +129,13 @@ export function EventDangerZonePanel({
         <div className="danger-zone__item">
           <div className="danger-zone__info">
             <div className="danger-zone__title">Export personal data</div>
-            <p className="danger-zone__desc">
-              Downloads every attendee&apos;s personal data as a CSV file (a simple spreadsheet).
-              Saved in the history log.
-            </p>
+            <p className="danger-zone__desc">{describeExportPii(event.exportable_attendee_count)}</p>
           </div>
           <ArchivedGuard
             event={null}
             reasonId="export-pii-reason"
-            disabled={!isSa}
-            tooltip={isSa ? undefined : "Superadmin only"}
+            disabled={!isSa || event.exportable_attendee_count === 0}
+            tooltip={exportPiiTooltip}
           >
             {(guard) => (
               <Button

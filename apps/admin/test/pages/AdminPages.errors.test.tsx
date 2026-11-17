@@ -150,6 +150,9 @@ const emptyReport = {
   by_operator: [],
 };
 
+// Export report is off for an event with no attendees, so the export tests need one.
+const reportWithAttendee = { ...emptyReport, summary: { ...emptyReport.summary, total_attendees: 1 } };
+
 const archivedEvent = {
   id: "evt-arch",
   title: "Archived Summit",
@@ -677,7 +680,7 @@ describe("ReportsPage operator errors", () => {
   });
 
   it("toasts export failure without leaking internals", async () => {
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
@@ -722,7 +725,7 @@ describe("ReportsPage operator errors", () => {
       assign: vi.fn(),
       pathname: "/admin/events/evt-1/reports",
     });
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new ApiError(401, "unauthenticated"));
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
@@ -742,7 +745,7 @@ describe("ReportsPage operator errors", () => {
   });
 
   it("toasts a generic export failure for a non-API error (e.g. a network failure)", async () => {
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new TypeError("Failed to fetch"));
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
@@ -763,7 +766,7 @@ describe("ReportsPage operator errors", () => {
 
   it("exports the PDF report by opening the print URL in a new tab", async () => {
     vi.stubGlobal("open", vi.fn());
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
         <Routes>

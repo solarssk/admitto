@@ -85,6 +85,7 @@ const activeEvent = {
   deletion_blockers: [] as string[],
   admitted_count: 0,
   issued_items_count: 0,
+  exportable_attendee_count: 3,
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
 };
 
