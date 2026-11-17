@@ -102,19 +102,17 @@ interface ReportsExportMenuProps {
   readonly disabled: boolean;
   /** The active tab has nothing to export: the button is off, with the reason. */
   readonly nothingToExport: boolean;
-  readonly isDesktop: boolean;
   readonly onExport: (format: ExportFormat) => void;
 }
 
-/** Single "Export report" entry point for CSV/PDF, replacing two separate buttons - same
+/** Single "Export" entry point for CSV/PDF, replacing two separate buttons - same
  * useDropdownMenu-backed pattern as the Attendees list's own Export menu. The trigger is the
  * button that holds the keyboard focus once the menu has closed on a click, so it is the one
  * that shows a CSV export at work (`loading`: a spinner, and the menu stays shut until the file
  * is in, as on Attendees); `disabled` is only for a report that is not there to export.
- * Label shortens to "Export" below desktop (same isDesktop-driven pattern as Attendees'
- * "+ Add attendee"/"Send tickets") so it keeps sitting beside the title instead of forcing the
- * header to stack (reports-pageheader override in reports-page.css). */
-function ReportsExportMenu({ exportingCsv, disabled, nothingToExport, isDesktop, onExport }: Readonly<ReportsExportMenuProps>) {
+ * The label is "Export" at every width, as on Attendees: the page is already Reports, and the short word keeps the button
+ * beside the title instead of forcing the header to stack (reports-pageheader override in reports-page.css). */
+function ReportsExportMenu({ exportingCsv, disabled, nothingToExport, onExport }: Readonly<ReportsExportMenuProps>) {
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
@@ -124,7 +122,7 @@ function ReportsExportMenu({ exportingCsv, disabled, nothingToExport, isDesktop,
       {/* Export is not an edit, so no event is passed: only the reason is shown (as on the Attendees Export). */}
       <ArchivedGuard
         event={null}
-        reasonId="export-report-reason"
+        reasonId="export-reason"
         disabled={nothingToExport}
         tooltip="Nothing to export yet."
       >
@@ -142,7 +140,7 @@ function ReportsExportMenu({ exportingCsv, disabled, nothingToExport, isDesktop,
             loading={exportingCsv}
             onClick={() => setOpen((current) => !current)}
           >
-            {isDesktop ? "Export report" : "Export"}
+            Export
           </Button>
         )}
       </ArchivedGuard>
@@ -789,7 +787,6 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const walletsTabAvailable = walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung;
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
-  const isDesktop = useIsDesktop();
   const exportAbortRef = useRef<AbortController | null>(null);
 
   // Whether each tab's report has nothing to export, as that tab says once its read is in (a tab not read yet is not empty:
@@ -1039,7 +1036,6 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
             // has nothing to do with what it's about to export.
             disabled={activeTab === "eventday" && view !== "ready"}
             nothingToExport={tabIsEmpty[activeTab]}
-            isDesktop={isDesktop}
             onExport={handleExport}
           />
         }

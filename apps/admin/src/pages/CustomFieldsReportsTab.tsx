@@ -193,6 +193,20 @@ function CustomFieldCard({
   );
 }
 
+/** How many attendees answered a field, by the same numbers its card shows: the fill count of a text field, the
+ * categories of a select or boolean field other than "Not answered". */
+function answeredCount(field: CustomFieldReport): number {
+  if (field.response_rate) return field.response_rate.answered;
+  return (field.distribution ?? [])
+    .filter((row) => row.key !== CUSTOM_FIELD_NOT_ANSWERED_KEY)
+    .reduce((sum, row) => sum + row.count, 0);
+}
+
+/** Nothing to export: no field, or no field answered by anyone yet (no attendees at all is the same: every card reads zero). */
+function hasNoAnswers(data: EventCustomFieldReportsResponse): boolean {
+  return data.fields.every((field) => answeredCount(field) === 0);
+}
+
 /** The custom field report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
  * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
 export function CustomFieldsReport({
@@ -200,7 +214,7 @@ export function CustomFieldsReport({
   isActive,
   onEmptyChange,
 }: Readonly<{ data: EventCustomFieldReportsResponse; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
-  useReportEmpty(onEmptyChange, data.fields.length === 0);
+  useReportEmpty(onEmptyChange, hasNoAnswers(data));
   if (data.fields.length === 0) {
     return (
       <EmptyState

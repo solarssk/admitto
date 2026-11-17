@@ -150,7 +150,7 @@ const emptyReport = {
   by_operator: [],
 };
 
-// Export report is off for an event with no attendees, so the export tests need one.
+// Export is off for an event with no attendees, so the export tests need one.
 const reportWithAttendee = { ...emptyReport, summary: { ...emptyReport.summary, total_attendees: 1 } };
 
 const archivedEvent = {
@@ -690,9 +690,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
@@ -735,9 +735,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
       expect(window.location.assign).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Freports");
@@ -755,9 +755,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
@@ -775,9 +775,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /PDF/ }));
     expect(window.open).toHaveBeenCalledWith(
       "/api/admin/events/evt-1/reports/export?format=pdf",

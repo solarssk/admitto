@@ -77,7 +77,7 @@ Email delivery analytics:
 
 #### Export
 
-**Export report** follows whichever tab is open. It exports one CSV row per attendee (wallet status, email delivery, or each custom field's own answer, depending on the tab), or a printable PDF summary of that tab's own cards.
+**Export** follows whichever tab is open. It exports one CSV row per attendee (wallet status, email delivery, or each custom field's own answer, depending on the tab), or a printable PDF summary of that tab's own cards.
 
 ### Archive the event
 
@@ -122,7 +122,7 @@ Reports reflect the recorded admissions and event data. An archived event remain
 
 The report is being read from the server. After 30 seconds, or when the read fails, the tab stops waiting and shows an error with a **Retry** button. The button stays on screen, busy, until the answer is in.
 
-- **Event day** ("Could not load report"): the header, the tabs and **Export report** stay on screen, and **Export report** waits for the report. Once the report is there, live check-ins update it as they happen. **Export report** shows a spinner while a CSV file is being made, and its menu opens again when the file is in.
+- **Event day** ("Could not load report"): the header, the tabs and **Export** stay on screen, and **Export** waits for the report. Once the report is there, live check-ins update it as they happen. **Export** shows a spinner while a CSV file is being made, and its menu opens again when the file is in.
 - **Wallets, Custom fields and Mail** ("Could not load wallet report", "custom field report" or "mail report"): each tab is read from the server the first time you open it, and its charts load together with its data. Grey cards of the tab's own shape show while it loads. They stay invisible for the first fraction of a second, so a quick answer shows no flash. When it works, the keyboard focus goes to the tab. Going back to a tab you have already opened does not read it again.
 
 ## Related pages

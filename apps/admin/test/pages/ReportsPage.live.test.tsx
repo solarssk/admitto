@@ -1248,7 +1248,7 @@ describe("ReportsPage: the export", () => {
     const trigger = await pressCsv();
     expect(trigger.getAttribute("aria-busy")).toBe("true");
     expect(trigger.hasAttribute("disabled")).toBe(false);
-    expect(trigger.textContent).toContain("Export report");
+    expect(trigger.textContent).toContain("Export");
     expect(document.activeElement).toBe(trigger);
     // A second press does not open the menu, so there is no second export.
     fireEvent.click(trigger);
@@ -1274,7 +1274,7 @@ describe("ReportsPage: the export", () => {
   });
 });
 
-describe("ReportsPage: Export report is off while the tab has nothing to export", () => {
+describe("ReportsPage: Export is off while the tab has nothing to export", () => {
   const exportButton = () => screen.getByRole("button", { name: /Export/ }) as HTMLButtonElement;
   const reason = () => document.getElementById(exportButton().getAttribute("aria-describedby") ?? "")?.textContent;
 
@@ -1328,5 +1328,60 @@ describe("ReportsPage: Export report is off while the tab has nothing to export"
     await screen.findByText("No custom fields yet");
     await waitFor(() => expect(exportButton().disabled).toBe(true));
     expect(reason()).toBe("Nothing to export yet.");
+  });
+
+  const textField = (answered: number) => ({
+    id: "f1",
+    source_field: "diet",
+    label: "Diet",
+    description: null,
+    type: "text" as const,
+    distribution: null,
+    response_rate: { answered, pct: answered > 0 ? 50 : 0 },
+  });
+  const selectField = (rows: Array<{ key: string; label: string; count: number; pct: number }>) => ({
+    id: "f2",
+    source_field: "size",
+    label: "Size",
+    description: null,
+    type: "select" as const,
+    distribution: rows,
+    response_rate: null,
+  });
+
+  it("Custom fields: off while nobody has answered any field (no attendees, or only 'Not answered')", async () => {
+    fetchEventCustomFieldReports.mockResolvedValueOnce({
+      total_attendees: 0,
+      fields: [textField(0), selectField([])],
+    });
+    const { unmount } = renderPage("?tab=customfields");
+    await screen.findByText("Diet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    unmount();
+
+    fetchEventCustomFieldReports.mockResolvedValueOnce({
+      total_attendees: 4,
+      fields: [textField(0), selectField([{ key: "__not_answered__", label: "Not answered", count: 4, pct: 100 }])],
+    });
+    renderPage("?tab=customfields");
+    await screen.findByText("Diet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+  });
+
+  it("Custom fields: on once any field has an answer", async () => {
+    fetchEventCustomFieldReports.mockResolvedValueOnce({
+      total_attendees: 4,
+      fields: [
+        textField(0),
+        selectField([
+          { key: "M", label: "M", count: 1, pct: 25 },
+          { key: "__not_answered__", label: "Not answered", count: 3, pct: 75 },
+        ]),
+      ],
+    });
+    renderPage("?tab=customfields");
+    await screen.findByText("Diet");
+    await waitFor(() => expect(fetchEventCustomFieldReports).toHaveBeenCalled());
+    expect(exportButton().disabled).toBe(false);
   });
 });
