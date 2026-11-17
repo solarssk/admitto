@@ -6,7 +6,7 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, resolveInstanceBaseUrl, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
-import { generateToken, hashToken } from "@admitto/tickets";
+import { eraseAttendees, generateToken, hashToken } from "@admitto/tickets";
 import { PassCreatorClient, WalletProviderError } from "@admitto/wallet";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
@@ -269,9 +269,32 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.resolved_header_image_url).toBeNull();
     expect(body.admitted_count).toBe(0);
     expect(body.issued_items_count).toBe(0);
-    expect(body.exportable_attendee_count).toBe(
-      await prisma.attendee.count({ where: { event_id: EVENT_SET, erased_at: null } }),
-    );
+    // The one attendee the suite seeds into this event (ATT_SET), not erased.
+    expect(body.exportable_attendee_count).toBe(1);
+  });
+
+  it("counts only attendees whose data is held in exportable_attendee_count: 0 for an event with none, erased ones left out", async () => {
+    const empty = await app.request(`/api/admin/events/${EVENT_ACTIVE_EMPTY}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(((await empty.json()) as { exportable_attendee_count: number }).exportable_attendee_count).toBe(0);
+
+    const erased = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_SET,
+        email: "erased-guest@example.com",
+        name: "Erased Guest",
+        status: "registered",
+      },
+    });
+    await prisma.$transaction((tx) => eraseAttendees(tx, { eventId: EVENT_SET, attendeeIds: [erased.id] }));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, { headers: { Cookie: adminCookie } });
+      // ATT_SET is live, the erased one is not counted.
+      expect(((await res.json()) as { exportable_attendee_count: number }).exportable_attendee_count).toBe(1);
+    } finally {
+      await prisma.attendee.delete({ where: { id: erased.id } });
+    }
   });
 
   it("normalizes legacy event and audit timezones in the settings response", async () => {
@@ -346,10 +369,8 @@ describe("GET /api/admin/events/:eventId/settings", () => {
         issued_items_count: number;
         exportable_attendee_count: number;
       };
-      expect(body.exportable_attendee_count).toBe(
-        await prisma.attendee.count({ where: { event_id: EVENT_SET, erased_at: null } }),
-      );
-      expect(body.exportable_attendee_count).toBeGreaterThanOrEqual(1);
+      // The seeded ATT_SET plus the admitted guest.
+      expect(body.exportable_attendee_count).toBe(2);
       expect(body.admitted_count).toBe(1);
       expect(body.issued_items_count).toBe(1);
     } finally {

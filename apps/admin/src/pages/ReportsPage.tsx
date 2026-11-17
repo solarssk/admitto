@@ -116,6 +116,10 @@ function ReportsExportMenu({ exportingCsv, disabled, nothingToExport, onExport }
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
+  // The menu can be open while the tab is still reading: when it turns out empty, the menu closes.
+  useEffect(() => {
+    if (nothingToExport) setOpen(false);
+  }, [nothingToExport, setOpen]);
 
   return (
     <div className="reports-export-menu" ref={rootRef}>
@@ -154,7 +158,7 @@ function ReportsExportMenu({ exportingCsv, disabled, nothingToExport, onExport }
               className="reports-export-menu__item"
               onClick={() => {
                 close();
-                onExport(format.key);
+                if (!nothingToExport) onExport(format.key);
               }}
             >
               <span className="reports-export-menu__item-icon">

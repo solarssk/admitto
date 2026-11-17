@@ -970,6 +970,10 @@ function ExportMenu({ exportingFormat, nothingToExport, onExport }: Readonly<Exp
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
+  // The menu can be open before the first answer: when that answer is an empty list, it closes.
+  useEffect(() => {
+    if (nothingToExport) setOpen(false);
+  }, [nothingToExport, setOpen]);
 
   return (
     <div className="attendees-export-menu" ref={rootRef}>
@@ -1008,7 +1012,7 @@ function ExportMenu({ exportingFormat, nothingToExport, onExport }: Readonly<Exp
               className="attendees-export-menu__item"
               onClick={() => {
                 close();
-                onExport(format.key);
+                if (!nothingToExport) onExport(format.key);
               }}
             >
               <span className="attendees-export-menu__item-icon">
@@ -1401,6 +1405,14 @@ export function AttendeesPage() {
     return params;
   }, [customFields, customFieldSelectValues, customFieldTextQueries]);
 
+  // Which filters a list answer is for, so a zero total is only trusted for the filters it was read with.
+  const listFilterKey = useMemo(
+    () =>
+      JSON.stringify([searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, mailStatusFilter, customFieldParams, showErased]),
+    [searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, mailStatusFilter, customFieldParams, showErased],
+  );
+  const [totalFilterKey, setTotalFilterKey] = useState("");
+
   const loadList = useCallback(async () => {
     if (!eventId) return;
 
@@ -1442,6 +1454,7 @@ export function AttendeesPage() {
       }
       setItems(data.items);
       setTotal(data.total);
+      setTotalFilterKey(listFilterKey);
       setErasedCount(data.erased_count ?? 0);
       setLoadError(null);
     } catch (err) {
@@ -1464,6 +1477,7 @@ export function AttendeesPage() {
     mailStatusFilter,
     customFieldParams,
     showErased,
+    listFilterKey,
     sortBy,
     sortDir,
     reportApiError,
@@ -2257,7 +2271,8 @@ export function AttendeesPage() {
 
   // The export covers the filtered list, so a filter that matches nobody leaves nothing to export too. Not before the
   // first answer (the total is still 0) and not after a failed load (the list is not known to be empty).
-  const nothingToExport = hasLoadedOnce && !listFailure.error && total === 0;
+  // `total` belongs to the filters that were loaded with it: while a changed set is awaiting its answer, the old zero says nothing.
+  const nothingToExport = hasLoadedOnce && !listFailure.error && total === 0 && totalFilterKey === listFilterKey;
 
   // How many of the selection the bulk "Revoke check-in" confirm dialog would actually affect,
   // not the raw selection size — matches the bulk bar's own menu-item hint (PO review).

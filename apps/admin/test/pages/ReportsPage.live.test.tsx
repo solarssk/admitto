@@ -1324,6 +1324,21 @@ describe("ReportsPage: Export is off while the tab has nothing to export", () =>
     expect(exportButton().disabled).toBe(false);
   });
 
+  it("Mail: a menu opened while the tab was still reading closes when the tab turns out empty, and starts no export", async () => {
+    const read = deferred<unknown>();
+    fetchEventMailReports.mockReturnValueOnce(read.promise);
+    renderPage("?tab=mail");
+    fireEvent.click(exportButton());
+    const csv = screen.getByRole("menuitem", { name: /CSV/ });
+
+    read.resolve({ delivery: { total_attempts: 0 } });
+    await screen.findByText("No emails sent yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(csv);
+    expect(exportEventMailReportsCsv).not.toHaveBeenCalled();
+  });
+
   it("Mail: off while no email was sent", async () => {
     fetchEventMailReports.mockResolvedValueOnce({ delivery: { total_attempts: 0 } });
     renderPage("?tab=mail");
