@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
-import { isOff } from "../test-utils.js";
+import { getTooltipText, isOff } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
 import { settings, ssoEventSettings } from "./accessData.js";
 import { resetApi, saveButton } from "./accessFixtures.js";
@@ -40,11 +40,33 @@ afterEach(() => {
 });
 
 describe("the bot protection card of an event, in Event settings", () => {
-  it("is not there while the organisation's own switch is off: there is no check anywhere then", async () => {
-    await renderPanel(settings({ bot_protection: "not_used" }));
+  it("stays while the organisation's own switch is off, with the switch shown Off and greyed, a tooltip that says why, and nothing else added", async () => {
+    await renderPanel(settings({ bot_protection: "not_used", bot_protection_enabled: true }));
 
-    expect(screen.queryByText("Bot protection", { selector: ".at-card__title" })).toBeNull();
-    expect(document.getElementById("event-bot-protection-enabled")).toBeNull();
+    expect(botSwitch().checked).toBe(false);
+    expect(botSwitch().disabled).toBe(true);
+    expect(within(botCard()).getByText("Off")).toBeTruthy();
+    expect(getTooltipText(botSwitch())).toBe("Bot protection is turned off for the whole organisation.");
+    const note = document.getElementById(botSwitch().getAttribute("aria-describedby") ?? "none");
+    expect(note?.textContent).toBe("Bot protection is turned off for the whole organisation.");
+    expect(note?.className).toBe("sr-only");
+    expect(within(botCard()).getByText(/Asks a visitor to prove they are not a bot before the form is sent\./)).toBeTruthy();
+    expect(botCard().querySelector(".at-notice")).toBeNull();
+    fireEvent.click(botSwitch());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(isOff(saveButton())).toBe(true);
+  });
+
+  it("sends nothing about the switch while the organisation's is off, and leaves the value stored for the event as it is", async () => {
+    await renderPanel(settings({ bot_protection: "not_used", bot_protection_enabled: false }));
+    // The event's own value is Off too, and still no notice: the organisation's switch is what counts, and the card says nothing more.
+    expect(botCard().querySelector(".at-notice")).toBeNull();
+    api.saveRegistrationSettings.mockResolvedValue(settings({ bot_protection: "not_used", bot_protection_enabled: false, access_methods: ["password"] }));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Password" }));
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["password"], expected_sso_provider_id: null }));
   });
 
   it("is there, On by default, with what the check does, while the organisation's switch is on", async () => {

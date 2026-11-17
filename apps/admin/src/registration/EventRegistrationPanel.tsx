@@ -33,6 +33,7 @@ const NOT_USED_NOTE = "This event does not use Company SSO, so these fields are 
 
 const SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "method", title: "Access method", intro: 1, rows: 1, rowHeight: 40 },
+  { id: "bot", title: "Bot protection", intro: 1 },
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
   { id: "address", title: "Address for guests", intro: 2, fields: 1 },
 ];
@@ -353,14 +354,13 @@ function EventRegistrationCards({
         onPasswordChanged={passwordChanged}
         onArchived={archivedMeanwhile}
       />
-      {settings.bot_protection === "required" && (
-        <EventBotProtectionCard
-          enabled={draft.bot_protection_enabled}
-          usesSso={draft.method === "sso"}
-          disabled={archived || saving}
-          onChange={(enabled) => edit({ bot_protection_enabled: enabled })}
-        />
-      )}
+      <EventBotProtectionCard
+        organisationOn={settings.bot_protection === "required"}
+        enabled={draft.bot_protection_enabled}
+        usesSso={draft.method === "sso"}
+        disabled={archived || saving}
+        onChange={(enabled) => edit({ bot_protection_enabled: enabled })}
+      />
       <SsoClaimCard
         usesSso={draft.method === "sso"}
         archived={archived}
