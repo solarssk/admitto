@@ -344,7 +344,8 @@ function EventRegistrationCards({
         savedMethod={base.method}
         passwordSet={settings.password_set}
         ssoAvailable={settings.sso_providers.length > 0}
-        botCheck={settings.bot_protection !== "not_used"}
+        // The notice says a bot check protects the form only while the organisation has it on AND this event does (the draft, so it follows the switch).
+        botCheck={settings.bot_protection === "required" && draft.bot_protection_enabled}
         extra={
           <EventBotProtectionRow
             organisationOn={settings.bot_protection === "required"}

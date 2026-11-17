@@ -157,6 +157,28 @@ describe("the bot protection card of an event, in Event settings", () => {
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["link"], expected_sso_provider_id: null }));
   });
 
+  it("stops saying that a bot check protects the form, in the notice of the method, as soon as the event's switch is Off, and says it again when On", async () => {
+    await renderPanel(settings());
+    const methodNotice = () => botCard().querySelector(".settings-card-stack > .at-notice")?.textContent ?? "";
+    expect(methodNotice()).toBe("Anyone who has the link can ask to join. A bot check protects the form.");
+
+    fireEvent.click(botSwitch());
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Turn off" }));
+    expect(methodNotice()).toBe("Anyone who has the link can ask to join.");
+
+    fireEvent.click(botSwitch());
+    expect(methodNotice()).toBe("Anyone who has the link can ask to join. A bot check protects the form.");
+  });
+
+  it("does not say it for an event that is saved with the switch Off, nor while the organisation's switch is off", async () => {
+    await renderPanel(settings({ bot_protection_enabled: false }));
+    expect(botCard().querySelector(".settings-card-stack > .at-notice")?.textContent).toBe("Anyone who has the link can ask to join.");
+    cleanup();
+
+    await renderPanel(settings({ bot_protection: "not_used" }));
+    expect(botCard().querySelector(".settings-card-stack > .at-notice")?.textContent).toBe("Anyone who has the link can ask to join.");
+  });
+
   it("is greyed for an event that uses Company SSO, with one sentence that says why, and keeps its value", async () => {
     await renderPanel(ssoEventSettings({ bot_protection_enabled: false }));
 
