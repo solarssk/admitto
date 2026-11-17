@@ -20,7 +20,7 @@ import { AccessAddressCard } from "./AccessAddressCard.js";
 import { AccessSsoClaim } from "./AccessSsoClaim.js";
 import { AccessSsoProvider } from "./AccessSsoProvider.js";
 import { AccessWayInCard } from "./AccessWayInCard.js";
-import { EventBotProtectionCard } from "./EventBotProtectionCard.js";
+import { EventBotProtectionRow } from "./EventBotProtectionRow.js";
 import { claimErrors, draftFromSettings, parseClaim, technicalPatch, type AccessDraft } from "./accessSettings.js";
 import { ownAddressOf } from "./ownAddress.js";
 import { methodEdit } from "./ssoProviderChoice.js";
@@ -33,7 +33,6 @@ const NOT_USED_NOTE = "This event does not use Company SSO, so these fields are 
 
 const SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "method", title: "Access method", intro: 1, rows: 1, rowHeight: 40 },
-  { id: "bot", title: "Bot protection", intro: 1 },
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
   { id: "address", title: "Address for guests", intro: 2, fields: 1 },
 ];
@@ -346,6 +345,15 @@ function EventRegistrationCards({
         passwordSet={settings.password_set}
         ssoAvailable={settings.sso_providers.length > 0}
         botCheck={settings.bot_protection !== "not_used"}
+        extra={
+          <EventBotProtectionRow
+            organisationOn={settings.bot_protection === "required"}
+            enabled={draft.bot_protection_enabled}
+            usesSso={draft.method === "sso"}
+            disabled={archived || saving}
+            onChange={(enabled) => edit({ bot_protection_enabled: enabled })}
+          />
+        }
         disabled={archived || saving}
         // Pressing the method that is chosen already changes nothing: not the provider, not the claim.
         onMethodChange={(method) => {
@@ -353,13 +361,6 @@ function EventRegistrationCards({
         }}
         onPasswordChanged={passwordChanged}
         onArchived={archivedMeanwhile}
-      />
-      <EventBotProtectionCard
-        organisationOn={settings.bot_protection === "required"}
-        enabled={draft.bot_protection_enabled}
-        usesSso={draft.method === "sso"}
-        disabled={archived || saving}
-        onChange={(enabled) => edit({ bot_protection_enabled: enabled })}
       />
       <SsoClaimCard
         usesSso={draft.method === "sso"}

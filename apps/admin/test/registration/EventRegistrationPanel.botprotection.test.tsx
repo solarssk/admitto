@@ -29,6 +29,8 @@ vi.mock("@admitto/ui", async (importOriginal) => {
 
 const botSwitch = () => document.getElementById("event-bot-protection-enabled") as HTMLInputElement;
 const botCard = () => botSwitch().closest(".at-card") as HTMLElement;
+/** The part of the Access method card that is about the bot check: its row and what it says. */
+const botArea = () => botSwitch().closest(".access-bot") as HTMLElement;
 
 beforeEach(() => {
   resetApi();
@@ -45,13 +47,13 @@ describe("the bot protection card of an event, in Event settings", () => {
 
     expect(botSwitch().checked).toBe(false);
     expect(botSwitch().disabled).toBe(true);
-    expect(within(botCard()).getByText("Off")).toBeTruthy();
+    expect(within(botArea()).getByText("Off")).toBeTruthy();
     expect(getTooltipText(botSwitch())).toBe("Bot protection is turned off for the whole organisation.");
     const note = document.getElementById(botSwitch().getAttribute("aria-describedby") ?? "none");
     expect(note?.textContent).toBe("Bot protection is turned off for the whole organisation.");
     expect(note?.className).toBe("sr-only");
-    expect(within(botCard()).getByText(/Asks a visitor to prove they are not a bot before the form is sent\./)).toBeTruthy();
-    expect(botCard().querySelector(".at-notice")).toBeNull();
+    expect(within(botArea()).getByText("Asks a visitor to prove they are not a bot before the form is sent. Used on the link and password forms of this event.")).toBeTruthy();
+    expect(botArea().querySelector(".at-notice")).toBeNull();
     fireEvent.click(botSwitch());
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(isOff(saveButton())).toBe(true);
@@ -60,7 +62,7 @@ describe("the bot protection card of an event, in Event settings", () => {
   it("sends nothing about the switch while the organisation's is off, and leaves the value stored for the event as it is", async () => {
     await renderPanel(settings({ bot_protection: "not_used", bot_protection_enabled: false }));
     // The event's own value is Off too, and still no notice: the organisation's switch is what counts, and the card says nothing more.
-    expect(botCard().querySelector(".at-notice")).toBeNull();
+    expect(botArea().querySelector(".at-notice")).toBeNull();
     api.saveRegistrationSettings.mockResolvedValue(settings({ bot_protection: "not_used", bot_protection_enabled: false, access_methods: ["password"] }));
 
     fireEvent.click(screen.getByRole("radio", { name: "Password" }));
@@ -69,13 +71,27 @@ describe("the bot protection card of an event, in Event settings", () => {
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["password"], expected_sso_provider_id: null }));
   });
 
+  it("is a row inside the Access method card, under the notice of the method, in the pattern of the switch rows of the Form card, and not a card of its own", async () => {
+    await renderPanel(settings());
+
+    expect(botCard().querySelector(".at-card__title")?.textContent).toBe("Access method");
+    expect(screen.queryByText("Bot protection", { selector: ".at-card__title" })).toBeNull();
+    const row = botArea().querySelector(".settings-row.settings-row--switch") as HTMLElement;
+    expect(row.querySelector(".settings-row__text strong")?.textContent?.trim()).toBe("Bot protection");
+    expect(row.querySelector(".settings-row__text p")).not.toBeNull();
+    const stack = botCard().querySelector(".settings-card-stack") as HTMLElement;
+    const children = [...stack.children];
+    expect(children.at(-1)).toBe(botArea());
+    expect(children.findIndex((child) => child.classList.contains("at-notice"))).toBeLessThan(children.indexOf(botArea()));
+  });
+
   it("is there, On by default, with what the check does, while the organisation's switch is on", async () => {
     await renderPanel(settings());
 
     expect(botSwitch().checked).toBe(true);
-    expect(within(botCard()).getByText("On")).toBeTruthy();
-    expect(within(botCard()).getByText(/Asks a visitor to prove they are not a bot before the form is sent\./)).toBeTruthy();
-    expect(botCard().querySelector(".at-notice")).toBeNull();
+    expect(within(botArea()).getByText("On")).toBeTruthy();
+    expect(within(botArea()).getByText("Asks a visitor to prove they are not a bot before the form is sent. Used on the link and password forms of this event.")).toBeTruthy();
+    expect(botArea().querySelector(".at-notice")).toBeNull();
     expect(isOff(saveButton())).toBe(true);
   });
 
@@ -83,8 +99,8 @@ describe("the bot protection card of an event, in Event settings", () => {
     await renderPanel(settings({ bot_protection_enabled: false }));
 
     expect(botSwitch().checked).toBe(false);
-    expect(within(botCard()).getByText("Off")).toBeTruthy();
-    expect(botCard().querySelector(".at-notice--warning")?.textContent).toBe("Without the check, bots can fill in the form. The link and password forms of this event have no bot check.");
+    expect(within(botArea()).getByText("Off")).toBeTruthy();
+    expect(botArea().querySelector(".at-notice--warning")?.textContent).toBe("Without the check, bots can fill in the form. The link and password forms of this event have no bot check.");
   });
 
   it("asks first when it is turned off, with the confirm as the primary button, and changes nothing until the person confirms", async () => {
@@ -146,8 +162,8 @@ describe("the bot protection card of an event, in Event settings", () => {
 
     expect(botSwitch().disabled).toBe(true);
     expect(botSwitch().checked).toBe(false);
-    expect(botCard().querySelector(".at-notice--info")?.textContent).toContain("Company SSO, which does not use the bot check");
-    expect(botCard().querySelector(".at-notice--warning")).toBeNull();
+    expect(botArea().querySelector(".at-notice--info")?.textContent).toContain("Company SSO, which does not use the bot check");
+    expect(botArea().querySelector(".at-notice--warning")).toBeNull();
   });
 
   it("follows the access method in the form: greyed as soon as Company SSO is chosen, offered again for the link", async () => {

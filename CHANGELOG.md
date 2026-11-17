@@ -10,7 +10,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Added
 
-- Add a Bot protection card to Event settings > Registration, where a superadmin switches the bot check off or on for one event, and show on the Access tab whether it is off for the event or for the organisation ([#1944](https://github.com/solarssk/admitto/pull/1944))
+- Add a Bot protection row to the Access method card in Event settings > Registration, where a superadmin switches the bot check off or on for one event, and show on the Access tab whether it is off for the event or for the organisation ([#1944](https://github.com/solarssk/admitto/pull/1944))
 - Add a bot protection switch for each event (server side), set by a superadmin, so one event can run its link or password form without the bot check while the organisation keeps it on ([#1943](https://github.com/solarssk/admitto/pull/1943))
 - Add rate limits for the upcoming public registration form, tunable with `RATE_LIMIT_OVERRIDES` (`registration:page`, `registration:submit`, `registration:confirm`, `registration:password`, `registration:event`, `registration:mail-recipient`) ([#1753](https://github.com/solarssk/admitto/pull/1753))
 - Add the groundwork for guest registration mails: four English default messages, a signed email-confirmation link, and `confirm_url`, `contact_name` and `contact_email` variables ([#1749](https://github.com/solarssk/admitto/pull/1749))
