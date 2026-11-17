@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import { Link } from "react-router";
 import { Card } from "@admitto/ui";
 import type { RegistrationMode } from "@admitto/db/status";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
@@ -21,7 +22,7 @@ const MODE_HINTS: Readonly<Record<ModeChoice, string>> = {
 
 /**
  * Whether registration is on for the event, and in which mode: off, accepting guests by itself, or waiting for the organiser's
- * decision. The two modes that are on are off the table while the event is not ready (the checklist below says what is missing), and
+ * decision. The two modes that are on are off the table while the event is not ready (the Checklist tab says what is missing), and
  * the reason is the text under the control. Turning registration off is always possible. The link guests use is the `children`.
  */
 export function AccessModeCard({
@@ -59,7 +60,11 @@ export function AccessModeCard({
         <p className="settings-card-intro">{MODE_HINTS[choice]}</p>
         {!canTurnOn && (
           <p className="settings-card-intro" id={reasonId}>
-            Registration can be turned on when the checklist below is done.{unsaved ? " Save your changes first: the checklist shows what is saved." : ""}
+            Registration can be turned on when the steps on the{" "}
+            <Link to={{ search: "?tab=checklist" }} replace>
+              Checklist tab
+            </Link>{" "}
+            are done.{unsaved ? " Save your changes first: the checklist shows what is saved." : ""}
           </p>
         )}
         {children}

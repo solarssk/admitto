@@ -3,17 +3,19 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes, useLocation } from "react-router";
 import { ApiError } from "../../src/api/client.js";
-import type { RegistrationCountsDto } from "../../src/api/types.js";
+import type { RegistrationCountsDto, RegistrationReadinessCheckDto, RegistrationSettingsDto } from "../../src/api/types.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
 import { deferred } from "../test-utils.js";
 
 const fetchRegistrationCounts = vi.fn();
+const fetchRegistrationSettings = vi.fn();
 const goToLogin = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchRegistrationCounts: (...args: unknown[]) => fetchRegistrationCounts(...args),
+  fetchRegistrationSettings: (...args: unknown[]) => fetchRegistrationSettings(...args),
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js");
@@ -37,6 +39,11 @@ vi.mock("../../src/registration/RegistrationLegalTab.js", () => ({
 // The Access tab reads and saves the registration settings: RegistrationAccessTab.test.tsx has it. The page is tested around it.
 vi.mock("../../src/registration/RegistrationAccessTab.js", () => ({
   RegistrationAccessTab: () => <p>The access settings of the event</p>,
+}));
+
+// The Checklist tab reads the settings and words each check: RegistrationChecklistTab.test.tsx has it. The page is tested around it.
+vi.mock("../../src/registration/RegistrationChecklistTab.js", () => ({
+  RegistrationChecklistTab: () => <p>The checklist of the event</p>,
 }));
 
 /** Shows the query string of the address, so a test can read what a click wrote to it. */
@@ -78,9 +85,18 @@ function counts(pending: number): RegistrationCountsDto {
   };
 }
 
+/** The answer to the read of the settings: only the checks matter to the page. Two are open (one is information, and does not count). */
+function checks(...open: string[]): RegistrationSettingsDto {
+  const keys = ["access_method", "bot_protection_not_used", "legal_documents", "mail_provider", "event_not_archived"];
+  const readiness: RegistrationReadinessCheckDto[] = keys.map((key) => ({ key: key as RegistrationReadinessCheckDto["key"], ok: !open.includes(key) }));
+  return { readiness } as RegistrationSettingsDto;
+}
+
 beforeEach(() => {
   fetchRegistrationCounts.mockReset();
   fetchRegistrationCounts.mockResolvedValue(counts(3));
+  fetchRegistrationSettings.mockReset();
+  fetchRegistrationSettings.mockResolvedValue(checks("legal_documents", "mail_provider"));
 });
 
 afterEach(() => {
@@ -89,14 +105,15 @@ afterEach(() => {
 });
 
 describe("RegistrationPage", () => {
-  it("has the page heading and the four tabs, with no number on Requests, and reads no numbers without an event", () => {
+  it("has the page heading and the five tabs, with no number on them, and reads no numbers without an event", () => {
     renderAt();
 
     expect(screen.getByRole("heading", { level: 1, name: "Registration" })).toBeTruthy();
     expect(screen.getAllByRole("heading")).toHaveLength(1);
     const tabs = within(screen.getByRole("tablist")).getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Requests", "Fields", "Access", "Legal"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Requests", "Fields", "Access", "Legal", "Checklist"]);
     expect(fetchRegistrationCounts).not.toHaveBeenCalled();
+    expect(fetchRegistrationSettings).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -105,6 +122,7 @@ describe("RegistrationPage", () => {
     ["?tab=fields", "Fields"],
     ["?tab=access", "Access"],
     ["?tab=legal", "Legal"],
+    ["?tab=checklist", "Checklist"],
     ["?tab=nope", "Requests"],
     ["?tab=", "Requests"],
   ])("opens the tab for the address %j: %s", (search, label) => {
@@ -119,6 +137,7 @@ describe("RegistrationPage", () => {
     ["fields", "Fields", "The attendee fields card"],
     ["access", "Access", "The access settings of the event"],
     ["legal", "Legal", "The legal texts of the event"],
+    ["checklist", "Checklist", "The checklist of the event"],
   ])("shows the content of the %s tab, labelled %s, and nothing of the others", (id, label, content) => {
     renderAt(`?tab=${id}`);
 
@@ -152,21 +171,21 @@ describe("RegistrationPage", () => {
   it("keeps only the open tab in the tab order and moves with the arrow, Home and End keys", () => {
     renderAt();
     const tabIndexes = () => screen.getAllByRole("tab").map((tab) => tab.tabIndex);
-    expect(tabIndexes()).toEqual([0, -1, -1, -1]);
+    expect(tabIndexes()).toEqual([0, -1, -1, -1, -1]);
 
     fireEvent.keyDown(openTab(), { key: "ArrowRight" });
     expect(openTab().textContent).toBe("Fields");
     expect(document.activeElement).toBe(openTab());
-    expect(tabIndexes()).toEqual([-1, 0, -1, -1]);
+    expect(tabIndexes()).toEqual([-1, 0, -1, -1, -1]);
 
     fireEvent.keyDown(openTab(), { key: "End" });
-    expect(openTab().textContent).toBe("Legal");
+    expect(openTab().textContent).toBe("Checklist");
 
     fireEvent.keyDown(openTab(), { key: "ArrowRight" });
     expect(openTab().textContent).toBe("Requests");
 
     fireEvent.keyDown(openTab(), { key: "ArrowLeft" });
-    expect(openTab().textContent).toBe("Legal");
+    expect(openTab().textContent).toBe("Checklist");
 
     fireEvent.keyDown(openTab(), { key: "Home" });
     expect(openTab().textContent).toBe("Requests");
@@ -260,5 +279,74 @@ describe("RegistrationPage: the number on the Requests tab", () => {
     expect(requestsTab().textContent).toBe("Requests");
     await act(async () => read.resolve(counts(7)));
     expect(requestsTab().textContent).toBe("Requests7");
+  });
+});
+
+const checklistTab = () => screen.getByRole("tab", { name: /Checklist/ });
+
+describe("RegistrationPage: the number on the Checklist tab", () => {
+  it("is the number of steps that are still open, whichever tab is open, and does not count information or the archived row", async () => {
+    renderForEvent("?tab=fields");
+
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist2"));
+    expect(fetchRegistrationSettings).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
+    expect(openTab().textContent).toBe("Fields");
+  });
+
+  it("has an accessible name that says what the number is, in the singular for one step", async () => {
+    renderForEvent();
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist2"));
+
+    expect(screen.getByRole("tab", { name: "Checklist, 2 steps open" })).toBeTruthy();
+
+    cleanup();
+    fetchRegistrationSettings.mockResolvedValue(checks("mail_provider"));
+    renderForEvent();
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist1"));
+    expect(screen.getByRole("tab", { name: "Checklist, 1 step open" })).toBeTruthy();
+  });
+
+  it("is not there when nothing is open, and not while the checks are unknown, and says nothing when they cannot be read", async () => {
+    const read = deferred<RegistrationSettingsDto>();
+    fetchRegistrationSettings.mockReturnValueOnce(read.promise);
+    renderForEvent();
+    expect(checklistTab().textContent).toBe("Checklist");
+
+    await act(async () => read.resolve(checks()));
+    expect(checklistTab().textContent).toBe("Checklist");
+    expect(checklistTab().getAttribute("aria-label")).toBeNull();
+
+    cleanup();
+    fetchRegistrationSettings.mockRejectedValue(new ApiError(500, "internal_error", "internal_error"));
+    renderForEvent();
+    await waitFor(() => expect(reportApiError).toHaveBeenCalledWith(500));
+    expect(checklistTab().textContent).toBe("Checklist");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("hands the browser to the login page when the session has ended", async () => {
+    fetchRegistrationSettings.mockRejectedValue(new ApiError(401, "authentication_required"));
+    renderForEvent();
+
+    await waitFor(() => expect(goToLogin).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/)));
+  });
+
+  it("belongs to the event in the address, not to the one before it", async () => {
+    const router = createMemoryRouter([{ path: "/admin/events/:eventId/registration", element: <RegistrationPage /> }], {
+      initialEntries: ["/admin/events/evt-1/registration"],
+    });
+    render(<RouterProvider router={router} />);
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist2"));
+
+    const read = deferred<RegistrationSettingsDto>();
+    fetchRegistrationSettings.mockReturnValueOnce(read.promise);
+    await act(async () => {
+      await router.navigate("/admin/events/evt-2/registration");
+    });
+
+    expect(fetchRegistrationSettings).toHaveBeenLastCalledWith("evt-2", expect.any(AbortSignal));
+    expect(checklistTab().textContent).toBe("Checklist");
+    await act(async () => read.resolve(checks("legal_documents")));
+    expect(checklistTab().textContent).toBe("Checklist1");
   });
 });

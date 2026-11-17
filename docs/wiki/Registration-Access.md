@@ -4,14 +4,14 @@
 
 ## What this page helps you do
 
-Turn guest registration on or off for an event, see the access method, set what the form asks, and copy the link you give to guests. You do this on the **Access** tab of the event's **Registration** page. The page is in the event menu, after **Overview**.
+Turn guest registration on or off for an event, set what the form asks, and copy the link you give to guests. You do this on the **Access** tab of the event's **Registration** page. The page is in the event menu, after **Overview**. What registration still needs is on the **Checklist** tab of the same page.
 
 Registration is off for every event until you turn it on. Until then, the address of the form answers "not found".
 
 ## Before you start
 
 - You must be the Administrator of the event's organisation, or a Superadmin. An Operator cannot open this page.
-- Some things are set up for the whole instance, by a Superadmin: bot protection, the list of identity providers for Company SSO (under **Identity**), email sending and the address of the instance. You cannot change them here, and the checklist tells you when one is missing.
+- Some things are set up for the whole instance, by a Superadmin: bot protection, the list of identity providers for Company SSO (under **Identity**), email sending and the address of the instance. You cannot change them here, and the **Checklist** tab tells you when one is missing.
 - Only a Superadmin sets the access method (with the event password and the identity provider), the address of the event for guests and the restriction to one company, on the **Registration** tab of **Event settings** (see **Set the access method**, **Give the event an address of its own** and **Restrict Company SSO to one company** below). Every Administrator of the event is warned on this page when the address stops working.
 - You write the legal texts and the questions yourself. See [Legal Texts and Consents](Legal-Texts-and-Consents) and [Registration Form Fields](Registration-Form-Fields).
 - An archived event keeps its settings. You can read them and copy the link, but you cannot change anything.
@@ -20,14 +20,17 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 **Check what registration needs**
 
-1. Open the event, then **Registration**, then the **Access** tab.
-2. Read the **Setup checklist**. Each row is one thing that registration needs. A row that is not done comes first, and it says what to do.
-3. Put each missing row right. The table under **Important decisions** says where.
-4. Come back to the tab. The checklist shows the settings that are saved, so save your changes first to see it update.
+1. Open the event, then **Registration**, then the **Checklist** tab. The tab has the number of steps that are still open next to its name. The number is the same for everybody.
+2. Read the card **For you**. Each row is one step that you can do. A link under it takes you to the place where it is put right.
+3. Read the card **Waiting for a superadmin**. It is there when a step needs a Superadmin and you are not one. It says who to ask. A Superadmin has no such card: every open step is under **For you**, with a link to where it is put right (Event settings, or Organisation settings).
+4. The card **Done** lists what is met. The table under **Important decisions** says what each row needs.
+5. Come back to the tab after you have put a step right. The tab reads the settings each time you open it, so it is the state of now. It stays when registration is on: an address or a key can stop working later.
+
+When registration is on and a step stops being done, the **Access** tab shows a warning with a link to the **Checklist** tab. When registration is off and a step is open, the **Access** tab says that registration can be turned on when the steps on the **Checklist** tab are done.
 
 **Read the access method**
 
-The **Access method** row of the **Setup checklist** on this tab says what is set, as text: "Link. Anyone who has the link can ask to join.", "Password. ..." or "Company SSO. Guests sign in with" and the name of the identity provider. It has no button. A Superadmin sets it in **Event settings → Registration**, and the row says so. When no method is chosen, the row is not done and says "No access method is chosen yet. Guests cannot open the form." The rows **Identity provider** and **Event password** tell an Administrator to ask a Superadmin, and send a Superadmin to Event settings.
+The **Access method** row of the **Done** card on the **Checklist** tab says what is set, as text: "Link. Anyone who has the link can ask to join.", "Password. ..." or "Company SSO. Guests sign in with" and the name of the identity provider. It has no button. A Superadmin sets it in **Event settings → Registration**, and the row says so. When no method is chosen, the row is open, under **Waiting for a superadmin** for an Administrator, and says "No access method is chosen yet. Guests cannot open the form." The rows **Identity provider** and **Event password** tell an Administrator to ask a Superadmin, and send a Superadmin to Event settings.
 
 **Set the access method**
 
@@ -71,7 +74,7 @@ Admitto also checks the address by itself soon after you save it, and again ever
 
 **Turn registration on**
 
-1. Under **Guest registration**, choose **Automatic** or **With approval**. Both are off while the checklist has a row that is not done.
+1. Under **Guest registration**, choose **Automatic** or **With approval**. Both are off while the **Checklist** tab has a row that is not done.
 2. Select **Save**.
 3. Copy the address under **Link for guests** with the copy button, and give it to your guests.
 
@@ -105,7 +108,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 | **Password** | Anyone who has the link and types the event password |
 | **Company SSO** | Anyone who has the link and signs in with the identity provider chosen for the event |
 
-- The link and the password are protected by a bot check, unless a Superadmin turned bot protection **Off** for your organisation. Then the checklist shows **Bot protection** in grey, as information, and a script can send the form or guess an event password within the usual limits. Use the company SSO or a strong password for an event that matters. The company SSO needs no bot check, because the form opens only after the sign-in.
+- The link and the password are protected by a bot check, unless a Superadmin turned bot protection **Off** for your organisation. Then the **Checklist** tab shows **Bot protection** in grey, as information, and a script can send the form or guess an event password within the usual limits. Use the company SSO or a strong password for an event that matters. The company SSO needs no bot check, because the form opens only after the sign-in.
 - A Superadmin can switch the bot check off for one event, in **Event settings → Registration**, as the **Bot protection** row at the bottom of the **Access method** card. While the check is **Off** for the organisation, the switch shows **Off**, is greyed and says so in its tooltip, and nothing is saved for it. Turning it **Off** asks first, and it is saved with the **Save** of the tab. That event's link and password forms then need no Turnstile keys and have no check, and the limits stay the same. The switch is greyed for an event that uses Company SSO, which never has the check. An Administrator cannot change it; on the **Access** tab the checklist row says "Off for this event" or "Off for this organisation". Turning it on again for an event that has registration on needs the keys to be saved.
 - You cannot read the password again after you save it. Keep a copy where you share it with guests.
 - A new password does not change the requests that guests already sent.
@@ -121,7 +124,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 - Use a claim that the identity provider vouches for, such as the tenant. Never use the end of an email address: it says where mail goes, not who the person is.
 - A change of the restriction counts at once, also for guests who have already signed in. A guest who does not match sees a message and cannot register.
 - Moving the event to another way removes the restriction.
-- Company SSO is grey while no identity provider is turned on. An event that already has it keeps it, and the **Identity provider** row of the checklist warns that guests cannot open the form.
+- Company SSO is grey while no identity provider is turned on. An event that already has it keeps it, and the **Identity provider** row of the **Checklist** tab warns that guests cannot open the form.
 
 **Styled boxes**
 
@@ -140,19 +143,19 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 - No rule of a date or a date and time question changes what the calendar can pick, so every such question gets the boxes.
 - The answers, the rules and the messages are the same with the switch on or off. Only the boxes differ.
 
-**What each row of the checklist needs**
+**What each row of the checklist needs, and who does it**
 
 | Row | If it is not done |
 |---|---|
 | **Access method** | A Superadmin chooses **Link**, **Password** or **Company SSO** in **Event settings → Registration** |
-| **Bot protection** | Ask a Superadmin to set up bot protection. A form with the company SSO does not have this row. If bot protection is **Off** for your organisation, the row is grey, says "Off for this organisation" and does not block anything |
+| **Bot protection** | Ask a Superadmin to set up bot protection. A Superadmin is sent to **Organisation settings → External services**. A form with the company SSO does not have this row. If bot protection is **Off** for your organisation, the row is grey, says "Off for this organisation" and does not block anything |
 | **Identity provider** | A Superadmin chooses it in **Event settings → Registration**. If the list is empty, one is set up under **Identity** first. Only a form with the company SSO has this row |
 | **Event password** | A Superadmin sets it in **Event settings → Registration** |
 | **Legal texts** | Publish the privacy notice, the terms and the consents you chose on the **Legal** tab |
 | **Form questions** | A required question cannot be shown on the form. Open the **Fields** tab |
 | **Required questions** | A required question is not on the form. Switch **On the form** on for it, or make it optional, on the **Fields** tab |
-| **Email sending** | Ask a Superadmin to set up email sending |
-| **Instance address** | Ask a Superadmin to set the address of the instance |
+| **Email sending** | Ask a Superadmin to set up email sending. A Superadmin is sent to **Organisation settings → Mail** |
+| **Instance address** | Ask a Superadmin to set the address of the instance. A Superadmin is sent to **Organisation settings → General** |
 | **Event status** | The event is archived. Ask a Superadmin to restore it |
 | **Event dates** | The event has ended. Check the date and hours in **Event settings** |
 
@@ -217,7 +220,7 @@ When you turn registration off:
 
 | Problem | What to do |
 |---|---|
-| **Automatic** and **With approval** are off | The checklist has a row that is not done. Put it right, save, and try again |
+| **Automatic** and **With approval** are off | The **Checklist** tab has a row that is not done. Put it right, save, and try again |
 | The page says "This change needs something that is not set up yet" | Nothing was saved. The rows it lists are what is missing. Put them right and select **Save** again |
 | An extra consent is marked "(not published)" | Publish its text on the **Legal** tab, or take the consent off the list |
 | "One of the extra consents you chose is not published" | Someone took a text back while you were editing. Publish it again or take it off the list |
@@ -230,7 +233,7 @@ When you turn registration off:
 | The tab warns that the address of the event stopped working | Ask a Superadmin or your IT team. The card under **Address for guests** names the reason |
 | **Check now** is off | The field holds an address that is not set. Select **Set address** first |
 | "Another event already uses this address" | One address belongs to one event. Remove it from the other event first |
-| Registration is on, but the page warns that something is missing | A row of the checklist stopped being done, for example the bot protection keys. The form may be closed to guests until it is fixed |
+| Registration is on, but the page warns that something is missing | A row of the **Checklist** tab stopped being done, for example the bot protection keys. The form may be closed to guests until it is fixed |
 | **Save** and the controls are off | The event is archived, or a save is still running |
 | A message says you have no access | Your role does not let you manage this event. Ask a Superadmin |
 

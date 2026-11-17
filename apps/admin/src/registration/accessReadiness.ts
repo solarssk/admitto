@@ -1,7 +1,14 @@
 import type { RegistrationReadinessKey } from "../api/types.js";
 
 /** Where a missing check is put right when it is not on this tab: another tab of the page, or the settings of the event. */
-export type ReadinessLink = "legal" | "fields" | "event_settings" | "registration_settings";
+export type ReadinessLink =
+  | "legal"
+  | "fields"
+  | "event_settings"
+  | "registration_settings"
+  | "organisation_general"
+  | "organisation_mail"
+  | "organisation_external";
 
 export interface ReadinessCopy {
   /** What the check is about: the heading of its row. */
@@ -14,6 +21,8 @@ export interface ReadinessCopy {
   remedy?: { text: string; link?: ReadinessLink };
   /** What a superadmin is told instead, when the check is put right in a place that only a superadmin can open. */
   superadminRemedy?: { text: string; link?: ReadinessLink };
+  /** Only a superadmin can put it right: for everybody else the step waits for a superadmin (the checklist's "Waiting for a superadmin"). */
+  superadminOnly?: boolean;
   /** The row is information, not a task: it is shown grey, with a dash instead of a tick, and is not counted in "x of y done". */
   info?: boolean;
 }
@@ -36,12 +45,15 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     missing: "No access method is chosen yet. Guests cannot open the form.",
     remedy: ASK_TO_CHOOSE,
     superadminRemedy: CHOOSE_IN_SETTINGS,
+    superadminOnly: true,
   },
   bot_protection: {
     title: "Bot protection",
     met: "Bot protection is set up.",
     missing: "Bot protection is not set up, so the form stays closed.",
     remedy: ASK_A_SUPERADMIN,
+    superadminRemedy: { text: "Set it up in Organisation settings, External services.", link: "organisation_external" },
+    superadminOnly: true,
   },
   bot_protection_not_used: {
     title: "Bot protection",
@@ -55,6 +67,7 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     missing: "Choose an identity provider for Company SSO. If the list is empty, ask a superadmin to set one up under Identity.",
     remedy: ASK_TO_CHOOSE,
     superadminRemedy: CHOOSE_IN_SETTINGS,
+    superadminOnly: true,
   },
   password: {
     title: "Event password",
@@ -62,6 +75,7 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     missing: "Set the password that guests will enter.",
     remedy: { text: "Ask a superadmin to set it in Event settings, Registration." },
     superadminRemedy: { text: "Set it in Event settings, Registration.", link: "registration_settings" },
+    superadminOnly: true,
   },
   legal_documents: {
     title: "Legal texts",
@@ -86,18 +100,23 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
     met: "Email sending is set up for this event.",
     missing: "Email sending is not set up for this event, so guests would get no email.",
     remedy: ASK_A_SUPERADMIN,
+    superadminRemedy: { text: "Set it up in Organisation settings, Mail.", link: "organisation_mail" },
+    superadminOnly: true,
   },
   instance_url: {
     title: "Instance address",
     met: "The address of this instance is set.",
     missing: "The address of this instance is not set, so the links in emails would not work.",
     remedy: ASK_A_SUPERADMIN,
+    superadminRemedy: { text: "Set it in Organisation settings, General.", link: "organisation_general" },
+    superadminOnly: true,
   },
   event_not_archived: {
     title: "Event status",
     met: "The event is not archived.",
     missing: "The event is archived, so it cannot take registrations.",
     remedy: { text: "Ask a superadmin to restore it." },
+    superadminOnly: true,
   },
   event_not_ended: {
     title: "Event dates",
@@ -148,4 +167,40 @@ const COPY_BY_KEY: ReadonlyMap<string, ReadinessCopy> = new Map(Object.entries(R
 /** The words of a check, by the key the server sent. */
 export function readinessCopy(key: string): ReadinessCopy {
   return COPY_BY_KEY.get(key) ?? UNKNOWN_COPY;
+}
+
+/** The steps of the checklist, by who does them. Information rows (bot protection that is off) and steps that are done go last. */
+export interface ChecklistSections<T extends { key: string; ok: boolean }> {
+  /** Open steps this person can put right. */
+  forYou: T[];
+  /** Open steps only a superadmin can put right, for somebody who is not one. Empty for a superadmin. */
+  waiting: T[];
+  /** Steps that are met, then the information rows. */
+  done: T[];
+  /** How many steps there are: information rows are not steps. */
+  total: number;
+}
+
+/** The checks without the one about the event being archived: the page says so itself, and the checklist does not say it again. */
+export function checklistChecks<T extends { key: string }>(checks: readonly T[]): T[] {
+  return checks.filter((check) => check.key !== "event_not_archived");
+}
+
+/** Splits the checks by who does them. A superadmin does every open step, anybody else waits for a superadmin on some. */
+export function splitChecklist<T extends { key: string; ok: boolean }>(checks: readonly T[], superadmin: boolean): ChecklistSections<T> {
+  const shown = checklistChecks(checks);
+  const tasks = shown.filter((check) => !readinessCopy(check.key).info);
+  const open = tasks.filter((check) => !check.ok);
+  const waits = (check: T) => !superadmin && readinessCopy(check.key).superadminOnly === true;
+  return {
+    forYou: open.filter((check) => !waits(check)),
+    waiting: open.filter(waits),
+    done: [...tasks.filter((check) => check.ok), ...shown.filter((check) => readinessCopy(check.key).info)],
+    total: tasks.length,
+  };
+}
+
+/** How many steps are open: the number on the tab. The same for everybody, whoever does the step. */
+export function openStepCount(checks: readonly { key: string; ok: boolean }[]): number {
+  return splitChecklist(checks, true).forYou.length;
 }

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { accessMethodDetail, botProtectionOffText, READINESS_COPY, readinessCopy, remedyFor } from "../../src/registration/accessReadiness.js";
+import { accessMethodDetail, botProtectionOffText, openStepCount, READINESS_COPY, readinessCopy, remedyFor, splitChecklist } from "../../src/registration/accessReadiness.js";
 
 /** The checks the server reports, read from the file that holds them: the screen has words for each one, and for no other. */
 function serverKeys(): string[] {
@@ -45,6 +45,10 @@ describe("the words of the checks", () => {
     for (const key of ["bot_protection", "mail_provider", "instance_url"] as const) {
       expect(remedy(key), key).toEqual({ text: "Ask a superadmin to set it up." });
     }
+    // A superadmin is sent to the organisation's settings for each of them.
+    expect(remedyFor(READINESS_COPY.bot_protection, true)).toEqual({ text: "Set it up in Organisation settings, External services.", link: "organisation_external" });
+    expect(remedyFor(READINESS_COPY.mail_provider, true)).toEqual({ text: "Set it up in Organisation settings, Mail.", link: "organisation_mail" });
+    expect(remedyFor(READINESS_COPY.instance_url, true)).toEqual({ text: "Set it in Organisation settings, General.", link: "organisation_general" });
     // How guests open the form is set in Event settings, by a superadmin: the others are told to ask, a superadmin is sent there.
     for (const key of ["access_method", "identity_provider", "password"] as const) {
       expect(remedy(key)?.text, key).toMatch(/^Ask a superadmin to (choose|set) it in Event settings, Registration\.$/);
@@ -52,8 +56,8 @@ describe("the words of the checks", () => {
       expect(remedyFor(READINESS_COPY[key], true)?.text, key).toMatch(/^(Choose|Set) it in Event settings, Registration\.$/);
       expect(remedyFor(READINESS_COPY[key], false), key).toBe(READINESS_COPY[key].remedy);
     }
-    // A check without a place of its own for a superadmin reads the same for everybody.
-    expect(remedyFor(READINESS_COPY.mail_provider, true)).toBe(READINESS_COPY.mail_provider.remedy);
+    // A check that a superadmin has no other place for reads the same for everybody.
+    expect(remedyFor(READINESS_COPY.legal_documents, true)).toBe(READINESS_COPY.legal_documents.remedy);
     expect(remedy("legal_documents")?.link).toBe("legal");
     expect(remedy("form_questions")?.link).toBe("fields");
     expect(remedy("required_fields")?.link).toBe("fields");
@@ -106,5 +110,52 @@ describe("accessMethodDetail: what the row Access method says is set", () => {
     ["no method", null, null, "No access method is chosen yet. Guests cannot open the form."],
   ] as const)("says it for %s", (_what, method, provider, expected) => {
     expect(accessMethodDetail(method, provider)).toBe(expected);
+  });
+});
+
+describe("splitChecklist: who does each open step", () => {
+  const check = (key: string, ok: boolean) => ({ key, ok });
+  const all = [
+    check("access_method", true),
+    check("bot_protection", false),
+    check("legal_documents", false),
+    check("mail_provider", false),
+    check("form_questions", true),
+    check("event_not_archived", false),
+    check("bot_protection_not_used", true),
+  ];
+  const keys = (list: Array<{ key: string }>) => list.map((entry) => entry.key);
+
+  it("marks the checks that only a superadmin can put right", () => {
+    const only = Object.entries(READINESS_COPY).filter(([, copy]) => copy.superadminOnly === true).map(([key]) => key);
+
+    expect(only).toEqual(["access_method", "bot_protection", "identity_provider", "password", "mail_provider", "instance_url", "event_not_archived"]);
+  });
+
+  it("leaves a step that the person can do under For you, and one that waits for a superadmin under Waiting, for somebody who is not one", () => {
+    const sections = splitChecklist(all, false);
+
+    expect(keys(sections.forYou)).toEqual(["legal_documents"]);
+    expect(keys(sections.waiting)).toEqual(["bot_protection", "mail_provider"]);
+    // What is met comes first, then the information row; the archived row is never listed.
+    expect(keys(sections.done)).toEqual(["access_method", "form_questions", "bot_protection_not_used"]);
+    expect(sections.total).toBe(5);
+  });
+
+  it("gives a superadmin every open step, and nothing to wait for", () => {
+    const sections = splitChecklist(all, true);
+
+    expect(keys(sections.forYou)).toEqual(["bot_protection", "legal_documents", "mail_provider"]);
+    expect(sections.waiting).toEqual([]);
+  });
+
+  it("counts the open steps the same for everybody, without information and the archived row", () => {
+    expect(openStepCount(all)).toBe(3);
+    expect(openStepCount([])).toBe(0);
+    expect(openStepCount([check("bot_protection_not_used", false), check("event_not_archived", false)])).toBe(0);
+  });
+
+  it("keeps a check it has no words for under For you, so a newer server never hides a step", () => {
+    expect(keys(splitChecklist([check("something_new", false)], false).forYou)).toEqual(["something_new"]);
   });
 });

@@ -2,18 +2,30 @@ import { Link } from "react-router";
 import { Card } from "@admitto/ui";
 import type { RegistrationReadinessCheckDto, RegistrationSettingsDto } from "../api/types.js";
 import type { AccessMethod } from "./accessSettings.js";
-import { ACCESS_METHOD_SET_BY, accessMethodDetail, botProtectionOffText, readinessCopy, remedyFor, type ReadinessCopy, type ReadinessLink } from "./accessReadiness.js";
+import { ACCESS_METHOD_SET_BY, accessMethodDetail, botProtectionOffText, readinessCopy, remedyFor, splitChecklist, type ReadinessCopy, type ReadinessLink } from "./accessReadiness.js";
 import "./registration-access.css";
 
-/** Where a link of a missing check goes: another tab of this page (the address keeps its path), or the settings of the event. */
+/** Where a link of a missing check goes: another tab of this page (the address keeps its path), the settings of the event, or the settings of the organisation. */
 function linkTarget(link: ReadinessLink, eventId: string) {
   const settings = `/admin/events/${encodeURIComponent(eventId)}/settings`;
-  if (link === "event_settings") return settings;
-  return link === "registration_settings" ? `${settings}?tab=registration` : { search: `?tab=${link}` };
+  switch (link) {
+    case "event_settings":
+      return settings;
+    case "registration_settings":
+      return `${settings}?tab=registration`;
+    case "organisation_general":
+      return "/admin/settings?tab=general";
+    case "organisation_mail":
+      return "/admin/settings?tab=mail";
+    case "organisation_external":
+      return "/admin/settings?tab=external";
+    default:
+      return { search: `?tab=${link}` };
+  }
 }
 
-/** Whether a link leaves this page for the settings of the event. */
-const leavesPage = (link: ReadinessLink) => link === "event_settings" || link === "registration_settings";
+/** Whether a link leaves this page: only the Legal and Fields tabs are on it. */
+const leavesPage = (link: ReadinessLink) => link !== "legal" && link !== "fields";
 
 /** What to do about a check that is not met: a plain sentence, or a link to the tab that puts it right. */
 export function ReadinessRemedy({ eventId, remedy }: Readonly<{ eventId: string; remedy: ReadinessCopy["remedy"] }>) {
@@ -102,16 +114,38 @@ function ReadinessRow({
   );
 }
 
-/**
- * What registration needs before it can be on, one row for each check the server reports: met or not, in a sentence, with what to
- * do about it when it is not. What is missing comes first. The list is of the settings that are saved, so it says so while the form
- * holds changes that are not.
- */
-export function AccessReadinessCard({
+/** The rows of one card of the checklist. */
+function ChecklistRows({
   eventId,
   checks,
-  hideArchived,
-  unsaved,
+  superadmin,
+  accessMethod,
+  organisationBotProtection,
+}: Readonly<{
+  eventId: string;
+  checks: readonly RegistrationReadinessCheckDto[];
+  superadmin: boolean;
+  accessMethod: AccessMethodState;
+  organisationBotProtection: "required" | "not_used";
+}>) {
+  return (
+    <ul className="access-checklist">
+      {checks.map((check) => (
+        <ReadinessRow key={check.key} eventId={eventId} check={check} superadmin={superadmin} accessMethod={accessMethod} organisationBotProtection={organisationBotProtection} />
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * What registration needs, one row for each check the server reports, in cards by who does it: "For you" (what this person can put
+ * right, a link to where), "Waiting for a superadmin" (only for somebody who is not one: what only a superadmin can put right, with
+ * who to ask) and "Done" (what is met, and the information rows). A superadmin has every open step under "For you". The checklist stays
+ * when registration is on: an address or a key can stop working later.
+ */
+export function ReadinessChecklist({
+  eventId,
+  checks,
   superadmin,
   method,
   provider,
@@ -126,26 +160,31 @@ export function AccessReadinessCard({
   /** A superadmin is sent to the settings that put a check right, anybody else is told to ask. */
   superadmin: boolean;
   checks: readonly RegistrationReadinessCheckDto[];
-  /** The event is archived and the page above says so: the checklist does not say it again. */
-  hideArchived: boolean;
-  unsaved: boolean;
 }>) {
-  const shown = checks.filter((check) => !(hideArchived && check.key === "event_not_archived"));
-  // A row that is information (bot protection "not used") is listed last and is not a task, so it is not counted.
-  const tasks = shown.filter((check) => !readinessCopy(check.key).info);
-  const info = shown.filter((check) => readinessCopy(check.key).info);
-  const missing = tasks.filter((check) => !check.ok);
-  const ordered = [...missing, ...tasks.filter((check) => check.ok), ...info];
+  const { forYou, waiting, done, total } = splitChecklist(checks, superadmin);
+  const rows = { eventId, superadmin, accessMethod: { method, provider }, organisationBotProtection };
   return (
-    <Card title="Setup checklist" actions={<span className="overview-readiness-score">{tasks.length - missing.length} of {tasks.length} done</span>}>
-      <div className="settings-card-stack">
-        {unsaved && <p className="settings-card-intro">The checklist shows what is saved. Save your changes to update it.</p>}
-        <ul className="access-checklist">
-          {ordered.map((check) => (
-            <ReadinessRow key={check.key} eventId={eventId} check={check} superadmin={superadmin} accessMethod={{ method, provider }} organisationBotProtection={organisationBotProtection} />
-          ))}
-        </ul>
-      </div>
-    </Card>
+    <>
+      <Card title="For you" actions={<span className="overview-readiness-score">{forYou.length === 0 ? "Nothing to do" : `${forYou.length} to do`}</span>}>
+        {forYou.length === 0 ? (
+          <p className="settings-card-intro">There is nothing for you to do right now.</p>
+        ) : (
+          <ChecklistRows checks={forYou} {...rows} />
+        )}
+      </Card>
+      {waiting.length > 0 && (
+        <Card title="Waiting for a superadmin" actions={<span className="overview-readiness-score">{waiting.length} to do</span>}>
+          <div className="settings-card-stack">
+            <p className="settings-card-intro">Only a superadmin can put these right. Ask one to do it.</p>
+            <ChecklistRows checks={waiting} {...rows} />
+          </div>
+        </Card>
+      )}
+      {done.length > 0 && (
+        <Card title="Done" actions={<span className="overview-readiness-score">{total - forYou.length - waiting.length} of {total} done</span>}>
+          <ChecklistRows checks={done} {...rows} />
+        </Card>
+      )}
+    </>
   );
 }

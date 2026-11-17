@@ -415,7 +415,20 @@ describe("RegistrationAccessTab: a save that the server refuses because registra
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     expect(api.fetchLegalDocuments).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(radio("Automatic").hasAttribute("disabled")).toBe(true));
-    expect(screen.getByText("Registration can be turned on when the checklist below is done.")).toBeTruthy();
+    expect(screen.getByText(/Registration can be turned on when the steps on the/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Checklist tab" })).toBeTruthy();
+  });
+
+  it("tells the page what the checks are now, so that the number on the Checklist tab follows the read", async () => {
+    await renderLoaded();
+    expect(screen.getByRole("tab", { name: "Checklist" })).toBeTruthy();
+    refuse("legal_documents");
+    api.fetchRegistrationSettings.mockResolvedValue(settings({ readiness: checks("legal_documents", "mail_provider") }));
+
+    fireEvent.click(radio("Automatic"));
+    await save();
+
+    expect(await screen.findByRole("tab", { name: "Checklist, 2 steps open" })).toBeTruthy();
   });
 
   it("keeps what it showed when the second read fails, and still says what is missing", async () => {
@@ -595,10 +608,10 @@ describe("RegistrationAccessTab: leaving with changes", () => {
   });
 
   it("asks for a link to another tab too, such as the one of a check that is not met", async () => {
-    await renderLoaded(settings({ readiness: checks("legal_documents") }));
+    await renderLoaded(settings({ mode: "automatic", readiness: checks("legal_documents") }));
     fireEvent.click(toggle("Waiting list"));
 
-    fireEvent.click(screen.getByRole("link", { name: "Open the Legal tab." }));
+    fireEvent.click(screen.getByRole("link", { name: "The Checklist tab says what." }));
 
     expect(await screen.findByRole("dialog", { name: "Discard unsaved changes?" })).toBeTruthy();
     expect(openTab()).toBe("Access");

@@ -1,17 +1,17 @@
 import { useEffect } from "react";
-import { useBlocker } from "react-router";
+import { Link, useBlocker } from "react-router";
 import { Notice } from "@admitto/ui";
 import { useOptionalAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
-import type { EventDto, LegalDocumentDto, RegistrationSettingsDto } from "../api/types.js";
+import type { EventDto, LegalDocumentDto, RegistrationReadinessCheckDto, RegistrationSettingsDto } from "../api/types.js";
 import { isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SettingsFooter } from "../settings/mailTransportFormParts.js";
-import { chosenMethod, missingChecks } from "./accessSettings.js";
+import { missingChecks } from "./accessSettings.js";
 import { AccessFormCard } from "./AccessFormCard.js";
 import { AccessModeCard } from "./AccessModeCard.js";
 import { AccessQuestionsCard } from "./AccessQuestionsCard.js";
-import { AccessReadinessCard, MissingChecks } from "./AccessReadinessCard.js";
+import { MissingChecks } from "./AccessReadinessCard.js";
 import { GuestLinkField } from "./GuestLinkField.js";
 import { hasStopped, stoppedWarning } from "./ownAddress.js";
 import { useAccessForm, type AccessProblem } from "./useAccessForm.js";
@@ -48,8 +48,8 @@ function TurnOffConsequences() {
 }
 
 /**
- * The Access tab once its first read is in: registration mode, the access method (to read), the switches of the form, the consents,
- * the checklist of what registration needs, and the link for guests. The page holds a draft, and Save sends what changed. A
+ * The Access tab once its first read is in: registration mode, the link for guests, the switches of the form and the consents. What
+ * registration needs is the Checklist tab's, and this tab only points to it. The page holds a draft, and Save sends what changed. A
  * navigation away with changes in the draft asks first, and so does turning registration off.
  */
 export function RegistrationAccessForm({
@@ -58,12 +58,15 @@ export function RegistrationAccessForm({
   settings,
   legalItems,
   refreshEvent,
+  onReadiness,
 }: Readonly<{
   eventId: string;
   event: EventDto;
   settings: RegistrationSettingsDto;
   legalItems: readonly LegalDocumentDto[];
   refreshEvent?: () => Promise<unknown>;
+  /** Told what the checklist is now, so that the number on the Checklist tab follows a save. */
+  onReadiness?: (readiness: RegistrationReadinessCheckDto[]) => void;
 }>) {
   const form = useAccessForm({ eventId, settings, legalItems, refreshEvent });
   const { server, draft, dirty, saving, problem, confirmOffOpen } = form;
@@ -72,6 +75,7 @@ export function RegistrationAccessForm({
   // A move between the two modes that are on is never refused, so only an event that has registration off needs to be ready.
   const canTurnOn = server.mode !== null || missing.length === 0;
   const superadmin = isSuperadmin(useOptionalAuth()?.assignments ?? []);
+  useEffect(() => onReadiness?.(server.readiness), [server.readiness, onReadiness]);
 
   // A change of the path or of `?tab=` leaves the form: with changes in it, the person is asked first.
   const blocker = useBlocker(
@@ -88,13 +92,17 @@ export function RegistrationAccessForm({
   return (
     <div className="settings-sections at-fade-in">
       {server.mode !== null && missing.length > 0 && (
-        <Notice variant="warning">Registration is on, but something it needs is missing, so guests may not be able to register. The checklist says what.</Notice>
+        <Notice variant="warning">
+          Registration is on, but something it needs is missing, so guests may not be able to register.{" "}
+          <Link to={{ search: "?tab=checklist" }} replace>
+            The Checklist tab says what.
+          </Link>
+        </Notice>
       )}
       {hasStopped(server.own_address) && <Notice variant="warning">{stoppedWarning(server.own_address)}</Notice>}
       <AccessModeCard mode={draft.mode} canTurnOn={canTurnOn} unsaved={dirty} disabled={archived || saving} onChange={(mode) => form.edit({ mode })}>
         <GuestLinkField url={server.guest_url} registrationOn={server.mode !== null} />
       </AccessModeCard>
-      <AccessReadinessCard eventId={eventId} checks={server.readiness} hideArchived={archived} unsaved={dirty} superadmin={superadmin} method={chosenMethod(server.access_methods)} provider={server.sso_provider} organisationBotProtection={server.bot_protection} />
       <AccessFormCard draft={draft} legalItems={form.legalItems} disabled={archived || saving} onChange={form.edit} />
       <AccessQuestionsCard fields={server.public_fields} />
       {problem && !confirmOffOpen && <ProblemMessage eventId={eventId} problem={problem} superadmin={superadmin} />}
