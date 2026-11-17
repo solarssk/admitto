@@ -234,7 +234,8 @@ describe("a queue with nothing in it", () => {
 
     await screen.findByRole("table", { name: "Requests" });
     expect(router.state.location.search).toBe("?tab=requests&status=all");
-    expect(document.activeElement).toBe(cardPanel());
+    // The focus is handed on in an effect, which can run after the table is on screen.
+    await waitFor(() => expect(document.activeElement).toBe(cardPanel()));
   });
 
   it("is no longer the queue when a search or an age is on too: then nothing matches", async () => {

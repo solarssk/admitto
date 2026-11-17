@@ -407,11 +407,21 @@ describe("feeds and exports", () => {
 });
 
 describe("removing an erased attendee still works", () => {
+  // A removal deletes the attendee's pass at the provider first. The seeded passes keep their provider id, so
+  // without a stub this goes to the real PassCreator host, which makes the test depend on the network.
+  let fetchStub: ReturnType<typeof vi.fn<(input: string | URL, init?: RequestInit) => Promise<Response>>>;
+  beforeEach(() => {
+    fetchStub = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response(JSON.stringify({ success: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchStub);
+  });
+
   it("removes one", async () => {
     const res = await app.request(`${base}/${GONE_REMOVE_ID}/remove`, json("POST", { reason: "duplicate" }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ removed: 1, not_found: 0 });
     expect(await prisma.attendee.findUnique({ where: { id: GONE_REMOVE_ID } })).toBeNull();
+    expect(fetchStub).toHaveBeenCalledTimes(1);
+    expect(String(fetchStub.mock.calls[0]![0])).toContain(`pc-${GONE_REMOVE_ID}`);
   });
 
   it("removes several", async () => {

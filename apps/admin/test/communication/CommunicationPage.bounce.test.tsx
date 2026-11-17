@@ -100,6 +100,18 @@ function renderPage() {
   return renderPageAt("evt-1");
 }
 
+/** Opens the actions menu of Guest One's row and returns its item. A click that lands while the log is still settling can
+ * open a menu that is closed again by the next draw, so the click is repeated until the item is there. */
+async function openRowMenu(itemName: string): Promise<HTMLElement> {
+  await waitFor(() => {
+    if (!screen.queryByRole("menuitem", { name: itemName })) {
+      fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    }
+    expect(screen.getByRole("menuitem", { name: itemName })).toBeTruthy();
+  });
+  return screen.getByRole("menuitem", { name: itemName });
+}
+
 /** Sets up a single bounced delivery for Guest One, dismisses it via the delivery log's row menu,
  * and waits for the dismiss call to land - the "arrange" both dismiss-outcome tests below start
  * from, before diverging into their own assertions. */
@@ -117,8 +129,7 @@ async function dismissGuestOneBounce() {
   renderPage();
 
   fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
-  fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+  fireEvent.click(await openRowMenu("Dismiss bounce"));
 
   await waitFor(() => {
     expect(dismissBounce).toHaveBeenCalledWith("evt-1", "att-1");
@@ -321,8 +332,7 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
     // Open the log via the tab bar - the banner CTA is unavailable while mount overview is pending.
     fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
-    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+    fireEvent.click(await openRowMenu("Dismiss bounce"));
 
     await waitFor(() => {
       expect(fetchEventOverview).toHaveBeenCalledTimes(2);
@@ -357,8 +367,7 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Resend" }));
+    fireEvent.click(await openRowMenu("Resend"));
 
     await waitFor(() => {
       expect(resendTicket).toHaveBeenCalledWith("evt-1", "att-1", { templateId: "tpl-reminder" });
@@ -385,8 +394,7 @@ describe("CommunicationPage bounce banner", () => {
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Resend" }));
+    fireEvent.click(await openRowMenu("Resend"));
 
     await waitFor(() => {
       expect(resendTicket).toHaveBeenCalledWith("evt-1", "att-1", { templateId: undefined });
@@ -445,8 +453,7 @@ describe("CommunicationPage bounce banner", () => {
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Resend" }));
+    fireEvent.click(await openRowMenu("Resend"));
     expect(await screen.findByText("Resend failed.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
@@ -491,8 +498,7 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+    fireEvent.click(await openRowMenu("Dismiss bounce"));
 
     await waitFor(() => {
       expect(dismissBounce).toHaveBeenCalledTimes(1);
