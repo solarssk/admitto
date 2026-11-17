@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Button, Card, Notice, useToast } from "@admitto/ui";
 import { ApiError, clearRegistrationPassword } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -80,6 +80,7 @@ export function AccessWayInCard({
   passwordSet,
   ssoAvailable,
   botCheck,
+  extra,
   disabled,
   onMethodChange,
   onPasswordChanged,
@@ -95,6 +96,8 @@ export function AccessWayInCard({
   ssoAvailable: boolean;
   /** The organisation checks guests for bots on the link and password forms (a superadmin has not switched it off). */
   botCheck: boolean;
+  /** What goes at the bottom of the card, set off from the method: the bot check of the event. */
+  extra?: ReactNode;
   disabled: boolean;
   onMethodChange: (method: AccessMethod) => void;
   onPasswordChanged: (isSet: boolean) => void;
@@ -169,6 +172,7 @@ export function AccessWayInCard({
         {method === "password" && (
           <EventPasswordRow event={event} passwordSet={passwordSet} disabled={disabled} onSet={() => setSetOpen(true)} onRemove={() => setRemoveOpen(true)} />
         )}
+        {extra}
       </div>
       <EventPasswordDialog
         open={setOpen}

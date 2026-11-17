@@ -20,6 +20,7 @@ import { AccessAddressCard } from "./AccessAddressCard.js";
 import { AccessSsoClaim } from "./AccessSsoClaim.js";
 import { AccessSsoProvider } from "./AccessSsoProvider.js";
 import { AccessWayInCard } from "./AccessWayInCard.js";
+import { EventBotProtectionRow } from "./EventBotProtectionRow.js";
 import { claimErrors, draftFromSettings, parseClaim, technicalPatch, type AccessDraft } from "./accessSettings.js";
 import { ownAddressOf } from "./ownAddress.js";
 import { methodEdit } from "./ssoProviderChoice.js";
@@ -174,10 +175,10 @@ function SsoClaimCard({
 }
 
 /** What this tab edits besides the address: how guests open the form, with the identity provider and the restriction of Company SSO. */
-type Technical = Pick<AccessDraft, "method" | "sso_provider_id" | "sso_claim_name" | "sso_claim_values">;
+type Technical = Pick<AccessDraft, "method" | "bot_protection_enabled" | "sso_provider_id" | "sso_claim_name" | "sso_claim_values">;
 
 function technicalOf(draft: AccessDraft): Technical {
-  return { method: draft.method, sso_provider_id: draft.sso_provider_id, sso_claim_name: draft.sso_claim_name, sso_claim_values: draft.sso_claim_values };
+  return { method: draft.method, bot_protection_enabled: draft.bot_protection_enabled, sso_provider_id: draft.sso_provider_id, sso_claim_name: draft.sso_claim_name, sso_claim_values: draft.sso_claim_values };
 }
 
 function EventRegistrationCards({
@@ -343,7 +344,17 @@ function EventRegistrationCards({
         savedMethod={base.method}
         passwordSet={settings.password_set}
         ssoAvailable={settings.sso_providers.length > 0}
-        botCheck={settings.bot_protection !== "not_used"}
+        // The notice says a bot check protects the form only while the organisation has it on AND this event does (the draft, so it follows the switch).
+        botCheck={settings.bot_protection === "required" && draft.bot_protection_enabled}
+        extra={
+          <EventBotProtectionRow
+            organisationOn={settings.bot_protection === "required"}
+            enabled={draft.bot_protection_enabled}
+            usesSso={draft.method === "sso"}
+            disabled={archived || saving}
+            onChange={(enabled) => edit({ bot_protection_enabled: enabled })}
+          />
+        }
         disabled={archived || saving}
         // Pressing the method that is chosen already changes nothing: not the provider, not the claim.
         onMethodChange={(method) => {

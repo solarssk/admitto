@@ -338,13 +338,13 @@ describe("RegistrationAccessTab: the checklist", () => {
   });
 
   it("shows bot protection that is not used as grey information, last, with a dash, and does not count it", async () => {
-    await renderLoaded(settings({ readiness: notUsedChecks("mail_provider") }));
+    await renderLoaded(settings({ bot_protection: "not_used", readiness: notUsedChecks("mail_provider") }));
 
     const rows = checklistRows();
     expect(rows).toHaveLength(9);
     const info = rows.at(-1) as HTMLElement;
     expect(info.textContent).toContain("Bot protection");
-    expect(info.textContent).toContain("Off. The link and password forms have no bot check.");
+    expect(info.textContent).toContain("Off for this organisation. The link and password forms have no bot check.");
     expect(info.querySelector(".sr-only")?.textContent).toBe("Off: ");
     expect(info.querySelector(".overview-check__icon--neutral")).not.toBeNull();
     expect(info.querySelector(".ti-minus")).not.toBeNull();
@@ -352,6 +352,14 @@ describe("RegistrationAccessTab: the checklist", () => {
     expect(within(card("Setup checklist")).getByText("7 of 8 done")).toBeTruthy();
     expect(rows[0]?.textContent).toContain("Email sending");
     expect(within(info).queryByRole("link")).toBeNull();
+  });
+
+  it("tells the event's own switch from the organisation's: the row says Off for this event when only the event has it off", async () => {
+    await renderLoaded(settings({ bot_protection: "required", bot_protection_enabled: false, readiness: notUsedChecks() }));
+
+    const info = checklistRows().at(-1) as HTMLElement;
+    expect(info.textContent).toContain("Off for this event. The link and password forms of this event have no bot check.");
+    expect(info.textContent).not.toContain("organisation");
   });
 
   it("sends a missing check to the tab that puts it right, and a superadmin's to the superadmin", async () => {

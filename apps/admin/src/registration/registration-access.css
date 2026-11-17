@@ -298,3 +298,18 @@
 .access-provider .settings-card-intro a {
   text-decoration: underline;
 }
+
+/* The bot check of the event, a switch row at the bottom of the Access method card, set off from the method by a rule as the extra
+ * consents are from the switches of the Form card. The row itself keeps the look of a switch row, with no rule of its own. */
+.access-bot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.access-bot .settings-row {
+  padding: 0;
+  border-bottom: 0;
+}

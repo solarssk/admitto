@@ -94,7 +94,7 @@ export function RegistrationAccessForm({
       <AccessModeCard mode={draft.mode} canTurnOn={canTurnOn} unsaved={dirty} disabled={archived || saving} onChange={(mode) => form.edit({ mode })}>
         <GuestLinkField url={server.guest_url} registrationOn={server.mode !== null} />
       </AccessModeCard>
-      <AccessReadinessCard eventId={eventId} checks={server.readiness} hideArchived={archived} unsaved={dirty} superadmin={superadmin} method={chosenMethod(server.access_methods)} provider={server.sso_provider} />
+      <AccessReadinessCard eventId={eventId} checks={server.readiness} hideArchived={archived} unsaved={dirty} superadmin={superadmin} method={chosenMethod(server.access_methods)} provider={server.sso_provider} organisationBotProtection={server.bot_protection} />
       <AccessFormCard draft={draft} legalItems={form.legalItems} disabled={archived || saving} onChange={form.edit} />
       <AccessQuestionsCard fields={server.public_fields} />
       {problem && !confirmOffOpen && <ProblemMessage eventId={eventId} problem={problem} superadmin={superadmin} />}

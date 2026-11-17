@@ -28,6 +28,8 @@ export interface AccessDraft {
   companion: boolean;
   consent_keys: string[];
   styled_form_controls: boolean;
+  /** The bot check of the link and password forms of the event. Only a superadmin changes it (Event settings, Registration). */
+  bot_protection_enabled: boolean;
   /** The company SSO only: the claim a guest's token must hold, as typed. Empty for no restriction. */
   sso_claim_name: string;
   /** The values of that claim that may register, as typed: one on each line. Empty for no restriction. */
@@ -54,6 +56,7 @@ export function draftFromSettings(settings: RegistrationSettingsDto): AccessDraf
     companion: settings.max_companions > 0,
     consent_keys: [...settings.consent_keys],
     styled_form_controls: settings.styled_form_controls,
+    bot_protection_enabled: settings.bot_protection_enabled,
     sso_claim_name: settings.sso_claim_name ?? "",
     sso_claim_values: settings.sso_claim_values.join("\n"),
     sso_provider_id: settings.sso_provider_id,
@@ -162,12 +165,13 @@ export function settingsPatch(draft: AccessDraft, base: AccessDraft): SaveRegist
 }
 
 /**
- * What a save of Event settings, Registration sends: the access method, the identity provider and the restriction, when they differ
+ * What a save of Event settings, Registration sends: the access method, the bot check, the identity provider and the restriction, when they differ
  * from the settings the form was made from. Only a superadmin sends them (the server refuses others), and the Access tab never does.
  */
 export function technicalPatch(draft: AccessDraft, base: AccessDraft): SaveRegistrationSettingsBody {
   const patch: SaveRegistrationSettingsBody = {};
   if (draft.method !== base.method) patch.access_methods = draft.method === null ? [] : [draft.method];
+  if (draft.bot_protection_enabled !== base.bot_protection_enabled) patch.bot_protection_enabled = draft.bot_protection_enabled;
   return { ...patch, ...claimPatch(draft, base), ...providerPatch(draft, base) };
 }
 
