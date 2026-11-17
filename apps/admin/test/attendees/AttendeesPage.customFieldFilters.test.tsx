@@ -5,6 +5,7 @@ import {
   exportAttendees,
   fetchEventAttendees,
   fetchEventCustomFields,
+  makeRow,
   renderPage,
 } from "./attendeesPageSetup.js";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
@@ -168,11 +169,12 @@ describe("AttendeesPage custom-field text filter debounce", () => {
 describe("AttendeesPage custom-field select filter", () => {
   it("re-fetches with the selected value and applies the same filter to the export request", async () => {
     fetchEventCustomFields.mockResolvedValue([selectField("shirt_size", "T-Shirt size", ["S", "M", "L"])]);
-    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    // An empty list has nothing to export (the button is off), so the filtered list has a row.
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("a1", "Ada")], total: 1, page: 1, pageSize: 25 });
     exportAttendees.mockResolvedValue(undefined);
 
     renderPage();
-    await screen.findByText(/No attendees yet/i);
+    await screen.findByText("Ada");
     fetchEventAttendees.mockClear();
 
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));

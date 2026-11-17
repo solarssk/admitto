@@ -253,28 +253,28 @@ export function MailReport({ data, isActive }: Readonly<{ data: EventMailReports
               </div>
             </Card>
           </div>
+
+          <div className="wallets-panels">
+            <Card title="Admission rate by email status" className="wallets-card--centered">
+              <ReportsAdmissionCompare
+                description="Check-in rate compared between attendees email reached and attendees it didn’t."
+                withLabel="Reached by email"
+                withGroup={data.admission_by_email.reached}
+                withoutLabel="Not reached by email"
+                withoutGroup={data.admission_by_email.not_reached}
+                isActive={isActive}
+              />
+            </Card>
+            <Card title="Event journey" className="wallets-card--centered">
+              <p className="wallets-description">
+                How many attendees reached each stage of the event: got a ticket email, installed a wallet pass, and
+                attended. The wallet-installed count is permanent - it stays even if they later remove the pass.
+              </p>
+              <EventJourneyFunnel funnel={data.funnel} />
+            </Card>
+          </div>
         </>
       )}
-
-      <div className="wallets-panels">
-        <Card title="Admission rate by email status" className="wallets-card--centered">
-          <ReportsAdmissionCompare
-            description="Check-in rate compared between attendees email reached and attendees it didn’t."
-            withLabel="Reached by email"
-            withGroup={data.admission_by_email.reached}
-            withoutLabel="Not reached by email"
-            withoutGroup={data.admission_by_email.not_reached}
-            isActive={isActive}
-          />
-        </Card>
-        <Card title="Event journey" className="wallets-card--centered">
-          <p className="wallets-description">
-            How many attendees reached each stage of the event: got a ticket email, installed a wallet pass, and
-            attended. The wallet-installed count is permanent - it stays even if they later remove the pass.
-          </p>
-          <EventJourneyFunnel funnel={data.funnel} />
-        </Card>
-      </div>
     </>
   );
 }

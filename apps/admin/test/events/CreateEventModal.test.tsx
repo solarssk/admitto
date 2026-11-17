@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CreateEventModal } from "../../src/events/CreateEventModal.js";
@@ -70,6 +71,26 @@ describe("CreateEventModal", () => {
     const body = mockCreateEvent.mock.calls[0]![0] as Record<string, unknown>;
     expect(body.title).toBe("Autumn Summit 2026");
     expect(body).not.toHaveProperty("slug");
+  });
+
+  it("keeps the standard space between its fields (the rule of the dialog's field class, not of the attendee grid)", () => {
+    // jsdom loads no stylesheets, so the two files that style the fields are put on the page by hand.
+    const style = document.createElement("style");
+    style.textContent = ["../../src/attendees/add-attendee-modal.css", "../../src/attendees/attendee-fields-grid.css"]
+      .map((file) => readFileSync(new URL(file, import.meta.url), "utf8"))
+      .join("\n");
+    document.head.appendChild(style);
+    try {
+      render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+      const fields = screen.getByLabelText(/Event title/).closest(".add-attendee-modal__fields");
+      expect(fields).not.toBeNull();
+      const computed = getComputedStyle(fields as Element);
+      expect(computed.display).toBe("flex");
+      expect(computed.flexDirection).toBe("column");
+      expect(computed.gap).toBe("var(--space-4)");
+    } finally {
+      style.remove();
+    }
   });
 
   it("keeps Create enabled for a non-ASCII title", async () => {
