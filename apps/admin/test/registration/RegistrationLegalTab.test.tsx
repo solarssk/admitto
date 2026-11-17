@@ -221,6 +221,17 @@ describe("RegistrationLegalTab: the list", () => {
     expect(screen.queryByText(/Registration cannot be turned on/)).toBeNull();
   });
 
+  it("puts the two header buttons in the card header's look: small and secondary, as on the Fields tab (#1883)", async () => {
+    renderTab();
+    await listLoaded();
+
+    for (const name of ["Copy from another event", "Add consent"]) {
+      const { className } = screen.getByRole("button", { name });
+      expect(className).toContain("at-btn--sm");
+      expect(className).toContain("at-btn--secondary");
+    }
+  });
+
   it("turns Copy and Add consent off, with the reason, for an archived event", async () => {
     renderTab({ withEvent: archivedEvent });
     await listLoaded();

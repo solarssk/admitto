@@ -71,7 +71,7 @@ export function LegalTextsList({ event, rows, missingNames, limits, onOpen, onAd
         <div className="legal-card-actions">
           <ArchivedGuard event={event} reasonId="legal-copy-reason">
             {(guard) => (
-              <Button variant="secondary" icon={<i className="ti ti-copy" aria-hidden="true" />} onClick={onCopy} {...guard}>
+              <Button variant="secondary" size="sm" icon={<i className="ti ti-copy" aria-hidden="true" />} onClick={onCopy} {...guard}>
                 Copy from another event
               </Button>
             )}
@@ -83,7 +83,7 @@ export function LegalTextsList({ event, rows, missingNames, limits, onOpen, onAd
             tooltip={`This event has reached its limit of ${limits.consents} extra consents.`}
           >
             {(guard) => (
-              <Button icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={onAddConsent} {...guard}>
+              <Button variant="secondary" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={onAddConsent} {...guard}>
                 Add consent
               </Button>
             )}

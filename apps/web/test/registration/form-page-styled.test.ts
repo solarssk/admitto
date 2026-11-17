@@ -126,7 +126,7 @@ const STYLED_PHONE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFor
 const STYLED_HASH = {
   script: "b43513313f458dd7-15862",
   css: "ab92d1d67262b09d-1322",
-  styleSheet: "db5b1fbb446d60f5-58043",
+  styleSheet: "127afbc2e3a113a3-58063",
   phoneKit: "d72fe234ef011226-13580",
   phone: "9588a1b1e01c3567-70908",
   phoneRequired: "673ae726e1e8afb2-70980",

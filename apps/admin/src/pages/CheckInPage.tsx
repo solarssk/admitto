@@ -243,7 +243,6 @@ function CheckInOperatorActionsBar({
           <Button
             type="button"
             variant="secondary"
-            size="sm"
             icon={<i className={`ti ti-camera${cameraActive ? "-off" : ""}`} aria-hidden="true" />}
             onClick={onToggleCamera}
           >
@@ -252,7 +251,6 @@ function CheckInOperatorActionsBar({
           <Button
             type="button"
             variant="secondary"
-            size="sm"
             aria-pressed={scanSoundMuted}
             aria-label={scanSoundMuteLabel(scanSoundMuted)}
             title={scanSoundMuteTitle(scanSoundMuted)}
@@ -263,7 +261,6 @@ function CheckInOperatorActionsBar({
             <Button
               type="button"
               variant="secondary"
-              size="sm"
               aria-pressed={torchOn}
               aria-label={torchOn ? "Turn off torch" : "Turn on torch"}
               title={torchOn ? "Turn off torch" : "Turn on torch"}
