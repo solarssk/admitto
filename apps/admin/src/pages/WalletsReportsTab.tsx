@@ -766,11 +766,17 @@ function registrationCountBreakdownRows(
   }));
 }
 
+/** Nothing to show or export: no wallet pass was issued. The tab draws only its empty state, and the page switches Export off, by this one answer. */
+export function isWalletsReportEmpty(data: EventWalletReportsResponse): boolean {
+  return data.adoption.got_pass === 0;
+}
+
 /** The wallet report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
  * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
 export function WalletsReport({ data, walletPlatforms, isActive, onEmptyChange }: Readonly<{ data: EventWalletReportsResponse; walletPlatforms: EnabledWalletPlatforms; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
-  useReportEmpty(onEmptyChange, data.adoption.got_pass === 0);
-  if (data.adoption.got_pass === 0) {
+  const empty = isWalletsReportEmpty(data);
+  useReportEmpty(onEmptyChange, empty);
+  if (empty) {
     return (
       <EmptyState
         icon={<i className="ti ti-wallet-off" aria-hidden="true" />}

@@ -1011,10 +1011,11 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     ? pctOf(liveAdmitted, data.summary.total_attendees)
     : 0;
   const liveNoShowRatePct = data ? pctOf(liveNoShows, data.summary.total_attendees) : 0;
-  // What each export would hold: Event day, the admission log of an event with no attendees; the other tabs, what their own
-  // empty state says (no email sent, no wallet pass, no custom field).
+  // Event day shows only its empty state, and Export is off, until someone has checked in (no attendees is the same).
+  const eventDayEmpty = liveAdmitted === 0;
+  // What each export would hold; a tab is empty by the same answer that makes it draw only its empty state.
   const tabIsEmpty: Record<ReportsTab, boolean> = {
-    eventday: data?.summary.total_attendees === 0,
+    eventday: view === "ready" && eventDayEmpty,
     wallets: walletsEmpty,
     customfields: customFieldsEmpty,
     mail: mailEmpty,
@@ -1102,7 +1103,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
           {view === "ready" && (
             // What replaces the placeholder fades in; the wrapper is a column of its own with the section's rhythm.
             <div className="reports-eventday__ready at-fade-in">
-              {liveAdmitted === 0 && (
+              {eventDayEmpty && (
                 <EmptyState
                   icon={<i className="ti ti-chart-bar-off" aria-hidden="true" />}
                   title="No check-ins yet"
@@ -1110,7 +1111,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
                 />
               )}
 
-              {data && liveAdmitted > 0 && (
+              {data && !eventDayEmpty && (
                 <>
                 <div className="reports-stats-grid">
                   <Card>

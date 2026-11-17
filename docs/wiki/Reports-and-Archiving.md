@@ -58,6 +58,8 @@ A chart for each custom field configured on the **Fields** tab of the event's **
 - A selector or yes/no field shows a donut: how many attendees hold each value, plus how many have not answered.
 - A free-text field shows a gauge: how many attendees have filled it in.
 
+Until at least one attendee has answered a field, the tab shows only "No answers yet" (or "No custom fields yet" when the event has none).
+
 A newly added custom field gets a chart here automatically, with no extra setup.
 
 #### Mail
@@ -78,6 +80,8 @@ Email delivery analytics:
 #### Export
 
 **Export** follows whichever tab is open. It exports one CSV row per attendee (wallet status, email delivery, or each custom field's own answer, depending on the tab), or a printable PDF summary of that tab's own cards.
+
+**Export** is off, with the hint "Nothing to export yet.", while the open tab shows only its empty state: Event day before the first check-in, Wallets before the first pass, Custom fields before the first answer, and Mail before the first email.
 
 ### Archive the event
 

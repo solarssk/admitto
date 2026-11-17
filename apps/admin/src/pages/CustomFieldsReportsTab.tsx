@@ -202,8 +202,9 @@ function answeredCount(field: CustomFieldReport): number {
     .reduce((sum, row) => sum + row.count, 0);
 }
 
-/** Nothing to export: no field, or no field answered by anyone yet (no attendees at all is the same: every card reads zero). */
-function hasNoAnswers(data: EventCustomFieldReportsResponse): boolean {
+/** Nothing to show or export: no field, or no field answered by anyone yet (no attendees at all is the same: every card
+ * would read zero). The tab draws only its empty state, and the page switches Export off, by this one answer. */
+export function isCustomFieldsReportEmpty(data: EventCustomFieldReportsResponse): boolean {
   return data.fields.every((field) => answeredCount(field) === 0);
 }
 
@@ -214,13 +215,23 @@ export function CustomFieldsReport({
   isActive,
   onEmptyChange,
 }: Readonly<{ data: EventCustomFieldReportsResponse; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
-  useReportEmpty(onEmptyChange, hasNoAnswers(data));
+  const empty = isCustomFieldsReportEmpty(data);
+  useReportEmpty(onEmptyChange, empty);
   if (data.fields.length === 0) {
     return (
       <EmptyState
         icon={<i className="ti ti-forms" aria-hidden="true" />}
         title="No custom fields yet"
         description="Add custom fields on the Fields tab of the Registration page to see a chart for each one here."
+      />
+    );
+  }
+  if (empty) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-forms" aria-hidden="true" />}
+        title="No answers yet"
+        description="Answers to your custom fields show up here once guests fill them in."
       />
     );
   }

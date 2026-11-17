@@ -155,6 +155,11 @@ function EventJourneyFunnel({ funnel }: Readonly<{ funnel: EventMailReportsRespo
   );
 }
 
+/** Nothing to show or export: no email was sent. The tab draws only its empty state, and the page switches Export off, by this one answer. */
+export function isMailReportEmpty(data: EventMailReportsResponse): boolean {
+  return data.delivery.total_attempts === 0;
+}
+
 /** The mail report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
  * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
 export function MailReport({
@@ -162,10 +167,11 @@ export function MailReport({
   isActive,
   onEmptyChange,
 }: Readonly<{ data: EventMailReportsResponse; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
-  useReportEmpty(onEmptyChange, data.delivery.total_attempts === 0);
+  const empty = isMailReportEmpty(data);
+  useReportEmpty(onEmptyChange, empty);
   return (
     <>
-      {data.delivery.total_attempts === 0 ? (
+      {empty ? (
         <EmptyState
           icon={<i className="ti ti-mail-off" aria-hidden="true" />}
           title="No emails sent yet"

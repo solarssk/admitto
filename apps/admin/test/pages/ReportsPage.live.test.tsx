@@ -1283,14 +1283,23 @@ describe("ReportsPage: Export is off while the tab has nothing to export", () =>
     fetchEventReports.mockResolvedValue(reportFixture(5));
   });
 
-  it("Event day: off for an event with no attendees, on with attendees", async () => {
+  it("Event day: only the empty state, and Export off, until someone has checked in (with or without attendees); on after", async () => {
     fetchEventReports.mockResolvedValueOnce(
       reportFixture(0, { summary: { ...reportFixture(0).summary, total_attendees: 0, no_shows: 0 } }),
     );
-    const { unmount } = renderPage();
+    const none = renderPage();
+    await screen.findByText("No check-ins yet");
     await waitFor(() => expect(exportButton().disabled).toBe(true));
     expect(reason()).toBe("Nothing to export yet.");
-    unmount();
+    expect(screen.queryByText("Total attendees")).toBeNull();
+    none.unmount();
+
+    fetchEventReports.mockResolvedValueOnce(reportFixture(0));
+    const noCheckIns = renderPage();
+    await screen.findByText("No check-ins yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByText("Total attendees")).toBeNull();
+    noCheckIns.unmount();
 
     renderPage();
     await waitFor(() => expect(admittedValue()).toBe("5"));
@@ -1304,6 +1313,7 @@ describe("ReportsPage: Export is off while the tab has nothing to export", () =>
     const { unmount } = renderPage("?tab=wallets");
     await screen.findByText("No wallet passes yet");
     await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByText("Wallet adoption")).toBeNull();
     expect(reason()).toBe("Nothing to export yet.");
     unmount();
 
@@ -1319,6 +1329,7 @@ describe("ReportsPage: Export is off while the tab has nothing to export", () =>
     renderPage("?tab=mail");
     await screen.findByText("No emails sent yet");
     await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByText("Event journey")).toBeNull();
     expect(reason()).toBe("Nothing to export yet.");
   });
 
@@ -1355,8 +1366,9 @@ describe("ReportsPage: Export is off while the tab has nothing to export", () =>
       fields: [textField(0), selectField([])],
     });
     const { unmount } = renderPage("?tab=customfields");
-    await screen.findByText("Diet");
+    await screen.findByText("No answers yet");
     await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByText("Diet")).toBeNull();
     unmount();
 
     fetchEventCustomFieldReports.mockResolvedValueOnce({
@@ -1364,8 +1376,9 @@ describe("ReportsPage: Export is off while the tab has nothing to export", () =>
       fields: [textField(0), selectField([{ key: "__not_answered__", label: "Not answered", count: 4, pct: 100 }])],
     });
     renderPage("?tab=customfields");
-    await screen.findByText("Diet");
+    await screen.findByText("No answers yet");
     await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByText("Size")).toBeNull();
   });
 
   it("Custom fields: on once any field has an answer", async () => {

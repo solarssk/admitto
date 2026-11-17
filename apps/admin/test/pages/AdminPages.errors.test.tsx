@@ -150,8 +150,11 @@ const emptyReport = {
   by_operator: [],
 };
 
-// Export is off for an event with no attendees, so the export tests need one.
-const reportWithAttendee = { ...emptyReport, summary: { ...emptyReport.summary, total_attendees: 1 } };
+// Export is off until someone has checked in, so the export tests need one admitted attendee.
+const reportWithAttendee = {
+  ...emptyReport,
+  summary: { ...emptyReport.summary, total_attendees: 1, admitted: 1, admission_rate_pct: 100 },
+};
 
 const archivedEvent = {
   id: "evt-arch",
