@@ -6,6 +6,7 @@ export const REGISTRATION_TABS = [
   { id: "fields", label: "Fields" },
   { id: "access", label: "Access" },
   { id: "legal", label: "Legal" },
+  { id: "checklist", label: "Checklist" },
 ] as const;
 
 export type RegistrationTab = (typeof REGISTRATION_TABS)[number];
@@ -16,11 +17,16 @@ export function registrationTabFromSearch(searchParams: URLSearchParams): Regist
   return REGISTRATION_TABS.find((tab) => tab.id === raw) ?? REGISTRATION_TABS[0];
 }
 
-/** The tab strip. Requests carries the number of requests that wait for a decision (D-B11) once it is known. */
-export function registrationTabItems(requestsCount?: number): TabItem[] {
-  return REGISTRATION_TABS.map(({ id, label }) => ({
-    id,
-    label,
-    count: id === "requests" ? requestsCount : undefined,
-  }));
+/** What the number on the Checklist tab says, for assistive tech. */
+const stepsOpen = (count: number) => `${count} ${count === 1 ? "step" : "steps"} open`;
+
+/**
+ * The tab strip. Requests carries the number of requests that wait for a decision (D-B11) and Checklist the number of steps that are
+ * still open, each once it is known and more than zero.
+ */
+export function registrationTabItems(requestsCount?: number, openSteps?: number): TabItem[] {
+  return REGISTRATION_TABS.map(({ id, label }) => {
+    if (id === "checklist" && openSteps) return { id, label, count: openSteps, countLabel: stepsOpen(openSteps) };
+    return { id, label, count: id === "requests" ? requestsCount : undefined };
+  });
 }

@@ -11,12 +11,13 @@ import { orLoginRedirect } from "../identity/loginRedirect.js";
 import { EventCustomFieldsCard } from "../requirements/EventCustomFieldsCard.js";
 import { RegistrationFieldsSkeleton } from "../requirements/RequirementsSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
+import { useAfterFirstAnswer } from "./useAfterFirstAnswer.js";
 
 /** One event, one tab: a different `:eventId` is a fresh tab (its own read and dialogs), never the previous one's. */
-export function RegistrationFieldsTab() {
+export function RegistrationFieldsTab({ onChecksStale }: Readonly<{ onChecksStale?: () => void }>) {
   const { eventId } = useParams();
   if (!eventId) return <p>Missing event.</p>;
-  return <RegistrationFieldsBody key={eventId} eventId={eventId} />;
+  return <RegistrationFieldsBody key={eventId} eventId={eventId} onChecksStale={onChecksStale} />;
 }
 
 /**
@@ -27,7 +28,9 @@ export function RegistrationFieldsTab() {
  * blocked and dimmed, while the read that follows an add, an edit or a delete runs. What a switch or an arrow has just saved
  * is shown at once, from the server's answer.
  */
-function RegistrationFieldsBody({ eventId }: Readonly<{ eventId: string }>) {
+function RegistrationFieldsBody({ eventId, onChecksStale }: Readonly<{ eventId: string; onChecksStale?: () => void }>) {
+  // What the checklist needs (a required text published, a required question) changes with this list: the page reads it again.
+  const onData = useAfterFirstAnswer(onChecksStale);
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   // A failure is told to the connection state when the answer is in, never when a Retry starts, so the wording of the error on
@@ -45,7 +48,7 @@ function RegistrationFieldsBody({ eventId }: Readonly<{ eventId: string }>) {
       }),
     [eventId, reportApiError],
   );
-  const list = useListLoad({ fetcher: fetchFields, fallback: "Could not load attendee fields." });
+  const list = useListLoad({ fetcher: fetchFields, fallback: "Could not load attendee fields.", onData });
   const card = useCardLoad(list);
 
   if (!card.gate.showContent) return <RegistrationFieldsSkeleton held={!card.gate.showIndicator} slow={card.slow} />;

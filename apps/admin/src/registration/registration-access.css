@@ -26,7 +26,6 @@
 
 /* The checklist: one row for each check, the icon, the heading with its sentence, and what to do about it. */
 .access-checklist,
-.access-questions,
 .access-missing,
 .access-consequences {
   margin: 0;
@@ -88,24 +87,6 @@ span.access-check__remedy {
 
 .access-consequences {
   margin-bottom: var(--space-3);
-}
-
-/* The questions of the form: the label, and whether the question is required. */
-.access-question {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-}
-
-.access-question + .access-question {
-  border-top: 1px solid var(--border);
-}
-
-.access-question__label {
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 /* The restriction of the company SSO sits in the Way in card, under the choice: its fields are spaced by the card's gap, and a
@@ -300,6 +281,11 @@ span.access-check__remedy {
   overflow-wrap: anywhere;
 }
 
+/* The link to the Checklist tab inside a sentence is underlined too (axe: link-in-text-block). */
+.access-text-link {
+  text-decoration: underline;
+}
+
 /* A link inside a sentence is underlined, so that it is told from the text by more than its colour (axe: link-in-text-block). */
 .access-provider .settings-card-intro a {
   text-decoration: underline;
@@ -318,4 +304,79 @@ span.access-check__remedy {
 .access-bot .settings-row {
   padding: 0;
   border-bottom: 0;
+}
+
+/* The Checklist tab: a step has its action at the right, beside the sentence; a step that only a superadmin can do has a badge by its name. */
+/* The lines of what a step says stack like wrapped text: no gap between them, one line height. Only the name keeps a little room under it. */
+.access-check--step .overview-check__body {
+  flex: 1;
+  gap: 0;
+  min-width: 0;
+}
+
+.access-check__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.access-check__aside {
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+}
+
+/* Nothing is left for this person: an icon, what it means and what to do. */
+.access-ready {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-3);
+  text-align: center;
+}
+
+.access-ready__title {
+  font-size: var(--fs-h2);
+}
+
+.access-ready p {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.access-ready__icon {
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-6) + var(--space-5));
+  height: calc(var(--space-6) + var(--space-5));
+  border-radius: 50%;
+  font-size: var(--fs-display);
+  background: var(--status-ok-tint);
+  color: var(--status-ok-fg);
+}
+
+.access-ready__icon--info {
+  background: var(--status-info-tint);
+  color: var(--status-info-fg);
+}
+
+/* On a narrow screen the button goes under the sentence, so the sentence keeps its width. */
+@media (max-width: 640px) {
+  .access-check--step {
+    flex-wrap: wrap;
+  }
+
+  .access-check--step .overview-check__body {
+    flex-basis: calc(100% - var(--space-7));
+  }
+
+  .access-check__aside {
+    flex-basis: 100%;
+    margin-left: 0;
+    align-self: flex-start;
+  }
 }

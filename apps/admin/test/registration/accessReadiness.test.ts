@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { accessMethodDetail, botProtectionOffText, READINESS_COPY, readinessCopy, remedyFor } from "../../src/registration/accessReadiness.js";
+import { accessMethodDetail, actionLabel, botProtectionOffText, checklistBanner, checklistFromSettings, formQuestionsText, openStepCount, READINESS_COPY, readinessCopy, remedyFor, splitChecklist } from "../../src/registration/accessReadiness.js";
 
 /** The checks the server reports, read from the file that holds them: the screen has words for each one, and for no other. */
 function serverKeys(): string[] {
@@ -45,6 +45,10 @@ describe("the words of the checks", () => {
     for (const key of ["bot_protection", "mail_provider", "instance_url"] as const) {
       expect(remedy(key), key).toEqual({ text: "Ask a superadmin to set it up." });
     }
+    // A superadmin is sent to the organisation's settings for each of them.
+    expect(remedyFor(READINESS_COPY.bot_protection, true)).toEqual({ text: "Set it up in Organisation settings, External services.", link: "organisation_external" });
+    expect(remedyFor(READINESS_COPY.mail_provider, true)).toEqual({ text: "Set it up in Organisation settings, Mail.", link: "organisation_mail" });
+    expect(remedyFor(READINESS_COPY.instance_url, true)).toEqual({ text: "Set it in Organisation settings, General.", link: "organisation_general" });
     // How guests open the form is set in Event settings, by a superadmin: the others are told to ask, a superadmin is sent there.
     for (const key of ["access_method", "identity_provider", "password"] as const) {
       expect(remedy(key)?.text, key).toMatch(/^Ask a superadmin to (choose|set) it in Event settings, Registration\.$/);
@@ -52,8 +56,8 @@ describe("the words of the checks", () => {
       expect(remedyFor(READINESS_COPY[key], true)?.text, key).toMatch(/^(Choose|Set) it in Event settings, Registration\.$/);
       expect(remedyFor(READINESS_COPY[key], false), key).toBe(READINESS_COPY[key].remedy);
     }
-    // A check without a place of its own for a superadmin reads the same for everybody.
-    expect(remedyFor(READINESS_COPY.mail_provider, true)).toBe(READINESS_COPY.mail_provider.remedy);
+    // A check that a superadmin has no other place for reads the same for everybody.
+    expect(remedyFor(READINESS_COPY.legal_documents, true)).toBe(READINESS_COPY.legal_documents.remedy);
     expect(remedy("legal_documents")?.link).toBe("legal");
     expect(remedy("form_questions")?.link).toBe("fields");
     expect(remedy("required_fields")?.link).toBe("fields");
@@ -106,5 +110,110 @@ describe("accessMethodDetail: what the row Access method says is set", () => {
     ["no method", null, null, "No access method is chosen yet. Guests cannot open the form."],
   ] as const)("says it for %s", (_what, method, provider, expected) => {
     expect(accessMethodDetail(method, provider)).toBe(expected);
+  });
+});
+
+describe("splitChecklist: who does each open step", () => {
+  const check = (key: string, ok: boolean) => ({ key, ok });
+  const all = [
+    check("access_method", true),
+    check("bot_protection", false),
+    check("legal_documents", false),
+    check("mail_provider", false),
+    check("form_questions", true),
+    check("event_not_archived", false),
+    check("bot_protection_not_used", true),
+  ];
+  const keys = (list: Array<{ key: string }>) => list.map((entry) => entry.key);
+
+  it("marks the checks that only a superadmin can put right", () => {
+    const only = Object.entries(READINESS_COPY).filter(([, copy]) => copy.superadminOnly === true).map(([key]) => key);
+
+    expect(only).toEqual(["access_method", "bot_protection", "identity_provider", "password", "mail_provider", "instance_url", "event_not_archived"]);
+  });
+
+  it("leaves a step that the person can do under For you, and one that waits for a superadmin under Waiting, for somebody who is not one", () => {
+    const sections = splitChecklist(all, false);
+
+    expect(keys(sections.forYou)).toEqual(["legal_documents"]);
+    expect(keys(sections.waiting)).toEqual(["bot_protection", "mail_provider"]);
+    // What is met comes first, then the information row; the archived row is never listed.
+    expect(keys(sections.done)).toEqual(["access_method", "form_questions", "bot_protection_not_used"]);
+    expect(sections.total).toBe(5);
+  });
+
+  it("gives a superadmin every open step, and nothing to wait for", () => {
+    const sections = splitChecklist(all, true);
+
+    expect(keys(sections.forYou)).toEqual(["bot_protection", "legal_documents", "mail_provider"]);
+    expect(sections.waiting).toEqual([]);
+  });
+
+  it("counts the open steps the same for everybody, without information and the archived row", () => {
+    expect(openStepCount(all)).toBe(3);
+    expect(openStepCount([])).toBe(0);
+    expect(openStepCount([check("bot_protection_not_used", false), check("event_not_archived", false)])).toBe(0);
+  });
+
+  it("keeps a check it has no words for under For you, so a newer server never hides a step", () => {
+    expect(keys(splitChecklist([check("something_new", false)], false).forYou)).toEqual(["something_new"]);
+  });
+});
+
+describe("formQuestionsText", () => {
+  it("says how many questions of the organiser are on the form, in the singular and the plural, and what a guest gives when there are none", () => {
+    expect(formQuestionsText(1)).toBe("1 question of yours is on the form.");
+    expect(formQuestionsText(3)).toBe("3 questions of yours are on the form.");
+    expect(formQuestionsText(0)).toContain("No question of yours is on the form.");
+  });
+});
+
+describe("checklistFromSettings: the checks of the checklist", () => {
+  const readiness = [{ key: "access_method", ok: true }];
+  const address = { domain: "events.example.com", status: "ok", check_result: "ok", verified: true, checked_at: null } as const;
+
+  it("adds the address for guests only when a check once found it working, open while the last check fails", () => {
+    expect(checklistFromSettings({ readiness, own_address: null })).toEqual(readiness);
+    expect(checklistFromSettings({ readiness, own_address: { ...address, verified: false, status: "failing" } })).toEqual(readiness);
+    expect(checklistFromSettings({ readiness, own_address: address })).toEqual([...readiness, { key: "own_address", ok: true }]);
+    expect(checklistFromSettings({ readiness, own_address: { ...address, status: "failing" } })).toEqual([...readiness, { key: "own_address", ok: false }]);
+  });
+
+  it("has words and a superadmin's remedy for the address, and the server's list of keys does not hold it", () => {
+    expect(readinessCopy("own_address")).toMatchObject({ title: "Address for guests", superadminOnly: true });
+    expect(remedyFor(readinessCopy("own_address"), true)).toEqual({ text: "Check the address in Event settings, Registration.", link: "registration_settings" });
+    expect(Object.keys(READINESS_COPY)).not.toContain("own_address");
+  });
+});
+
+describe("actionLabel", () => {
+  it.each([
+    ["legal", "Open Legal"],
+    ["fields", "Open Fields"],
+    ["event_settings", "Open Event settings"],
+    ["registration_settings", "Open Event settings"],
+    ["organisation_general", "Open Organisation settings"],
+    ["organisation_mail", "Open Organisation settings"],
+    ["organisation_external", "Open Organisation settings"],
+  ] as const)("is the button of %s", (link, label) => {
+    expect(actionLabel(link)).toBe(label);
+  });
+});
+
+describe("checklistBanner", () => {
+  const base = { mode: null, archived: false, forYou: 0, waiting: 0, addressStopped: false } as const;
+
+  it("is about the archive first, whatever is open", () => {
+    expect(checklistBanner({ ...base, archived: true, forYou: 2 })).toMatchObject({ variant: "info", goToAccess: false });
+  });
+
+  it("is ready, with the way to the Access tab, when registration is off and nothing is open", () => {
+    expect(checklistBanner(base)).toEqual({ variant: "success", text: "Ready. Registration can be turned on.", goToAccess: true });
+    expect(checklistBanner({ ...base, mode: "automatic" })).toMatchObject({ variant: "success", goToAccess: false });
+  });
+
+  it("is an error while registration is on and a step is open, and names the address when that is the step", () => {
+    expect(checklistBanner({ ...base, mode: "approval", forYou: 1 }).text).toContain("something it needs is missing");
+    expect(checklistBanner({ ...base, mode: "approval", waiting: 1, addressStopped: true }).text).toContain("the address of this event stopped working");
   });
 });

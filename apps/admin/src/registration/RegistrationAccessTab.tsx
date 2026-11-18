@@ -9,25 +9,23 @@ import { orLoginRedirect } from "../identity/loginRedirect.js";
 import { PanelLoadError } from "../settings/PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "../settings/SettingsPanelSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
+import type { ChecklistCheck } from "./accessReadiness.js";
 import { RegistrationAccessForm } from "./RegistrationAccessForm.js";
 
-const ACCESS_HINT = "Whether guests can register for this event, the access method, and what the form asks them.";
+const ACCESS_HINT = "Whether guests can register for this event, and what the form asks them.";
 
 /** The cards of the tab as its placeholder draws them: the real titles, over rows that make each card about as tall as the real one
- * at 1280px (272, 731 for ten checks, 177, 553 and 256 for three questions, measured in Chrome on an event that is ready). */
+ * at 1280px (measured in Chrome on an event that is ready). */
 const ACCESS_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "mode", title: "Guest registration", intro: 1, rows: 2, rowHeight: 60 },
-  { id: "checklist", title: "Setup checklist", rows: 10, rowHeight: 46 },
-  { id: "way-in", title: "Access method", intro: 1, rows: 1, rowHeight: 40 },
   { id: "form", title: "Form", rows: 6, rowHeight: 64 },
-  { id: "questions", title: "Your questions on the form", rows: 2, rowHeight: 40 },
 ];
 
 /** One event, one tab: a different `:eventId` is a fresh tab (its own read and its own draft), never the previous one's. */
-export function RegistrationAccessTab() {
+export function RegistrationAccessTab({ onReadiness }: Readonly<{ onReadiness?: (readiness: ChecklistCheck[]) => void }>) {
   const { eventId } = useParams();
   if (!eventId) return <p>Missing event.</p>;
-  return <RegistrationAccessBody key={eventId} eventId={eventId} />;
+  return <RegistrationAccessBody key={eventId} eventId={eventId} onReadiness={onReadiness} />;
 }
 
 /**
@@ -36,7 +34,7 @@ export function RegistrationAccessTab() {
  * grey with their real titles, an error with a busy Retry that stays on screen until the answer is in, and the form only when both
  * answers are. A loaded form is never read again under the person's hands.
  */
-function RegistrationAccessBody({ eventId }: Readonly<{ eventId: string }>) {
+function RegistrationAccessBody({ eventId, onReadiness }: Readonly<{ eventId: string; onReadiness?: (readiness: ChecklistCheck[]) => void }>) {
   const { event, refreshEvent } = useOutletContext<{ event: EventDto; refreshEvent?: () => Promise<unknown> }>();
   const { reportApiError } = useConnectionState();
   const [loaded, setLoaded] = useState<{ settings: RegistrationSettingsDto; legalItems: LegalDocumentDto[] } | null>(null);
@@ -75,5 +73,5 @@ function RegistrationAccessBody({ eventId }: Readonly<{ eventId: string }>) {
   }
   // A load that worked has put its answer in `loaded`; a failed one is `panel.error`, above.
   assertPresent(loaded);
-  return <RegistrationAccessForm eventId={eventId} event={event} settings={loaded.settings} legalItems={loaded.legalItems} refreshEvent={refreshEvent} />;
+  return <RegistrationAccessForm eventId={eventId} event={event} settings={loaded.settings} legalItems={loaded.legalItems} refreshEvent={refreshEvent} onReadiness={onReadiness} />;
 }

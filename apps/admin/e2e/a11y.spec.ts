@@ -213,17 +213,24 @@ const ADMIN_SURFACES: {
     blocking: true,
   },
   {
-    // Its Access tab: the registration settings of the event with the checklist of what registration needs, and the legal texts the
+    // Its Access tab: the registration settings of the event and the legal texts the
     // list of consents is made from. The event of this suite has nothing set up, so the page is the one a new event has.
     name: "admin-registration-access",
     path: (i) => `/admin/events/${i.event}/registration?tab=access`,
     data: (i) => [`/api/admin/events/${i.event}/registration/settings`, `/api/admin/events/${i.event}/legal-documents`],
     blocking: true,
   },
+  {
+    // Its Checklist tab: what registration still needs, in the cards for you and for a superadmin, from the same settings.
+    name: "admin-registration-checklist",
+    path: (i) => `/admin/events/${i.event}/registration?tab=checklist`,
+    data: (i) => [`/api/admin/events/${i.event}/registration/settings`],
+    blocking: true,
+  },
 ];
 
 test("admin pages", async ({ page, baseURL }, testInfo) => {
-  // Nine pages, each waited for and scanned, plus the sign-in: more than the 30 s default.
+  // Ten pages, each waited for and scanned, plus the sign-in: more than the 30 s default.
   test.setTimeout(180_000);
   // Re-seed first: it resets the admin's MFA (a retry after a failed attempt could not enrol TOTP
   // again otherwise) and puts the attendee back to "not admitted", the state whose "Not yet" item

@@ -7,7 +7,7 @@ import { reportApiError } from "../../src/connection/ConnectionStateProvider.js"
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import { advanceTimers, deferred, getTooltipText, hangUntilAborted, isOff } from "../test-utils.js";
 import { addToast, api } from "./accessApiMocks.js";
-import { archivedEvent, checks, event, legalAnswer, notUsedChecks, settings, texts } from "./accessData.js";
+import { archivedEvent, checks, event, legalAnswer, settings, texts } from "./accessData.js";
 import { accessPanel, card, loaded, radio, renderAccess, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 const goToLogin = vi.fn();
@@ -32,7 +32,6 @@ vi.mock("@admitto/ui", async (importOriginal) => {
 });
 
 const placeholder = () => screen.queryByRole("status", { name: "Loading registration settings" });
-const checklistRows = () => Array.from(card("Setup checklist").querySelectorAll("li.access-check"));
 
 beforeEach(() => {
   resetApi();
@@ -68,7 +67,7 @@ describe("RegistrationAccessTab: the first read", () => {
 
     const held = placeholder() as HTMLElement;
     expect(held.classList.contains("at-loading-hold")).toBe(true);
-    for (const title of ["Guest registration", "Setup checklist", "Access method", "Form", "Your questions on the form"]) expect(within(held).getByText(title)).toBeTruthy();
+    for (const title of ["Guest registration", "Form"]) expect(within(held).getByText(title)).toBeTruthy();
     // The shapes are decoration; nothing claims that there is nothing yet.
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("radiogroup")).toBeNull();
@@ -146,7 +145,7 @@ describe("RegistrationAccessTab: a read that fails", () => {
     expect(alert.textContent).toContain("Could not load the registration settings");
     expect(alert.textContent).toContain("You do not have access.");
     expect(screen.queryByRole("radiogroup")).toBeNull();
-    expect(screen.queryByText("Setup checklist", { selector: ".at-card__title" })).toBeNull();
+    expect(screen.queryByText("Form", { selector: ".at-card__title" })).toBeNull();
     expect(reportApiError).toHaveBeenCalledWith(403);
   });
 
@@ -167,9 +166,6 @@ describe("RegistrationAccessTab: a read that fails", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
-
-/** The row "Access method" of the checklist. */
-const accessMethodRow = () => Array.from(card("Setup checklist").querySelectorAll("li.access-check")).find((row) => row.textContent?.includes("Access method")) as HTMLElement;
 
 describe("RegistrationAccessTab: the settings", () => {
   it("reads the settings and the legal texts of the event, with the signal that abandons them", async () => {
@@ -214,7 +210,6 @@ describe("RegistrationAccessTab: the settings", () => {
 
     expect(radio("With approval").getAttribute("aria-checked")).toBe("true");
     expect(radio("Off").getAttribute("aria-checked")).toBe("false");
-    expect(accessMethodRow().textContent).toContain("Password. Guests need the link and the event password to open the form.");
     expect(toggle("Waiting list").checked).toBe(false);
     expect(toggle("Confirm email addresses").checked).toBe(true);
     expect(toggle("Ask for the company").checked).toBe(true);
@@ -237,14 +232,6 @@ describe("RegistrationAccessTab: the settings", () => {
     cleanup();
     await renderLoaded(settings({ mode: null }));
     expect(screen.getByText("Guests cannot open the form. The requests you already have stay on the Requests tab.")).toBeTruthy();
-  });
-
-  it.each<[string[]]>([[[]], [["link", "password"]], [["sso", "link"]]])("shows no access method as chosen for %j, as the server counts none, and has nothing to save", async (methods) => {
-    await renderLoaded(settings({ access_methods: methods as RegistrationSettingsDto["access_methods"], readiness: checks("access_method") }));
-
-    expect(accessMethodRow().textContent).toContain("No access method is chosen yet. Guests cannot open the form.");
-    expect(accessMethodRow().textContent).not.toContain("Set by a superadmin");
-    expect(isOff(saveButton())).toBe(true);
   });
 
   it("reads again nothing under the form that is loaded: one read, whatever the person does", async () => {
@@ -278,18 +265,17 @@ describe("RegistrationAccessTab: turning registration on", () => {
     expect(radio("Off").getAttribute("aria-checked")).toBe("true");
     const group = screen.getByRole("radiogroup", { name: "Registration mode" });
     const reason = document.getElementById(group.getAttribute("aria-describedby") ?? "");
-    expect(reason?.textContent).toBe("Registration can be turned on when the checklist below is done.");
+    expect(reason?.textContent).toBe("Registration can be turned on when the steps on the Checklist tab are done.");
+    expect(within(reason as HTMLElement).getByRole("link", { name: "Checklist tab" }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=checklist");
   });
 
   it("says to save first when the form holds changes, since the checklist is of what is saved", async () => {
     await renderLoaded(settings({ readiness: checks("legal_documents") }));
     expect(screen.queryByText(/Save your changes first/)).toBeNull();
-    expect(screen.queryByText("The checklist shows what is saved. Save your changes to update it.")).toBeNull();
 
     fireEvent.click(toggle("Ask for the company"));
 
     expect(screen.getByText(/Save your changes first: the checklist shows what is saved\./)).toBeTruthy();
-    expect(screen.getByText("The checklist shows what is saved. Save your changes to update it.")).toBeTruthy();
   });
 
   it("is not blocked for an event that has it on: a move between the modes is never refused", async () => {
@@ -304,6 +290,10 @@ describe("RegistrationAccessTab: turning registration on", () => {
     await renderLoaded(settings({ mode: "automatic", readiness: checks("bot_protection") }));
 
     expect(screen.getByText(/Registration is on, but something it needs is missing/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "The Checklist tab says what." }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=checklist");
+    // The long checklist is not on this tab any more.
+    expect(screen.queryByText("Setup checklist", { selector: ".at-card__title" })).toBeNull();
+    expect(screen.queryByText("For you", { selector: ".at-card__title" })).toBeNull();
 
     cleanup();
     await renderLoaded(settings({ mode: "automatic", readiness: checks() }));
@@ -312,107 +302,6 @@ describe("RegistrationAccessTab: turning registration on", () => {
     cleanup();
     await renderLoaded(settings({ mode: null, readiness: checks("bot_protection") }));
     expect(screen.queryByText(/Registration is on, but something it needs is missing/)).toBeNull();
-  });
-});
-
-describe("RegistrationAccessTab: the checklist", () => {
-  it("has a row for each check, the ones that are not met first, and how many are done", async () => {
-    await renderLoaded(settings({ readiness: checks("mail_provider", "legal_documents") }));
-
-    const rows = checklistRows();
-    expect(rows).toHaveLength(9);
-    expect(rows[0]?.textContent).toContain("Legal texts");
-    expect(rows[0]?.textContent).toContain("Publish the privacy notice, the terms and every consent you chose.");
-    expect(rows[1]?.textContent).toContain("Email sending");
-    expect(rows[1]?.textContent).toContain("Email sending is not set up for this event, so guests would get no email.");
-    expect(rows[2]?.textContent).toContain("Link. Anyone who has the link can ask to join.");
-    expect(within(card("Setup checklist")).getByText("7 of 9 done")).toBeTruthy();
-  });
-
-  it("says in words, not by colour alone, which check is done and which is to do", async () => {
-    await renderLoaded(settings({ readiness: checks("legal_documents") }));
-
-    const [first, second] = checklistRows();
-    expect(first?.querySelector(".sr-only")?.textContent).toBe("To do: ");
-    expect(second?.querySelector(".sr-only")?.textContent).toBe("Done: ");
-  });
-
-  it("shows bot protection that is not used as grey information, last, with a dash, and does not count it", async () => {
-    await renderLoaded(settings({ bot_protection: "not_used", readiness: notUsedChecks("mail_provider") }));
-
-    const rows = checklistRows();
-    expect(rows).toHaveLength(9);
-    const info = rows.at(-1) as HTMLElement;
-    expect(info.textContent).toContain("Bot protection");
-    expect(info.textContent).toContain("Off for this organisation. The link and password forms have no bot check.");
-    expect(info.querySelector(".sr-only")?.textContent).toBe("Off: ");
-    expect(info.querySelector(".overview-check__icon--neutral")).not.toBeNull();
-    expect(info.querySelector(".ti-minus")).not.toBeNull();
-    // Eight tasks, one of them not done, and the information row is not one of them.
-    expect(within(card("Setup checklist")).getByText("7 of 8 done")).toBeTruthy();
-    expect(rows[0]?.textContent).toContain("Email sending");
-    expect(within(info).queryByRole("link")).toBeNull();
-  });
-
-  it("tells the event's own switch from the organisation's: the row says Off for this event when only the event has it off", async () => {
-    await renderLoaded(settings({ bot_protection: "required", bot_protection_enabled: false, readiness: notUsedChecks() }));
-
-    const info = checklistRows().at(-1) as HTMLElement;
-    expect(info.textContent).toContain("Off for this event. The link and password forms of this event have no bot check.");
-    expect(info.textContent).not.toContain("organisation");
-  });
-
-  it("sends a missing check to the tab that puts it right, and a superadmin's to the superadmin", async () => {
-    api.fetchRegistrationSettings.mockResolvedValue(
-      settings({ readiness: checks("legal_documents", "form_questions", "required_fields", "bot_protection", "mail_provider", "instance_url", "event_not_ended") }),
-    );
-    const { router } = renderAccess();
-    await loaded();
-    const checklist = within(card("Setup checklist"));
-
-    const legal = checklist.getByRole("link", { name: "Open the Legal tab." });
-    expect(legal.getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=legal");
-    expect(checklist.getAllByRole("link", { name: "Open the Fields tab." })).toHaveLength(2);
-    expect(checklist.getByRole("link", { name: "Check the date and hours in Event settings." }).getAttribute("href")).toBe("/admin/events/evt-1/settings");
-    expect(checklist.getAllByText("Ask a superadmin to set it up.")).toHaveLength(3);
-    expect(checklist.queryByText(/Ways in/)).toBeNull();
-
-    fireEvent.click(legal);
-    expect(router.state.location.search).toBe("?tab=legal");
-    // A tab of the page replaces the entry of the history, as the tab strip does: Back leaves the page, not the tab.
-    expect(router.state.historyAction).toBe("REPLACE");
-  });
-
-  it("does not send a check that is put right on this tab anywhere", async () => {
-    await renderLoaded(settings({ access_methods: [], readiness: checks("access_method") }));
-
-    const row = checklistRows()[0] as HTMLElement;
-    expect(row.textContent).toContain("No access method is chosen yet. Guests cannot open the form.");
-    expect(within(row).queryByRole("link")).toBeNull();
-  });
-
-  it("does not say again that the event is archived, which the page above says, and says it for an event that is not archived as far as the page knows", async () => {
-    await renderLoaded(settings({ readiness: checks("event_not_archived") }), { withEvent: archivedEvent });
-    expect(checklistRows()).toHaveLength(8);
-    expect(screen.queryByText("Event status")).toBeNull();
-    expect(within(card("Setup checklist")).getByText("8 of 8 done")).toBeTruthy();
-
-    cleanup();
-    await renderLoaded(settings({ readiness: checks("event_not_archived") }));
-    expect(screen.getByText("The event is archived, so it cannot take registrations.")).toBeTruthy();
-    expect(screen.getByText("Ask a superadmin to restore it.")).toBeTruthy();
-  });
-
-  it("reads a check it has no words for as another thing that is missing, so a newer server never leaves a blank row", async () => {
-    await renderLoaded(settings({ readiness: [...checks(), { key: "something_new" as never, ok: false }] }));
-
-    expect(checklistRows()[0]?.textContent).toContain("Something else that registration needs is missing.");
-  });
-
-  it("asks for the password only when the way in is the password, as the server lists it", async () => {
-    await renderLoaded(settings({ access_methods: ["password"], readiness: [{ key: "access_method", ok: true }, { key: "password", ok: false }] }));
-
-    expect(checklistRows()[0]?.textContent).toContain("Set the password that guests will enter.");
   });
 });
 
@@ -513,29 +402,13 @@ describe("RegistrationAccessTab: the consents", () => {
   });
 });
 
-describe("RegistrationAccessTab: the questions on the form", () => {
-  it("lists the questions the form asks, whether each is required, and where to change them", async () => {
-    await renderLoaded(
-      settings({
-        public_fields: [
-          { key: "plate", label: "Registration number of your car", type: "text", required: true },
-          { key: "diet", label: "Dietary requirements", type: "text", required: false },
-        ],
-      }),
-    );
+describe("RegistrationAccessTab: the questions of the event", () => {
+  it("has no card of the questions on the form (the Fields tab is where they are), and a link to the Fields tab in the Form card", async () => {
+    await renderLoaded(settings({ public_fields: [{ key: "plate", label: "Registration number of your car", type: "text", required: true }] }));
 
-    const questions = within(card("Your questions on the form"));
-    const rows = questions.getAllByRole("listitem");
-    expect(rows.map((row) => row.textContent)).toEqual(["Registration number of your carRequired", "Dietary requirementsOptional"]);
-    expect(questions.getByRole("link", { name: "Add or change questions on the Fields tab." }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
-  });
-
-  it("says what a guest is asked when none of the organiser's questions is on the form", async () => {
-    await renderLoaded(settings({ public_fields: [] }));
-
-    const questions = within(card("Your questions on the form"));
-    expect(questions.queryByRole("listitem")).toBeNull();
-    expect(questions.getByText("No question of yours is on the form. Guests give their name and email address, and what the switches above add.")).toBeTruthy();
+    expect(screen.queryByText("Your questions on the form", { selector: ".at-card__title" })).toBeNull();
+    expect(screen.queryByText("Registration number of your car")).toBeNull();
+    expect(within(card("Form")).getByRole("link", { name: "Add or change your own questions on the Fields tab." }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
   });
 });
 

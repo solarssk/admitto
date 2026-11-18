@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isOff } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
-import { settings, ssoChecks, ssoEventSettings } from "./accessData.js";
-import { card, radio, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
+import { settings, ssoEventSettings } from "./accessData.js";
+import { checklistPanel, openDone, radio, renderChecklistLoaded, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const { api: mocks } = await import("./accessApiMocks.js");
@@ -44,15 +44,19 @@ afterEach(() => {
 });
 
 describe("the company SSO as the way in of an event, on the Access tab", () => {
-  it("is stated in the checklist, with the identity provider, and has no control that changes it on this tab", async () => {
+  it("has no control that changes it on this tab, and the checklist states it with the identity provider", async () => {
     await renderLoaded(ssoEventSettings());
 
-    expect(card("Setup checklist").textContent).toContain("Company SSO. Guests sign in with Contoso Entra.");
     expect(screen.queryByRole("radio", { name: "Company SSO" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
     expect(screen.queryByText("Event password")).toBeNull();
     expect(screen.queryByLabelText("Claim name")).toBeNull();
     expect(screen.queryByLabelText("Allowed values")).toBeNull();
+    cleanup();
+
+    await renderChecklistLoaded(ssoEventSettings());
+    openDone();
+    expect(checklistPanel().textContent).toContain("Company SSO. Guests sign in with Contoso Entra.");
   });
 
   it("greys out the confirmation of the address for the company SSO and says why, and gives the switch back, unchanged, with the other ways in", async () => {
@@ -77,24 +81,5 @@ describe("the company SSO as the way in of an event, on the Access tab", () => {
     await save();
 
     expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { waitlist_enabled: false });
-  });
-});
-
-describe("the setup checklist of an event with the company SSO", () => {
-  const rows = () => Array.from(card("Setup checklist").querySelectorAll("li.access-check"));
-
-  it("has no bot protection among its checks, and the company SSO as one", async () => {
-    await renderLoaded(ssoEventSettings());
-
-    expect(screen.queryByText("Bot protection")).toBeNull();
-    expect(within(card("Setup checklist")).getByText("Identity provider")).toBeTruthy();
-    expect(rows()).toHaveLength(9);
-  });
-
-  it("says what to do, and who sets providers up, when the identity provider is not chosen", async () => {
-    await renderLoaded(ssoEventSettings({ readiness: ssoChecks("identity_provider") }));
-
-    const row = rows()[0] as HTMLElement;
-    expect(row.textContent).toContain("Choose an identity provider for Company SSO. If the list is empty, ask a superadmin to set one up under Identity.");
   });
 });

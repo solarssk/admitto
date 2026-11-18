@@ -17,6 +17,7 @@ import { CopyLegalTextsDialog } from "./CopyLegalTextsDialog.js";
 import { LegalTextEditor } from "./LegalTextEditor.js";
 import { LegalTextsList } from "./LegalTextsList.js";
 import { legalTextRows, missingTextName, type LegalTextRow, type LegalTextTarget } from "./legalTexts.js";
+import { useAfterFirstAnswer } from "./useAfterFirstAnswer.js";
 
 /** The text open in the editor: one the event has, one it has not written yet, or a consent that is about to be added. */
 type OpenText = { target: LegalTextTarget; exists: boolean; newConsent: boolean };
@@ -24,10 +25,10 @@ type OpenText = { target: LegalTextTarget; exists: boolean; newConsent: boolean 
 const NEW_CONSENT: OpenText = { target: { ref: "", kind: "consent", key: null }, exists: false, newConsent: true };
 
 /** One event, one tab: a different `:eventId` is a fresh tab (its own read and editor), never the previous one's. */
-export function RegistrationLegalTab() {
+export function RegistrationLegalTab({ onChecksStale }: Readonly<{ onChecksStale?: () => void }>) {
   const { eventId } = useParams();
   if (!eventId) return <p>Missing event.</p>;
-  return <RegistrationLegalBody key={eventId} eventId={eventId} />;
+  return <RegistrationLegalBody key={eventId} eventId={eventId} onChecksStale={onChecksStale} />;
 }
 
 /**
@@ -36,7 +37,9 @@ export function RegistrationLegalTab() {
  * `useCardLoad`): a placeholder in the card's own shape for the first read, an error with a busy Retry that stays on screen
  * until the answer is in, and the list kept, blocked and dimmed, while the read that follows a change runs.
  */
-function RegistrationLegalBody({ eventId }: Readonly<{ eventId: string }>) {
+function RegistrationLegalBody({ eventId, onChecksStale }: Readonly<{ eventId: string; onChecksStale?: () => void }>) {
+  // What the checklist needs (a required text published, a required question) changes with this list: the page reads it again.
+  const onData = useAfterFirstAnswer(onChecksStale);
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
@@ -56,7 +59,7 @@ function RegistrationLegalBody({ eventId }: Readonly<{ eventId: string }>) {
       }),
     [eventId, reportApiError],
   );
-  const list = useListLoad({ fetcher: fetchList, fallback: "Could not load the legal texts." });
+  const list = useListLoad({ fetcher: fetchList, fallback: "Could not load the legal texts.", onData });
   const card = useCardLoad(list);
 
   if (!card.gate.showContent) {

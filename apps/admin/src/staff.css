@@ -8996,3 +8996,8 @@ output.mail-field-hint {
 .event-load-error .at-empty-state {
   padding-bottom: 1.5rem;
 }
+
+/* A closed collapsible card in a placeholder: the header alone, with no line under it, as the card is when it is loaded. */
+.settings-skeleton__closed .at-card__header {
+  border-bottom-color: transparent;
+}

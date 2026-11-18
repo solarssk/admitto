@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { expect } from "vitest";
 import { createMemoryRouter, Outlet, RouterProvider } from "react-router";
 import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
@@ -50,5 +51,38 @@ export async function renderLoaded(saved: RegistrationSettingsDto = settings(), 
   api.fetchRegistrationSettings.mockResolvedValue(saved);
   const rendered = renderAccess({ withEvent });
   await loaded();
+  return rendered;
+}
+
+/** The Registration page on its Checklist tab. */
+export function renderChecklist({ withEvent = event, path = "/admin/events/evt-1/registration?tab=checklist" } = {}) {
+  return renderAccess({ withEvent, path });
+}
+
+export const checklistPanel = () => screen.getByRole("tabpanel", { name: "Checklist" });
+/** Every row of the checklist that can be seen, in the order of the page, whichever card it is in (what is in a closed Done is inert, and not among them). */
+export const checklistRows = () => Array.from(checklistPanel().querySelectorAll<HTMLElement>("li.access-check")).filter((row) => !row.closest("[inert]"));
+
+/** Opens the card Done, which is closed until it is opened: its rows are then among the rows of the checklist. */
+export function openDone() {
+  fireEvent.click(doneSummary());
+}
+
+/** The header of the card Done. */
+export const doneSummary = () => within(checklistPanel()).getByRole("button", { name: /^Done/ });
+
+/** Waits until the checklist is on screen: the placeholder draws the titles of the cards too, so a title alone is not the answer. */
+export async function checklistLoaded() {
+  await waitFor(() => {
+    expect(screen.queryByRole("status", { name: "Loading the checklist" })).toBeNull();
+    expect(screen.getByText("Registration checklist", { selector: ".at-card__title" })).toBeTruthy();
+  });
+}
+
+/** The checklist with these settings, read and on screen. */
+export async function renderChecklistLoaded(saved: RegistrationSettingsDto = settings(), { withEvent = event } = {}) {
+  api.fetchRegistrationSettings.mockResolvedValue(saved);
+  const rendered = renderChecklist({ withEvent });
+  await checklistLoaded();
   return rendered;
 }

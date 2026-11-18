@@ -46,3 +46,13 @@ describe("the second line of a row of the Setup checklist", () => {
     expect(declarationsOf(css, ".access-check__remedy")).not.toMatch(/color:/);
   });
 });
+
+describe("the lines of one row of the Checklist tab", () => {
+  it("stack like wrapped text: no gap between the lines of a step, and only the name keeps room under it", () => {
+    expect(declarationsOf(css, ".access-check--step .overview-check__body")).toMatch(/gap:\s*0;/);
+    expect(declarationsOf(css, ".access-check__title")).toMatch(/margin-bottom:\s*var\(--space-1\)/);
+    // The lines of the sentence and of what to do next share the font size, so they read as one statement.
+    expect(declarationsOf(css, ".access-check__remedy")).toMatch(/font-size:\s*var\(--fs-xs\)/);
+    expect(declarationsOf(staff, ".overview-check__detail")).toMatch(/font-size:\s*var\(--fs-xs\)/);
+  });
+});
