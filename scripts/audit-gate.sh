@@ -6,7 +6,7 @@ set -uo pipefail
 
 accepted="${ACCEPTED_ADVISORY:-}"
 report="${AUDIT_REPORT:-}"
-if [ -z "$report" ]; then
+if [[ -z "$report" ]]; then
   report="$(mktemp)"
   npm audit --json > "$report" || true
 fi
@@ -24,13 +24,13 @@ blocking=$(jq -r --arg accepted "$accepted" '
   | select($accepted == "" or (((.url // "") | endswith("/" + $accepted)) | not))
   | "\(.name): \(.title) (\(.url))"
 ' "$report")
-if [ -n "$blocking" ]; then
+if [[ -n "$blocking" ]]; then
   echo "::error::npm audit found high or critical advisories:"
   echo "$blocking"
   exit 1
 fi
 
-if [ -n "$accepted" ] && ! jq -e --arg accepted "$accepted" \
+if [[ -n "$accepted" ]] && ! jq -e --arg accepted "$accepted" \
   'any(.vulnerabilities[].via[]; type == "object" and ((.url // "") | endswith("/" + $accepted)))' "$report" > /dev/null; then
   echo "::notice::$accepted is gone from the audit: remove ACCEPTED_ADVISORY from the audit step in ci.yml."
 fi
