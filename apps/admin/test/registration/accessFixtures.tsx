@@ -60,8 +60,8 @@ export function renderChecklist({ withEvent = event, path = "/admin/events/evt-1
 }
 
 export const checklistPanel = () => screen.getByRole("tabpanel", { name: "Checklist" });
-/** Every row of the checklist that can be seen, in the order of the page, whichever card it is in (not those in a closed Done). */
-export const checklistRows = () => Array.from(checklistPanel().querySelectorAll<HTMLElement>("li.access-check")).filter((row) => !row.closest("details:not([open])"));
+/** Every row of the checklist that can be seen, in the order of the page, whichever card it is in (a closed Done has no rows). */
+export const checklistRows = () => Array.from(checklistPanel().querySelectorAll<HTMLElement>("li.access-check"));
 
 /** Opens the card Done, which is closed until it is opened: its rows are then among the rows of the checklist. */
 export function openDone() {
@@ -69,8 +69,7 @@ export function openDone() {
 }
 
 /** The header of the card Done. */
-export const doneSummary = () => within(checklistPanel()).getByText(/^Done/, { selector: "summary" });
-export const doneDetails = () => doneSummary().closest("details") as HTMLDetailsElement;
+export const doneSummary = () => within(checklistPanel()).getByRole("button", { name: /^Done/ });
 
 /** Waits until the checklist is on screen: the placeholder draws the titles of the cards too, so a title alone is not the answer. */
 export async function checklistLoaded() {

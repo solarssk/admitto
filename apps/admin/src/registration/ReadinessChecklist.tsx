@@ -142,18 +142,18 @@ function NothingToDo({ everythingDone, mode }: Readonly<{ everythingDone: boolea
   );
 }
 
-/** The steps that are done, behind a header that says how many: closed until it is opened. The disclosure of the app (`.disclosure`, a `<details>` with a rotating chevron), as "Advanced tuning" and "Opening hours" in the settings. */
+/** The steps that are done: a collapsible card (`Card collapsible`, closed until its header is pressed) with how many there are in its title. */
 function DoneCard({ checks, count, context }: Readonly<{ checks: readonly ChecklistCheck[]; count: number; context: RowContext }>) {
   return (
-    <Card>
-      <details className="disclosure access-done">
-        <summary className="disclosure__summary">
-          <i className="ti ti-chevron-right" aria-hidden="true" /> Done <Badge variant="ok">{count}</Badge>
-        </summary>
-        <div className="disclosure__body">
-          <StepList checks={checks} tone={doneTone} context={context} />
-        </div>
-      </details>
+    <Card
+      collapsible
+      title={
+        <>
+          Done <Badge variant="ok">{count}</Badge>
+        </>
+      }
+    >
+      <StepList checks={checks} tone={doneTone} context={context} />
     </Card>
   );
 }

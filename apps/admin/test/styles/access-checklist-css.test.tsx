@@ -55,8 +55,4 @@ describe("the lines of one row of the Checklist tab", () => {
     expect(declarationsOf(css, ".access-check__remedy")).toMatch(/font-size:\s*var\(--fs-xs\)/);
     expect(declarationsOf(staff, ".overview-check__detail")).toMatch(/font-size:\s*var\(--fs-xs\)/);
   });
-
-  it("has the Done card as the disclosure of the app, with no rule above it", () => {
-    expect(declarationsOf(css, ".access-done.disclosure")).toMatch(/border-top:\s*0/);
-  });
 });

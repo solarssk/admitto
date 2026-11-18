@@ -9,7 +9,7 @@ import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-
 import { advanceTimers, deferred, hangUntilAborted } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
 import { archivedEvent, checks, notUsedChecks, settings, ssoChecks, ssoEventSettings } from "./accessData.js";
-import { card, checklistPanel, checklistRows, doneDetails, doneSummary, openDone, renderChecklist, renderChecklistLoaded, resetApi } from "./accessFixtures.js";
+import { card, checklistPanel, checklistRows, doneSummary, openDone, renderChecklist, renderChecklistLoaded, resetApi } from "./accessFixtures.js";
 
 let assignments: RoleAssignment[] = [];
 const goToLogin = vi.fn();
@@ -33,7 +33,7 @@ vi.mock("../../src/auth/AuthProvider.js", async (importOriginal) => ({
 const SUPERADMIN: RoleAssignment = { role: "superadmin", scope_type: "instance", scope_id: null };
 const ORG_ADMIN: RoleAssignment = { role: "admin", scope_type: "organization", scope_id: "org-1" };
 const placeholder = () => screen.queryByRole("status", { name: "Loading the checklist" });
-const checklistTitles = () => Array.from(checklistPanel().querySelectorAll(".at-card__title")).map((title) => title.textContent);
+const checklistTitles = () => Array.from(checklistPanel().querySelectorAll(".at-card__title")).map((title) => (title.textContent ?? "").replace(/\s*\d+$/, ""));
 const rowOf = (text: string) => checklistRows().find((row) => row.textContent?.includes(text)) as HTMLElement;
 
 beforeEach(() => {
@@ -68,7 +68,11 @@ describe("RegistrationChecklistTab: the first read", () => {
 
     const held = placeholder() as HTMLElement;
     expect(held.classList.contains("at-loading-hold")).toBe(true);
-    for (const title of ["Registration checklist", "For you"]) expect(within(held).getByText(title)).toBeTruthy();
+    for (const title of ["Registration checklist", "For you", "Done"]) expect(within(held).getByText(title)).toBeTruthy();
+    // The closed Done is a header alone, as the card is when it is loaded: no body under it.
+    const done = within(held).getByText("Done").closest(".at-card") as HTMLElement;
+    expect(done.classList.contains("settings-skeleton__closed")).toBe(true);
+    expect(done.querySelector(".at-card__body")).toBeNull();
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("list")).toBeNull();
     // The placeholder is the tab's own and has no Save and Reset footer: there is nothing to save here.
@@ -217,7 +221,7 @@ describe("RegistrationChecklistTab: what an event administrator sees", () => {
   it("has the steps this person can do under For you, the ones for a superadmin under Waiting for a superadmin, and what is met behind Done", async () => {
     await renderChecklistLoaded(settings({ readiness: checks("mail_provider", "legal_documents", "bot_protection") }));
 
-    expect(checklistTitles()).toEqual(["Registration checklist", "For you", "Waiting for a superadmin"]);
+    expect(checklistTitles()).toEqual(["Registration checklist", "For you", "Waiting for a superadmin", "Done"]);
     const forYou = within(card("For you"));
     expect(forYou.getAllByRole("listitem")).toHaveLength(1);
     expect(forYou.getByText("Legal texts")).toBeTruthy();
@@ -266,7 +270,7 @@ describe("RegistrationChecklistTab: what an event administrator sees", () => {
 
   it("has a different state for everything done, for registration on and off, and no card of waiting", async () => {
     await renderChecklistLoaded(settings({ readiness: checks() }));
-    expect(checklistTitles()).toEqual(["Registration checklist", "For you"]);
+    expect(checklistTitles()).toEqual(["Registration checklist", "For you", "Done"]);
     expect(within(card("For you")).getByText("Everything is ready")).toBeTruthy();
     expect(within(card("For you")).getByText(/Turn registration on from the Access tab/)).toBeTruthy();
     cleanup();
@@ -285,7 +289,7 @@ describe("RegistrationChecklistTab: what a superadmin sees", () => {
   it("has every open step under For you, with a button to where it is put right, and no card of waiting", async () => {
     await renderChecklistLoaded(settings({ own_address: STOPPED, readiness: checks("bot_protection", "mail_provider", "instance_url", "legal_documents") }));
 
-    expect(checklistTitles()).toEqual(["Registration checklist", "For you"]);
+    expect(checklistTitles()).toEqual(["Registration checklist", "For you", "Done"]);
     const forYou = within(card("For you"));
     expect(forYou.getAllByRole("listitem")).toHaveLength(5);
     expect(forYou.queryByText("Superadmin")).toBeNull();
@@ -342,45 +346,46 @@ describe("RegistrationChecklistTab: an archived event", () => {
 
     expect(banner().textContent).toContain("This event is archived. Registration is closed and nothing here can be changed.");
     expect(banner().className).toContain("at-notice--info");
-    expect(checklistTitles()).toEqual(["Registration checklist"]);
+    expect(checklistTitles()).toEqual(["Registration checklist", "Done"]);
     expect(doneSummary()).toBeTruthy();
     expect(screen.queryByText("Event status")).toBeNull();
   });
 });
 
 describe("RegistrationChecklistTab: the card Done", () => {
-  it("is the disclosure of the app: closed, with how many steps are done, until its header is pressed, and closes again", async () => {
+  it("is a collapsible card: closed, with how many steps are done in its title, until its header is pressed, and closes again", async () => {
     await renderChecklistLoaded(settings({ readiness: checks("legal_documents") }));
+    const toggle = doneSummary();
 
-    expect(doneDetails().classList.contains("disclosure")).toBe(true);
-    expect(doneSummary().className).toBe("disclosure__summary");
-    expect(doneSummary().textContent).toContain("7");
-    expect(doneSummary().textContent).not.toMatch(/Show|Hide/);
-    expect(doneSummary().querySelector(".ti-chevron-right")).not.toBeNull();
-    expect(doneDetails().open).toBe(false);
+    expect(toggle.classList.contains("at-card__header")).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.textContent).toContain("7");
+    expect(toggle.textContent).not.toMatch(/Show|Hide/);
+    expect(toggle.querySelector(".at-card__chevron")).not.toBeNull();
     expect(checklistRows()).toHaveLength(1);
 
-    fireEvent.click(doneSummary());
-    expect(doneDetails().open).toBe(true);
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById(toggle.getAttribute("aria-controls") as string)).not.toBeNull();
     expect(checklistRows()).toHaveLength(8);
 
-    fireEvent.click(doneSummary());
-    expect(doneDetails().open).toBe(false);
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(checklistRows()).toHaveLength(1);
   });
 
-  it("is a native details with a summary, so the whole header is focusable and Enter and Space open it", async () => {
+  it("is a native button in the tab order, in a card like the others", async () => {
     await renderChecklistLoaded(settings({ readiness: checks() }));
 
-    expect(doneDetails().tagName).toBe("DETAILS");
-    expect(doneSummary().tagName).toBe("SUMMARY");
+    expect(doneSummary().tagName).toBe("BUTTON");
+    expect(doneSummary().tabIndex).toBe(0);
     expect(doneSummary().closest(".at-card")).not.toBeNull();
   });
 
   it("is not drawn when nothing is done", async () => {
     await renderChecklistLoaded(settings({ readiness: [{ key: "legal_documents", ok: false }] }));
 
-    expect(within(checklistPanel()).queryByText(/^Done/, { selector: "summary" })).toBeNull();
+    expect(within(checklistPanel()).queryByRole("button", { name: /^Done/ })).toBeNull();
   });
 });
 

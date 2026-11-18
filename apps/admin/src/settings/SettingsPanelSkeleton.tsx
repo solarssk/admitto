@@ -17,6 +17,8 @@ export interface SettingsSkeletonCard {
   /** Full-width rows of the given height (switches, numeric settings with a description), after the fields. */
   rows?: number;
   rowHeight?: number;
+  /** A collapsible card that is closed: only its header. */
+  collapsed?: boolean;
 }
 
 interface SettingsPanelSkeletonProps {
@@ -48,6 +50,7 @@ function SkeletonIntro({ lines }: Readonly<{ lines: number }>) {
  * their place. */
 export function SettingsSkeletonCardView({ card }: Readonly<{ card: SettingsSkeletonCard }>) {
   const fields = card.fields ?? 0;
+  if (card.collapsed) return <Card title={card.title} aria-hidden="true" padded={false} className="settings-skeleton__closed" />;
   return (
     <Card title={card.title} aria-hidden="true">
       <div className="settings-card-stack" aria-hidden="true">

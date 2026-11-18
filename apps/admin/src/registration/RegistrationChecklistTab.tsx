@@ -22,7 +22,7 @@ const CHECKLIST_HINT = "What registration still needs for this event, and who do
 const CHECKLIST_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "summary", title: "Registration checklist", rows: 1, rowHeight: 58 },
   { id: "for-you", title: "For you", rows: 3, rowHeight: 46 },
-  { id: "done", title: "Done", rows: 1, rowHeight: 24 },
+  { id: "done", title: "Done", collapsed: true },
 ];
 
 /** One event, one tab: a different `:eventId` is a fresh tab with its own read, never the previous one's. */

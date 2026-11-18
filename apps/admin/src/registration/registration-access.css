@@ -328,16 +328,6 @@ span.access-check__remedy {
   margin-left: auto;
 }
 
-/* The Done card is the app's disclosure (.disclosure) with no rule above it: the card is its frame. */
-.access-done.disclosure {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.access-done .disclosure__body {
-  padding-top: var(--space-3);
-}
-
 /* Nothing is left for this person: an icon, what it means and what to do. */
 .access-ready {
   display: flex;
