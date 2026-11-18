@@ -15,9 +15,10 @@ import {
   splitChecklist,
   type ChecklistCheck,
   type ReadinessCopy,
+  type ReadinessLink,
 } from "./accessReadiness.js";
 import type { AccessMethod } from "./accessSettings.js";
-import { leavesPage, linkTarget, ReadinessRemedy } from "./AccessReadinessCard.js";
+import { leavesPage, linkTarget } from "./AccessReadinessCard.js";
 import "./registration-access.css";
 
 /** What the rows need to word themselves besides the check: the access method and its provider, the bot switch and the questions. */
@@ -47,27 +48,24 @@ function rowSentence(check: ChecklistCheck, copy: ReadinessCopy, context: RowCon
   return check.ok ? copy.met : copy.missing;
 }
 
-/** The link of the met row "Form questions", to where the questions are written. */
-const CHANGE_QUESTIONS: ReadinessCopy["remedy"] = { text: "Add or change questions on the Fields tab.", link: "fields" };
+/** Where the button of a row leads: an open step, to where it is put right; the met row "Form questions", to where the questions are written. None for a row with nothing to do. */
+function actionLink(check: ChecklistCheck, tone: RowTone, copy: ReadinessCopy, superadmin: boolean): ReadinessLink | undefined {
+  if (tone === "open") return remedyFor(copy, superadmin)?.link;
+  return tone === "done" && check.key === "form_questions" ? "fields" : undefined;
+}
 
-/** What an open step offers: a button to where it is put right, or who to ask (with a badge, when it is a superadmin's). */
-function OpenAction({ check, copy, context }: Readonly<{ check: ChecklistCheck; copy: ReadinessCopy; context: RowContext }>) {
-  const remedy = remedyFor(copy, context.superadmin);
-  if (!remedy) return null;
-  if (!remedy.link) return <span className="access-check__remedy">{remedy.text}</span>;
-  const label = actionLabel(remedy.link);
+/** The button of a row, at its right: a secondary small button to where the step is put right (or, for the questions, changed). One look for every row, open or done. */
+function RowAction({ check, copy, link, context }: Readonly<{ check: ChecklistCheck; copy: ReadinessCopy; link: ReadinessLink; context: RowContext }>) {
+  const label = actionLabel(link);
   return (
     <Link
       className="at-btn at-btn--secondary at-btn--sm access-check__action"
-      to={linkTarget(remedy.link, context.eventId)}
-      replace={!leavesPage(remedy.link)}
+      to={linkTarget(link, context.eventId)}
+      replace={!leavesPage(link)}
       aria-label={`${label}: ${copy.title}`}
       data-step={check.key}
     >
       {label}
-      <span className="at-btn__icon" aria-hidden="true">
-        <i className="ti ti-arrow-right" />
-      </span>
     </Link>
   );
 }
@@ -76,10 +74,10 @@ function StepRow({ check, tone, context }: Readonly<{ check: ChecklistCheck; ton
   const copy = readinessCopy(check.key);
   const look = ROW_LOOK[tone];
   const remedy = remedyFor(copy, context.superadmin);
+  const link = actionLink(check, tone, copy, context.superadmin);
   // A step that only a superadmin can put right, for somebody who is not one: marked, and it says who to ask.
   const waits = tone === "open" && copy.superadminOnly === true && !context.superadmin;
   const icon = tone === "open" && check.key === OWN_ADDRESS_KEY ? "world-off" : look.icon;
-  const action = tone === "open" && remedy?.link ? <OpenAction check={check} copy={copy} context={context} /> : null;
   const states = check.key === "access_method" && check.ok;
   return (
     <li className="access-check access-check--step">
@@ -96,10 +94,13 @@ function StepRow({ check, tone, context }: Readonly<{ check: ChecklistCheck; ton
         </span>
         <span className="overview-check__detail">{rowSentence(check, copy, context)}</span>
         {states && <span className="overview-check__detail">{ACCESS_METHOD_SET_BY}</span>}
-        {tone === "open" && !remedy?.link && <OpenAction check={check} copy={copy} context={context} />}
-        {tone === "done" && check.key === "form_questions" && <ReadinessRemedy eventId={context.eventId} remedy={CHANGE_QUESTIONS} />}
+        {tone === "open" && remedy && !remedy.link && <span className="access-check__remedy">{remedy.text}</span>}
       </span>
-      {action && <span className="access-check__aside">{action}</span>}
+      {link && (
+        <span className="access-check__aside">
+          <RowAction check={check} copy={copy} link={link} context={context} />
+        </span>
+      )}
     </li>
   );
 }
@@ -142,17 +143,10 @@ function NothingToDo({ everythingDone, mode }: Readonly<{ everythingDone: boolea
   );
 }
 
-/** The steps that are done: a collapsible card (`Card collapsible`, closed until its header is pressed) with how many there are in its title. */
+/** The steps that are done: a collapsible card (`Card collapsible`, closed until its header is pressed) with how many there are as the pill at the right of its header, as in every header of this tab. */
 function DoneCard({ checks, count, context }: Readonly<{ checks: readonly ChecklistCheck[]; count: number; context: RowContext }>) {
   return (
-    <Card
-      collapsible
-      title={
-        <>
-          Done <Badge variant="ok">{count}</Badge>
-        </>
-      }
-    >
+    <Card collapsible title="Done" meta={<Badge variant="ok">{count}</Badge>}>
       <StepList checks={checks} tone={doneTone} context={context} />
     </Card>
   );
@@ -196,7 +190,7 @@ export function ReadinessChecklist({
   const tone = barTone(open, mode);
   return (
     <>
-      <Card title="Registration checklist" actions={<span className="overview-readiness-score">{doneCount} of {total} steps done</span>}>
+      <Card title="Registration checklist" actions={<Badge variant={tone}>{doneCount} of {total} done</Badge>}>
         <div className="overview-setup">
           <progress className={`overview-setup__bar overview-setup__bar--${tone}`} aria-label="Checklist progress" max={total} value={doneCount} />
           <Notice
@@ -215,12 +209,12 @@ export function ReadinessChecklist({
         </div>
       </Card>
       {!archived && (
-        <Card title="For you" actions={forYou.length > 0 ? <Badge variant="warn">{forYou.length} to do</Badge> : undefined}>
+        <Card title="For you" actions={<Badge variant={forYou.length > 0 ? "warn" : "ok"}>{forYou.length > 0 ? `${forYou.length} to do` : "All done"}</Badge>}>
           {forYou.length > 0 ? <StepList checks={forYou} tone={isOpen} context={context} /> : <NothingToDo everythingDone={waiting.length === 0} mode={mode} />}
         </Card>
       )}
       {!archived && waiting.length > 0 && (
-        <Card title="Waiting for a superadmin" actions={<Badge variant="neutral">{waiting.length} to do</Badge>}>
+        <Card title="Waiting for a superadmin" actions={<Badge variant="neutral">{waiting.length} waiting</Badge>}>
           <div className="settings-card-stack">
             <p className="settings-card-intro">Only a superadmin can put these right. Ask one to do it.</p>
             <StepList checks={waiting} tone={isOpen} context={context} />

@@ -14,12 +14,14 @@ export interface CardProps extends Omit<HTMLAttributes<HTMLDivElement>, "title">
    * allowed.
    */
   collapsible?: boolean;
+  /** A collapsible card: what its header says at the right, just before the chevron (a count or a status `Badge`). Pills of the other headers sit in `actions`. */
+  meta?: ReactNode;
   /** A collapsible card starts open. Closed by default. The state is not kept anywhere: a new visit starts as the page says. */
   defaultOpen?: boolean;
   children?: ReactNode;
 }
 
-export function Card({ title, actions, footer, padded = true, collapsible = false, defaultOpen = false, children, className, ...rest }: Readonly<CardProps>) {
+export function Card({ title, actions, footer, padded = true, collapsible = false, defaultOpen = false, meta, children, className, ...rest }: Readonly<CardProps>) {
   const bodyId = useId();
   const [open, setOpen] = useState(defaultOpen);
   // The body is mounted from the first render, closed and out of reach, never when the card opens: mounting it in the same commit that
@@ -34,6 +36,7 @@ export function Card({ title, actions, footer, padded = true, collapsible = fals
       onClick={() => setOpen((was) => !was)}
     >
       <span className="at-card__title">{title}</span>
+      {meta && <span className="at-card__meta">{meta}</span>}
       <i className="ti ti-chevron-down at-card__chevron" aria-hidden="true" />
     </button>
   ) : (

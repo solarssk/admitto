@@ -104,6 +104,17 @@ describe("Card collapsible", () => {
     expect(screen.getByText("Body link")).toBe(link);
   });
 
+  it("shows what it is given as meta at the right of the title, just before the chevron", () => {
+    render(<Card title="Done" meta={<span>7</span>} collapsible>Body</Card>);
+    const meta = document.querySelector(".at-card__meta") as HTMLElement;
+
+    expect(meta.textContent).toBe("7");
+    expect(meta.previousElementSibling?.className).toBe("at-card__title");
+    expect(meta.nextElementSibling?.className).toContain("at-card__chevron");
+    expect(css).toMatch(/\.at-card__meta \{ margin-left: auto;/);
+    expect(css).toMatch(/\.at-card__meta \+ \.at-card__chevron \{ margin-left: 0;/);
+  });
+
   it("starts open with defaultOpen, with the body mounted", () => {
     renderCard({ defaultOpen: true });
 

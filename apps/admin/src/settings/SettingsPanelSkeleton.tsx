@@ -17,6 +17,8 @@ export interface SettingsSkeletonCard {
   /** Full-width rows of the given height (switches, numeric settings with a description), after the fields. */
   rows?: number;
   rowHeight?: number;
+  /** The header has a pill at the right (a count, a status): the placeholder draws it as a grey one. */
+  pill?: boolean;
   /** A collapsible card that is closed: only its header. */
   collapsed?: boolean;
 }
@@ -50,9 +52,10 @@ function SkeletonIntro({ lines }: Readonly<{ lines: number }>) {
  * their place. */
 export function SettingsSkeletonCardView({ card }: Readonly<{ card: SettingsSkeletonCard }>) {
   const fields = card.fields ?? 0;
-  if (card.collapsed) return <Card title={card.title} aria-hidden="true" padded={false} className="settings-skeleton__closed" />;
+  const pill = card.pill ? <Skeleton variant="rect" width={72} height={22} /> : undefined;
+  if (card.collapsed) return <Card title={card.title} actions={pill} aria-hidden="true" padded={false} className="settings-skeleton__closed" />;
   return (
-    <Card title={card.title} aria-hidden="true">
+    <Card title={card.title} actions={pill} aria-hidden="true">
       <div className="settings-card-stack" aria-hidden="true">
         {card.intro && <SkeletonIntro lines={card.intro === true ? 1 : card.intro} />}
         {fields > 0 && (

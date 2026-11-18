@@ -73,6 +73,8 @@ describe("RegistrationChecklistTab: the first read", () => {
     const done = within(held).getByText("Done").closest(".at-card") as HTMLElement;
     expect(done.classList.contains("settings-skeleton__closed")).toBe(true);
     expect(done.querySelector(".at-card__body")).toBeNull();
+    // Every header has the grey pill of its status at the right.
+    for (const title of ["Registration checklist", "For you", "Done"]) expect((within(held).getByText(title).closest(".at-card__header") as HTMLElement).querySelector(".at-skeleton")).not.toBeNull();
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("list")).toBeNull();
     // The placeholder is the tab's own and has no Save and Reset footer: there is nothing to save here.
@@ -154,7 +156,7 @@ describe("RegistrationChecklistTab: the summary", () => {
 
     expect(progress().max).toBe(8);
     expect(progress().value).toBe(5);
-    expect(within(card("Registration checklist")).getByText("5 of 8 steps done")).toBeTruthy();
+    expect(within(card("Registration checklist")).getByText("5 of 8 done")).toBeTruthy();
     expect(progress().className).toContain("overview-setup__bar--warn");
   });
 
@@ -171,6 +173,60 @@ describe("RegistrationChecklistTab: the summary", () => {
 
     expect(progress().value).toBe(progress().max);
     expect(progress().className).toContain("overview-setup__bar--ok");
+  });
+});
+
+describe("RegistrationChecklistTab: the headers and the buttons", () => {
+  const pill = (title: string) => card(title).querySelector(".at-card__header .at-badge") as HTMLElement;
+
+  it("shows the status of every card as one pill at the right of its header, in the same place", async () => {
+    await renderChecklistLoaded(settings({ readiness: checks("mail_provider", "legal_documents") }));
+
+    expect(pill("Registration checklist").textContent).toBe("6 of 8 done");
+    expect(pill("Registration checklist").className).toContain("at-badge--warn");
+    expect(pill("For you").textContent).toBe("1 to do");
+    expect(pill("For you").className).toContain("at-badge--warn");
+    expect(pill("Waiting for a superadmin").textContent).toBe("1 waiting");
+    expect(pill("Waiting for a superadmin").className).toContain("at-badge--neutral");
+    expect(pill("Registration checklist").closest(".at-card__actions")).not.toBeNull();
+    expect(pill("For you").closest(".at-card__actions")).not.toBeNull();
+  });
+
+  it("puts the count of Done at the right too, before the chevron, and leaves its title plain", async () => {
+    await renderChecklistLoaded(settings({ readiness: checks("legal_documents") }));
+    const toggle = doneSummary();
+
+    expect(toggle.querySelector(".at-card__title")?.textContent).toBe("Done");
+    expect(toggle.querySelector(".at-card__meta .at-badge")?.textContent).toBe("7");
+    expect(toggle.querySelector(".at-card__meta")?.nextElementSibling?.className).toContain("at-card__chevron");
+  });
+
+  it("has an ok pill when nothing is left for the person, and an ok pill for a finished checklist", async () => {
+    await renderChecklistLoaded(settings({ readiness: checks() }));
+
+    expect(pill("For you").textContent).toBe("All done");
+    expect(pill("For you").className).toContain("at-badge--ok");
+    expect(pill("Registration checklist").className).toContain("at-badge--ok");
+  });
+
+  it("has a red pill on the summary while registration is on and a step is open", async () => {
+    await renderChecklistLoaded(settings({ mode: "automatic", readiness: checks("mail_provider") }));
+
+    expect(pill("Registration checklist").className).toContain("at-badge--error");
+  });
+
+  it("has no arrow in a button, and no link under any text, on any row", async () => {
+    assignments = [SUPERADMIN];
+    await renderChecklistLoaded(settings({ own_address: STOPPED, readiness: checks("legal_documents", "mail_provider") }));
+    openDone();
+
+    expect(checklistPanel().querySelector(".ti-arrow-right")).toBeNull();
+    for (const link of Array.from(checklistPanel().querySelectorAll("li.access-check a"))) {
+      expect(link.className).toContain("at-btn--secondary");
+      expect(link.className).toContain("at-btn--sm");
+      expect(link.closest(".access-check__aside")).not.toBeNull();
+    }
+    expect(checklistPanel().querySelectorAll(".overview-check__body a")).toHaveLength(0);
   });
 });
 
@@ -229,7 +285,7 @@ describe("RegistrationChecklistTab: what an event administrator sees", () => {
     const waiting = within(card("Waiting for a superadmin"));
     expect(waiting.getAllByRole("listitem").map((row) => row.querySelector("strong")?.textContent)).toEqual(["To do: Bot protection", "To do: Email sending"]);
     expect(waiting.getByText("Only a superadmin can put these right. Ask one to do it.")).toBeTruthy();
-    expect(waiting.getByText("2 to do")).toBeTruthy();
+    expect(waiting.getByText("2 waiting")).toBeTruthy();
     expect(waiting.getAllByText("Superadmin")).toHaveLength(2);
   });
 
@@ -406,7 +462,7 @@ describe("RegistrationChecklistTab: the rows", () => {
 
     expect(checklistRows()).toHaveLength(8);
     expect(screen.queryByText("Event status")).toBeNull();
-    expect(within(card("Registration checklist")).getByText("8 of 8 steps done")).toBeTruthy();
+    expect(within(card("Registration checklist")).getByText("8 of 8 done")).toBeTruthy();
   });
 
   it("states the access method as text, with who sets it, and no control", async () => {
@@ -430,7 +486,7 @@ describe("RegistrationChecklistTab: the rows", () => {
     expect(info.querySelector(".overview-check__icon--neutral")).not.toBeNull();
     expect(info.querySelector(".ti-minus")).not.toBeNull();
     expect(within(info).queryByRole("link")).toBeNull();
-    expect(within(card("Registration checklist")).getByText("6 of 7 steps done")).toBeTruthy();
+    expect(within(card("Registration checklist")).getByText("6 of 7 done")).toBeTruthy();
   });
 
   it("tells the event's own switch from the organisation's", async () => {
@@ -488,13 +544,18 @@ describe("RegistrationChecklistTab: the rows", () => {
     [[], "No question of yours is on the form. Guests give their name and email address, and what the switches on the Access tab add."],
     [[{ key: "a", label: "A", type: "text", required: true }], "1 question of yours is on the form."],
     [[{ key: "a", label: "A", type: "text", required: true }, { key: "b", label: "B", type: "text", required: false }], "2 questions of yours are on the form."],
-  ] as const)("says how many questions of the organiser are on the form, with a link to the Fields tab", async (fields, text) => {
+  ] as const)("says how many questions of the organiser are on the form, with a button to the Fields tab", async (fields, text) => {
     await renderChecklistLoaded(settings({ public_fields: [...fields] }));
     openDone();
     const row = rowOf("Form questions");
 
     expect(row.textContent).toContain(text);
-    expect(within(row).getByRole("link", { name: "Add or change questions on the Fields tab." }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
+    // A done row has the same button, in the same place and look, as an open one: no link under the text.
+    const button = within(row).getByRole("link", { name: "Open Fields: Form questions" });
+    expect(button.getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
+    expect(button.className).toContain("at-btn--secondary");
+    expect(button.closest(".access-check__aside")).not.toBeNull();
+    expect(within(row).queryByText("Add or change questions on the Fields tab.")).toBeNull();
   });
 
   it("does not say how many questions there are for a form that cannot show a required one: the row says what is wrong", async () => {
