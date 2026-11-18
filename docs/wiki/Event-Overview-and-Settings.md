@@ -204,7 +204,7 @@ The data is being read from the server. Wait a moment and check your connection.
 - [Create an Event](Create-an-Event)
 - [First Event Checklist](First-Event-Checklist)
 - [Ticket Types](Ticket-Types)
-- [Requirements and Fulfilment](Requirements-and-Fulfilment)
+- [Event items and Fulfilment](Requirements-and-Fulfilment)
 - [Reports and Archiving](Reports-and-Archiving)
 - [Mail Delivery Administration](Mail-Delivery-Administration)
 - [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup)

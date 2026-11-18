@@ -70,9 +70,9 @@ const SetupWizardPage = lazyRoute(loadSetupWizardPage);
 const PLACEHOLDER_ROUTES = [
   { path: "overview", title: "Overview" },
   { path: "attendees", title: "Attendees" },
-  { path: "requirements", title: "Requirements" },
   { path: "registration", title: "Registration" },
   { path: "communication", title: "Communication" },
+  { path: "event-items", title: "Event items" },
   { path: "wallet", title: "Wallet passes" },
   { path: "checkin", title: "Check-in" },
   { path: "fulfilment", title: "Fulfilment" },
@@ -87,7 +87,7 @@ const EVENT_ROUTE_COMPONENTS: Partial<Record<(typeof PLACEHOLDER_ROUTES)[number]
   overview: EventOverviewPage,
   checkin: AdminCheckInRoute,
   attendees: AttendeesPage,
-  requirements: RequirementsPage,
+  "event-items": RequirementsPage,
   registration: RegistrationPage,
   communication: CommunicationPage,
   reports: ReportsPage,
@@ -104,7 +104,7 @@ const EVENT_ROUTE_LOADERS: Partial<Record<string, () => Promise<unknown>>> = {
   communication: loadCommunicationPage,
   registration: loadRegistrationPage,
   reports: loadReportsPage,
-  requirements: loadRequirementsPage,
+  "event-items": loadRequirementsPage,
   settings: loadEventSettingsPage,
 };
 
@@ -157,7 +157,7 @@ export function EventLayout() {
   const requestRef = useRef<AbortController | null>(null);
 
   // On-demand re-fetch: pages nested under this layout (Settings, Attendees,
-  // Requirements, Communication, Import, Check-in) all read `event` from the
+  // Event items, Communication, Import, Check-in) all read `event` from the
   // Outlet context below, but the effect that populates it only re-runs when
   // `eventId` changes — an in-place mutation like archive/unarchive/save on
   // the Settings page otherwise leaves every *other* already-mounted sibling

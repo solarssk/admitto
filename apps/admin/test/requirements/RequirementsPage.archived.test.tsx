@@ -46,9 +46,9 @@ const badgeItem: EventItemDto = {
 function renderPage() {
   return render(
     <ToastProvider>
-      <MemoryRouter initialEntries={["/admin/events/evt-1/requirements"]}>
+      <MemoryRouter initialEntries={["/admin/events/evt-1/event-items"]}>
         <Routes>
-          <Route path="/admin/events/:eventId/requirements" element={<RequirementsPage />} />
+          <Route path="/admin/events/:eventId/event-items" element={<RequirementsPage />} />
         </Routes>
       </MemoryRouter>
     </ToastProvider>,

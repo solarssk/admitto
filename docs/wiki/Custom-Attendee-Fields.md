@@ -37,7 +37,7 @@ The field appears in supported attendee and import workflows with the label, typ
 - Use the field ID, not only the display label, as the import column name.
 - A required field can prevent incomplete attendee data from being saved or imported.
 - Select values must match an allowed option.
-- A field used by an event item cannot be deleted until that reference is removed. Open the item on the **Requirements** page and uncheck the field under **Attendee data field**.
+- A field used by an event item cannot be deleted until that reference is removed. Open the item on the **Event items** page and uncheck the field under **Attendee data field**.
 
 ### Types of answer
 
@@ -110,7 +110,7 @@ Turn on **Sensitive** in the field editor for a question whose answers should no
 - The answers are hidden in lists, search, filters, exports, reports, wallet passes, emails and on the operator card. The guest still answers the question on the registration form.
 - Only an Administrator of the organisation or a Superadmin can see the answers, by selecting **Show** on the attendee's page or in the request window. Every click is recorded in the audit log: who, when and which questions, never the answers. See [Roles and Permissions](Roles-and-Permissions#sensitive-answers).
 - Deleting the question deletes its answers.
-- When you turn **Sensitive** on for a question that already has answers, exports that are ready and include it are cancelled when you save. A question that an item still shows on the Requirements page cannot be made sensitive: the editor says so, and you uncheck the field on the item first.
+- When you turn **Sensitive** on for a question that already has answers, exports that are ready and include it are cancelled when you save. A question that an item still shows on the Event items page cannot be made sensitive: the editor says so, and you uncheck the field on the item first.
 - A question that the wallet field mapping names cannot be made sensitive either, because passes already issued keep its answer: the editor says so, and you remove the question from the mapping in Event Settings → Wallet first.
 - When you turn **Sensitive** off, the answers already given are visible again in lists and exports. The editor warns you before you save.
 - In the forms where staff add or correct answers, the box of a sensitive question is always empty and says **Hidden after saving**. Type a new value to replace the answer; leave the box empty to keep the current one. An empty box never clears an answer, and a required question does not stop you from saving an edit.
@@ -226,7 +226,7 @@ A phone number is saved as a + and its digits. A number saved earlier in another
 | **The field ID is not what you need** | Delete and recreate the unused field before importing data. It cannot be renamed later |
 | **A Select field cannot be saved** | Add at least one option |
 | **An import value is invalid** | Use the field ID as the column and match the selected type or option |
-| **The field cannot be deleted** | Open the event item that uses it, on the **Requirements** page, and uncheck the field under **Attendee data field**. Also change or remove the condition of any field that is shown only for an answer to it |
+| **The field cannot be deleted** | Open the event item that uses it, on the **Event items** page, and uncheck the field under **Attendee data field**. Also change or remove the condition of any field that is shown only for an answer to it |
 | **A Required field cannot be saved because of the registration form** | The event accepts registrations, and a guest cannot answer a field that is not on the form. Put the field on the form, or clear **Required** |
 | **The editor says a change can't be saved when you move a question to the other person** | Other questions are shown for an answer to it, or it is shown for an answer to a question about the other person. Open those questions and set **Show only when** to **No condition**, or undo the move |
 | **The editor says a change can't be saved because other questions are shown for an answer to this field** | Open each of those questions and set **Show only when** to **No condition**, or undo the change. The same applies to deleting the field |

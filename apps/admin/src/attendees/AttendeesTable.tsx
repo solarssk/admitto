@@ -986,7 +986,7 @@ function bulkRevokeItemsTooltip(
 ): string | undefined {
   if (archived) return ARCHIVED_ACTION_TOOLTIP;
   if (itemsError) return "Could not load items. Try again.";
-  if (itemCount === 0) return "No items configured for this event. Add some in Requirements.";
+  if (itemCount === 0) return "No items configured for this event. Add some in Event items.";
   if (!canRevokeItems) return "None of the selected attendees have anything issued.";
   return undefined;
 }

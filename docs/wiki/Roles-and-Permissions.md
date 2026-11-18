@@ -12,7 +12,7 @@ Your role decides which organisations, events, and actions are available. If a c
 | Add, import, and edit attendees | ✅ | – | ✅ |
 | Prepare templates and send event messages | ✅ | – | ✅ |
 | Run check-in | ✅ | 🟡¹ | ✅ |
-| Change ticket types and requirements | ✅ | – | ✅ |
+| Change ticket types and event items | ✅ | – | ✅ |
 | Show the answers to sensitive questions (each click is logged) | ✅ | – | ✅ |
 | Manage organisation-level settings | 🟡² | – | ✅ |
 | Assign Operator access to events | 🟡³ | – | ✅ |
@@ -39,7 +39,7 @@ An erased guest has no answers left to show. Showing is also allowed on an archi
 
 ## Operator
 
-An Operator works on assigned events. Operators scan tickets, use manual lookup only when enabled, and follow the configured item process. They do not configure attendees, templates, requirements, or settings. Start with [Operator Quick Start](Operator-Quick-Start).
+An Operator works on assigned events. Operators scan tickets, use manual lookup only when enabled, and follow the configured item process. They do not configure attendees, templates, event items, or settings. Start with [Operator Quick Start](Operator-Quick-Start).
 
 ## Superadmin
 

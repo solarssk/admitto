@@ -892,7 +892,7 @@ function itemStateLabel(state: string): string {
  * per-attendee "nothing to do" gates as the Attendees list's bulk version
  * (bulkRevokeItemsTooltip), just singular. */
 function revokeItemsMenuTooltip(itemCount: number, canRevokeItems: boolean): string | undefined {
-  if (itemCount === 0) return "No items configured for this event. Add some in Requirements.";
+  if (itemCount === 0) return "No items configured for this event. Add some in Event items.";
   if (!canRevokeItems) return "Nothing issued to revoke for this attendee.";
   return undefined;
 }

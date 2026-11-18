@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Create the event workspace before adding attendees, messages, requirements, or operators.
+Create the event workspace before adding attendees, messages, event items, or operators.
 
 ## Before you start
 
@@ -39,7 +39,7 @@ Admitto creates an active event and opens its **Overview** page directly.
 
 ## What changes after this action
 
-The event becomes visible to Superadmins and Organisation Admins for its organisation. No attendees, operators, requirements, attendee fields, or messages are created automatically.
+The event becomes visible to Superadmins and Organisation Admins for its organisation. No attendees, operators, event items, attendee fields, or messages are created automatically.
 
 ## Common problems
 

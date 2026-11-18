@@ -1005,7 +1005,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
       "Tickets sent": "/admin/events/evt-1/communication",
       "Email delivery": "/admin/events/evt-1/communication",
       "Check-in staff": "/admin/users",
-      "Event items": "/admin/events/evt-1/requirements",
+      "Event items": "/admin/events/evt-1/event-items",
     });
   });
 
