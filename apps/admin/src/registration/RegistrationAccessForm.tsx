@@ -94,7 +94,7 @@ export function RegistrationAccessForm({
       {server.mode !== null && missing.length > 0 && (
         <Notice variant="warning">
           Registration is on, but something it needs is missing, so guests may not be able to register.{" "}
-          <Link to={{ search: "?tab=checklist" }} replace>
+          <Link className="access-text-link" to={{ search: "?tab=checklist" }} replace>
             The Checklist tab says what.
           </Link>
         </Notice>

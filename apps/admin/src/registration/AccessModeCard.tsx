@@ -61,7 +61,7 @@ export function AccessModeCard({
         {!canTurnOn && (
           <p className="settings-card-intro" id={reasonId}>
             Registration can be turned on when the steps on the{" "}
-            <Link to={{ search: "?tab=checklist" }} replace>
+            <Link className="access-text-link" to={{ search: "?tab=checklist" }} replace>
               Checklist tab
             </Link>{" "}
             are done.{unsaved ? " Save your changes first: the checklist shows what is saved." : ""}

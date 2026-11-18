@@ -343,13 +343,14 @@ describe("RegistrationChecklistTab: the number on the tab", () => {
   it("is the number of open steps of the list, for an organiser and for a superadmin alike, and is read once", async () => {
     await renderChecklistLoaded(settings({ readiness: checks("mail_provider", "legal_documents", "bot_protection") }));
 
-    expect(screen.getByRole("tab", { name: "Checklist, 3 steps open" }).textContent).toBe("Checklist3");
+    // The page hears of the checks in an effect after the list is drawn.
+    expect((await screen.findByRole("tab", { name: "Checklist, 3 steps open" })).textContent).toBe("Checklist3");
     expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(1);
     cleanup();
 
     assignments = [SUPERADMIN];
     await renderChecklistLoaded(settings({ readiness: checks("mail_provider", "legal_documents", "bot_protection") }));
-    expect(screen.getByRole("tab", { name: "Checklist, 3 steps open" })).toBeTruthy();
+    expect(await screen.findByRole("tab", { name: "Checklist, 3 steps open" })).toBeTruthy();
   });
 
   it("is gone when nothing is open, and the list says so", async () => {

@@ -300,6 +300,11 @@ span.access-check__remedy {
   overflow-wrap: anywhere;
 }
 
+/* The link to the Checklist tab inside a sentence is underlined too (axe: link-in-text-block). */
+.access-text-link {
+  text-decoration: underline;
+}
+
 /* A link inside a sentence is underlined, so that it is told from the text by more than its colour (axe: link-in-text-block). */
 .access-provider .settings-card-intro a {
   text-decoration: underline;
