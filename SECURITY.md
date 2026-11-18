@@ -43,7 +43,7 @@ These automated checks are active in this repository. The table gives the short 
 | CodeQL | SAST (JavaScript/TypeScript) | Every PR + weekly | `.github/workflows/codeql.yml` |
 | Semgrep | SAST (JavaScript/TypeScript) | Every PR + merge to `main` + weekly | `.github/workflows/semgrep.yml` |
 | gitleaks | Secret scan of the commits a PR adds on top of its base branch. For a push to `main`: the commits that push introduced | Every PR + every push to `main` | `.github/workflows/ci.yml` (`secret-scan`) |
-| npm audit | Dependency SCA (`--audit-level=high`) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
+| npm audit | Dependency SCA (high and critical, `scripts/audit-gate.sh`) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
 | Dependency review | Diffs the PR's manifest against its base ref. Blocks newly introduced high-severity-vulnerable or disallowed-license dependencies | Every PR | `.github/workflows/ci.yml` (`dependency-review`) |
 | License compliance | Every third-party package's license against an allowlist of standard permissive terms (`scripts/check-licenses.mjs`). Not a blocking check, see the notes | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
 | Dependabot | npm, GitHub Actions, pip (Semgrep toolchain) and Docker image pins (root Dockerfile, deploy compose, ClusterFuzzLite) | Scheduled | `.github/dependabot.yml` |
