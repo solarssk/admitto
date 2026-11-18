@@ -47,9 +47,9 @@ afterEach(() => {
 describe("the checklist rows that are put right in Event settings, Registration", () => {
   const rows = () => checklistRows();
   it.each([
-    ["access_method", "No access method is chosen yet. Guests cannot open the form.", "Ask a superadmin to choose it in Event settings, Registration.", "Choose it in Event settings, Registration."],
-    ["password", "Set the password that guests will enter.", "Ask a superadmin to set it in Event settings, Registration.", "Set it in Event settings, Registration."],
-  ] as const)("send an organiser to ask, and a superadmin to the settings, for %s", async (key, missing, ask, go) => {
+    ["access_method", "No access method is chosen yet. Guests cannot open the form.", "Ask a superadmin to choose it in Event settings, Registration.", "Access method"],
+    ["password", "Set the password that guests will enter.", "Ask a superadmin to set it in Event settings, Registration.", "Event password"],
+  ] as const)("send an organiser to ask, and a superadmin to the settings, for %s", async (key, missing, ask, title) => {
     const readiness = key === "password" ? [{ key: "access_method", ok: true }, { key: "password", ok: false }] : checks(key);
     await renderChecklistLoaded(settings({ access_methods: key === "password" ? ["password"] : [], readiness }));
     let row = rows().find((entry) => entry.textContent?.includes(missing)) as HTMLElement;
@@ -60,7 +60,7 @@ describe("the checklist rows that are put right in Event settings, Registration"
     assignments = [SUPERADMIN];
     await renderChecklistLoaded(settings({ access_methods: key === "password" ? ["password"] : [], readiness }));
     row = rows().find((entry) => entry.textContent?.includes(missing)) as HTMLElement;
-    expect(within(row).getByRole("link", { name: go }).getAttribute("href")).toBe(SETTINGS_LINK);
+    expect(within(row).getByRole("link", { name: `Open Event settings: ${title}` }).getAttribute("href")).toBe(SETTINGS_LINK);
   });
 
   it("do the same for the identity provider", async () => {
@@ -71,7 +71,7 @@ describe("the checklist rows that are put right in Event settings, Registration"
 
     assignments = [SUPERADMIN];
     await renderChecklistLoaded(ssoEventSettings({ readiness: ssoChecks("identity_provider") }));
-    expect(within(rows()[0] as HTMLElement).getByRole("link", { name: "Choose it in Event settings, Registration." }).getAttribute("href")).toBe(SETTINGS_LINK);
+    expect(within(rows()[0] as HTMLElement).getByRole("link", { name: "Open Event settings: Identity provider" }).getAttribute("href")).toBe(SETTINGS_LINK);
   });
 
   it("do the same in the list of what a refused save needs", async () => {

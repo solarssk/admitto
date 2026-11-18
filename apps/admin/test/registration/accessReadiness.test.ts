@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { accessMethodDetail, botProtectionOffText, formQuestionsText, openStepCount, READINESS_COPY, readinessCopy, remedyFor, splitChecklist } from "../../src/registration/accessReadiness.js";
+import { accessMethodDetail, actionLabel, botProtectionOffText, checklistBanner, checklistFromSettings, formQuestionsText, openStepCount, READINESS_COPY, readinessCopy, remedyFor, splitChecklist } from "../../src/registration/accessReadiness.js";
 
 /** The checks the server reports, read from the file that holds them: the screen has words for each one, and for no other. */
 function serverKeys(): string[] {
@@ -165,5 +165,55 @@ describe("formQuestionsText", () => {
     expect(formQuestionsText(1)).toBe("1 question of yours is on the form.");
     expect(formQuestionsText(3)).toBe("3 questions of yours are on the form.");
     expect(formQuestionsText(0)).toContain("No question of yours is on the form.");
+  });
+});
+
+describe("checklistFromSettings: the checks of the checklist", () => {
+  const readiness = [{ key: "access_method", ok: true }];
+  const address = { domain: "events.example.com", status: "ok", check_result: "ok", verified: true, checked_at: null } as const;
+
+  it("adds the address for guests only when a check once found it working, open while the last check fails", () => {
+    expect(checklistFromSettings({ readiness, own_address: null })).toEqual(readiness);
+    expect(checklistFromSettings({ readiness, own_address: { ...address, verified: false, status: "failing" } })).toEqual(readiness);
+    expect(checklistFromSettings({ readiness, own_address: address })).toEqual([...readiness, { key: "own_address", ok: true }]);
+    expect(checklistFromSettings({ readiness, own_address: { ...address, status: "failing" } })).toEqual([...readiness, { key: "own_address", ok: false }]);
+  });
+
+  it("has words and a superadmin's remedy for the address, and the server's list of keys does not hold it", () => {
+    expect(readinessCopy("own_address")).toMatchObject({ title: "Address for guests", superadminOnly: true });
+    expect(remedyFor(readinessCopy("own_address"), true)).toEqual({ text: "Check the address in Event settings, Registration.", link: "registration_settings" });
+    expect(Object.keys(READINESS_COPY)).not.toContain("own_address");
+  });
+});
+
+describe("actionLabel", () => {
+  it.each([
+    ["legal", "Open Legal"],
+    ["fields", "Open Fields"],
+    ["event_settings", "Open Event settings"],
+    ["registration_settings", "Open Event settings"],
+    ["organisation_general", "Open Organisation settings"],
+    ["organisation_mail", "Open Organisation settings"],
+    ["organisation_external", "Open Organisation settings"],
+  ] as const)("is the button of %s", (link, label) => {
+    expect(actionLabel(link)).toBe(label);
+  });
+});
+
+describe("checklistBanner", () => {
+  const base = { mode: null, archived: false, forYou: 0, waiting: 0, addressStopped: false } as const;
+
+  it("is about the archive first, whatever is open", () => {
+    expect(checklistBanner({ ...base, archived: true, forYou: 2 })).toMatchObject({ variant: "info", goToAccess: false });
+  });
+
+  it("is ready, with the way to the Access tab, when registration is off and nothing is open", () => {
+    expect(checklistBanner(base)).toEqual({ variant: "success", text: "Ready. Registration can be turned on.", goToAccess: true });
+    expect(checklistBanner({ ...base, mode: "automatic" })).toMatchObject({ variant: "success", goToAccess: false });
+  });
+
+  it("is an error while registration is on and a step is open, and names the address when that is the step", () => {
+    expect(checklistBanner({ ...base, mode: "approval", forYou: 1 }).text).toContain("something it needs is missing");
+    expect(checklistBanner({ ...base, mode: "approval", waiting: 1, addressStopped: true }).text).toContain("the address of this event stopped working");
   });
 });

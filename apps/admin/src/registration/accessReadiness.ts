@@ -1,4 +1,6 @@
-import type { RegistrationReadinessKey } from "../api/types.js";
+import type { RegistrationMode } from "@admitto/db/status";
+import type { RegistrationOwnAddressDto, RegistrationReadinessKey } from "../api/types.js";
+import { hasStopped } from "./ownAddress.js";
 
 /** Where a missing check is put right when it is not on this tab: another tab of the page, or the settings of the event. */
 export type ReadinessLink =
@@ -168,7 +170,80 @@ const UNKNOWN_COPY: ReadinessCopy = {
   missing: "Something else that registration needs is missing.",
 };
 
-const COPY_BY_KEY: ReadonlyMap<string, ReadinessCopy> = new Map(Object.entries(READINESS_COPY));
+/** The check the screen adds to the server's: the event's own address for guests, from the settings answer. Not in `READINESS_COPY`, which is the server's list. */
+export const OWN_ADDRESS_KEY = "own_address";
+const OWN_ADDRESS_COPY: ReadinessCopy = {
+  title: "Address for guests",
+  met: "The address of this event for guests works.",
+  missing: "The address of this event for guests stopped working, so guests may not be able to open their links.",
+  remedy: { text: "Ask a superadmin to check the address." },
+  superadminRemedy: { text: "Check the address in Event settings, Registration.", link: "registration_settings" },
+  superadminOnly: true,
+};
+
+const COPY_BY_KEY: ReadonlyMap<string, ReadinessCopy> = new Map([...Object.entries(READINESS_COPY), [OWN_ADDRESS_KEY, OWN_ADDRESS_COPY]]);
+
+/** One row of the checklist: a check of the server, or the one the screen adds. */
+export interface ChecklistCheck {
+  key: string;
+  ok: boolean;
+}
+
+/**
+ * The checks of the checklist: the server's, and the event's own address for guests when a check once found it working (an address
+ * that was never verified is not used for links, so it is not a step). It is open while the last check fails.
+ */
+export function checklistFromSettings(settings: { readiness: readonly ChecklistCheck[]; own_address: RegistrationOwnAddressDto | null }): ChecklistCheck[] {
+  const address = settings.own_address;
+  const extra = address?.verified ? [{ key: OWN_ADDRESS_KEY, ok: !hasStopped(address) }] : [];
+  return [...settings.readiness, ...extra];
+}
+
+/** The label of the button that leads to where a step is put right. */
+export function actionLabel(link: ReadinessLink): string {
+  if (link === "legal") return "Open Legal";
+  if (link === "fields") return "Open Fields";
+  if (link === "organisation_general" || link === "organisation_mail" || link === "organisation_external") return "Open Organisation settings";
+  return "Open Event settings";
+}
+
+/** The banner above the steps: what state registration is in, in one sentence. */
+export interface ChecklistBanner {
+  variant: "success" | "warning" | "info" | "error";
+  text: string;
+  /** The banner offers the Access tab, where registration is turned on. */
+  goToAccess: boolean;
+}
+
+const steps = (count: number) => (count === 1 ? "1 step" : `${count} steps`);
+
+/** The sentence for the state: archived, all done (on or off), something broke while on, or what is left and who does it. */
+export function checklistBanner({
+  mode,
+  archived,
+  forYou,
+  waiting,
+  addressStopped,
+}: {
+  mode: RegistrationMode | null;
+  archived: boolean;
+  forYou: number;
+  waiting: number;
+  addressStopped: boolean;
+}): ChecklistBanner {
+  if (archived) return { variant: "info", text: "This event is archived. Registration is closed and nothing here can be changed.", goToAccess: false };
+  if (forYou + waiting === 0) {
+    if (mode !== null) return { variant: "success", text: "Registration is on and every step is done.", goToAccess: false };
+    return { variant: "success", text: "Ready. Registration can be turned on.", goToAccess: true };
+  }
+  if (mode !== null) {
+    const what = addressStopped ? "the address of this event stopped working" : "something it needs is missing";
+    return { variant: "error", text: `Registration is on, but ${what}. Guests may not be able to register.`, goToAccess: false };
+  }
+  if (forYou === 0) return { variant: "info", text: `${steps(waiting)} ${waiting === 1 ? "waits" : "wait"} for a superadmin. Your steps are done.`, goToAccess: false };
+  if (waiting === 0) return { variant: "warning", text: `${steps(forYou)} ${forYou === 1 ? "is" : "are"} open. Registration can be turned on when ${forYou === 1 ? "it is" : "they are"} done.`, goToAccess: false };
+  return { variant: "warning", text: `${forYou} for you, ${waiting} waiting for a superadmin. Registration can be turned on when all are done.`, goToAccess: false };
+}
 
 /** The words of a check, by the key the server sent. */
 export function readinessCopy(key: string): ReadinessCopy {

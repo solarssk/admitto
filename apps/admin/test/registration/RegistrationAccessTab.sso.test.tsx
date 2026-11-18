@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isOff } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
 import { settings, ssoEventSettings } from "./accessData.js";
-import { checklistPanel, radio, renderChecklistLoaded, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
+import { checklistPanel, openDone, radio, renderChecklistLoaded, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const { api: mocks } = await import("./accessApiMocks.js");
@@ -55,6 +55,7 @@ describe("the company SSO as the way in of an event, on the Access tab", () => {
     cleanup();
 
     await renderChecklistLoaded(ssoEventSettings());
+    openDone();
     expect(checklistPanel().textContent).toContain("Company SSO. Guests sign in with Contoso Entra.");
   });
 

@@ -293,6 +293,13 @@ describe("RegistrationPage: the number on the Checklist tab", () => {
     expect(openTab().textContent).toBe("Fields");
   });
 
+  it("counts the address for guests that stopped working, as the checklist does", async () => {
+    fetchRegistrationSettings.mockResolvedValue({ ...checks("legal_documents", "mail_provider"), own_address: { domain: "events.example.com", status: "failing", check_result: "unreachable", verified: true, checked_at: null } });
+    renderForEvent();
+
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist3"));
+  });
+
   it("has an accessible name that says what the number is, in the singular for one step", async () => {
     renderForEvent();
     await waitFor(() => expect(checklistTab().textContent).toBe("Checklist2"));

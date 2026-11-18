@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { ApiError, fetchRegistrationCounts, fetchRegistrationSettings } from "../api/client.js";
-import type { RegistrationCountsDto, RegistrationReadinessCheckDto } from "../api/types.js";
+import type { RegistrationCountsDto } from "../api/types.js";
+import { checklistFromSettings, type ChecklistCheck } from "./accessReadiness.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useListLoad, type ListLoad } from "../hooks/useListLoad.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
@@ -56,10 +57,10 @@ export function useRegistrationCounts(eventId: string | undefined): ListLoad<Reg
  * The checks of what registration needs, for the number on the Checklist tab (an extra, see `useEventExtra`). `onData` hears each
  * answer. With no event nothing is read: the page passes none while a tab that reads the checks itself is open.
  */
-export function useRegistrationChecks(eventId: string | undefined, onData: (checks: RegistrationReadinessCheckDto[]) => void): ListLoad<RegistrationReadinessCheckDto[]> {
+export function useRegistrationChecks(eventId: string | undefined, onData: (checks: ChecklistCheck[]) => void): ListLoad<ChecklistCheck[]> {
   return useEventExtra(eventId, readChecks, "Could not load the checklist.", onData);
 }
 
-async function readChecks(eventId: string, signal: AbortSignal): Promise<RegistrationReadinessCheckDto[]> {
-  return (await fetchRegistrationSettings(eventId, signal)).readiness;
+async function readChecks(eventId: string, signal: AbortSignal): Promise<ChecklistCheck[]> {
+  return checklistFromSettings(await fetchRegistrationSettings(eventId, signal));
 }

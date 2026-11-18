@@ -305,3 +305,111 @@ span.access-check__remedy {
   padding: 0;
   border-bottom: 0;
 }
+
+/* The Checklist tab: a step has its action at the right, beside the sentence; a step that only a superadmin can do has a badge by its name. */
+.access-check--step .overview-check__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.access-check__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.access-check__aside {
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+}
+
+/* The Done card is a header that opens and closes the list of what is done. */
+.access-done-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.access-done-toggle__chevron {
+  color: var(--text-muted);
+  transition: transform var(--dur-fast);
+}
+
+.access-done-toggle[aria-expanded="true"] .access-done-toggle__chevron {
+  transform: rotate(90deg);
+}
+
+.access-done-toggle__state {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.access-done-body {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* Nothing is left for this person: an icon, what it means and what to do. */
+.access-ready {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-3);
+  text-align: center;
+}
+
+.access-ready__title {
+  font-size: var(--fs-h2);
+}
+
+.access-ready p {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.access-ready__icon {
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-6) + var(--space-5));
+  height: calc(var(--space-6) + var(--space-5));
+  border-radius: 50%;
+  font-size: var(--fs-display);
+  background: var(--status-ok-tint);
+  color: var(--status-ok-fg);
+}
+
+.access-ready__icon--info {
+  background: var(--status-info-tint);
+  color: var(--status-info-fg);
+}
+
+/* On a narrow screen the button goes under the sentence, so the sentence keeps its width. */
+@media (max-width: 640px) {
+  .access-check--step {
+    flex-wrap: wrap;
+  }
+
+  .access-check--step .overview-check__body {
+    flex-basis: calc(100% - var(--space-7));
+  }
+
+  .access-check__aside {
+    flex-basis: 100%;
+    margin-left: 0;
+    align-self: flex-start;
+  }
+}

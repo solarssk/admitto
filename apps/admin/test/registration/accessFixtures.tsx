@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect } from "vitest";
 import { createMemoryRouter, Outlet, RouterProvider } from "react-router";
 import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
@@ -63,11 +63,16 @@ export const checklistPanel = () => screen.getByRole("tabpanel", { name: "Checkl
 /** Every row of the checklist, in the order of the page, whichever card it is in. */
 export const checklistRows = () => Array.from(checklistPanel().querySelectorAll<HTMLElement>("li.access-check"));
 
+/** Opens the card Done, which is closed until it is opened: its rows are then among the rows of the checklist. */
+export function openDone() {
+  fireEvent.click(within(checklistPanel()).getByRole("button", { name: /^Done/ }));
+}
+
 /** Waits until the checklist is on screen: the placeholder draws the titles of the cards too, so a title alone is not the answer. */
 export async function checklistLoaded() {
   await waitFor(() => {
     expect(screen.queryByRole("status", { name: "Loading the checklist" })).toBeNull();
-    expect(screen.getByText("For you", { selector: ".at-card__title" })).toBeTruthy();
+    expect(screen.getByText("Registration checklist", { selector: ".at-card__title" })).toBeTruthy();
   });
 }
 

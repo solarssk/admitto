@@ -21,10 +21,12 @@ Registration is off for every event until you turn it on. Until then, the addres
 **Check what registration needs**
 
 1. Open the event, then **Registration**, then the **Checklist** tab. The tab has the number of steps that are still open next to its name. The number is the same for everybody.
-2. Read the card **For you**. Each row is one step that you can do. A link under it takes you to the place where it is put right.
-3. Read the card **Waiting for a superadmin**. It is there when a step needs a Superadmin and you are not one. It says who to ask. A Superadmin has no such card: every open step is under **For you**, with a link to where it is put right (Event settings, or Organisation settings).
-4. The card **Done** lists what is met. The table under **Important decisions** says what each row needs.
-5. Come back to the tab after you have put a step right. The tab reads the settings each time you open it, so it is the state of now. It stays when registration is on: an address or a key can stop working later.
+2. Read the card **Registration checklist** at the top. The bar and "N of M steps done" say how far you are. The message under the bar says what state registration is in: "Ready. Registration can be turned on." (with a **Go to Access** button), how many steps are open, how many wait for a Superadmin, or, when registration is on and something stopped working, a red message.
+3. Read the card **For you**. Each row is one step that you can do, with a button (for example **Open Legal** or **Open Event settings**) that takes you to the place where it is put right. When nothing is left for you, the card says so.
+4. Read the card **Waiting for a superadmin**. It is there when a step needs a Superadmin and you are not one. Each row has the badge **Superadmin** and says who to ask. A Superadmin has no such card: every open step is under **For you**, with a button to where it is put right (Event settings, or Organisation settings).
+5. The card **Done** is closed. Select its header to see the steps that are met, with the access method as text. Select it again to close it.
+6. Come back to the tab after you have put a step right. The tab reads the settings each time you open it, so it is the state of now. It stays when registration is on: an address or a key can stop working later. An event with an address of its own for guests has the row **Address for guests**, which is open while the last check of the address fails.
+7. An archived event has only the message at the top and the card **Done**.
 
 When registration is on and a step stops being done, the **Access** tab shows a warning with a link to the **Checklist** tab. When registration is off and a step is open, the **Access** tab says that registration can be turned on when the steps on the **Checklist** tab are done.
 
@@ -157,6 +159,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 | **Email sending** | Ask a Superadmin to set up email sending. A Superadmin is sent to **Organisation settings → Mail** |
 | **Instance address** | Ask a Superadmin to set the address of the instance. A Superadmin is sent to **Organisation settings → General** |
 | **Event status** | The event is archived. Ask a Superadmin to restore it |
+| **Address for guests** | Only when the event has an address of its own that was found working once. If the last check fails, ask a Superadmin to look at it. A Superadmin is sent to **Event settings → Registration** |
 | **Event dates** | The event has ended. Check the date and hours in **Event settings** |
 
 **Saving**

@@ -3,10 +3,11 @@ import { Link, useBlocker } from "react-router";
 import { Notice } from "@admitto/ui";
 import { useOptionalAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
-import type { EventDto, LegalDocumentDto, RegistrationReadinessCheckDto, RegistrationSettingsDto } from "../api/types.js";
+import type { EventDto, LegalDocumentDto, RegistrationSettingsDto } from "../api/types.js";
 import { isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SettingsFooter } from "../settings/mailTransportFormParts.js";
+import { checklistFromSettings, type ChecklistCheck } from "./accessReadiness.js";
 import { missingChecks } from "./accessSettings.js";
 import { AccessFormCard } from "./AccessFormCard.js";
 import { AccessModeCard } from "./AccessModeCard.js";
@@ -65,7 +66,7 @@ export function RegistrationAccessForm({
   legalItems: readonly LegalDocumentDto[];
   refreshEvent?: () => Promise<unknown>;
   /** Told what the checklist is now, so that the number on the Checklist tab follows a save. */
-  onReadiness?: (readiness: RegistrationReadinessCheckDto[]) => void;
+  onReadiness?: (readiness: ChecklistCheck[]) => void;
 }>) {
   const form = useAccessForm({ eventId, settings, legalItems, refreshEvent });
   const { server, draft, dirty, saving, problem, confirmOffOpen } = form;
@@ -74,7 +75,7 @@ export function RegistrationAccessForm({
   // A move between the two modes that are on is never refused, so only an event that has registration off needs to be ready.
   const canTurnOn = server.mode !== null || missing.length === 0;
   const superadmin = isSuperadmin(useOptionalAuth()?.assignments ?? []);
-  useEffect(() => onReadiness?.(server.readiness), [server.readiness, onReadiness]);
+  useEffect(() => onReadiness?.(checklistFromSettings(server)), [server, onReadiness]);
 
   // A change of the path or of `?tab=` leaves the form: with changes in it, the person is asked first.
   const blocker = useBlocker(

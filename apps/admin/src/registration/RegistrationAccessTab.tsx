@@ -2,13 +2,14 @@ import { useMemo, useState } from "react";
 import { useOutletContext, useParams } from "react-router";
 import { HintLabel } from "@admitto/ui";
 import { ApiError, fetchLegalDocuments, fetchRegistrationSettings } from "../api/client.js";
-import type { EventDto, LegalDocumentDto, RegistrationReadinessCheckDto, RegistrationSettingsDto } from "../api/types.js";
+import type { EventDto, LegalDocumentDto, RegistrationSettingsDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { orLoginRedirect } from "../identity/loginRedirect.js";
 import { PanelLoadError } from "../settings/PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "../settings/SettingsPanelSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
+import type { ChecklistCheck } from "./accessReadiness.js";
 import { RegistrationAccessForm } from "./RegistrationAccessForm.js";
 
 const ACCESS_HINT = "Whether guests can register for this event, and what the form asks them.";
@@ -21,7 +22,7 @@ const ACCESS_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
 ];
 
 /** One event, one tab: a different `:eventId` is a fresh tab (its own read and its own draft), never the previous one's. */
-export function RegistrationAccessTab({ onReadiness }: Readonly<{ onReadiness?: (readiness: RegistrationReadinessCheckDto[]) => void }>) {
+export function RegistrationAccessTab({ onReadiness }: Readonly<{ onReadiness?: (readiness: ChecklistCheck[]) => void }>) {
   const { eventId } = useParams();
   if (!eventId) return <p>Missing event.</p>;
   return <RegistrationAccessBody key={eventId} eventId={eventId} onReadiness={onReadiness} />;
@@ -33,7 +34,7 @@ export function RegistrationAccessTab({ onReadiness }: Readonly<{ onReadiness?: 
  * grey with their real titles, an error with a busy Retry that stays on screen until the answer is in, and the form only when both
  * answers are. A loaded form is never read again under the person's hands.
  */
-function RegistrationAccessBody({ eventId, onReadiness }: Readonly<{ eventId: string; onReadiness?: (readiness: RegistrationReadinessCheckDto[]) => void }>) {
+function RegistrationAccessBody({ eventId, onReadiness }: Readonly<{ eventId: string; onReadiness?: (readiness: ChecklistCheck[]) => void }>) {
   const { event, refreshEvent } = useOutletContext<{ event: EventDto; refreshEvent?: () => Promise<unknown> }>();
   const { reportApiError } = useConnectionState();
   const [loaded, setLoaded] = useState<{ settings: RegistrationSettingsDto; legalItems: LegalDocumentDto[] } | null>(null);

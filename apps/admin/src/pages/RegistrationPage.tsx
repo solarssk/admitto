@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { PageHeader, Tabs } from "@admitto/ui";
-import type { RegistrationCountsDto, RegistrationReadinessCheckDto } from "../api/types.js";
+import type { RegistrationCountsDto } from "../api/types.js";
 import type { ListLoad } from "../hooks/useListLoad.js";
-import { openStepCount } from "../registration/accessReadiness.js";
+import { openStepCount, type ChecklistCheck } from "../registration/accessReadiness.js";
 import { RegistrationAccessTab } from "../registration/RegistrationAccessTab.js";
 import { RegistrationChecklistTab } from "../registration/RegistrationChecklistTab.js";
 import { RegistrationFieldsTab } from "../registration/RegistrationFieldsTab.js";
@@ -17,7 +17,7 @@ function TabPanel({
   id,
   counts,
   onReadiness,
-}: Readonly<{ id: RegistrationTab["id"]; counts: ListLoad<RegistrationCountsDto>; onReadiness: (readiness: RegistrationReadinessCheckDto[]) => void }>) {
+}: Readonly<{ id: RegistrationTab["id"]; counts: ListLoad<RegistrationCountsDto>; onReadiness: (readiness: ChecklistCheck[]) => void }>) {
   if (id === "requests") return <RegistrationRequestsTab counts={counts} />;
   if (id === "fields") return <RegistrationFieldsTab />;
   if (id === "access") return <RegistrationAccessTab onReadiness={onReadiness} />;
@@ -42,7 +42,7 @@ function RegistrationPageBody({ eventId }: Readonly<{ eventId: string | undefine
   // The number on the Checklist tab is the steps that are still open, whichever tab is open. The Access tab (after a save) and the
   // Checklist tab read the checks themselves and tell the page what they found, so that the number is never older than the list; on
   // the other tabs the page reads them (once for each visit to such a tab).
-  const [checks, setChecks] = useState<RegistrationReadinessCheckDto[] | null>(null);
+  const [checks, setChecks] = useState<ChecklistCheck[] | null>(null);
   const reportsItself = tab.id === "access" || tab.id === "checklist";
   useRegistrationChecks(reportsItself ? undefined : eventId, setChecks);
   const openSteps = checks ? openStepCount(checks) : undefined;
