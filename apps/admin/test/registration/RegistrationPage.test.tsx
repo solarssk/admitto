@@ -28,12 +28,22 @@ vi.mock("../../src/registration/RegistrationRequestsTab.js", () => ({
 
 // The Fields tab reads and edits the event's fields: RegistrationFieldsTab.test.tsx has it. The page is tested around it.
 vi.mock("../../src/registration/RegistrationFieldsTab.js", () => ({
-  RegistrationFieldsTab: () => <p>The attendee fields card</p>,
+  RegistrationFieldsTab: ({ onChecksStale }: { onChecksStale?: () => void }) => (
+    <>
+      <p>The attendee fields card</p>
+      <button type="button" onClick={onChecksStale}>A question changed</button>
+    </>
+  ),
 }));
 
 // The Legal tab reads and edits the event's legal texts: RegistrationLegalTab.test.tsx has it. The page is tested around it.
 vi.mock("../../src/registration/RegistrationLegalTab.js", () => ({
-  RegistrationLegalTab: () => <p>The legal texts of the event</p>,
+  RegistrationLegalTab: ({ onChecksStale }: { onChecksStale?: () => void }) => (
+    <>
+      <p>The legal texts of the event</p>
+      <button type="button" onClick={onChecksStale}>A text was published</button>
+    </>
+  ),
 }));
 
 // The Access tab reads and saves the registration settings: RegistrationAccessTab.test.tsx has it. The page is tested around it.
@@ -355,5 +365,41 @@ describe("RegistrationPage: the number on the Checklist tab", () => {
     expect(checklistTab().textContent).toBe("Checklist");
     await act(async () => read.resolve(checks("legal_documents")));
     expect(checklistTab().textContent).toBe("Checklist1");
+  });
+});
+
+describe("RegistrationPage: the number on the Checklist tab after a change on the Fields or Legal tab", () => {
+  it("is read again when the Legal tab says its list changed, and the number follows", async () => {
+    renderForEvent("?tab=legal");
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist2"));
+    fetchRegistrationSettings.mockResolvedValue(checks("mail_provider"));
+
+    fireEvent.click(screen.getByRole("button", { name: "A text was published" }));
+
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist1"));
+    expect(fetchRegistrationSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("is read again when the Fields tab says so, and a burst of changes is one read", async () => {
+    renderForEvent("?tab=fields");
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist2"));
+    fetchRegistrationSettings.mockResolvedValue(checks());
+
+    for (let i = 0; i < 3; i += 1) fireEvent.click(screen.getByRole("button", { name: "A question changed" }));
+
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist"));
+    expect(fetchRegistrationSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("is read again when the person moves to another tab that does not read the checks itself, and not otherwise", async () => {
+    renderForEvent("?tab=fields");
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist2"));
+    expect(fetchRegistrationSettings).toHaveBeenCalledTimes(1);
+    fetchRegistrationSettings.mockResolvedValue(checks("mail_provider"));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Legal" }));
+
+    await waitFor(() => expect(checklistTab().textContent).toBe("Checklist1"));
+    expect(fetchRegistrationSettings).toHaveBeenCalledTimes(2);
   });
 });

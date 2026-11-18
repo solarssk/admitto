@@ -275,7 +275,7 @@ export function splitChecklist<T extends { key: string; ok: boolean }>(checks: r
   const waits = (check: T) => !superadmin && readinessCopy(check.key).superadminOnly === true;
   return {
     forYou: open.filter((check) => !waits(check)),
-    waiting: open.filter(waits),
+    waiting: open.filter((check) => waits(check)),
     done: [...tasks.filter((check) => check.ok), ...shown.filter((check) => readinessCopy(check.key).info)],
     total: tasks.length,
   };

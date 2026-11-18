@@ -14,6 +14,7 @@ import { advanceTimers, deferred, hangUntilAborted } from "../test-utils.js";
 
 const fetchEventCustomFields = vi.fn();
 const fetchEventItems = vi.fn();
+const fetchRegistrationSettings = vi.fn();
 const updateEventCustomField = vi.fn();
 const reorderEventCustomFields = vi.fn();
 const deleteEventCustomField = vi.fn();
@@ -24,6 +25,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
+  fetchRegistrationSettings: (...args: unknown[]) => fetchRegistrationSettings(...args),
   updateEventCustomField: (...args: unknown[]) => updateEventCustomField(...args),
   reorderEventCustomFields: (...args: unknown[]) => reorderEventCustomFields(...args),
   deleteEventCustomField: (...args: unknown[]) => deleteEventCustomField(...args),
@@ -371,6 +373,24 @@ describe("RegistrationFieldsTab: a change", () => {
     expect(rowNames()).toEqual(["Dietary requirements", "Shirt size"]);
     await act(async () => again.resolve([shirt]));
     expect(rowNames()).toEqual(["Shirt size"]);
+  });
+
+  it("tells the page when the list changes, so that the number on the Checklist tab is read again, and not for the first answer", async () => {
+    fetchRegistrationSettings.mockResolvedValue({ readiness: [], own_address: null });
+    fetchEventCustomFields.mockResolvedValueOnce([dietary, shirt]).mockResolvedValueOnce([shirt]);
+    deleteEventCustomField.mockResolvedValueOnce(undefined);
+    renderTab();
+    await cardLoaded();
+    // The page read the checks once for itself.
+    await waitFor(() => expect(fetchRegistrationSettings).toHaveBeenCalledTimes(1));
+    // Longer than the page waits before it reads again: the first answer of the list asks for nothing.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(fetchRegistrationSettings).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete field" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(fetchRegistrationSettings).toHaveBeenCalledTimes(2));
   });
 
   it("replaces the card with the error when the read after a change fails, since the card may be wrong", async () => {

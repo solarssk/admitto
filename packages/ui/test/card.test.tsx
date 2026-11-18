@@ -76,7 +76,7 @@ describe("Card collapsible", () => {
     expect(collapse().hasAttribute("inert")).toBe(true);
     expect(screen.getByText("Body link")).toBeTruthy();
     // jsdom has no inert; what an inert subtree holds is never focusable in a browser, so the card must mark the one wrapper that holds all of it.
-    expect(collapse().querySelectorAll("a, button").length).toBe(2);
+    expect(collapse().querySelectorAll("a, button")).toHaveLength(2);
     expect(Array.from(document.querySelectorAll("a, button")).filter((el) => !collapse().contains(el)).map((el) => el.textContent)).toEqual(["Done 7"]);
   });
 

@@ -18,6 +18,7 @@ const saveLegalDocument = vi.fn();
 const publishLegalDocument = vi.fn();
 const deleteLegalDocument = vi.fn();
 const fetchAdminEvents = vi.fn();
+const fetchRegistrationSettings = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
@@ -27,6 +28,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   publishLegalDocument: (...args: unknown[]) => publishLegalDocument(...args),
   deleteLegalDocument: (...args: unknown[]) => deleteLegalDocument(...args),
   fetchAdminEvents: (...args: unknown[]) => fetchAdminEvents(...args),
+  fetchRegistrationSettings: (...args: unknown[]) => fetchRegistrationSettings(...args),
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js");
@@ -322,6 +324,8 @@ describe("RegistrationLegalTab: opening a text", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(fetchLegalDocuments).toHaveBeenCalledTimes(2));
+    // What the checklist needs may have changed with the text: the page reads the checks again, once.
+    await waitFor(() => expect(fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     fireEvent.click(screen.getByRole("button", { name: "Back to legal texts" }));
     await screen.findByText("Legal texts");
     expect(within(rows()[1]!).getByText("Draft")).toBeTruthy();

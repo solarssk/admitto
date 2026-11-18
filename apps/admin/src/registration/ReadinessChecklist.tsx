@@ -158,6 +158,12 @@ function DoneCard({ checks, count, context }: Readonly<{ checks: readonly Checkl
   );
 }
 
+/** The colour of the progress bar: green when nothing is open, red when registration is on and something is, yellow otherwise. */
+function barTone(open: number, mode: RegistrationMode | null): "ok" | "warn" | "error" {
+  if (open === 0) return "ok";
+  return mode === null ? "warn" : "error";
+}
+
 /**
  * What registration needs, as one summary (the progress and a banner for the state) and cards by who does it: "For you" (what this
  * person can put right, with a button to where), "Waiting for a superadmin" (only for somebody who is not one: what only a superadmin
@@ -187,7 +193,7 @@ export function ReadinessChecklist({
   const doneCount = total - open;
   const addressStopped = [...forYou, ...waiting].some((check) => check.key === OWN_ADDRESS_KEY);
   const banner = checklistBanner({ mode, archived, forYou: forYou.length, waiting: waiting.length, addressStopped });
-  const tone = open === 0 ? "ok" : mode === null ? "warn" : "error";
+  const tone = barTone(open, mode);
   return (
     <>
       <Card title="Registration checklist" actions={<span className="overview-readiness-score">{doneCount} of {total} steps done</span>}>
