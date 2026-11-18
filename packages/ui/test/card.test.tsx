@@ -43,15 +43,16 @@ describe("Card collapsible", () => {
     expect(toggle.textContent).toContain("7");
     expect(toggle.querySelector(".at-card__title")).not.toBeNull();
     expect(toggle.querySelector(".at-card__chevron")).not.toBeNull();
-    expect(screen.queryByText("Body link")).toBeNull();
-    expect(screen.queryByText("Foot")).toBeNull();
+    // Mounted from the first render, so that opening does not mount it inside the first frames of the transition.
+    expect(collapse().contains(screen.getByText("Body link"))).toBe(true);
+    expect(collapse().contains(screen.getByText("Foot"))).toBe(true);
     // The element the button controls is always there, closed and inert.
     expect(toggle.getAttribute("aria-controls")).toBe(collapse().id);
     expect(collapse().getAttribute("data-open")).toBe("false");
     expect(collapse().hasAttribute("inert")).toBe(true);
   });
 
-  it("opens on a click, mounts the body, and is reachable: aria-expanded, data-open and no inert", () => {
+  it("opens on a click, with the same body, and is reachable: aria-expanded, data-open and no inert", () => {
     renderCard();
     const toggle = screen.getByRole("button", { name: /Done/ });
 
@@ -91,6 +92,18 @@ describe("Card collapsible", () => {
     expect(document.activeElement).toBe(toggle);
   });
 
+  it("keeps what is in the body when the card closes and opens again: the same elements", () => {
+    renderCard();
+    const link = screen.getByText("Body link");
+    const toggle = screen.getByRole("button", { name: /Done/ });
+
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+
+    expect(screen.getByText("Body link")).toBe(link);
+  });
+
   it("starts open with defaultOpen, with the body mounted", () => {
     renderCard({ defaultOpen: true });
 
@@ -114,13 +127,13 @@ describe("Card collapsible", () => {
     expect(css).toMatch(/\.at-card__header--closed \{ border-bottom-color: transparent/);
   });
 
-  it("opens by growing a grid row from 0fr to 1fr with the kit's duration and easing, and hides what is closed once the closing has finished", () => {
-    expect(css).toMatch(/\.at-card__collapse \{ display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows var\(--dur-slow\) var\(--ease-out\), opacity var\(--dur-slow\) var\(--ease-out\), visibility 0s linear var\(--dur-slow\)/);
+  it("opens by growing a grid row from 0fr to 1fr with the kit's duration and the easing that moves it over the whole time, and hides what is closed once the closing has finished", () => {
+    expect(css).toMatch(/\.at-card__collapse \{ display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows var\(--dur-slow\) var\(--ease-in-out\), opacity var\(--dur-slow\) var\(--ease-in-out\), visibility 0s linear var\(--dur-slow\)/);
     expect(css).toMatch(/\.at-card__collapse\[data-open="true"\] \{ grid-template-rows: 1fr; opacity: 1; visibility: visible; transition: [^}]*visibility 0s;/);
     expect(css).toMatch(/\.at-card__collapse-inner \{ min-height: 0; overflow: hidden;/);
     // The border of the header changes with the body, and the chevron turns for as long.
     expect(css).toMatch(/\.at-card__header--toggle \{[^}]*transition: border-color var\(--dur-slow\)/);
-    expect(css).toMatch(/\.at-card__chevron \{[^}]*transition: transform var\(--dur-slow\) var\(--ease-out\)/);
+    expect(css).toMatch(/\.at-card__chevron \{[^}]*transition: transform var\(--dur-slow\) var\(--ease-in-out\)/);
   });
 
   it("does not animate for a person who asked for less motion", () => {
