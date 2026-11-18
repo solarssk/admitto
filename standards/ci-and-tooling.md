@@ -80,3 +80,5 @@ Confirmed empirically on two files sharing a near-identical 5-line explanation:
 - Trimming both comments to 1-2 lines did (down to 2.1%).
 
 Keep any such comment as short as possible, and re-check the actual SonarCloud PR analysis after pushing - don't assume a comment is free just because it isn't executable code.
+
+**The dependency audit is `scripts/audit-gate.sh`, not a bare `npm audit`.** It fails on every high or critical advisory except the one id in `ACCEPTED_ADVISORY` in the `lint-and-typecheck` step of `ci.yml` (today GHSA-fc5q-39xc-vjpf, picomatch, dev tooling only, no patched release). Accept an advisory only when it has no fix and does not reach `npm ls --omit=dev`; put the reason and date in the comment above the variable. Remove the variable when a fix exists: the script prints a `::notice::` once the advisory leaves the report. Run it locally with `ACCEPTED_ADVISORY=<id> bash scripts/audit-gate.sh`; its test is `scripts/audit-gate.test.mjs`.
