@@ -322,8 +322,6 @@ export function StaffRoutes() {
               />
             );
           })}
-          {/* The page was called Requirements and lived at /requirements: old links and bookmarks still arrive. */}
-          <Route path="requirements" element={<Navigate to="../event-items" replace />} />
           <Route path="attendees/import" element={<ImportPage />} />
           <Route path="attendees/:attendeeId" element={<AttendeeDetailPage />} />
           <Route path="settings" element={<EventSettingsPage />} />

@@ -85,7 +85,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Remove the Ways in card from External services: how guests open the form is set on each event ([#1939](https://github.com/solarssk/admitto/pull/1939))
 - Always offer Link, Password and Company SSO, and remove the old list of enabled ways in, the single identity provider for the whole instance and their settings routes ([#1940](https://github.com/solarssk/admitto/pull/1941))
 - Show the Open-Meteo API key like the other secret keys: a locked box with Set, Change and Clear, and never its value ([#1932](https://github.com/solarssk/admitto/pull/1932))
-- Rename Requirements to Event items and move it just before Check-in in the event menu; the old address still opens it ([#1952](https://github.com/solarssk/admitto/pull/1952))
+- Rename Requirements to Event items and move it just before Check-in in the event menu ([#1952](https://github.com/solarssk/admitto/pull/1952))
 
 ### Fixed
 

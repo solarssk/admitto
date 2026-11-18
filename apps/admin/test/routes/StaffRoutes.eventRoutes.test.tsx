@@ -9,12 +9,6 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: [], setupComplete: true, refresh: async () => {} }),
 }));
 
-// A direct visit carries no navigation state, so the layout reads the event from the API.
-vi.mock("../../src/api/client.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
-  fetchAdminEvent: async () => event,
-}));
-
 vi.mock("../../src/auth/capabilities.js", () => ({
   isSuperadmin: () => false,
 }));
@@ -91,17 +85,6 @@ describe("StaffRoutes event route selection", () => {
 
   it("opens the Event items page at /event-items", async () => {
     renderAt("/admin/events/evt-1/event-items");
-
-    expect(await screen.findByText("mapped event items page")).toBeTruthy();
-  });
-
-  it("sends the old /requirements address to /event-items, so old links and bookmarks still work", async () => {
-    // Like a bookmark or an old link: a direct visit has no navigation state, so the layout reads the event itself.
-    render(
-      <MemoryRouter initialEntries={["/admin/events/evt-1/requirements"]}>
-        <StaffRoutes />
-      </MemoryRouter>,
-    );
 
     expect(await screen.findByText("mapped event items page")).toBeTruthy();
   });
