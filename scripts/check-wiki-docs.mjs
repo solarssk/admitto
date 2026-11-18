@@ -49,7 +49,7 @@ const requiredSidebarSections = [
   "Start Here",
   "Event Management",
   "Registration and Attendees",
-  "Requirements and Fulfilment",
+  "Event items and Fulfilment",
   "Tickets and Passes",
   "Communication",
   "Check-in Operations",
