@@ -227,7 +227,7 @@ describe("RegistrationAccessTab: what a save sends", () => {
     expect(document.activeElement).toBe(button);
     expect(toggle("Waiting list").disabled).toBe(true);
     expect(toggle("Styled form boxes").disabled).toBe(true);
-    expect(radio("Automatic").hasAttribute("disabled")).toBe(true);
+    expect(toggle("Approve requests by hand").disabled).toBe(true);
     expect(isOff(screen.getByRole("button", { name: "Reset" }))).toBe(true);
     fireEvent.click(button);
     expect(api.saveRegistrationSettings).toHaveBeenCalledTimes(1);
@@ -239,143 +239,14 @@ describe("RegistrationAccessTab: what a save sends", () => {
   });
 });
 
-describe("RegistrationAccessTab: turning registration on", () => {
-  it.each([
-    ["Automatic", "automatic"],
-    ["With approval", "approval"],
-  ])("sends %s as the mode and nothing else, and says that registration is on", async (name, mode) => {
-    await renderLoaded();
-    savedAs({ mode: mode as "automatic" | "approval" });
-
-    fireEvent.click(radio(name));
-    await save();
-
-    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { mode });
-    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Registration is on.", "success"));
-    expect(radio(name).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByText("Guests open the form at this link.")).toBeTruthy();
-  });
-
-  it("does not ask for a confirmation: turning on is not a loss", async () => {
-    await renderLoaded();
-    savedAs({ mode: "automatic" });
-
-    fireEvent.click(radio("Automatic"));
-    await save();
-
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  it("says only that the settings were saved when it moves between the two modes that are on", async () => {
-    await renderLoaded(settings({ mode: "approval" }));
-    savedAs({ mode: "automatic" });
-
-    fireEvent.click(radio("Automatic"));
-    await save();
-
-    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { mode: "automatic" });
-    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Registration settings saved.", "success"));
-  });
-});
-
-describe("RegistrationAccessTab: turning registration off", () => {
-  async function chooseOff(saved: RegistrationSettingsDto = settings({ mode: "automatic" })) {
-    await renderLoaded(saved);
-    fireEvent.click(radio("Off"));
-    fireEvent.click(saveButton());
-    return screen.findByRole("dialog", { name: "Turn off registration?" });
-  }
-
-  it("asks first, says what it does, and sends nothing until it is confirmed", async () => {
-    const dialog = await chooseOff();
-
-    expect(within(dialog).getByText("Guests can no longer open the form. This is what changes:")).toBeTruthy();
-    const consequences = within(dialog).getAllByRole("listitem").map((item) => item.textContent);
-    expect(consequences).toEqual([
-      "The requests you already have stay. You can still accept, reject and delete them on the Requests tab.",
-      "Confirmation links stop working. They work again if you turn registration on before they expire.",
-      "Emails that are already queued are still sent.",
-    ]);
-    expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
-  });
-
-  it("sends the mode as none, and only that, when it is confirmed, and says that registration is off", async () => {
-    const dialog = await chooseOff();
-    api.saveRegistrationSettings.mockResolvedValue(settings({ mode: null }));
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Turn off registration" }));
-
-    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { mode: null }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(addToast).toHaveBeenCalledWith("Registration is off.", "success");
-    expect(radio("Off").getAttribute("aria-checked")).toBe("true");
-  });
-
-  it("sends nothing when it is cancelled, and keeps the choice of Off on the form to be saved or reset", async () => {
-    const dialog = await chooseOff();
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
-    expect(radio("Off").getAttribute("aria-checked")).toBe("true");
-    expect(unsavedNote()).toBeTruthy();
-  });
-
-  it("is never refused for want of anything: it is possible when every check is missing", async () => {
-    const dialog = await chooseOff(settings({ mode: "approval", readiness: checks("bot_protection", "legal_documents", "mail_provider", "instance_url") }));
-    api.saveRegistrationSettings.mockResolvedValue(settings({ mode: null, readiness: checks("bot_protection") }));
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Turn off registration" }));
-
-    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { mode: null }));
-  });
-
-  it("sends the other changes with it, and asks first all the same", async () => {
-    await renderLoaded(settings({ mode: "approval" }));
-    fireEvent.click(toggle("Ask for the company"));
-    fireEvent.click(radio("Off"));
-    fireEvent.click(saveButton());
-    const dialog = await screen.findByRole("dialog", { name: "Turn off registration?" });
-    api.saveRegistrationSettings.mockResolvedValue(settings({ mode: null, ask_company: true }));
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Turn off registration" }));
-
-    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { mode: null, ask_company: true }));
-  });
-
-  it("shows a failure in the dialog, not in a toast, and keeps the dialog so that it can be tried again", async () => {
-    const dialog = await chooseOff();
-    api.saveRegistrationSettings.mockRejectedValue(refusal(500, "unexpected_failure"));
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Turn off registration" }));
-
-    await waitFor(() => expect(within(dialog).getByRole("alert").textContent).toBe("Could not save the registration settings."));
-    expect(screen.getByRole("dialog", { name: "Turn off registration?" })).toBeTruthy();
-    expect(addToast).not.toHaveBeenCalled();
-    // Only the dialog says it: the form behind it does not say it twice.
-    expect(screen.getAllByRole("alert")).toHaveLength(1);
-  });
-
-  it("does not ask when the form was off already and something else changed", async () => {
-    await renderLoaded(settings({ mode: null }));
-    savedAs({ ask_company: true });
-
-    fireEvent.click(toggle("Ask for the company"));
-    await save();
-
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-});
-
 describe("RegistrationAccessTab: a save that the server refuses because registration is not ready", () => {
   const refuse = (...keys: string[]) => api.saveRegistrationSettings.mockRejectedValue(refusal(409, "registration_not_ready", keys));
 
   it("names what is missing, from the keys and in its own words, with what to do about each, at the buttons, and not in a toast", async () => {
-    await renderLoaded(settings(), { superadmin: false });
+    await renderLoaded(settings({ mode: "approval" }), { superadmin: false });
     refuse("legal_documents", "mail_provider");
 
-    fireEvent.click(radio("Automatic"));
+    fireEvent.click(toggle("Approve requests by hand"));
     await save();
 
     const alert = await screen.findByRole("alert");
@@ -390,53 +261,50 @@ describe("RegistrationAccessTab: a save that the server refuses because registra
   });
 
   it("takes the mode that was asked for off the form, since registration stays as it was, and keeps the other changes", async () => {
-    await renderLoaded();
+    await renderLoaded(settings({ mode: "approval" }));
     refuse("bot_protection");
 
     fireEvent.click(toggle("Ask for the company"));
-    fireEvent.click(radio("Automatic"));
+    fireEvent.click(toggle("Approve requests by hand"));
     await save();
     await screen.findByRole("alert");
 
-    expect(radio("Off").getAttribute("aria-checked")).toBe("true");
-    expect(radio("Automatic").getAttribute("aria-checked")).toBe("false");
+    expect(toggle("Approve requests by hand").checked).toBe(true);
     expect(toggle("Ask for the company").checked).toBe(true);
     expect(unsavedNote()).toBeTruthy();
   });
 
-  it("reads the settings and the texts again, so the checklist is the truth, and the modes that are on go off the table", async () => {
-    await renderLoaded();
+  it("reads the settings and the texts again, so the checklist is the truth, and the warning that registration is on without what it needs shows", async () => {
+    await renderLoaded(settings({ mode: "approval" }));
     refuse("legal_documents");
-    api.fetchRegistrationSettings.mockResolvedValue(settings({ readiness: checks("legal_documents") }));
+    api.fetchRegistrationSettings.mockResolvedValue(settings({ mode: "approval", readiness: checks("legal_documents") }));
 
-    fireEvent.click(radio("Automatic"));
+    fireEvent.click(toggle("Approve requests by hand"));
     await save();
 
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     expect(api.fetchLegalDocuments).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(radio("Automatic").hasAttribute("disabled")).toBe(true));
-    expect(screen.getByText(/Registration can be turned on when the steps on the/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Checklist tab" })).toBeTruthy();
+    expect(await screen.findByText(/Registration is on, but something it needs is missing/)).toBeTruthy();
   });
 
   it("keeps what it showed when the second read fails, and still says what is missing", async () => {
-    await renderLoaded();
+    await renderLoaded(settings({ mode: "approval" }));
     refuse("legal_documents");
     api.fetchRegistrationSettings.mockRejectedValue(refusal(500, "unexpected_failure"));
 
-    fireEvent.click(radio("Automatic"));
+    fireEvent.click(toggle("Approve requests by hand"));
     await save();
 
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
     expect((await screen.findByRole("alert")).textContent).toContain("This change needs something that is not set up yet.");
-    expect(radio("Off").getAttribute("aria-checked")).toBe("true");
+    expect(toggle("Approve requests by hand").checked).toBe(true);
   });
 
   it("falls back to a sentence of the app when the answer names no key", async () => {
-    await renderLoaded();
+    await renderLoaded(settings({ mode: "approval" }));
     api.saveRegistrationSettings.mockRejectedValue(refusal(409, "registration_not_ready"));
 
-    fireEvent.click(radio("Automatic"));
+    fireEvent.click(toggle("Approve requests by hand"));
     await save();
 
     expect(await screen.findByRole("alert")).toBeTruthy();

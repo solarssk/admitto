@@ -19,6 +19,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js");
+vi.mock("@admitto/ui", async (importOriginal) => ({ ...(await importOriginal<typeof import("@admitto/ui")>()), useToast: () => ({ addToast: vi.fn() }) }));
 vi.mock("../../src/auth/login-navigation.js", () => ({ goToLogin: (...args: unknown[]) => goToLogin(...args) }));
 
 // The Requests tab reads the requests: RegistrationRequestsTab.test.tsx has it. The page is tested around it.

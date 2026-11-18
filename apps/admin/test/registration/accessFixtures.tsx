@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
+import { ToastProvider } from "@admitto/ui";
 import { createMemoryRouter, Outlet, RouterProvider, useOutletContext, useParams } from "react-router";
 import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
 import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
@@ -32,7 +33,11 @@ export function renderPage({ withEvent = event, path = "/admin/events/evt-1/regi
     ],
     { initialEntries: [path] },
   );
-  render(<RouterProvider router={router} />);
+  render(
+    <ToastProvider>
+      <RouterProvider router={router} />
+    </ToastProvider>,
+  );
   return { router };
 }
 
@@ -80,7 +85,7 @@ export const card = (title: string) => screen.getByText(title, { selector: ".at-
 
 /** Waits until the form is on screen: the placeholder draws the titles of the cards too, so a title alone is not the answer. */
 export async function loaded() {
-  await screen.findByRole("radiogroup", { name: "Registration mode" });
+  await screen.findByRole("switch", { name: "Waiting list" });
 }
 
 /** The Registration tab of Event settings with these settings, read and on screen. */

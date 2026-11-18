@@ -51,7 +51,7 @@ async function renderPanel(saved: RegistrationSettingsDto, uris: RegistrationRed
       <EventRegistrationPanel eventId="evt-1" archived={false} superadmin refreshEvent={refreshEvent} />
     </MemoryRouter>,
   );
-  await screen.findByRole("radiogroup", { name: "Registration mode" });
+  await screen.findByRole("switch", { name: "Waiting list" });
 }
 
 beforeEach(() => {

@@ -87,7 +87,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Always offer Link, Password and Company SSO, and remove the old list of enabled ways in, the single identity provider for the whole instance and their settings routes ([#1940](https://github.com/solarssk/admitto/pull/1941))
 - Show the Open-Meteo API key like the other secret keys: a locked box with Set, Change and Clear, and never its value ([#1932](https://github.com/solarssk/admitto/pull/1932))
 - Rename Requirements to Event items and move it just before Check-in in the event menu ([#1952](https://github.com/solarssk/admitto/pull/1952))
-- Move every registration setting into Event settings, Registration, open to every event administrator (a superadmin still sets how guests open the form), drop the Access tab of the Registration page, and move the address for guests to Event settings, General ([#1953](https://github.com/solarssk/admitto/pull/1953))
+- Move every registration setting into Event settings, Registration, open to every event administrator (a superadmin still sets how guests open the form), drop the Access tab of the Registration page, switch registration on and off and copy the guest link in the header of the Registration page, and move the address for guests to Event settings, General ([#1953](https://github.com/solarssk/admitto/pull/1953))
 
 ### Fixed
 

@@ -39,7 +39,7 @@ export async function renderPanel(saved: RegistrationSettingsDto, { archived = f
       />
     </MemoryRouter>,
   );
-  await screen.findByRole("radiogroup", { name: "Registration mode" });
+  await screen.findByRole("switch", { name: "Waiting list" });
 }
 
 /** Save of the tab, once the address card has lifted its hold (a click before that is dropped, as it is for a person). */

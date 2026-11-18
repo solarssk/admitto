@@ -380,3 +380,15 @@ span.access-check__remedy {
     align-self: flex-start;
   }
 }
+
+/* The registration switch in the header of the Registration page: the title, the switch, a way to the Checklist, and the copy button. */
+.registration-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.registration-switch__title {
+  font-weight: 600;
+}

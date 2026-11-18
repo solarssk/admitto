@@ -90,6 +90,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  fetchRegistrationSettings.mockResolvedValue({ mode: null, guest_url: null, readiness: [], own_address: null });
   fetchLegalDocuments.mockResolvedValue(answer([privacy], [{ ref: "event-terms", kind: "event_terms", key: null }]));
   fetchLegalDocument.mockImplementation(async (_event: string, ref: string) => withContent(ref === "privacy-notice" ? privacy : doc(ref)));
   fetchAdminEvents.mockResolvedValue([event]);

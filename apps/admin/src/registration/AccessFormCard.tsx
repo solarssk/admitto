@@ -38,6 +38,29 @@ function providerDecides(key: ToggleKey, draft: AccessDraft): boolean {
   return key === "verify_email" && draft.method === "sso";
 }
 
+const APPROVAL_TITLE = "Approve requests by hand";
+const APPROVAL_TEXT = "Every request waits on the Requests tab until you accept or reject it. Turned off, guests are accepted without waiting for you, until the event is full.";
+const APPROVAL_OFF_TEXT = "You can choose this while registration is on. Turn it on with the switch in the header of the Registration page.";
+
+/** The mode of registration while it is on: with approval, or automatic. It is a switch of the form, since the Registration page only turns registration on or off. */
+function ApprovalRow({ draft, disabled, onChange }: Readonly<{ draft: AccessDraft; disabled: boolean; onChange: (change: Partial<Pick<AccessDraft, "mode">>) => void }>) {
+  const registrationOn = draft.mode !== null;
+  return (
+    <div className="settings-row settings-row--switch">
+      <div className="settings-row__text">
+        <strong>{APPROVAL_TITLE}</strong>
+        <p>{registrationOn ? APPROVAL_TEXT : APPROVAL_OFF_TEXT}</p>
+      </div>
+      <Switch
+        checked={draft.mode === "approval"}
+        disabled={disabled || !registrationOn}
+        aria-label={APPROVAL_TITLE}
+        onChange={(event) => onChange({ mode: event.target.checked ? "approval" : "automatic" })}
+      />
+    </div>
+  );
+}
+
 /**
  * What the form asks beyond the questions of the Fields tab: the switches of the form, and the extra consents a guest must accept.
  * The consents are chosen from the texts the event has published (the Legal tab writes them); one that is chosen and not published
@@ -54,11 +77,12 @@ export function AccessFormCard({
   draft: AccessDraft;
   legalItems: readonly LegalDocumentDto[];
   disabled: boolean;
-  onChange: (change: Partial<Pick<AccessDraft, ToggleKey | "consent_keys">>) => void;
+  onChange: (change: Partial<Pick<AccessDraft, ToggleKey | "consent_keys" | "mode">>) => void;
 }>) {
   const options = consentOptions(legalItems, draft.consent_keys);
   return (
     <Card title="Form">
+      <ApprovalRow draft={draft} disabled={disabled} onChange={onChange} />
       {TOGGLES.map(({ key, title, text }) => {
         const byProvider = providerDecides(key, draft);
         return (

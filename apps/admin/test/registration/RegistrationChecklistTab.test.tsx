@@ -283,7 +283,7 @@ describe("RegistrationChecklistTab: the banner", () => {
     ["only a superadmin's steps are open", settings({ readiness: checks("mail_provider") }), "1 step waits for a superadmin. Your steps are done.", "info"],
     ["two of a superadmin's steps are open", settings({ readiness: checks("mail_provider", "instance_url") }), "2 steps wait for a superadmin. Your steps are done.", "info"],
     ["everything is done and registration is off", settings({ readiness: checks() }), "Ready. Registration can be turned on.", "success"],
-    ["everything is done and registration is on", settings({ mode: "approval", readiness: checks() }), "Registration is on and every step is done.", "success"],
+    ["everything is done and registration is on", settings({ mode: "approval", readiness: checks() }), "Registration is open.", "success"],
     ["a step is open while registration is on", settings({ mode: "automatic", readiness: checks("mail_provider") }), "Registration is on, but something it needs is missing. Guests may not be able to register.", "error"],
     ["the address stopped while registration is on", settings({ mode: "automatic", own_address: STOPPED, readiness: checks() }), "Registration is on, but the address of this event stopped working. Guests may not be able to register.", "error"],
   ])("says, when %s, the sentence for it", async (_case, saved, text, variant) => {
@@ -302,19 +302,17 @@ describe("RegistrationChecklistTab: the banner", () => {
     expect(banner().getAttribute("role")).toBeNull();
   });
 
-  it("has the button Go to Event settings, which opens Event settings, Registration, when everything is ready and registration is off, and only then", async () => {
-    const { router } = await renderChecklistLoaded(settings({ readiness: checks() }));
-
-    fireEvent.click(within(banner()).getByRole("link", { name: "Go to Event settings" }));
-    expect(router.state.location.pathname + router.state.location.search).toBe("/admin/events/evt-1/settings?tab=registration");
+  it("has the button Turn registration on when everything is ready and registration is off, Turn off when it is on, and none otherwise", async () => {
+    await renderChecklistLoaded(settings({ readiness: checks() }));
+    expect(within(banner()).getByRole("button", { name: "Turn registration on" })).toBeTruthy();
     cleanup();
 
     await renderChecklistLoaded(settings({ mode: "automatic", readiness: checks() }));
-    expect(within(banner()).queryByRole("link")).toBeNull();
+    expect(within(banner()).getByRole("button", { name: "Turn off" })).toBeTruthy();
     cleanup();
 
     await renderChecklistLoaded(settings({ readiness: checks("legal_documents") }));
-    expect(within(banner()).queryByRole("link")).toBeNull();
+    expect(within(banner()).queryByRole("button")).toBeNull();
   });
 });
 

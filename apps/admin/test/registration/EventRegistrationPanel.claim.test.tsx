@@ -313,7 +313,7 @@ describe("reading the tab", () => {
     expect(reportApiError).toHaveBeenCalledWith(500);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-    expect(await screen.findByRole("radiogroup", { name: "Registration mode" })).toBeTruthy();
+    expect(await screen.findByRole("switch", { name: "Waiting list" })).toBeTruthy();
     expect(claimName()).toBeTruthy();
   });
 

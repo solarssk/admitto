@@ -56,10 +56,10 @@ afterEach(() => {
 });
 
 describe("the access method of an event, in Event settings", () => {
-  it("is the third card, named Access method, with one short instruction and the choice in the narrow group of the segmented control", async () => {
+  it("is the second card, named Access method, with one short instruction and the choice in the narrow group of the segmented control", async () => {
     await renderPanel(settings({ access_methods: [] }));
 
-    expect([...document.querySelectorAll(".at-card__title")].map((title) => title.textContent?.trim())).toEqual(["Guest registration", "Form", "Access method", "Company SSO"]);
+    expect([...document.querySelectorAll(".at-card__title")].map((title) => title.textContent?.trim())).toEqual(["Form", "Access method", "Company SSO"]);
     expect(within(methodCard()).getByText("Choose the access method for the registration form.")).toBeTruthy();
     expect(within(methodCard()).getByRole("radiogroup", { name: "Access method" }).classList.contains("access-seg")).toBe(true);
     expect(methodCard().querySelector(".at-notice")).toBeNull();

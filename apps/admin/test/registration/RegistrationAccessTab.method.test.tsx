@@ -75,14 +75,14 @@ describe("the checklist rows that are put right in Event settings, Registration"
   });
 
   it("do the same in the list of what a refused save needs", async () => {
-    const refused: RegistrationSettingsDto = settings({ mode: null });
+    const refused: RegistrationSettingsDto = settings({ mode: "approval" });
     await renderLoaded(refused, { superadmin: false });
     const { ApiError } = await import("../../src/api/client.js");
     const error = new ApiError(409, "registration_not_ready");
     error.blockers = ["password"];
     api.saveRegistrationSettings.mockRejectedValue(error);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Automatic" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Approve requests by hand" }));
     fireEvent.click(saveButton());
 
     const alert = await screen.findByRole("alert");

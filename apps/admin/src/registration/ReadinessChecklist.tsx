@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Badge, Card, Notice } from "@admitto/ui";
+import { Badge, Button, Card, Notice } from "@admitto/ui";
 import type { RegistrationMode } from "@admitto/db/status";
 import type { RegistrationSettingsDto } from "../api/types.js";
 import {
@@ -12,12 +12,14 @@ import {
   readinessCopy,
   remedyFor,
   splitChecklist,
+  type ChecklistBanner,
   type ChecklistCheck,
   type ReadinessCopy,
   type ReadinessLink,
 } from "./accessReadiness.js";
 import type { AccessMethod } from "./accessSettings.js";
 import { leavesPage, linkTarget } from "./AccessReadinessCard.js";
+import { MODE_ON_START, type RegistrationSwitchState } from "./RegistrationSwitch.js";
 import "./registration-access.css";
 
 /** What the rows need to word themselves besides the check: the access method and its provider, the bot switch and the questions. */
@@ -154,6 +156,25 @@ function DoneCard({ checks, count, context }: Readonly<{ checks: readonly Checkl
 }
 
 /** The colour of the progress bar: green when nothing is open, red when registration is on and something is, yellow otherwise. */
+/** The button of the banner: it uses the switch of the page, so it does what the switch in the header does. */
+function BannerAction({ action, reg }: Readonly<{ action: ChecklistBanner["action"]; reg: RegistrationSwitchState }>) {
+  if (action === "turn_on") {
+    return (
+      <Button type="button" size="sm" loading={reg.busy} onClick={() => reg.request(MODE_ON_START)}>
+        Turn registration on
+      </Button>
+    );
+  }
+  if (action === "turn_off") {
+    return (
+      <Button type="button" variant="secondary" size="sm" loading={reg.busy} onClick={() => reg.request(null)}>
+        Turn off
+      </Button>
+    );
+  }
+  return undefined;
+}
+
 function barTone(open: number, mode: RegistrationMode | null): "ok" | "warn" | "error" {
   if (open === 0) return "ok";
   return mode === null ? "warn" : "error";
@@ -169,6 +190,7 @@ export function ReadinessChecklist({
   eventId,
   checks,
   superadmin,
+  reg,
   mode,
   archived,
   method,
@@ -178,6 +200,8 @@ export function ReadinessChecklist({
 }: Readonly<
   RowContext & {
     checks: readonly ChecklistCheck[];
+    /** The switch of the page: the banner turns registration on and off with it. */
+    reg: RegistrationSwitchState;
     mode: RegistrationMode | null;
     archived: boolean;
   }
@@ -197,13 +221,7 @@ export function ReadinessChecklist({
           <Notice
             variant={banner.variant}
             role={banner.variant === "error" ? "alert" : undefined}
-            action={
-              banner.goToSettings ? (
-                <Link className="at-btn at-btn--primary at-btn--sm" to={linkTarget("registration_settings", eventId)}>
-                  Go to Event settings
-                </Link>
-              ) : undefined
-            }
+            action={<BannerAction action={banner.action} reg={reg} />}
           >
             {banner.text}
           </Notice>

@@ -97,6 +97,7 @@ async function cardLoaded() {
 }
 
 beforeEach(() => {
+  fetchRegistrationSettings.mockResolvedValue({ mode: null, guest_url: null, readiness: [], own_address: null });
   fetchEventItems.mockResolvedValue([]);
 });
 

@@ -3232,17 +3232,17 @@ describe("EventSettingsPage Registration tab", () => {
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["General", "Location", "Ticket types", "Registration", "Images", "Check-in", "Danger zone"]);
   });
 
-  it("opens with the cards Guest registration, Form, Access method and Company SSO, in that order, and no address card", async () => {
+  it("opens with the cards Form, Access method and Company SSO, in that order, and no address card", async () => {
     mockAssignments = superadminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await screen.findByRole("tab", { name: "Registration" });
     fireEvent.click(screen.getByRole("tab", { name: "Registration" }));
 
-    await screen.findByRole("radiogroup", { name: "Registration mode" });
+    await screen.findByRole("switch", { name: "Waiting list" });
     const panel = screen.getByRole("tabpanel", { name: "Registration" });
     const titles = Array.from(panel.querySelectorAll(".at-card__title")).map((node) => node.textContent);
-    expect(titles).toEqual(["Guest registration", "Form", "Access method", "Company SSO"]);
+    expect(titles).toEqual(["Form", "Access method", "Company SSO"]);
     expect(within(panel).queryByLabelText("Own address")).toBeNull();
   });
 
@@ -3254,7 +3254,7 @@ describe("EventSettingsPage Registration tab", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=registration");
 
-    await screen.findByRole("radiogroup", { name: "Registration mode" });
+    await screen.findByRole("switch", { name: "Waiting list" });
     expect(screen.getByRole("tab", { name: "Registration" }).getAttribute("aria-selected")).toBe("true");
     expect(isOff(screen.getByLabelText("Claim name"))).toBe(true);
     expect(isOff(screen.getByRole("radio", { name: "Link" }))).toBe(readOnly);
@@ -3266,7 +3266,7 @@ describe("EventSettingsPage Registration tab", () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=registration");
-    await screen.findByRole("radiogroup", { name: "Registration mode" });
+    await screen.findByRole("switch", { name: "Waiting list" });
     const leave = () => {
       const closing = new Event("beforeunload", { cancelable: true });
       window.dispatchEvent(closing);

@@ -3,7 +3,6 @@ import { Link } from "react-router";
 import { Card, HintLabel, Notice } from "@admitto/ui";
 import { ApiError, fetchLegalDocuments, fetchRegistrationReturnAddresses, fetchRegistrationSettings } from "../api/client.js";
 import type { LegalDocumentDto, RegistrationRedirectUriDto, RegistrationSettingsDto } from "../api/types.js";
-import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { orLoginRedirect, redirectToLogin } from "../identity/loginRedirect.js";
@@ -12,14 +11,12 @@ import { PanelLoadError } from "../settings/PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "../settings/SettingsPanelSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
 import { AccessFormCard } from "./AccessFormCard.js";
-import { ProblemMessage, TurnOffConsequences } from "./AccessFormParts.js";
-import { AccessModeCard } from "./AccessModeCard.js";
+import { ProblemMessage } from "./AccessFormParts.js";
 import { AccessSsoClaim } from "./AccessSsoClaim.js";
 import { AccessSsoProvider } from "./AccessSsoProvider.js";
 import { AccessWayInCard } from "./AccessWayInCard.js";
 import { EventBotProtectionRow } from "./EventBotProtectionRow.js";
 import { claimErrors, missingChecks, parseClaim, type AccessDraft, type Technical } from "./accessSettings.js";
-import { GuestLinkField } from "./GuestLinkField.js";
 import { hasStopped, stoppedWarning } from "./ownAddress.js";
 import { registrationTabPath } from "./registrationTabs.js";
 import { methodEdit } from "./ssoProviderChoice.js";
@@ -36,7 +33,6 @@ export const SUPERADMIN_ONLY_NOTE = "Only a superadmin can change this.";
 
 /** The cards of the tab as its placeholder draws them: the real titles, over rows that make each card about as tall as the real one. */
 export const REGISTRATION_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
-  { id: "mode", title: "Guest registration", intro: 1, rows: 2, rowHeight: 60 },
   { id: "form", title: "Form", rows: 6, rowHeight: 64 },
   { id: "method", title: "Access method", intro: 1, rows: 1, rowHeight: 40 },
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
@@ -66,9 +62,10 @@ async function readAll(eventId: string, superadmin: boolean, signal: AbortSignal
 }
 
 /**
- * The "Registration" tab of Event settings, for every administrator of the event: whether guests can register and in which mode, what
- * the form asks, and how guests open it. The first two cards are the page's own Save; the access method (with the event password and the
- * bot check) and Company SSO are a superadmin's, and show what is set to everybody else. A different event is a fresh panel.
+ * The "Registration" tab of Event settings, for every administrator of the event: what the form asks (and whether requests wait for
+ * approval) and how guests open it. Whether registration is on is the switch in the header of the Registration page. The Form card has the
+ * page's own Save; the access method (with the event password and the bot check) and Company SSO are a superadmin's, and show what is set
+ * to everybody else. A different event is a fresh panel.
  */
 export function EventRegistrationPanel(props: Readonly<PanelProps>) {
   return <EventRegistrationBody key={props.eventId} {...props} />;
@@ -210,13 +207,11 @@ function EventRegistrationCards({
   onSavingChange?: (saving: boolean) => void;
 }>) {
   const form = useAccessForm({ eventId, settings: loaded.settings, legalItems: loaded.legalItems, refreshEvent, superadmin });
-  const { server, base, draft, dirty, saving, problem, confirmOffOpen } = form;
+  const { server, base, draft, dirty, saving, problem } = form;
   const [returnAddresses, setReturnAddresses] = useState(loaded.redirectUris);
   const [returnAddressesFailed, setReturnAddressesFailed] = useState(loaded.redirectUrisFailed);
   const [retryingAddresses, setRetryingAddresses] = useState(false);
   const missing = missingChecks(server.readiness);
-  // A move between the two modes that are on is never refused, so only an event that has registration off needs to be ready.
-  const canTurnOn = server.mode !== null || missing.length === 0;
   const readOnly = !superadmin;
   const off = archived || saving;
 
@@ -247,9 +242,6 @@ function EventRegistrationCards({
         </Notice>
       )}
       {hasStopped(server.own_address) && <Notice variant="warning">{stoppedWarning(server.own_address)}</Notice>}
-      <AccessModeCard eventId={eventId} mode={draft.mode} canTurnOn={canTurnOn} unsaved={dirty} disabled={off} onChange={(mode) => form.edit({ mode })}>
-        <GuestLinkField url={server.guest_url} registrationOn={server.mode !== null} />
-      </AccessModeCard>
       <AccessFormCard eventId={eventId} draft={draft} legalItems={form.legalItems} disabled={off} onChange={form.edit} />
       <AccessWayInCard
         eventId={eventId}
@@ -300,20 +292,8 @@ function EventRegistrationCards({
         }
         onChange={form.edit}
       />
-      {problem && !confirmOffOpen && <ProblemMessage eventId={eventId} problem={problem} superadmin={superadmin} />}
+      {problem && <ProblemMessage eventId={eventId} problem={problem} superadmin={superadmin} />}
       {!archived && <SettingsFooter hasUnsavedChanges={dirty} saving={saving} onReset={form.reset} onSave={form.save} />}
-      <ConfirmDialog
-        open={confirmOffOpen}
-        title="Turn off registration?"
-        message="Guests can no longer open the form. This is what changes:"
-        confirmLabel="Turn off registration"
-        errorMessage={problem?.kind === "message" ? problem.text : null}
-        loading={saving}
-        onConfirm={form.submit}
-        onCancel={form.cancelTurnOff}
-      >
-        <TurnOffConsequences />
-      </ConfirmDialog>
     </div>
   );
 }

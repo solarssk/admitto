@@ -2,19 +2,12 @@ import { useRef, useState } from "react";
 import { useToast } from "@admitto/ui";
 import { ApiError, fetchLegalDocuments, fetchRegistrationSettings, saveRegistrationSettings } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { LegalDocumentDto, RegistrationSettingsDto, SaveRegistrationSettingsBody } from "../api/types.js";
+import type { LegalDocumentDto, RegistrationSettingsDto } from "../api/types.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
 import { claimErrors, draftFromSettings, settingsPatch, technicalOf, technicalPatch, type AccessDraft } from "./accessSettings.js";
 
 /** Why a save did not happen, shown at the form: the checks that are not met (from the keys of the server's answer), or a sentence. */
 export type AccessProblem = { kind: "not_ready"; blockers: readonly string[] } | { kind: "message"; text: string };
-
-/** What a save that worked says, in a toast: turning registration on or off is the thing an organiser wants to hear. */
-function savedMessage(patch: SaveRegistrationSettingsBody, base: AccessDraft): string {
-  if (patch.mode === null) return "Registration is off.";
-  if (patch.mode !== undefined && base.mode === null) return "Registration is on.";
-  return "Registration settings saved.";
-}
 
 export interface AccessFormInput {
   eventId: string;
@@ -31,7 +24,7 @@ export interface AccessFormInput {
  * The state of Event settings, Registration once its first read is in. `server` is the latest answer (what the checklist, the link and the
  * password say), `base` is the form as it was when the person started editing, and `draft` is the form now. A save sends the
  * difference between `draft` and `base` and nothing else (`settingsPatch`), so a setting the person did not touch is never written
- * back, and the answer of the server becomes both the new `base` and the new `draft`. Turning registration off asks first. For a
+ * back, and the answer of the server becomes both the new `base` and the new `draft`. Whether registration is on is the switch of the Registration page, not this form. For a
  * superadmin the difference includes how guests open the form (`technicalPatch`), sent with the provider the form was made from.
  */
 export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, refreshEvent, superadmin }: AccessFormInput) {
@@ -42,7 +35,6 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
   const [draft, setDraft] = useState(base);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<AccessProblem | null>(null);
-  const [confirmOffOpen, setConfirmOffOpen] = useState(false);
   // Which read of the settings is the newest: reads and changes can overtake each other, and only the newest may be applied.
   const newestRead = useRef(0);
 
@@ -124,10 +116,10 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     } else setProblem({ kind: "message", text: operatorApiErrorMessage(err, "Could not save the registration settings.") });
   }
 
-  async function submit() {
-    // Only the confirmation of turning off calls this, and its button is busy while the save runs.
+  async function save() {
+    // The Save button is off while nothing has changed and busy while a save runs, so a click never gets here then.
     /* v8 ignore if */
-    if (saving) return;
+    if (saving || !dirty) return;
     // The restriction goes with its name and its values: one that is half typed is told at the buttons, as the server would refuse it.
     if (("sso_claim_name" in technical || "sso_claim_values" in technical) && Object.keys(claimErrors(draft)).length > 0) {
       setProblem({ kind: "message", text: "Fix the restriction to one company before you save." });
@@ -140,13 +132,12 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
       // changed it is refused.
       const answer = await saveRegistrationSettings(eventId, Object.keys(technical).length > 0 ? { ...patch, expected_sso_provider_id: base.sso_provider_id } : patch);
       const next = draftFromSettings(answer);
-      addToast(savedMessage(patch, base), "success");
+      addToast("Registration settings saved.", "success");
       // A read that started before this answer is older than it.
       newestRead.current += 1;
       setServer(answer);
       setBase(next);
       setDraft(next);
-      setConfirmOffOpen(false);
     } catch (err) {
       fail(err);
     } finally {
@@ -154,19 +145,5 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     }
   }
 
-  function save() {
-    // The Save button is off while nothing has changed and busy while a save runs, so a click never gets here then.
-    /* v8 ignore if */
-    if (saving || !dirty) return;
-    // Turning registration off closes the form for every guest at once: say what it does first.
-    if (patch.mode === null) setConfirmOffOpen(true);
-    else void submit();
-  }
-
-  function cancelTurnOff() {
-    setConfirmOffOpen(false);
-    setProblem(null);
-  }
-
-  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, passwordChanged, eventArchived, submit: () => void submit(), cancelTurnOff };
+  return { server, legalItems, base, draft, dirty, saving, problem, edit, reset, save: () => void save(), passwordChanged, eventArchived };
 }
