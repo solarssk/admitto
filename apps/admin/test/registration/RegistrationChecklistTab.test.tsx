@@ -12,6 +12,7 @@ import { archivedEvent, checks, notUsedChecks, settings, ssoChecks, ssoEventSett
 import { card, checklistPanel, checklistRows, doneSummary, openDone, renderChecklist, renderChecklistLoaded, resetApi } from "./accessFixtures.js";
 
 let assignments: RoleAssignment[] = [];
+let signedIn = true;
 const goToLogin = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -27,7 +28,7 @@ vi.mock("../../src/connection/ConnectionStateProvider.js");
 vi.mock("../../src/auth/login-navigation.js", () => ({ goToLogin: (...args: unknown[]) => goToLogin(...args) }));
 vi.mock("../../src/auth/AuthProvider.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/auth/AuthProvider.js")>()),
-  useOptionalAuth: () => ({ assignments }),
+  useOptionalAuth: () => (signedIn ? { assignments } : null),
 }));
 
 const SUPERADMIN: RoleAssignment = { role: "superadmin", scope_type: "instance", scope_id: null };
@@ -40,6 +41,7 @@ beforeEach(() => {
   resetApi();
   goToLogin.mockReset();
   assignments = [ORG_ADMIN];
+  signedIn = true;
 });
 
 afterEach(() => {
@@ -377,6 +379,16 @@ describe("RegistrationChecklistTab: what an event administrator sees", () => {
     await renderChecklistLoaded(settings({ mode: "automatic", readiness: checks() }));
     expect(within(card("For you")).getByText("Everything is in place")).toBeTruthy();
     expect(within(card("For you")).getByText(/Check this tab again when something changes/)).toBeTruthy();
+  });
+});
+
+describe("RegistrationChecklistTab: without a signed-in person", () => {
+  it("is read as somebody who is not a superadmin: a step of a superadmin waits, and has no button", async () => {
+    signedIn = false;
+    await renderChecklistLoaded(settings({ readiness: checks("mail_provider") }));
+
+    expect(within(card("Waiting for a superadmin")).getByText("Email sending")).toBeTruthy();
+    expect(within(card("Waiting for a superadmin")).queryByRole("link")).toBeNull();
   });
 });
 

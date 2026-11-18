@@ -21,7 +21,8 @@ function useEventExtra<T>(
   const fetchExtra = useCallback(
     async (signal: AbortSignal, context?: { poll: boolean }): Promise<T> => {
       try {
-        return await read(eventId ?? "", signal);
+        // The read runs only while there is an event (`enabled`), so it is never asked for none.
+        return await read(eventId as string, signal);
       } catch (err) {
         // A missed tick says nothing (the connection heartbeat sees a session that ended); a read somebody waits for does: the
         // connection state hears that the session ended and the browser goes to the login page, with no error flashing up first.

@@ -23,6 +23,36 @@ describe("Card", () => {
   });
 });
 
+describe("Card without the collapsible part", () => {
+  it("has no header at all when it has neither a title nor actions", () => {
+    render(<Card>Only a body</Card>);
+
+    expect(document.querySelector(".at-card__header")).toBeNull();
+    expect(screen.getByText("Only a body")).toBeTruthy();
+  });
+
+  it("has a header with only its actions when it has no title", () => {
+    render(<Card actions={<span>Act</span>}>Body</Card>);
+
+    expect(document.querySelector(".at-card__title")).toBeNull();
+    expect(document.querySelector(".at-card__actions")?.textContent).toBe("Act");
+  });
+
+  it("gives what it is given with no padding wrapper when it is not padded, and shows its footer", () => {
+    render(<Card padded={false} footer="Foot"><table data-testid="t" /></Card>);
+
+    expect(document.querySelector(".at-card__body")).toBeNull();
+    expect(screen.getByTestId("t").parentElement?.classList.contains("at-card")).toBe(true);
+    expect(document.querySelector(".at-card__footer")?.textContent).toBe("Foot");
+  });
+
+  it("has no footer element when it is given none", () => {
+    render(<Card title="T">Body</Card>);
+
+    expect(document.querySelector(".at-card__footer")).toBeNull();
+  });
+});
+
 describe("Card collapsible", () => {
   const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/styles/components.css"), "utf8");
   const renderCard = (props: { defaultOpen?: boolean } = {}) =>
@@ -113,6 +143,26 @@ describe("Card collapsible", () => {
     expect(meta.nextElementSibling?.className).toContain("at-card__chevron");
     expect(css).toMatch(/\.at-card__meta \{ margin-left: auto;/);
     expect(css).toMatch(/\.at-card__meta \+ \.at-card__chevron \{ margin-left: 0;/);
+  });
+
+  it("leaves out the actions it is given, because its header is one button", () => {
+    render(<Card title="Done" collapsible actions={<span>Act</span>}>Body</Card>);
+
+    expect(screen.queryByText("Act")).toBeNull();
+    expect(document.querySelector(".at-card__meta")).toBeNull();
+  });
+
+  it("has no footer element while it is given none, open or closed", () => {
+    render(<Card title="Done" collapsible defaultOpen>Body</Card>);
+
+    expect(document.querySelector(".at-card__footer")).toBeNull();
+  });
+
+  it("gives an unpadded body to the element it controls, as it is", () => {
+    render(<Card title="Done" collapsible padded={false}><i data-testid="raw" /></Card>);
+
+    expect(document.querySelector(".at-card__body")).toBeNull();
+    expect(screen.getByTestId("raw").parentElement?.classList.contains("at-card__collapse-inner")).toBe(true);
   });
 
   it("starts open with defaultOpen, with the body mounted", () => {
