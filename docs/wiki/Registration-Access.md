@@ -152,7 +152,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 | **Identity provider** | A Superadmin chooses it in **Event settings → Registration**. If the list is empty, one is set up under **Identity** first. Only a form with the company SSO has this row |
 | **Event password** | A Superadmin sets it in **Event settings → Registration** |
 | **Legal texts** | Publish the privacy notice, the terms and the consents you chose on the **Legal** tab |
-| **Form questions** | A required question cannot be shown on the form. Open the **Fields** tab |
+| **Form questions** | A required question cannot be shown on the form. Open the **Fields** tab. When it is done, the row says how many of your questions are on the form |
 | **Required questions** | A required question is not on the form. Switch **On the form** on for it, or make it optional, on the **Fields** tab |
 | **Email sending** | Ask a Superadmin to set up email sending. A Superadmin is sent to **Organisation settings → Mail** |
 | **Instance address** | Ask a Superadmin to set the address of the instance. A Superadmin is sent to **Organisation settings → General** |

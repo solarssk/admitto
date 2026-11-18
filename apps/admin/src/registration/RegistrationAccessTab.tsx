@@ -18,7 +18,6 @@ const ACCESS_HINT = "Whether guests can register for this event, and what the fo
 const ACCESS_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "mode", title: "Guest registration", intro: 1, rows: 2, rowHeight: 60 },
   { id: "form", title: "Form", rows: 6, rowHeight: 64 },
-  { id: "questions", title: "Your questions on the form", rows: 2, rowHeight: 40 },
 ];
 
 /** One event, one tab: a different `:eventId` is a fresh tab (its own read and its own draft), never the previous one's. */

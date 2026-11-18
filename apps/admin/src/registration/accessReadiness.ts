@@ -150,6 +150,12 @@ export function botProtectionOffText(organisation: "required" | "not_used"): str
     : "Off for this event. The link and password forms of this event have no bot check.";
 }
 
+/** The sentence of the row "Form questions" when it is met: how many questions of the organiser are on the form (the ones the form always asks are not counted). */
+export function formQuestionsText(count: number): string {
+  if (count === 0) return "No question of yours is on the form. Guests give their name and email address, and what the switches on the Access tab add.";
+  return count === 1 ? "1 question of yours is on the form." : `${count} questions of yours are on the form.`;
+}
+
 /** What to do about a missing check, for this person: a superadmin may have another place to go to. */
 export function remedyFor(copy: ReadinessCopy, superadmin: boolean): ReadinessCopy["remedy"] {
   return superadmin ? (copy.superadminRemedy ?? copy.remedy) : copy.remedy;

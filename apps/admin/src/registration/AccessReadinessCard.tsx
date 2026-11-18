@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { Card } from "@admitto/ui";
 import type { RegistrationReadinessCheckDto, RegistrationSettingsDto } from "../api/types.js";
 import type { AccessMethod } from "./accessSettings.js";
-import { ACCESS_METHOD_SET_BY, accessMethodDetail, botProtectionOffText, readinessCopy, remedyFor, splitChecklist, type ReadinessCopy, type ReadinessLink } from "./accessReadiness.js";
+import { ACCESS_METHOD_SET_BY, accessMethodDetail, botProtectionOffText, formQuestionsText, readinessCopy, remedyFor, splitChecklist, type ReadinessCopy, type ReadinessLink } from "./accessReadiness.js";
 import "./registration-access.css";
 
 /** Where a link of a missing check goes: another tab of this page (the address keeps its path), the settings of the event, or the settings of the organisation. */
@@ -74,11 +74,15 @@ interface AccessMethodState {
 }
 
 /** The sentence of a row: what the access method is, for that row when it is met; else the words of the check for its state. */
-function rowSentence(check: RegistrationReadinessCheckDto, copy: ReadinessCopy, accessMethod: AccessMethodState | null, organisationBotProtection: "required" | "not_used"): string {
+function rowSentence(check: RegistrationReadinessCheckDto, copy: ReadinessCopy, accessMethod: AccessMethodState | null, organisationBotProtection: "required" | "not_used", questionCount: number): string {
+  if (check.key === "form_questions" && check.ok) return formQuestionsText(questionCount);
   if (accessMethod !== null) return accessMethodDetail(accessMethod.method, accessMethod.provider);
   if (check.key === "bot_protection_not_used") return botProtectionOffText(organisationBotProtection);
   return check.ok ? copy.met : copy.missing;
 }
+
+/** The link of the met row "Form questions", to where the questions are written. */
+const CHANGE_QUESTIONS: ReadinessCopy["remedy"] = { text: "Add or change questions on the Fields tab.", link: "fields" };
 
 function ReadinessRow({
   eventId,
@@ -86,12 +90,14 @@ function ReadinessRow({
   superadmin,
   accessMethod,
   organisationBotProtection,
+  questionCount,
 }: Readonly<{
   eventId: string;
   check: RegistrationReadinessCheckDto;
   superadmin: boolean;
   accessMethod: AccessMethodState;
   organisationBotProtection: "required" | "not_used";
+  questionCount: number;
 }>) {
   const states = check.key === "access_method" && check.ok;
   const copy = readinessCopy(check.key);
@@ -106,9 +112,10 @@ function ReadinessRow({
           <span className="sr-only">{look.prefix}</span>
           {copy.title}
         </strong>
-        <span className="overview-check__detail">{rowSentence(check, copy, states ? accessMethod : null, organisationBotProtection)}</span>
+        <span className="overview-check__detail">{rowSentence(check, copy, states ? accessMethod : null, organisationBotProtection, questionCount)}</span>
         {states && <span className="overview-check__detail">{ACCESS_METHOD_SET_BY}</span>}
         {!check.ok && <ReadinessRemedy eventId={eventId} remedy={remedyFor(copy, superadmin)} />}
+        {check.ok && check.key === "form_questions" && <ReadinessRemedy eventId={eventId} remedy={CHANGE_QUESTIONS} />}
       </span>
     </li>
   );
@@ -121,17 +128,19 @@ function ChecklistRows({
   superadmin,
   accessMethod,
   organisationBotProtection,
+  questionCount,
 }: Readonly<{
   eventId: string;
   checks: readonly RegistrationReadinessCheckDto[];
   superadmin: boolean;
   accessMethod: AccessMethodState;
   organisationBotProtection: "required" | "not_used";
+  questionCount: number;
 }>) {
   return (
     <ul className="access-checklist">
       {checks.map((check) => (
-        <ReadinessRow key={check.key} eventId={eventId} check={check} superadmin={superadmin} accessMethod={accessMethod} organisationBotProtection={organisationBotProtection} />
+        <ReadinessRow key={check.key} eventId={eventId} check={check} superadmin={superadmin} accessMethod={accessMethod} organisationBotProtection={organisationBotProtection} questionCount={questionCount} />
       ))}
     </ul>
   );
@@ -150,7 +159,10 @@ export function ReadinessChecklist({
   method,
   provider,
   organisationBotProtection,
+  questionCount,
 }: Readonly<{
+  /** How many questions of the organiser are on the form (the settings' `public_fields`): the row "Form questions" says it. */
+  questionCount: number;
   /** What the organisation's switch says: the row about the bot check tells who turned it off. */
   organisationBotProtection: "required" | "not_used";
   /** The access method the event has, and its identity provider: the row "Access method" says them, to read. */
@@ -162,7 +174,7 @@ export function ReadinessChecklist({
   checks: readonly RegistrationReadinessCheckDto[];
 }>) {
   const { forYou, waiting, done, total } = splitChecklist(checks, superadmin);
-  const rows = { eventId, superadmin, accessMethod: { method, provider }, organisationBotProtection };
+  const rows = { eventId, superadmin, accessMethod: { method, provider }, organisationBotProtection, questionCount };
   return (
     <>
       <Card title="For you" actions={<span className="overview-readiness-score">{forYou.length === 0 ? "Nothing to do" : `${forYou.length} to do`}</span>}>

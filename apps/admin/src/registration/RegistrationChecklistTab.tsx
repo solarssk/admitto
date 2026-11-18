@@ -82,6 +82,7 @@ function RegistrationChecklistBody({ eventId, onReadiness }: Readonly<{ eventId:
         method={chosenMethod(settings.access_methods)}
         provider={settings.sso_provider}
         organisationBotProtection={settings.bot_protection}
+        questionCount={settings.public_fields.length}
       />
     </div>
   );

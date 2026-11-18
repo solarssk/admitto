@@ -315,6 +315,25 @@ describe("RegistrationChecklistTab: the rows", () => {
     expect(rowOf("Access method").textContent).not.toContain("Set by a superadmin");
   });
 
+  it.each([
+    [[], "No question of yours is on the form. Guests give their name and email address, and what the switches on the Access tab add."],
+    [[{ key: "a", label: "A", type: "text", required: true }], "1 question of yours is on the form."],
+    [[{ key: "a", label: "A", type: "text", required: true }, { key: "b", label: "B", type: "text", required: false }], "2 questions of yours are on the form."],
+  ] as const)("says how many questions of the organiser are on the form, with a link to the Fields tab", async (fields, text) => {
+    await renderChecklistLoaded(settings({ public_fields: [...fields] }));
+    const row = rowOf("Form questions");
+
+    expect(row.textContent).toContain(text);
+    expect(within(row).getByRole("link", { name: "Add or change questions on the Fields tab." }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
+  });
+
+  it("does not say how many questions there are for a form that cannot show a required one: the row says what is wrong", async () => {
+    await renderChecklistLoaded(settings({ readiness: checks("form_questions") }));
+
+    expect(rowOf("Form questions").textContent).toContain("A required question cannot be shown on the form.");
+    expect(rowOf("Form questions").textContent).not.toContain("of yours");
+  });
+
   it("reads a check it has no words for as another thing that is missing, so a newer server never leaves a blank row", async () => {
     await renderChecklistLoaded(settings({ readiness: [...checks(), { key: "something_new" as never, ok: false }] }));
 

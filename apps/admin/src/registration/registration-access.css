@@ -26,7 +26,6 @@
 
 /* The checklist: one row for each check, the icon, the heading with its sentence, and what to do about it. */
 .access-checklist,
-.access-questions,
 .access-missing,
 .access-consequences {
   margin: 0;
@@ -88,24 +87,6 @@ span.access-check__remedy {
 
 .access-consequences {
   margin-bottom: var(--space-3);
-}
-
-/* The questions of the form: the label, and whether the question is required. */
-.access-question {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-}
-
-.access-question + .access-question {
-  border-top: 1px solid var(--border);
-}
-
-.access-question__label {
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 /* The restriction of the company SSO sits in the Way in card, under the choice: its fields are spaced by the card's gap, and a

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { accessMethodDetail, botProtectionOffText, openStepCount, READINESS_COPY, readinessCopy, remedyFor, splitChecklist } from "../../src/registration/accessReadiness.js";
+import { accessMethodDetail, botProtectionOffText, formQuestionsText, openStepCount, READINESS_COPY, readinessCopy, remedyFor, splitChecklist } from "../../src/registration/accessReadiness.js";
 
 /** The checks the server reports, read from the file that holds them: the screen has words for each one, and for no other. */
 function serverKeys(): string[] {
@@ -157,5 +157,13 @@ describe("splitChecklist: who does each open step", () => {
 
   it("keeps a check it has no words for under For you, so a newer server never hides a step", () => {
     expect(keys(splitChecklist([check("something_new", false)], false).forYou)).toEqual(["something_new"]);
+  });
+});
+
+describe("formQuestionsText", () => {
+  it("says how many questions of the organiser are on the form, in the singular and the plural, and what a guest gives when there are none", () => {
+    expect(formQuestionsText(1)).toBe("1 question of yours is on the form.");
+    expect(formQuestionsText(3)).toBe("3 questions of yours are on the form.");
+    expect(formQuestionsText(0)).toContain("No question of yours is on the form.");
   });
 });

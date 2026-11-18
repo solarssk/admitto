@@ -67,7 +67,7 @@ describe("RegistrationAccessTab: the first read", () => {
 
     const held = placeholder() as HTMLElement;
     expect(held.classList.contains("at-loading-hold")).toBe(true);
-    for (const title of ["Guest registration", "Form", "Your questions on the form"]) expect(within(held).getByText(title)).toBeTruthy();
+    for (const title of ["Guest registration", "Form"]) expect(within(held).getByText(title)).toBeTruthy();
     // The shapes are decoration; nothing claims that there is nothing yet.
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("radiogroup")).toBeNull();
@@ -402,29 +402,13 @@ describe("RegistrationAccessTab: the consents", () => {
   });
 });
 
-describe("RegistrationAccessTab: the questions on the form", () => {
-  it("lists the questions the form asks, whether each is required, and where to change them", async () => {
-    await renderLoaded(
-      settings({
-        public_fields: [
-          { key: "plate", label: "Registration number of your car", type: "text", required: true },
-          { key: "diet", label: "Dietary requirements", type: "text", required: false },
-        ],
-      }),
-    );
+describe("RegistrationAccessTab: the questions of the event", () => {
+  it("has no card of the questions on the form (the Fields tab is where they are), and a link to the Fields tab in the Form card", async () => {
+    await renderLoaded(settings({ public_fields: [{ key: "plate", label: "Registration number of your car", type: "text", required: true }] }));
 
-    const questions = within(card("Your questions on the form"));
-    const rows = questions.getAllByRole("listitem");
-    expect(rows.map((row) => row.textContent)).toEqual(["Registration number of your carRequired", "Dietary requirementsOptional"]);
-    expect(questions.getByRole("link", { name: "Add or change questions on the Fields tab." }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
-  });
-
-  it("says what a guest is asked when none of the organiser's questions is on the form", async () => {
-    await renderLoaded(settings({ public_fields: [] }));
-
-    const questions = within(card("Your questions on the form"));
-    expect(questions.queryByRole("listitem")).toBeNull();
-    expect(questions.getByText("No question of yours is on the form. Guests give their name and email address, and what the switches above add.")).toBeTruthy();
+    expect(screen.queryByText("Your questions on the form", { selector: ".at-card__title" })).toBeNull();
+    expect(screen.queryByText("Registration number of your car")).toBeNull();
+    expect(within(card("Form")).getByRole("link", { name: "Add or change your own questions on the Fields tab." }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
   });
 });
 

@@ -68,6 +68,11 @@ export function AccessFormCard({
           </div>
         );
       })}
+      <p className="settings-card-intro">
+        <Link to={{ search: "?tab=fields" }} replace>
+          Add or change your own questions on the Fields tab.
+        </Link>
+      </p>
       <div className="access-consents">
         <MultiSelect
           id="access-consents"

@@ -10,7 +10,6 @@ import { SettingsFooter } from "../settings/mailTransportFormParts.js";
 import { missingChecks } from "./accessSettings.js";
 import { AccessFormCard } from "./AccessFormCard.js";
 import { AccessModeCard } from "./AccessModeCard.js";
-import { AccessQuestionsCard } from "./AccessQuestionsCard.js";
 import { MissingChecks } from "./AccessReadinessCard.js";
 import { GuestLinkField } from "./GuestLinkField.js";
 import { hasStopped, stoppedWarning } from "./ownAddress.js";
@@ -104,7 +103,6 @@ export function RegistrationAccessForm({
         <GuestLinkField url={server.guest_url} registrationOn={server.mode !== null} />
       </AccessModeCard>
       <AccessFormCard draft={draft} legalItems={form.legalItems} disabled={archived || saving} onChange={form.edit} />
-      <AccessQuestionsCard fields={server.public_fields} />
       {problem && !confirmOffOpen && <ProblemMessage eventId={eventId} problem={problem} superadmin={superadmin} />}
       {!archived && <SettingsFooter hasUnsavedChanges={dirty} saving={saving} onReset={form.reset} onSave={form.save} />}
       <ConfirmDialog
