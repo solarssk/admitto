@@ -6,7 +6,7 @@ import type { RegistrationSettingsDto } from "../../src/api/types.js";
 import { deferred, isOff } from "../test-utils.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import { checks, legalAnswer, settings, texts } from "./accessData.js";
-import { radio, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
+import { onDirtyChange, onSavingChange, radio, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 const goToLogin = vi.fn();
 
@@ -372,7 +372,7 @@ describe("RegistrationAccessTab: a save that the server refuses because registra
   const refuse = (...keys: string[]) => api.saveRegistrationSettings.mockRejectedValue(refusal(409, "registration_not_ready", keys));
 
   it("names what is missing, from the keys and in its own words, with what to do about each, at the buttons, and not in a toast", async () => {
-    await renderLoaded();
+    await renderLoaded(settings(), { superadmin: false });
     refuse("legal_documents", "mail_provider");
 
     fireEvent.click(radio("Automatic"));
@@ -417,18 +417,6 @@ describe("RegistrationAccessTab: a save that the server refuses because registra
     await waitFor(() => expect(radio("Automatic").hasAttribute("disabled")).toBe(true));
     expect(screen.getByText(/Registration can be turned on when the steps on the/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Checklist tab" })).toBeTruthy();
-  });
-
-  it("tells the page what the checks are now, so that the number on the Checklist tab follows the read", async () => {
-    await renderLoaded();
-    expect(screen.getByRole("tab", { name: "Checklist" })).toBeTruthy();
-    refuse("legal_documents");
-    api.fetchRegistrationSettings.mockResolvedValue(settings({ readiness: checks("legal_documents", "mail_provider") }));
-
-    fireEvent.click(radio("Automatic"));
-    await save();
-
-    expect(await screen.findByRole("tab", { name: "Checklist, 2 steps open" })).toBeTruthy();
   });
 
   it("keeps what it showed when the second read fails, and still says what is missing", async () => {
@@ -570,95 +558,20 @@ describe("RegistrationAccessTab: other refusals", () => {
   });
 });
 
-describe("RegistrationAccessTab: leaving with changes", () => {
-  const legalTab = () => screen.getByRole("tab", { name: "Legal" });
-  const openTab = () => screen.getByRole("tab", { selected: true }).textContent;
-
-  it("does not ask when nothing changed", async () => {
+describe("RegistrationAccessTab: telling the page", () => {
+  it("tells the page when the form holds changes, and when a save is out, so that the page asks before it is left", async () => {
     await renderLoaded();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
 
-    fireEvent.click(legalTab());
-
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(openTab()).toBe("Legal");
-  });
-
-  it("asks when a tab is opened with changes in the form, and stays on the form when the person keeps editing", async () => {
-    await renderLoaded();
     fireEvent.click(toggle("Waiting list"));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 
-    fireEvent.click(legalTab());
-
-    const dialog = await screen.findByRole("dialog", { name: "Discard unsaved changes?" });
-    expect(within(dialog).getByText("You have unsaved changes to the registration settings.")).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Keep editing" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(openTab()).toBe("Access");
-    expect(toggle("Waiting list").checked).toBe(false);
-  });
-
-  it("leaves, and loses the changes, when the person discards them", async () => {
-    await renderLoaded();
-    fireEvent.click(toggle("Waiting list"));
-    fireEvent.click(legalTab());
-
-    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
-
-    await waitFor(() => expect(openTab()).toBe("Legal"));
-  });
-
-  it("asks for a link to another tab too, such as the one of a check that is not met", async () => {
-    await renderLoaded(settings({ mode: "automatic", readiness: checks("legal_documents") }));
-    fireEvent.click(toggle("Waiting list"));
-
-    fireEvent.click(screen.getByRole("link", { name: "The Checklist tab says what." }));
-
-    expect(await screen.findByRole("dialog", { name: "Discard unsaved changes?" })).toBeTruthy();
-    expect(openTab()).toBe("Access");
-  });
-
-  it("stays when the person discards while a save is out: the save finishes", async () => {
-    await renderLoaded();
     const answer = deferred<RegistrationSettingsDto>();
     api.saveRegistrationSettings.mockReturnValue(answer.promise);
-    fireEvent.click(toggle("Waiting list"));
     fireEvent.click(saveButton());
-    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalled());
-    fireEvent.click(legalTab());
-
-    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
-
-    expect(openTab()).toBe("Access");
+    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(true));
     await act(async () => answer.resolve(settings({ waitlist_enabled: false })));
-    expect(await screen.findByRole("radiogroup", { name: "Registration mode" })).toBeTruthy();
-  });
-
-  it("does not ask once the changes are saved", async () => {
-    await renderLoaded();
-    savedAs({ waitlist_enabled: false });
-    fireEvent.click(toggle("Waiting list"));
-    await save();
-    await waitFor(() => expect(isOff(saveButton())).toBe(true));
-
-    fireEvent.click(legalTab());
-
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(openTab()).toBe("Legal");
-  });
-
-  it("has the browser ask before the page is closed, only while the form holds changes", async () => {
-    await renderLoaded();
-    const closing = () => {
-      const unload = new Event("beforeunload", { cancelable: true });
-      window.dispatchEvent(unload);
-      return unload.defaultPrevented;
-    };
-    expect(closing()).toBe(false);
-
-    fireEvent.click(toggle("Waiting list"));
-    expect(closing()).toBe(true);
-
-    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
-    expect(closing()).toBe(false);
+    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(false));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 });

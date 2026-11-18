@@ -3,6 +3,7 @@ import { Card, Switch } from "@admitto/ui";
 import type { LegalDocumentDto } from "../api/types.js";
 import { MultiSelect } from "../components/MultiSelect.js";
 import { consentOptions, type AccessDraft } from "./accessSettings.js";
+import { registrationTabPath } from "./registrationTabs.js";
 import "./registration-access.css";
 
 type ToggleKey = "waitlist_enabled" | "verify_email" | "ask_company" | "ask_department" | "companion" | "styled_form_controls";
@@ -43,11 +44,13 @@ function providerDecides(key: ToggleKey, draft: AccessDraft): boolean {
  * stays in the list, marked, so that it can be taken off.
  */
 export function AccessFormCard({
+  eventId,
   draft,
   legalItems,
   disabled,
   onChange,
 }: Readonly<{
+  eventId: string;
   draft: AccessDraft;
   legalItems: readonly LegalDocumentDto[];
   disabled: boolean;
@@ -69,7 +72,7 @@ export function AccessFormCard({
         );
       })}
       <p className="settings-card-intro">
-        <Link to={{ search: "?tab=fields" }} replace>
+        <Link to={registrationTabPath(eventId, "fields")}>
           Add or change your own questions on the Fields tab.
         </Link>
       </p>
@@ -89,7 +92,7 @@ export function AccessFormCard({
         {options.length === 0 && (
           <p className="settings-card-intro">
             No extra consent is published for this event.{" "}
-            <Link to={{ search: "?tab=legal" }} replace>
+            <Link to={registrationTabPath(eventId, "legal")}>
               Write and publish one on the Legal tab.
             </Link>
           </p>

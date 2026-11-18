@@ -4,7 +4,7 @@ import { ApiError, fetchLegalDocuments, fetchRegistrationSettings, saveRegistrat
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { LegalDocumentDto, RegistrationSettingsDto, SaveRegistrationSettingsBody } from "../api/types.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
-import { draftFromSettings, settingsPatch, type AccessDraft } from "./accessSettings.js";
+import { claimErrors, draftFromSettings, settingsPatch, technicalOf, technicalPatch, type AccessDraft } from "./accessSettings.js";
 
 /** Why a save did not happen, shown at the form: the checks that are not met (from the keys of the server's answer), or a sentence. */
 export type AccessProblem = { kind: "not_ready"; blockers: readonly string[] } | { kind: "message"; text: string };
@@ -23,15 +23,18 @@ export interface AccessFormInput {
   legalItems: readonly LegalDocumentDto[];
   /** Reads the event again, so that the page learns it was archived. */
   refreshEvent?: () => Promise<unknown>;
+  /** Only a superadmin sends how guests open the form (the access method, the bot check, the identity provider and the restriction). */
+  superadmin: boolean;
 }
 
 /**
- * The state of the Access tab once its first read is in. `server` is the latest answer (what the checklist, the link and the
+ * The state of Event settings, Registration once its first read is in. `server` is the latest answer (what the checklist, the link and the
  * password say), `base` is the form as it was when the person started editing, and `draft` is the form now. A save sends the
  * difference between `draft` and `base` and nothing else (`settingsPatch`), so a setting the person did not touch is never written
- * back, and the answer of the server becomes both the new `base` and the new `draft`. Turning registration off asks first.
+ * back, and the answer of the server becomes both the new `base` and the new `draft`. Turning registration off asks first. For a
+ * superadmin the difference includes how guests open the form (`technicalPatch`), sent with the provider the form was made from.
  */
-export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, refreshEvent }: AccessFormInput) {
+export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, refreshEvent, superadmin }: AccessFormInput) {
   const { addToast } = useToast();
   const [server, setServer] = useState(settings);
   const [legalItems, setLegalItems] = useState(firstLegalItems);
@@ -43,7 +46,8 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
   // Which read of the settings is the newest: reads and changes can overtake each other, and only the newest may be applied.
   const newestRead = useRef(0);
 
-  const patch = settingsPatch(draft, base);
+  const technical = superadmin ? technicalPatch(draft, base) : {};
+  const patch = { ...settingsPatch(draft, base), ...technical };
   const dirty = Object.keys(patch).length > 0;
 
   function edit(change: Partial<AccessDraft>) {
@@ -78,6 +82,29 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     void refresh();
   }
 
+  /** Somebody else changed the identity provider of the event: nothing was saved. The settings are read again and the technical part of
+   * the form takes them, so that the person sees what is saved now and decides again; what else was typed stays. A read that fails
+   * leaves the form as it is. */
+  async function startAgain() {
+    const mine = ++newestRead.current;
+    try {
+      const latest = await fetchRegistrationSettings(eventId);
+      if (mine !== newestRead.current) return;
+      const next = technicalOf(draftFromSettings(latest));
+      setServer(latest);
+      setBase((current) => ({ ...current, ...next }));
+      setDraft((current) => ({ ...current, ...next }));
+    } catch {
+      // What the form shows stays as it is, and so does the message that sent us here.
+    }
+  }
+
+  /** The password was set or removed by its own request: the card says so now, and the settings are read again. */
+  function passwordChanged(isSet: boolean) {
+    setServer((current) => ({ ...current, password_set: isSet }));
+    void refresh();
+  }
+
   function fail(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
       redirectToLogin();
@@ -85,7 +112,8 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     }
     // These answers say that what the screen shows is out of date (the event lost something, a text was withdrawn, the event was
     // archived): read it again, and let the answer be the truth.
-    if (hasApiErrorCode(err, "registration_not_ready") || hasApiErrorCode(err, "consent_not_published")) void refresh();
+    if (hasApiErrorCode(err, "sso_provider_changed")) void startAgain();
+    else if (hasApiErrorCode(err, "registration_not_ready") || hasApiErrorCode(err, "consent_not_published") || hasApiErrorCode(err, "sso_provider_not_available")) void refresh();
     if (hasApiErrorCode(err, "event_archived")) eventArchived();
     // Only a 409 `registration_not_ready` carries `blockers`: the keys of the checks that are not met, which the screen words itself.
     const blockers = err instanceof ApiError ? err.blockers : undefined;
@@ -100,10 +128,17 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     // Only the confirmation of turning off calls this, and its button is busy while the save runs.
     /* v8 ignore if */
     if (saving) return;
+    // The restriction goes with its name and its values: one that is half typed is told at the buttons, as the server would refuse it.
+    if (("sso_claim_name" in technical || "sso_claim_values" in technical) && Object.keys(claimErrors(draft)).length > 0) {
+      setProblem({ kind: "message", text: "Fix the restriction to one company before you save." });
+      return;
+    }
     setSaving(true);
     setProblem(null);
     try {
-      const answer = await saveRegistrationSettings(eventId, patch);
+      // The provider the form was made from, not the one a later read found and not the one picked: a save made after somebody else
+      // changed it is refused.
+      const answer = await saveRegistrationSettings(eventId, Object.keys(technical).length > 0 ? { ...patch, expected_sso_provider_id: base.sso_provider_id } : patch);
       const next = draftFromSettings(answer);
       addToast(savedMessage(patch, base), "success");
       // A read that started before this answer is older than it.
@@ -133,5 +168,5 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     setProblem(null);
   }
 
-  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, submit: () => void submit(), cancelTurnOff };
+  return { server, legalItems, base, draft, dirty, saving, problem, confirmOffOpen, edit, reset, save, passwordChanged, eventArchived, submit: () => void submit(), cancelTurnOff };
 }

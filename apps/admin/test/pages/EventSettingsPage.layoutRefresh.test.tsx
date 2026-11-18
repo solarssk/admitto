@@ -50,8 +50,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     searchGeocoding: vi.fn(),
     reverseGeocoding: vi.fn(),
     fetchTimezoneForCoordinates: vi.fn(),
+    fetchRegistrationSettings: vi.fn(() => new Promise(() => undefined)),
   };
 });
+
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("../../src/settings/MapPicker.js", () => ({
   MapPicker: () => <div data-testid="map-picker" />,

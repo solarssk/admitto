@@ -6,7 +6,7 @@
 
 Know what a guest sees and can enter for each kind of question on the registration form, and how the rules of a field show up there. The questions on the form are the custom attendee fields of the event that are switched on for the form.
 
-The form opens for an event only when registration is turned on for it, on the **Access** tab. Until then, every address answers "not found". See [Registration Access](Registration-Access).
+The form opens for an event only when registration is turned on for it, in **Event settings → Registration**. Until then, every address answers "not found". See [Registration Access](Registration-Access).
 
 ## Before you start
 
@@ -87,7 +87,7 @@ The rules on the form are hints. The form does not stop a guest from sending bec
 
 ## Styled boxes
 
-An Administrator can switch **Styled form boxes** on for the event, on the **Access** tab. See [Registration Access](Registration-Access#styled-boxes). With it on:
+An Administrator can switch **Styled form boxes** on for the event, in **Event settings → Registration**. See [Registration Access](Registration-Access#styled-boxes). With it on:
 
 - A phone question shows the button of a country beside the number. The guest opens the list, searches by the name or the code of a country, and picks one with the mouse, a tap or the keys. The answer is the code and the digits of the number.
 - A date question shows a text box and a calendar button. The calendar opens under the box, with the month, the days and the buttons for the previous and the next month, for today and for clearing the date (not offered for a required question). The guest picks a day, or types it. The keys work as in any calendar: the arrows move by a day and a week, Home and End go to the start and the end of the week, Page Up and Page Down by a month, and with Shift by a year.

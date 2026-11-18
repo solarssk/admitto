@@ -213,10 +213,10 @@ const ADMIN_SURFACES: {
     blocking: true,
   },
   {
-    // Its Access tab: the registration settings of the event and the legal texts the
+    // The Registration tab of the event's settings: the registration settings of the event and the legal texts the
     // list of consents is made from. The event of this suite has nothing set up, so the page is the one a new event has.
     name: "admin-registration-access",
-    path: (i) => `/admin/events/${i.event}/registration?tab=access`,
+    path: (i) => `/admin/events/${i.event}/settings?tab=registration`,
     data: (i) => [`/api/admin/events/${i.event}/registration/settings`, `/api/admin/events/${i.event}/legal-documents`],
     blocking: true,
   },

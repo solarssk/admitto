@@ -17,6 +17,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...(await importOriginal<typeof import("../../src/api/client.js")>()),
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
+    fetchLegalDocuments: (...args: unknown[]) => mocks.fetchLegalDocuments(...args),
     saveRegistrationSettings: (...args: unknown[]) => mocks.saveRegistrationSettings(...args),
     setRegistrationPassword: (...args: unknown[]) => mocks.setRegistrationPassword(...args),
     clearRegistrationPassword: (...args: unknown[]) => mocks.clearRegistrationPassword(...args),

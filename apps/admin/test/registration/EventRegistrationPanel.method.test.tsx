@@ -15,6 +15,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...(await importOriginal<typeof import("../../src/api/client.js")>()),
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
+    fetchLegalDocuments: (...args: unknown[]) => mocks.fetchLegalDocuments(...args),
     saveRegistrationSettings: (...args: unknown[]) => mocks.saveRegistrationSettings(...args),
     fetchRegistrationReturnAddresses: (...args: unknown[]) => mocks.fetchRegistrationReturnAddresses(...args),
     saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
@@ -55,10 +56,10 @@ afterEach(() => {
 });
 
 describe("the access method of an event, in Event settings", () => {
-  it("is the first card, named Access method, with one short instruction and the choice in the narrow group of the segmented control", async () => {
+  it("is the third card, named Access method, with one short instruction and the choice in the narrow group of the segmented control", async () => {
     await renderPanel(settings({ access_methods: [] }));
 
-    expect([...document.querySelectorAll(".at-card__title")].map((title) => title.textContent?.trim())).toEqual(["Access method", "Company SSO", "Address for guests"]);
+    expect([...document.querySelectorAll(".at-card__title")].map((title) => title.textContent?.trim())).toEqual(["Guest registration", "Form", "Access method", "Company SSO"]);
     expect(within(methodCard()).getByText("Choose the access method for the registration form.")).toBeTruthy();
     expect(within(methodCard()).getByRole("radiogroup", { name: "Access method" }).classList.contains("access-seg")).toBe(true);
     expect(methodCard().querySelector(".at-notice")).toBeNull();
@@ -368,12 +369,13 @@ describe("the identity provider of Company SSO, in Event settings", () => {
 
   it("keeps sending the provider the form was made from when a later read finds another one, so the save is refused and not applied to it", async () => {
     await renderPanel(ssoSettings());
-    // Somebody else moves the event to Google; the address card reads the settings again.
+    // Somebody else moves the event to Google; a refused save reads the settings again.
     api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ sso_provider_id: "idp-google", sso_provider: { ...ENTRA, id: "idp-google", display_name: "Contoso Google", kind: "google" } }));
-    api.saveCustomDomain.mockResolvedValue({ custom_domain: "events.example.com", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
-    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "events.example.com" } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
+    api.saveRegistrationSettings.mockRejectedValueOnce(new ApiError(409, "registration_not_ready"));
+    fireEvent.click(screen.getByRole("radio", { name: "Link" }));
+    fireEvent.click(saveButton());
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("radio", { name: "Company SSO" }));
     api.saveRegistrationSettings.mockRejectedValue(new ApiError(409, "sso_provider_changed"));
 
     fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid" } });

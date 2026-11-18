@@ -54,11 +54,10 @@ afterEach(() => {
 });
 
 
-describe("the Access tab has no card for the address", () => {
+describe("the Registration tab has no card for the address (it is on the General tab)", () => {
   it("shows no address card and no field, whoever looks, with an address or without", async () => {
-    for (const assigned of [[SUPERADMIN], [ORG_ADMIN]]) {
-      assignments = assigned;
-      await renderLoaded(settings({ own_address: own({ status: "ok", verified: true, check_result: "ok" }) }));
+    for (const superadmin of [true, false]) {
+      await renderLoaded(settings({ own_address: own({ status: "ok", verified: true, check_result: "ok" }) }), { superadmin });
 
       expect(screen.queryByText("Address for guests", { selector: ".at-card__title" })).toBeNull();
       expect(screen.queryByLabelText("Own address")).toBeNull();
@@ -71,8 +70,7 @@ describe("the warning that an address stopped working", () => {
   const warning = () => screen.queryByText(/stopped working:/);
 
   it("is told to an administrator of the organisation, with the reason", async () => {
-    assignments = [ORG_ADMIN];
-    await renderLoaded(settings({ own_address: own({ status: "failing", verified: true, check_result: "tls_failed" }) }));
+    await renderLoaded(settings({ own_address: own({ status: "failing", verified: true, check_result: "tls_failed" }) }), { superadmin: false });
 
     expect(warning()?.textContent).toContain("its HTTPS certificate is refused");
     expect(warning()?.closest(".at-notice--warning")).not.toBeNull();

@@ -10,8 +10,8 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Added
 
-- Add a Checklist tab to the Registration page that splits what registration still needs into steps for you and steps that wait for a superadmin, with the number of open steps on the tab, and drop the card of questions from the Access tab (the Checklist row says how many are on the form) ([#1949](https://github.com/solarssk/admitto/pull/1949))
-- Add a Bot protection row to the Access method card in Event settings > Registration, where a superadmin switches the bot check off or on for one event, and show on the Access tab whether it is off for the event or for the organisation ([#1944](https://github.com/solarssk/admitto/pull/1944))
+- Add a Checklist tab to the Registration page that splits what registration still needs into steps for you and steps that wait for a superadmin, with the number of open steps on the tab, and drop the card of questions from the registration settings (the Checklist row says how many are on the form) ([#1949](https://github.com/solarssk/admitto/pull/1949))
+- Add a Bot protection row to the Access method card in Event settings > Registration, where a superadmin switches the bot check off or on for one event, and show on the Checklist tab whether it is off for the event or for the organisation ([#1944](https://github.com/solarssk/admitto/pull/1944))
 - Add a bot protection switch for each event (server side), set by a superadmin, so one event can run its link or password form without the bot check while the organisation keeps it on ([#1943](https://github.com/solarssk/admitto/pull/1943))
 - Add rate limits for the upcoming public registration form, tunable with `RATE_LIMIT_OVERRIDES` (`registration:page`, `registration:submit`, `registration:confirm`, `registration:password`, `registration:event`, `registration:mail-recipient`) ([#1753](https://github.com/solarssk/admitto/pull/1753))
 - Add the groundwork for guest registration mails: four English default messages, a signed email-confirmation link, and `confirm_url`, `contact_name` and `contact_email` variables ([#1749](https://github.com/solarssk/admitto/pull/1749))
@@ -44,11 +44,11 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add Delete all matching to the Requests tab, which deletes up to 500 requests a filter selects and refuses if the list changed meanwhile ([#1807](https://github.com/solarssk/admitto/pull/1807))
 - Add an admin API for the registration settings of an event; it refuses to turn registration on until the event is ready ([#1823](https://github.com/solarssk/admitto/pull/1823))
 - Add a guest's companion: it takes a seat, is marked in at check-in, and counts as "People on site" on the Overview and in Reports ([#1808](https://github.com/solarssk/admitto/pull/1808))
-- Add a Registration menu entry and its Access tab: turn guest registration on or off, choose the way in and password, and copy the guest link ([#1825](https://github.com/solarssk/admitto/pull/1825))
+- Add a Registration menu entry and registration settings in Event settings: turn guest registration on or off, choose the way in and password, and copy the guest link ([#1825](https://github.com/solarssk/admitto/pull/1825))
 - Add a Ways in card to Organisation settings > External services, where a superadmin turns the link and the password on so events can use them ([#1826](https://github.com/solarssk/admitto/pull/1826))
 - Let a guest bring one companion on the registration form, with a seat of their own counted against the event's capacity ([#1824](https://github.com/solarssk/admitto/pull/1824))
 - Let an Administrator correct or remove a guest's companion on the attendee's page, and mark a question as about the guest or the companion ([#1827](https://github.com/solarssk/admitto/pull/1827))
-- Add a switch on the Access tab for styled boxes on the guest form: a phone number gets a list of countries beside it ([#1829](https://github.com/solarssk/admitto/pull/1829))
+- Add a switch in the registration settings for styled boxes on the guest form: a phone number gets a list of countries beside it ([#1829](https://github.com/solarssk/admitto/pull/1829))
 - Add a Sensitive setting for attendee fields in the admin API: the answers stay out of lists, filters, exports, reports and the attendee page, and an empty box in an edit keeps them ([#1843](https://github.com/solarssk/admitto/pull/1843))
 - Add a calendar for dates and a list of times for times to the styled boxes of the guest form ([#1841](https://github.com/solarssk/admitto/pull/1841))
 - Keep a sensitive attendee field off wallet passes, the check-in card and event items, and refuse it in a wallet field mapping and in an item's fields ([#1845](https://github.com/solarssk/admitto/pull/1845))
@@ -82,11 +82,12 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Give a new event a random link name made by the server, not from its title, and remove "Event link ID" from Event settings; existing events keep theirs ([#1924](https://github.com/solarssk/admitto/pull/1924))
 - Use one name for each thing in the Registration screens (Company SSO, How guests open the form, restriction, Off), and explain claims, CNAME and Host header in plain words ([#1929](https://github.com/solarssk/admitto/pull/1929))
 - Let each event choose its own identity provider for Company SSO, with several providers possible, instead of one for the whole instance, set by a superadmin only (server only, screens follow) ([#1933](https://github.com/solarssk/admitto/pull/1933))
-- Move how guests open the form (access method, event password, identity provider for Company SSO) to Event settings, Registration, for superadmins; the Access tab only shows it ([#1934](https://github.com/solarssk/admitto/pull/1934))
+- Move how guests open the form (access method, event password, identity provider for Company SSO) to Event settings, Registration, for superadmins; other administrators see it ([#1934](https://github.com/solarssk/admitto/pull/1934))
 - Remove the Ways in card from External services: how guests open the form is set on each event ([#1939](https://github.com/solarssk/admitto/pull/1939))
 - Always offer Link, Password and Company SSO, and remove the old list of enabled ways in, the single identity provider for the whole instance and their settings routes ([#1940](https://github.com/solarssk/admitto/pull/1941))
 - Show the Open-Meteo API key like the other secret keys: a locked box with Set, Change and Clear, and never its value ([#1932](https://github.com/solarssk/admitto/pull/1932))
 - Rename Requirements to Event items and move it just before Check-in in the event menu ([#1952](https://github.com/solarssk/admitto/pull/1952))
+- Move every registration setting into Event settings, Registration, open to every event administrator (a superadmin still sets how guests open the form), drop the Access tab of the Registration page, and move the address for guests to Event settings, General
 
 ### Fixed
 

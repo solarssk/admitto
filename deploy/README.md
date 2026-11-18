@@ -781,7 +781,7 @@ Every path an anonymous caller reaches, in one table (everything else stays behi
 
 A superadmin can give an event an address on the organisation's own domain, such as `summit.example.com`. Guests then get every link on that name, and the panel is not reachable there. Admitto does not issue the certificate, change DNS or send traffic to the name before it is checked. These steps are yours.
 
-**Start only when the superadmin has saved the address** (Access tab, card **Address for guests**). Then do the steps in order and ask the superadmin to select **Check now**.
+**Start only when the superadmin has saved the address** (Event settings, **General** tab, card **Address for guests**). Then do the steps in order and ask the superadmin to select **Check now**.
 
 1. **DNS.** Create a CNAME from the event address to the address of the instance (`instance_host` in the registration settings answer, the same host the panel uses).
 2. **HTTPS.** Serve a valid certificate for exactly this name on your edge or proxy. The proxy passes the original host on: `Host`, or `X-Forwarded-Host` when `TRUST_PROXY=true` and the proxy is listed in `TRUSTED_PROXY_CIDRS`. The nginx of the compose stack already sets `X-Forwarded-Host`.

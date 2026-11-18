@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Badge, Card, HintLabel, Input } from "@admitto/ui";
 import type { EventSettingsDto, EventType } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
@@ -28,7 +29,7 @@ const EVENT_TYPE_SELECT_OPTIONS = [
 ];
 
 /** General tab: event status summary and basic information (title, date, capacity, event type,
- * hours, timezone). */
+ * hours, timezone), and the cards that are given to it (the address for guests). */
 export function EventGeneralInfoPanel({
   event,
   form,
@@ -40,10 +41,13 @@ export function EventGeneralInfoPanel({
   validationErrorsRef,
   onReset,
   onSave,
+  children,
 }: Readonly<
   EventSettingsFormPanelProps & {
     event: EventSettingsDto;
     logoUploading: boolean;
+    /** Cards that save themselves, between Basic information and the footer. */
+    children?: ReactNode;
   }
 >) {
   return (
@@ -181,6 +185,8 @@ export function EventGeneralInfoPanel({
           </div>
         </div>
       </Card>
+
+      {children}
 
       <LogoAwareSettingsFooter
         isArchived={isArchived}

@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { expect } from "vitest";
-import { createMemoryRouter, Outlet, RouterProvider } from "react-router";
+import { expect, vi } from "vitest";
+import { createMemoryRouter, Outlet, RouterProvider, useOutletContext, useParams } from "react-router";
 import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
+import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
 import { event, legalAnswer, settings, texts } from "./accessData.js";
@@ -17,8 +18,8 @@ export function resetApi(): void {
   api.fetchRegistrationCounts.mockResolvedValue({ mode: null, by_status: { awaiting_email: 0, pending: 0, waitlist: 0, accepted: 0, rejected: 0 }, needs_decision: 0 });
 }
 
-/** The Registration page on its Access tab, in the frame every page of an event has (the event is in the outlet context). */
-export function renderAccess({ withEvent = event, path = "/admin/events/evt-1/registration?tab=access" } = {}) {
+/** The Registration page, in the frame every page of an event has (the event is in the outlet context). */
+export function renderPage({ withEvent = event, path = "/admin/events/evt-1/registration" } = {}) {
   const router = createMemoryRouter(
     [
       {
@@ -35,7 +36,43 @@ export function renderAccess({ withEvent = event, path = "/admin/events/evt-1/re
   return { router };
 }
 
-export const accessPanel = () => screen.getByRole("tabpanel", { name: "Access" });
+export const onDirtyChange = vi.fn();
+export const onSavingChange = vi.fn();
+
+/** What the page of Event settings makes of the Registration tab: the panel for the event of the address, as a superadmin or not. */
+function SettingsRegistration({ superadmin }: Readonly<{ superadmin: boolean }>) {
+  const { eventId } = useParams();
+  const { event: current } = useOutletContext<{ event: typeof event }>();
+  return (
+    <EventRegistrationPanel
+      eventId={eventId ?? ""}
+      archived={current.archived_at !== null}
+      superadmin={superadmin}
+      refreshEvent={refreshEvent}
+      onDirtyChange={onDirtyChange}
+      onSavingChange={onSavingChange}
+    />
+  );
+}
+
+/** The Registration tab of Event settings, in the frame every page of an event has. A superadmin by default. */
+export function renderAccess({ withEvent = event, path = "/admin/events/evt-1/settings?tab=registration", superadmin = true } = {}) {
+  const router = createMemoryRouter(
+    [
+      {
+        element: <Outlet context={{ event: withEvent, refreshEvent }} />,
+        children: [
+          { path: "/admin/events/:eventId/settings", element: <SettingsRegistration superadmin={superadmin} /> },
+          { path: "/admin/events/:eventId/registration", element: <RegistrationPage /> },
+        ],
+      },
+    ],
+    { initialEntries: [path] },
+  );
+  render(<RouterProvider router={router} />);
+  return { router };
+}
+
 export const radio = (name: string) => screen.getByRole("radio", { name });
 export const toggle = (name: string) => screen.getByRole("switch", { name }) as HTMLInputElement;
 export const saveButton = () => screen.getByRole("button", { name: "Save" });
@@ -46,17 +83,17 @@ export async function loaded() {
   await screen.findByRole("radiogroup", { name: "Registration mode" });
 }
 
-/** The tab with these settings, read and on screen. */
-export async function renderLoaded(saved: RegistrationSettingsDto = settings(), { withEvent = event } = {}) {
+/** The Registration tab of Event settings with these settings, read and on screen. */
+export async function renderLoaded(saved: RegistrationSettingsDto = settings(), { withEvent = event, superadmin = true } = {}) {
   api.fetchRegistrationSettings.mockResolvedValue(saved);
-  const rendered = renderAccess({ withEvent });
+  const rendered = renderAccess({ withEvent, superadmin });
   await loaded();
   return rendered;
 }
 
 /** The Registration page on its Checklist tab. */
 export function renderChecklist({ withEvent = event, path = "/admin/events/evt-1/registration?tab=checklist" } = {}) {
-  return renderAccess({ withEvent, path });
+  return renderPage({ withEvent, path });
 }
 
 export const checklistPanel = () => screen.getByRole("tabpanel", { name: "Checklist" });

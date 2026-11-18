@@ -47,6 +47,7 @@ import { CheckInBehaviourPanel } from "../settings/CheckInBehaviourPanel.js";
 import { EventDangerZonePanel } from "../settings/EventDangerZonePanel.js";
 import { EventGeneralInfoPanel } from "../settings/EventGeneralInfoPanel.js";
 import { EventImagesPanel } from "../settings/EventImagesPanel.js";
+import { EventAddressCard } from "../registration/EventAddressCard.js";
 import { EventRegistrationPanel } from "../registration/EventRegistrationPanel.js";
 import { EventWalletPanel } from "../settings/EventWalletPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
@@ -1150,6 +1151,8 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const [checkinBehaviourSaving, setCheckinBehaviourSaving] = useState(false);
   const [registrationDirty, setRegistrationDirty] = useState(false);
   const [registrationSaving, setRegistrationSaving] = useState(false);
+  // A request of the card "Address for guests" (General) is out: it saves itself, and the page is not left under it.
+  const [addressBusy, setAddressBusy] = useState(false);
   // Same reasoning as mailCardResetKey above, applied to CheckInBehaviourPanel's own draft state.
   const [checkinBehaviourCardResetKey, setCheckinBehaviourCardResetKey] = useState(0);
   // Same reasoning as mailCardResetKey above, applied to the Registration tab's draft.
@@ -1206,7 +1209,7 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const pageDirty = dirty || mailTabDirty || locationDirty || ticketTypesDirty || checkinBehaviourDirty || registrationDirty;
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
   // Mail or Location tab's own save is still in flight would race against it on the same event record.
-  const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving || checkinBehaviourSaving || registrationSaving;
+  const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving || checkinBehaviourSaving || registrationSaving || addressBusy;
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       (pageDirty || pageBusy) && currentLocation.pathname !== nextLocation.pathname,
@@ -1511,7 +1514,19 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
           validationErrorsRef={basicValidationErrorsRef}
           onReset={handleBasicReset}
           onSave={() => void handleSave()}
-        />
+        >
+          <EventAddressCard
+            eventId={eventId}
+            archived={isArchived}
+            superadmin={isSa}
+            refreshEvent={refreshLayoutEvent}
+            // The Registration tab shows the address in the setup for IT: it reads again, unless it holds changes that would be lost.
+            onChanged={() => {
+              if (!registrationDirty) setRegistrationResetKey((n) => n + 1);
+            }}
+            onBusyChange={setAddressBusy}
+          />
+        </EventGeneralInfoPanel>
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="location" activeTab={tab} visited={visitedTabs} label="Location">
@@ -1702,18 +1717,17 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
         </EventSettingsTabPanel>
       )}
 
-      {isSa && (
-        <EventSettingsTabPanel tab="registration" activeTab={tab} visited={visitedTabs} label="Registration">
-          <EventRegistrationPanel
-            key={registrationResetKey}
-            eventId={eventId}
-            archived={isArchived}
-            refreshEvent={refreshLayoutEvent}
-            onDirtyChange={setRegistrationDirty}
-            onSavingChange={setRegistrationSaving}
-          />
-        </EventSettingsTabPanel>
-      )}
+      <EventSettingsTabPanel tab="registration" activeTab={tab} visited={visitedTabs} label="Registration">
+        <EventRegistrationPanel
+          key={registrationResetKey}
+          eventId={eventId}
+          archived={isArchived}
+          superadmin={isSa}
+          refreshEvent={refreshLayoutEvent}
+          onDirtyChange={setRegistrationDirty}
+          onSavingChange={setRegistrationSaving}
+        />
+      </EventSettingsTabPanel>
 
       {isSa && (
         <EventSettingsTabPanel

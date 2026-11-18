@@ -302,11 +302,11 @@ describe("RegistrationChecklistTab: the banner", () => {
     expect(banner().getAttribute("role")).toBeNull();
   });
 
-  it("has the button Go to Access, which opens the Access tab, when everything is ready and registration is off, and only then", async () => {
+  it("has the button Go to Event settings, which opens Event settings, Registration, when everything is ready and registration is off, and only then", async () => {
     const { router } = await renderChecklistLoaded(settings({ readiness: checks() }));
 
-    fireEvent.click(within(banner()).getByRole("link", { name: "Go to Access" }));
-    expect(router.state.location.search).toBe("?tab=access");
+    fireEvent.click(within(banner()).getByRole("link", { name: "Go to Event settings" }));
+    expect(router.state.location.pathname + router.state.location.search).toBe("/admin/events/evt-1/settings?tab=registration");
     cleanup();
 
     await renderChecklistLoaded(settings({ mode: "automatic", readiness: checks() }));
@@ -373,7 +373,7 @@ describe("RegistrationChecklistTab: what an event administrator sees", () => {
     await renderChecklistLoaded(settings({ readiness: checks() }));
     expect(checklistTitles()).toEqual(["Registration checklist", "For you", "Done"]);
     expect(within(card("For you")).getByText("Everything is ready")).toBeTruthy();
-    expect(within(card("For you")).getByText(/Turn registration on from the Access tab/)).toBeTruthy();
+    expect(within(card("For you")).getByText(/Turn registration on in Event settings, Registration/)).toBeTruthy();
     cleanup();
 
     await renderChecklistLoaded(settings({ mode: "automatic", readiness: checks() }));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REGISTRATION_TABS, registrationTabFromSearch, registrationTabItems } from "../../src/registration/registrationTabs.js";
+import { REGISTRATION_TABS, registrationTabFromSearch, registrationTabItems, registrationTabPath } from "../../src/registration/registrationTabs.js";
 
 describe("registrationTabFromSearch", () => {
   it.each(REGISTRATION_TABS.map((tab) => tab.id))("opens %s when the address names it", (id) => {
@@ -15,7 +15,7 @@ describe("registrationTabFromSearch", () => {
   });
 
   it("reads the first tab when the address repeats it", () => {
-    expect(registrationTabFromSearch(new URLSearchParams("tab=access&tab=fields")).id).toBe("access");
+    expect(registrationTabFromSearch(new URLSearchParams("tab=legal&tab=fields")).id).toBe("legal");
   });
 
   it("leaves the other parts of the address alone", () => {
@@ -24,13 +24,12 @@ describe("registrationTabFromSearch", () => {
 });
 
 describe("registrationTabItems", () => {
-  it("lists Requests, Fields, Access, Legal and Checklist in that order, with no number while the counts are unknown", () => {
+  it("lists Requests, Fields, Legal and Checklist in that order, with no number while the counts are unknown", () => {
     const items = registrationTabItems();
 
     expect(items.map((item) => [item.id, item.label])).toEqual([
       ["requests", "Requests"],
       ["fields", "Fields"],
-      ["access", "Access"],
       ["legal", "Legal"],
       ["checklist", "Checklist"],
     ]);
@@ -38,7 +37,7 @@ describe("registrationTabItems", () => {
   });
 
   it("puts the count of requests on Requests and nowhere else", () => {
-    expect(registrationTabItems(4).map((item) => item.count)).toEqual([4, undefined, undefined, undefined, undefined]);
+    expect(registrationTabItems(4).map((item) => item.count)).toEqual([4, undefined, undefined, undefined]);
   });
 
   it("puts the open steps on Checklist, named for assistive tech, and nothing on it when none is open or the number is unknown", () => {
@@ -48,12 +47,19 @@ describe("registrationTabItems", () => {
     expect(checklist(1)).toMatchObject({ count: 1, countLabel: "1 step open" });
     expect(checklist(0)?.count).toBeUndefined();
     expect(checklist()?.count).toBeUndefined();
-    expect(registrationTabItems(4, 2).map((item) => item.count)).toEqual([4, undefined, undefined, undefined, 2]);
+    expect(registrationTabItems(4, 2).map((item) => item.count)).toEqual([4, undefined, undefined, 2]);
   });
 
-  it("puts Checklist after Legal, and the old addresses keep their tabs", () => {
+  it("puts Checklist after Legal, and the old Access tab is gone, with no alias", () => {
     expect(REGISTRATION_TABS.map((tab) => tab.id).slice(-2)).toEqual(["legal", "checklist"]);
-    expect(registrationTabFromSearch(new URLSearchParams("tab=access")).id).toBe("access");
+    expect(registrationTabFromSearch(new URLSearchParams("tab=access")).id).toBe("requests");
     expect(registrationTabFromSearch(new URLSearchParams("tab=checklist")).id).toBe("checklist");
+  });
+});
+
+describe("registrationTabPath", () => {
+  it("is the address of a tab of the Registration page of an event, with the id made safe", () => {
+    expect(registrationTabPath("evt-1", "checklist")).toBe("/admin/events/evt-1/registration?tab=checklist");
+    expect(registrationTabPath("a/b", "fields")).toBe("/admin/events/a%2Fb/registration?tab=fields");
   });
 });

@@ -221,7 +221,7 @@ describe("AdminShell: the Registration entry of the menu", () => {
   });
 
   it("is marked as the page that is open on the Registration page, whichever tab is open", () => {
-    renderPanel("/admin/events/evt-1/registration?tab=access");
+    renderPanel("/admin/events/evt-1/registration?tab=checklist");
 
     const entry = lifecycleMenu().getByRole("link", { name: "Registration" });
     expect(entry.getAttribute("aria-current")).toBe("page");

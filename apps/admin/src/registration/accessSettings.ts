@@ -15,7 +15,7 @@ import type { SearchableSelectOption } from "../components/SearchableSelect.js";
 export type AccessMethod = "link" | "password" | "sso";
 
 /**
- * What the Access tab edits: the settings as a form holds them. The way in is one choice or none, and the person a guest may
+ * What Event settings, Registration edits: the settings as a form holds them. The way in is one choice or none, and the person a guest may
  * bring is a yes or a no (the server counts them, and takes 0 or 1).
  */
 export interface AccessDraft {
@@ -28,7 +28,7 @@ export interface AccessDraft {
   companion: boolean;
   consent_keys: string[];
   styled_form_controls: boolean;
-  /** The bot check of the link and password forms of the event. Only a superadmin changes it (Event settings, Registration). */
+  /** The bot check of the link and password forms of the event. Only a superadmin changes it. */
   bot_protection_enabled: boolean;
   /** The company SSO only: the claim a guest's token must hold, as typed. Empty for no restriction. */
   sso_claim_name: string;
@@ -147,7 +147,7 @@ function providerPatch(draft: AccessDraft, base: AccessDraft): Pick<SaveRegistra
 }
 
 /**
- * What a save of the Access tab sends: the settings that differ between the form and the settings it was made from (`base`), and no
+ * What a save sends of the form: the settings that differ between the form and the settings it was made from (`base`), and no
  * others. A setting the person did not touch is not sent, so a save never writes back what somebody else changed in the meantime.
  * How guests open the form is a superadmin's (`technicalPatch`) and is never sent from here.
  */
@@ -165,14 +165,21 @@ export function settingsPatch(draft: AccessDraft, base: AccessDraft): SaveRegist
 }
 
 /**
- * What a save of Event settings, Registration sends: the access method, the bot check, the identity provider and the restriction, when they differ
- * from the settings the form was made from. Only a superadmin sends them (the server refuses others), and the Access tab never does.
+ * What a superadmin's save adds: the access method, the bot check, the identity provider and the restriction, when they differ
+ * from the settings the form was made from. Only a superadmin sends them (the server refuses others).
  */
 export function technicalPatch(draft: AccessDraft, base: AccessDraft): SaveRegistrationSettingsBody {
   const patch: SaveRegistrationSettingsBody = {};
   if (draft.method !== base.method) patch.access_methods = draft.method === null ? [] : [draft.method];
   if (draft.bot_protection_enabled !== base.bot_protection_enabled) patch.bot_protection_enabled = draft.bot_protection_enabled;
   return { ...patch, ...claimPatch(draft, base), ...providerPatch(draft, base) };
+}
+
+/** What a save of a superadmin adds to the form: how guests open the form, with the identity provider and the restriction of Company SSO. */
+export type Technical = Pick<AccessDraft, "method" | "bot_protection_enabled" | "sso_provider_id" | "sso_claim_name" | "sso_claim_values">;
+
+export function technicalOf(draft: AccessDraft): Technical {
+  return { method: draft.method, bot_protection_enabled: draft.bot_protection_enabled, sso_provider_id: draft.sso_provider_id, sso_claim_name: draft.sso_claim_name, sso_claim_values: draft.sso_claim_values };
 }
 
 /** The keys of the checks that are not met. */

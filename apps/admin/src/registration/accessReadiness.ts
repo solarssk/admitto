@@ -208,8 +208,8 @@ export function actionLabel(link: ReadinessLink): string {
 export interface ChecklistBanner {
   variant: "success" | "warning" | "info" | "error";
   text: string;
-  /** The banner offers the Access tab, where registration is turned on. */
-  goToAccess: boolean;
+  /** The banner offers Event settings, Registration, where registration is turned on. */
+  goToSettings: boolean;
 }
 
 const steps = (count: number) => (count === 1 ? "1 step" : `${count} steps`);
@@ -228,18 +228,18 @@ export function checklistBanner({
   waiting: number;
   addressStopped: boolean;
 }): ChecklistBanner {
-  if (archived) return { variant: "info", text: "This event is archived. Registration is closed and nothing here can be changed.", goToAccess: false };
+  if (archived) return { variant: "info", text: "This event is archived. Registration is closed and nothing here can be changed.", goToSettings: false };
   if (forYou + waiting === 0) {
-    if (mode !== null) return { variant: "success", text: "Registration is on and every step is done.", goToAccess: false };
-    return { variant: "success", text: "Ready. Registration can be turned on.", goToAccess: true };
+    if (mode !== null) return { variant: "success", text: "Registration is on and every step is done.", goToSettings: false };
+    return { variant: "success", text: "Ready. Registration can be turned on.", goToSettings: true };
   }
   if (mode !== null) {
     const what = addressStopped ? "the address of this event stopped working" : "something it needs is missing";
-    return { variant: "error", text: `Registration is on, but ${what}. Guests may not be able to register.`, goToAccess: false };
+    return { variant: "error", text: `Registration is on, but ${what}. Guests may not be able to register.`, goToSettings: false };
   }
-  if (forYou === 0) return { variant: "info", text: `${steps(waiting)} ${waiting === 1 ? "waits" : "wait"} for a superadmin. Your steps are done.`, goToAccess: false };
-  if (waiting === 0) return { variant: "warning", text: `${steps(forYou)} ${forYou === 1 ? "is" : "are"} open. Registration can be turned on when ${forYou === 1 ? "it is" : "they are"} done.`, goToAccess: false };
-  return { variant: "warning", text: `${forYou} for you, ${waiting} waiting for a superadmin. Registration can be turned on when all are done.`, goToAccess: false };
+  if (forYou === 0) return { variant: "info", text: `${steps(waiting)} ${waiting === 1 ? "waits" : "wait"} for a superadmin. Your steps are done.`, goToSettings: false };
+  if (waiting === 0) return { variant: "warning", text: `${steps(forYou)} ${forYou === 1 ? "is" : "are"} open. Registration can be turned on when ${forYou === 1 ? "it is" : "they are"} done.`, goToSettings: false };
+  return { variant: "warning", text: `${forYou} for you, ${waiting} waiting for a superadmin. Registration can be turned on when all are done.`, goToSettings: false };
 }
 
 /** The words of a check, by the key the server sent. */

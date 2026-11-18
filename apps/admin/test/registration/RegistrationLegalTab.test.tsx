@@ -355,12 +355,12 @@ describe("RegistrationLegalTab: opening a text", () => {
     await screen.findByRole("textbox", { name: "Text" });
     fireEvent.change(screen.getByRole("textbox", { name: "Title" }), { target: { value: "Rules of the event" } });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Access" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Checklist" }));
 
     expect(await screen.findByRole("dialog", { name: "Discard unsaved changes?" })).toBeTruthy();
     expect(router.state.location.search).toBe("?tab=legal");
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
-    await waitFor(() => expect(router.state.location.search).toBe("?tab=access"));
+    await waitFor(() => expect(router.state.location.search).toBe("?tab=checklist"));
   });
 });
 

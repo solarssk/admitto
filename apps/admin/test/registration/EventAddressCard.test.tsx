@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { useLayoutEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
-import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
+import { EventAddressCard } from "../../src/registration/EventAddressCard.js";
 import { useOwnAddress } from "../../src/registration/useOwnAddress.js";
 import type { CustomDomainDto, RegistrationOwnAddressDto, RegistrationSettingsDto } from "../../src/api/types.js";
 import { getTooltipText, isOff, plain } from "../test-utils.js";
@@ -55,10 +55,12 @@ const state = (overrides: Partial<CustomDomainDto> = {}): CustomDomainDto => ({
   ...overrides,
 });
 
-/** The Registration tab of Event settings, read and on screen. */
+const onChanged = vi.fn();
+
+/** The card "Address for guests" of Event settings, General, read and on screen (a superadmin's, which has the field). */
 async function renderPanel(saved: RegistrationSettingsDto = settings(), { archived = false } = {}) {
   api.fetchRegistrationSettings.mockResolvedValue(saved);
-  render(<EventRegistrationPanel eventId="evt-1" archived={archived} refreshEvent={refreshEvent} />);
+  render(<EventAddressCard eventId="evt-1" archived={archived} superadmin refreshEvent={refreshEvent} onChanged={onChanged} />);
   await screen.findByLabelText("Own address");
 }
 
@@ -69,6 +71,7 @@ const type = (value: string) => fireEvent.change(field(), { target: { value } })
 
 beforeEach(() => {
   resetApi();
+  onChanged.mockReset();
   goToLogin.mockReset();
   api.fetchRegistrationReturnAddresses.mockResolvedValue({ provider_id: null, state: "none", providers: [], redirect_uri: null, redirect_uris: [] });
 });
@@ -185,7 +188,7 @@ describe("the address card", () => {
 
   const text = (name: string, target: string) =>
     [
-      "Set up the own address of an event for guest registration in Admitto.",
+      "Set up the own address of an event for guests in Admitto.",
       "",
       `1. DNS: create a CNAME record (a DNS entry that makes one name an alias of another) from ${name} to ${target}.`,
       `2. Serve HTTPS on ${name} with a valid certificate. Admitto does not issue certificates.`,
@@ -407,7 +410,7 @@ describe("saving the address", () => {
     expect(screen.getByText("This is the address of this instance. Guests need an address of their own for this event.")).toBeTruthy();
   });
 
-  it("saves the name as it is stored, says so, and shows the address as not checked yet, with the settings read again", async () => {
+  it("saves the name as it is stored, says so, and shows the address as not checked yet, and tells the page", async () => {
     api.saveCustomDomain.mockResolvedValue(state());
     await renderPanel(settings());
     api.fetchRegistrationSettings.mockClear();
@@ -420,7 +423,7 @@ describe("saving the address", () => {
     expect(await within(addressCard()).findByText(`${DOMAIN}: Not checked yet`)).toBeTruthy();
     expect(field().value).toBe(DOMAIN);
     expect(addToast).toHaveBeenCalledWith("Address set. Check it once IT has set it up.", "success");
-    expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(1);
+    expect(onChanged).toHaveBeenCalledTimes(1);
     expect(button("Remove")).toBeTruthy();
   });
 
@@ -598,5 +601,41 @@ describe("the typed address and the first effects of the card", () => {
 
     expect(latest?.typed).toBe("Admitto.example.com");
     expect(latest?.fieldError).toBe("This is the address of this instance. Guests need an address of their own for this event.");
+  });
+});
+
+describe("the card for somebody who is not a superadmin", () => {
+  async function renderReadOnly(saved: RegistrationSettingsDto) {
+    api.fetchRegistrationSettings.mockResolvedValue(saved);
+    render(<EventAddressCard eventId="evt-1" archived={false} superadmin={false} refreshEvent={refreshEvent} onChanged={onChanged} />);
+    await screen.findByText("Only a superadmin can change this.");
+  }
+
+  it("shows how the address stands, with no field, no button and no setup for IT, and says who can change it", async () => {
+    await renderReadOnly(settings({ own_address: own({ status: "failing", verified: true, check_result: "tls_failed" }) }));
+
+    expect(within(addressCard()).getByText(`${DOMAIN}: Stopped working`, { exact: false })).toBeTruthy();
+    expect(screen.queryByLabelText("Own address")).toBeNull();
+    expect(within(addressCard()).queryByRole("button")).toBeNull();
+    expect(api.saveCustomDomain).not.toHaveBeenCalled();
+  });
+
+  it("says the event has no address of its own, and that guests get the address of the instance", async () => {
+    await renderReadOnly(settings());
+
+    expect(within(addressCard()).getByText("This event has no address of its own. Guests get links on the address of this instance.")).toBeTruthy();
+  });
+});
+
+describe("reading the card", () => {
+  it("is an error with a Retry when the settings cannot be read, and shows the card when the Retry works", async () => {
+    api.fetchRegistrationSettings.mockRejectedValueOnce(new ApiError(500, "internal_error", "internal_error"));
+    api.fetchRegistrationSettings.mockResolvedValue(settings());
+    render(<EventAddressCard eventId="evt-1" archived={false} superadmin refreshEvent={refreshEvent} onChanged={onChanged} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not load the address for guests");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByLabelText("Own address")).toBeTruthy();
   });
 });

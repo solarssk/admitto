@@ -139,7 +139,7 @@ function NothingToDo({ everythingDone, mode }: Readonly<{ everythingDone: boolea
         <i className="ti ti-circle-check" />
       </span>
       <strong className="access-ready__title">{on ? "Everything is in place" : "Everything is ready"}</strong>
-      <p>{on ? "Guests can register. Check this tab again when something changes, for example an address or a key." : "Every step is done. Turn registration on from the Access tab when you want guests to start."}</p>
+      <p>{on ? "Guests can register. Check this tab again when something changes, for example an address or a key." : "Every step is done. Turn registration on in Event settings, Registration, when you want guests to start."}</p>
     </div>
   );
 }
@@ -198,9 +198,9 @@ export function ReadinessChecklist({
             variant={banner.variant}
             role={banner.variant === "error" ? "alert" : undefined}
             action={
-              banner.goToAccess ? (
-                <Link className="at-btn at-btn--primary at-btn--sm" to={{ search: "?tab=access" }} replace>
-                  Go to Access
+              banner.goToSettings ? (
+                <Link className="at-btn at-btn--primary at-btn--sm" to={linkTarget("registration_settings", eventId)}>
+                  Go to Event settings
                 </Link>
               ) : undefined
             }

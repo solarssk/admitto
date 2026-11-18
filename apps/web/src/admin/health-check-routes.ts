@@ -1642,7 +1642,7 @@ async function registrationCaptchaRow(db: PrismaClient, checkedAt: string): Prom
   );
 }
 
-/** Addresses named in the detail of the row: the rest are counted, and the Access tab of each event shows its own. */
+/** Addresses named in the detail of the row: the rest are counted, and Event settings, General, of each event shows its own. */
 const EVENT_ADDRESSES_LISTED = 5;
 
 /**

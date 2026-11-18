@@ -46,11 +46,6 @@ vi.mock("../../src/registration/RegistrationLegalTab.js", () => ({
   ),
 }));
 
-// The Access tab reads and saves the registration settings: RegistrationAccessTab.test.tsx has it. The page is tested around it.
-vi.mock("../../src/registration/RegistrationAccessTab.js", () => ({
-  RegistrationAccessTab: () => <p>The access settings of the event</p>,
-}));
-
 // The Checklist tab reads the settings and words each check: RegistrationChecklistTab.test.tsx has it. The page is tested around it.
 vi.mock("../../src/registration/RegistrationChecklistTab.js", () => ({
   RegistrationChecklistTab: () => <p>The checklist of the event</p>,
@@ -115,13 +110,13 @@ afterEach(() => {
 });
 
 describe("RegistrationPage", () => {
-  it("has the page heading and the five tabs, with no number on them, and reads no numbers without an event", () => {
+  it("has the page heading and the four tabs, with no number on them, and reads no numbers without an event", () => {
     renderAt();
 
     expect(screen.getByRole("heading", { level: 1, name: "Registration" })).toBeTruthy();
     expect(screen.getAllByRole("heading")).toHaveLength(1);
     const tabs = within(screen.getByRole("tablist")).getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Requests", "Fields", "Access", "Legal", "Checklist"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Requests", "Fields", "Legal", "Checklist"]);
     expect(fetchRegistrationCounts).not.toHaveBeenCalled();
     expect(fetchRegistrationSettings).not.toHaveBeenCalled();
   });
@@ -130,7 +125,7 @@ describe("RegistrationPage", () => {
     ["", "Requests"],
     ["?tab=requests", "Requests"],
     ["?tab=fields", "Fields"],
-    ["?tab=access", "Access"],
+    ["?tab=access", "Requests"],
     ["?tab=legal", "Legal"],
     ["?tab=checklist", "Checklist"],
     ["?tab=nope", "Requests"],
@@ -145,7 +140,6 @@ describe("RegistrationPage", () => {
   it.each([
     ["requests", "Requests", "The requests of the event"],
     ["fields", "Fields", "The attendee fields card"],
-    ["access", "Access", "The access settings of the event"],
     ["legal", "Legal", "The legal texts of the event"],
     ["checklist", "Checklist", "The checklist of the event"],
   ])("shows the content of the %s tab, labelled %s, and nothing of the others", (id, label, content) => {
@@ -161,7 +155,7 @@ describe("RegistrationPage", () => {
     renderAt("?tab=fields");
     const first = screen.getByText("The attendee fields card");
 
-    fireEvent.click(screen.getByRole("tab", { name: "Access" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Legal" }));
     expect(screen.queryByText("The attendee fields card")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Fields" }));
 
@@ -171,22 +165,22 @@ describe("RegistrationPage", () => {
   it("opens the tab that is clicked and writes it to the address", () => {
     renderAt();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Access" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Legal" }));
 
-    expect(openTab().textContent).toBe("Access");
-    expect(screen.getByRole("tabpanel", { name: "Access" })).toBeTruthy();
-    expect(screen.getByTestId("search").textContent).toBe("?tab=access");
+    expect(openTab().textContent).toBe("Legal");
+    expect(screen.getByRole("tabpanel", { name: "Legal" })).toBeTruthy();
+    expect(screen.getByTestId("search").textContent).toBe("?tab=legal");
   });
 
   it("keeps only the open tab in the tab order and moves with the arrow, Home and End keys", () => {
     renderAt();
     const tabIndexes = () => screen.getAllByRole("tab").map((tab) => tab.tabIndex);
-    expect(tabIndexes()).toEqual([0, -1, -1, -1, -1]);
+    expect(tabIndexes()).toEqual([0, -1, -1, -1]);
 
     fireEvent.keyDown(openTab(), { key: "ArrowRight" });
     expect(openTab().textContent).toBe("Fields");
     expect(document.activeElement).toBe(openTab());
-    expect(tabIndexes()).toEqual([-1, 0, -1, -1, -1]);
+    expect(tabIndexes()).toEqual([-1, 0, -1, -1]);
 
     fireEvent.keyDown(openTab(), { key: "End" });
     expect(openTab().textContent).toBe("Checklist");

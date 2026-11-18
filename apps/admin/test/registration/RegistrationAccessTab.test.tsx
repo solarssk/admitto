@@ -8,7 +8,7 @@ import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-
 import { advanceTimers, deferred, getTooltipText, hangUntilAborted, isOff } from "../test-utils.js";
 import { addToast, api } from "./accessApiMocks.js";
 import { archivedEvent, checks, event, legalAnswer, settings, texts } from "./accessData.js";
-import { accessPanel, card, loaded, radio, renderAccess, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
+import { card, loaded, radio, renderAccess, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 const goToLogin = vi.fn();
 
@@ -41,16 +41,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-});
-
-describe("RegistrationAccessTab: a route without an event", () => {
-  it("says there is no event, without reading anything", () => {
-    renderAccess({ path: "/admin/registration?tab=access" });
-
-    expect(screen.getByText("Missing event.")).toBeTruthy();
-    expect(api.fetchRegistrationSettings).not.toHaveBeenCalled();
-    expect(api.fetchLegalDocuments).not.toHaveBeenCalled();
-  });
 });
 
 describe("RegistrationAccessTab: the first read", () => {
@@ -94,7 +84,7 @@ describe("RegistrationAccessTab: the first read", () => {
     expect(screen.getByRole("radiogroup", { name: "Registration mode" })).toBeTruthy();
   });
 
-  it("ends in an error after 30 seconds, with a Retry that stays on screen, busy, with its focus, and hands the focus to the tab when it works", async () => {
+  it("ends in an error after 30 seconds, with a Retry that stays on screen, busy, with its focus", async () => {
     renderAccess();
     await advanceTimers(0);
     await advanceTimers(30_000);
@@ -119,7 +109,6 @@ describe("RegistrationAccessTab: the first read", () => {
     await advanceTimers(500);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("radiogroup", { name: "Registration mode" })).toBeTruthy();
-    expect(document.activeElement).toBe(accessPanel());
   });
 });
 
@@ -430,7 +419,8 @@ describe("RegistrationAccessTab: an archived event", () => {
   });
 
   it("does not say again, in the panel, that the event is archived: the page above says it, and the access method is only read", () => {
-    const sayings = Array.from(accessPanel().querySelectorAll("*")).filter((node) => node.children.length === 0 && /archived/i.test(node.textContent ?? ""));
+    // The page says it. The buttons of the event password carry the reason in their tooltips, as in every guarded control.
+    const sayings = [card("Guest registration"), card("Form")].flatMap((part) => Array.from(part.querySelectorAll("*"))).filter((node) => node.children.length === 0 && /archived/i.test(node.textContent ?? ""));
 
     expect(sayings).toHaveLength(0);
   });
@@ -445,10 +435,8 @@ describe("RegistrationAccessTab: one event, one tab", () => {
 
     api.fetchRegistrationSettings.mockResolvedValue(settings({ ask_company: false }));
     await act(async () => {
-      await router.navigate("/admin/events/evt-2/registration?tab=access");
+      await router.navigate("/admin/events/evt-2/settings?tab=registration");
     });
-    // The form that is open has changes in it, so the leaving is asked first.
-    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenLastCalledWith("evt-2", expect.any(AbortSignal)));
     await loaded();
 
