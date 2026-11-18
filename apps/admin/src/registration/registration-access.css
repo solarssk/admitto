@@ -14,14 +14,29 @@
   border-bottom: 0;
 }
 
-/* The extra consents are a field after the switches: a rule above it tells the two groups apart. */
+/* The two form cards hold labelled groups (SectionLabel), each with its own list of rows. */
+.access-form-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.access-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.access-form-group__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The extra consents field and the line under it. */
 .access-consents {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
 }
 
 /* The checklist: one row for each check, the icon, the heading with its sentence, and what to do about it. */
@@ -381,14 +396,29 @@ span.access-check__remedy {
   }
 }
 
-/* The registration switch in the header of the Registration page: the title, the switch, a way to the Checklist, and the copy button. */
+/* The grey block that holds the room of the header buttons until the first read is in. */
 .registration-switch {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  min-width: 9.5rem;
 }
 
-.registration-switch__title {
-  font-weight: 600;
+/* The state of registration beside the title. The title is large and bold, so the badge keeps its own small size and sits on the middle
+ * of the title's line; on a narrow screen it drops under the title when the two do not fit. */
+.registration-status {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: var(--space-3);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  letter-spacing: normal;
+  line-height: 1;
+}
+
+@media (max-width: 767px) {
+  .registration-status {
+    display: flex;
+    margin-left: 0;
+    margin-top: var(--space-1);
+  }
 }

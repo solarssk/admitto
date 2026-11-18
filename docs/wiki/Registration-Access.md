@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Turn guest registration on or off for an event, copy the link you give to guests, and set what the form asks. You turn registration on and off, and copy the link, with the header of the event's **Registration** page, which is in the event menu after **Overview**. The same header is on every tab. What the form asks is on the **Registration** tab of the event's **Event settings**. What registration still needs is on the **Checklist** tab of the **Registration** page.
+Turn guest registration on or off for an event, copy the link you give to guests, and set what the form asks. You turn registration on and off, and copy the link, with the buttons in the header of the event's **Registration** page, which is in the event menu after **Overview**. The same header is on every tab, with a badge next to the title that says **Open**, **Closed** or **Not ready**. What the form asks is on the **Registration** tab of the event's **Event settings**, in two cards: **Requests and limits** and **Questions and consents**. What registration still needs is on the **Checklist** tab of the **Registration** page.
 
 Registration is off for every event until you turn it on. Until then, the address of the form answers "not found".
 
@@ -23,21 +23,21 @@ Registration is off for every event until you turn it on. Until then, the addres
 1. Open the event, then **Registration**, then the **Checklist** tab. The tab has the number of steps that are still open next to its name. The number is the same for everybody.
 2. Read the card **Registration checklist** at the top. The bar and the pill "N of M done" at the right of the header say how far you are. Every card on the tab shows its status as a pill at the right of its header. The message under the bar says what state registration is in: "Ready. Registration can be turned on." (with a **Turn registration on**
 
-1. Open the event's **Registration** page. In the header, the switch **Registration** is **Off**. It is grey while the **Checklist** tab has a row that is not done.
-2. Switch it **On**. Registration starts with the mode that holds every request for you to accept or reject. To accept guests by themselves, go to **Event settings → Registration** and switch **Approve requests by hand** off, then select **Save**. The switch is grey while registration is off.
-3. Select **Copy link** in the header, and give the link to your guests. The button works while registration is on.
+1. Open the event's **Registration** page. The badge next to the title says **Closed**, and the main button is **Turn registration on**. While the **Checklist** tab has a row that is not done, the badge says **Not ready** with the number of open steps, and the main button is **See the Checklist**.
+2. Select **Turn registration on**. Registration starts with the mode that holds every request for you to accept or reject. To accept guests by themselves, go to **Event settings → Registration** and switch **Approve requests by hand** off, then select **Save**. That switch is grey while registration is off.
+3. Select **Copy link** in the header, and give the link to your guests. When registration is on, **Copy link** is the main button. **Open the form**, in **More actions**, opens the form in a new tab.
 
-On the **Checklist** tab, when every step is done, the green message has the button **Turn registration on**. It does the same as the switch in the header.
+On the **Checklist** tab, when every step is done, the green message has the button **Turn registration on**. It does the same as the main button in the header.
 
 **Turn registration off**
 
-1. In the header of the **Registration** page, switch **Registration** to **Off**. On the **Checklist** tab, the message "Registration is open." has the button **Turn off**.
+1. In the header of the **Registration** page, open **More actions** and select **Turn registration off**. On the **Checklist** tab, the message "Registration is open." has the button **Turn off**.
 2. Read what changes, then select **Turn off registration**.
 
 ## Expected result
 
 - The toast says "Registration is on." or "Registration is off."
-- The switch in the header shows **On** or **Off**, and the number on the **Checklist** tab follows it.
+- The badge in the header shows **Open** or **Closed**, and the number on the **Checklist** tab follows it.
 - With registration on, the link that **Copy link** copies opens the form.
 
 ## Important decisions
@@ -152,7 +152,7 @@ When a check fails, the card names the reason:
 | Action | Result |
 |---|---|
 | **Save** | Only the settings you changed are saved. Each save is recorded in the audit log as "Guest registration settings changed", with the names and the new values of what changed, and never a password |
-| Turn registration on (the header switch or the button on the **Checklist** tab) | The form opens at once. It is refused while a row of the checklist is not done |
+| Turn registration on (the button in the header or the one on the **Checklist** tab) | The form opens at once. It is refused while a row of the checklist is not done |
 | Change the access method or the consents of an event that is on | Refused while a row is not done, like turning on |
 | Switch **Approve requests by hand** | The new mode applies to new requests. **Save** it in **Event settings → Registration** |
 | Switch **Styled form boxes** on or off | The next guest who opens the form gets the boxes you chose. A form that is already open keeps the boxes it has |
@@ -172,7 +172,7 @@ When you turn registration off:
 
 | Problem | What to do |
 |---|---|
-| The **Registration** switch in the header is grey | The **Checklist** tab has a row that is not done. Hover over the switch to see how many. Put it right, and try again |
+| The badge in the header says **Not ready**, and **Turn registration on** in **More actions** is grey | The **Checklist** tab has a row that is not done. The badge says how many. Select **See the Checklist**, put it right, and try again |
 | The page says "This change needs something that is not set up yet" | Nothing was saved. The rows it lists are what is missing. Put them right and select **Save** again |
 | An extra consent is marked "(not published)" | Publish its text on the **Legal** tab, or take the consent off the list |
 | "One of the extra consents you chose is not published" | Someone took a text back while you were editing. Publish it again or take it off the list |

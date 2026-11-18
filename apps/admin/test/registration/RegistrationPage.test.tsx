@@ -6,7 +6,7 @@ import { ApiError } from "../../src/api/client.js";
 import type { RegistrationCountsDto, RegistrationReadinessCheckDto, RegistrationSettingsDto } from "../../src/api/types.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
-import { deferred } from "../test-utils.js";
+import { deferred, setViewport } from "../test-utils.js";
 
 const fetchRegistrationCounts = vi.fn();
 const fetchRegistrationSettings = vi.fn();
@@ -99,6 +99,7 @@ function checks(...open: string[]): RegistrationSettingsDto {
 }
 
 beforeEach(() => {
+  setViewport(true);
   fetchRegistrationCounts.mockReset();
   fetchRegistrationCounts.mockResolvedValue(counts(3));
   fetchRegistrationSettings.mockReset();
@@ -114,7 +115,7 @@ describe("RegistrationPage", () => {
   it("has the page heading and the four tabs, with no number on them, and reads no numbers without an event", () => {
     renderAt();
 
-    expect(screen.getByRole("heading", { level: 1, name: "Registration" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: /^Registration/ })).toBeTruthy();
     expect(screen.getAllByRole("heading")).toHaveLength(1);
     const tabs = within(screen.getByRole("tablist")).getAllByRole("tab");
     expect(tabs.map((tab) => tab.textContent)).toEqual(["Requests", "Fields", "Legal", "Checklist"]);

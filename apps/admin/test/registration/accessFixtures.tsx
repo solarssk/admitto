@@ -6,10 +6,12 @@ import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
 import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
+import { setViewport } from "../test-utils.js";
 import { event, legalAnswer, settings, texts } from "./accessData.js";
 
 /** Puts the first reads in their usual state: a ready event with a photo consent that is published. */
 export function resetApi(): void {
+  setViewport(true);
   for (const call of Object.values(api)) call.mockReset();
   addToast.mockReset();
   refreshEvent.mockReset();

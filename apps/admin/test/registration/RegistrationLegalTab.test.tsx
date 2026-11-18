@@ -8,7 +8,7 @@ import type { EventDto, LegalDocumentDto, LegalDocumentLimitsDto, LegalDocuments
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
-import { advanceTimers, deferred, hangUntilAborted, isOff } from "../test-utils.js";
+import { advanceTimers, deferred, hangUntilAborted, isOff, setViewport } from "../test-utils.js";
 import { LEGAL_LIMITS, legalDoc, legalDocWithContent } from "./legalFixtures.js";
 import { stubProseMirrorLayout } from "./proseMirrorJsdom.js";
 
@@ -90,6 +90,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  setViewport(true);
   fetchRegistrationSettings.mockResolvedValue({ mode: null, guest_url: null, readiness: [], own_address: null });
   fetchLegalDocuments.mockResolvedValue(answer([privacy], [{ ref: "event-terms", kind: "event_terms", key: null }]));
   fetchLegalDocument.mockImplementation(async (_event: string, ref: string) => withContent(ref === "privacy-notice" ? privacy : doc(ref)));

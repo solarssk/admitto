@@ -13,7 +13,7 @@ const CONFIRM_MESSAGE =
 
 /**
  * Event settings, Registration, inside the Access method card: the bot check of this event, for a superadmin, as a switch row like the
- * ones of the Form card, under the notice of the method. With the organisation's own switch off there is no check anywhere: the switch
+ * ones of the form cards, under the notice of the method. With the organisation's own switch off there is no check anywhere: the switch
  * shows Off and is greyed, with a tooltip that says why (as the greyed Company SSO option), and the value stored for the event is not
  * touched or sent. On is the default. The change is part of the draft of the tab and is saved with its Save. Turning it off asks first.
  * Company SSO has no check, so for it the switch is greyed, with a sentence that says why, and keeps its value.

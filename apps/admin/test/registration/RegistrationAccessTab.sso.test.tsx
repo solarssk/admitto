@@ -75,14 +75,14 @@ describe("the company SSO as the way in of an event, on the Access tab", () => {
     await renderLoaded(ssoEventSettings({ verify_email: true }));
 
     expect(isOff(toggle("Confirm email addresses"))).toBe(true);
-    expect(screen.getByText(/Not used with Company SSO\. The address comes from the identity provider, so no confirmation link is sent\./)).toBeTruthy();
-    expect(screen.queryByText(/Guests confirm their address with a link/)).toBeNull();
+    expect(screen.getByText(/Not used with Company SSO\. The identity provider confirms the address\./)).toBeTruthy();
+    expect(screen.queryByText(/Guests confirm by a link/)).toBeNull();
     cleanup();
 
     await renderLoaded(settings({ verify_email: true }));
     expect(isOff(toggle("Confirm email addresses"))).toBe(false);
     expect(toggle("Confirm email addresses").checked).toBe(true);
-    expect(screen.getByText(/Guests confirm their address with a link/)).toBeTruthy();
+    expect(screen.getByText(/Guests confirm by a link/)).toBeTruthy();
   });
 
   it("sends no access method, provider or restriction when another setting is saved", async () => {

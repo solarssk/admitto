@@ -57,7 +57,7 @@ describe("RegistrationAccessTab: the first read", () => {
 
     const held = placeholder() as HTMLElement;
     expect(held.classList.contains("at-loading-hold")).toBe(true);
-    for (const title of ["Form", "Access method", "Company SSO"]) expect(within(held).getByText(title)).toBeTruthy();
+    for (const title of ["Requests and limits", "Questions and consents", "Access method", "Company SSO"]) expect(within(held).getByText(title)).toBeTruthy();
     // The shapes are decoration; nothing claims that there is nothing yet.
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("switch")).toBeNull();
@@ -134,7 +134,7 @@ describe("RegistrationAccessTab: a read that fails", () => {
     expect(alert.textContent).toContain("Could not load the registration settings");
     expect(alert.textContent).toContain("You do not have access.");
     expect(screen.queryByRole("switch")).toBeNull();
-    expect(screen.queryByText("Form", { selector: ".at-card__title" })).toBeNull();
+    expect(screen.queryByText("Requests and limits", { selector: ".at-card__title" })).toBeNull();
     expect(reportApiError).toHaveBeenCalledWith(403);
   });
 
@@ -164,20 +164,18 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(api.fetchLegalDocuments).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
   });
 
-  it("has the switch for the styled boxes in the Form card: a switch named by its title, off by default, with its words in the same row", async () => {
+  it("has the switch for the styled boxes in the Questions and consents card: a switch named by its title, off by default, with its words in the same row", async () => {
     await renderLoaded();
 
-    const styled = within(card("Form")).getByRole("switch", { name: "Styled form boxes" }) as HTMLInputElement;
+    const styled = within(card("Questions and consents")).getByRole("switch", { name: "Styled form boxes" }) as HTMLInputElement;
     expect(styled.type).toBe("checkbox");
     expect(styled.checked).toBe(false);
     expect(styled.disabled).toBe(false);
     const row = styled.closest(".settings-row") as HTMLElement;
     expect(within(row).getByText("Styled form boxes").tagName).toBe("STRONG");
-    // It says what each kind of box becomes, and only what the form does: a date, a time and a phone number.
-    expect(row.textContent).toContain("a calendar for a date, a list of times for a time, and a list of countries beside a phone number");
-    expect(row.textContent).toContain("A phone question that allows only digits, or a set length, keeps the browser's box.");
-    expect(row.textContent).not.toContain("stay the browser's");
-    expect(row.textContent).toContain("Turned off, guests get their browser's boxes.");
+    // One short line: what the boxes are, and the one case that keeps the browser's own box.
+    expect(row.textContent).toContain("Own calendar, time list and phone country list.");
+    expect(row.textContent).toContain("A phone question for digits only keeps the browser's box.");
     expect(screen.queryByText("Unsaved changes")).toBeNull();
   });
 
@@ -251,14 +249,50 @@ describe("RegistrationAccessTab: the consents", () => {
   it("explains what a consent does, and that the notice and the terms are always on the form", async () => {
     await renderLoaded();
 
-    expect(screen.getByText("Each consent you choose gets its own checkbox on the form. The privacy notice and the terms are always on it.")).toBeTruthy();
+    expect(screen.getByText("Each consent you choose adds a checkbox to the form. The privacy notice and the terms are always there.")).toBeTruthy();
+  });
+});
+
+describe("RegistrationAccessTab: the two cards of the form", () => {
+  const switchNames = (part: HTMLElement) => within(part).getAllByRole("switch").map((node) => node.getAttribute("aria-label"));
+  const groupLabels = (part: HTMLElement) => Array.from(part.querySelectorAll(".attendees-section-label")).map((node) => node.textContent);
+
+  it("has the requests and the limits first, in two labelled groups, and the questions and the consents second, in three", async () => {
+    await renderLoaded();
+
+    const titles = Array.from(document.querySelectorAll(".at-card__title")).map((node) => node.textContent);
+    expect(titles.slice(0, 2)).toEqual(["Requests and limits", "Questions and consents"]);
+    expect(switchNames(card("Requests and limits"))).toEqual(["Approve requests by hand", "Waiting list", "Confirm email addresses", "Guests can bring one person"]);
+    expect(groupLabels(card("Requests and limits"))).toEqual(["Requests", "Who can register"]);
+    expect(switchNames(card("Questions and consents"))).toEqual(["Ask for the company", "Ask for the department", "Styled form boxes"]);
+    expect(groupLabels(card("Questions and consents"))).toEqual(["Questions", "Look", "Consents"]);
+    expect(within(card("Questions and consents")).getByRole("button", { name: /^Extra consents/ })).toBeTruthy();
+  });
+
+  it("says each setting in one short line", async () => {
+    await renderLoaded();
+
+    const line = (title: string) => (toggle(title).closest(".settings-row") as HTMLElement).querySelector("p")?.textContent;
+    expect(line("Waiting list")).toBe("When the event is full, new requests wait for a free place.");
+    expect(line("Confirm email addresses")).toBe("Guests confirm by a link. It works for 24 hours.");
+    expect(line("Guests can bring one person")).toBe("That person takes a place too.");
+    expect(line("Ask for the company")).toBe("Adds a company question to the form.");
+    expect(line("Ask for the department")).toBe("Adds a department question to the form.");
+  });
+
+  it("is changed by every administrator of the event, not by a superadmin alone", async () => {
+    await renderLoaded(settings({ mode: "approval" }), { superadmin: false });
+
+    for (const name of ["Approve requests by hand", "Waiting list", "Confirm email addresses", "Guests can bring one person", "Ask for the company", "Ask for the department", "Styled form boxes"]) {
+      expect(isOff(toggle(name)), name).toBe(false);
+    }
   });
 });
 
 describe("RegistrationAccessTab: the mode of registration", () => {
-  it("is a switch of the Form card, on for requests that wait, and off for guests that are accepted by themselves, while registration is on", async () => {
+  it("is a switch of the Requests and limits card, on for requests that wait, and off for guests that are accepted by themselves, while registration is on", async () => {
     await renderLoaded(settings({ mode: "approval" }));
-    expect(screen.getByText(/Every request waits on the Requests tab until you accept or reject it\./)).toBeTruthy();
+    expect(screen.getByText("You accept or reject each request on the Requests tab.")).toBeTruthy();
     expect(isOff(toggle("Approve requests by hand"))).toBe(false);
     api.saveRegistrationSettings.mockResolvedValue(settings({ mode: "automatic" }));
 
@@ -274,17 +308,17 @@ describe("RegistrationAccessTab: the mode of registration", () => {
 
     expect(isOff(toggle("Approve requests by hand"))).toBe(true);
     expect(toggle("Approve requests by hand").checked).toBe(false);
-    expect(screen.getByText(/Turn it on with the switch in the header of the Registration page\./)).toBeTruthy();
+    expect(screen.getByText("You can choose this once registration is on.")).toBeTruthy();
   });
 });
 
 describe("RegistrationAccessTab: the questions of the event", () => {
-  it("has no card of the questions on the form (the Fields tab is where they are), and a link to the Fields tab in the Form card", async () => {
+  it("has no card of the questions on the form (the Fields tab is where they are), and a link to the Fields tab in the Questions and consents card", async () => {
     await renderLoaded(settings({ public_fields: [{ key: "plate", label: "Registration number of your car", type: "text", required: true }] }));
 
     expect(screen.queryByText("Your questions on the form", { selector: ".at-card__title" })).toBeNull();
     expect(screen.queryByText("Registration number of your car")).toBeNull();
-    expect(within(card("Form")).getByRole("link", { name: "Add or change your own questions on the Fields tab." }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
+    expect(within(card("Questions and consents")).getByRole("link", { name: "Add or change your own questions on the Fields tab." }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
   });
 });
 
@@ -306,7 +340,7 @@ describe("RegistrationAccessTab: an archived event", () => {
 
   it("does not say again, in the panel, that the event is archived: the page above says it, and the access method is only read", () => {
     // The page says it. The buttons of the event password carry the reason in their tooltips, as in every guarded control.
-    const sayings = [card("Form")].flatMap((part) => Array.from(part.querySelectorAll("*"))).filter((node) => node.children.length === 0 && /archived/i.test(node.textContent ?? ""));
+    const sayings = [card("Requests and limits"), card("Questions and consents")].flatMap((part) => Array.from(part.querySelectorAll("*"))).filter((node) => node.children.length === 0 && /archived/i.test(node.textContent ?? ""));
 
     expect(sayings).toHaveLength(0);
   });

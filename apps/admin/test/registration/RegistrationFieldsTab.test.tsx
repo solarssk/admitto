@@ -10,7 +10,7 @@ import { reportApiError } from "../../src/connection/ConnectionStateProvider.js"
 import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
 import { RequirementsPage } from "../../src/pages/RequirementsPage.js";
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
-import { advanceTimers, deferred, hangUntilAborted } from "../test-utils.js";
+import { advanceTimers, deferred, hangUntilAborted, setViewport } from "../test-utils.js";
 
 const fetchEventCustomFields = vi.fn();
 const fetchEventItems = vi.fn();
@@ -97,6 +97,7 @@ async function cardLoaded() {
 }
 
 beforeEach(() => {
+  setViewport(true);
   fetchRegistrationSettings.mockResolvedValue({ mode: null, guest_url: null, readiness: [], own_address: null });
   fetchEventItems.mockResolvedValue([]);
 });
@@ -146,7 +147,7 @@ describe("RegistrationFieldsTab: the first read", () => {
     expect(screen.queryByText(/No attendee fields yet/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Add field" })).toBeNull();
     // The page's own header and tabs stay.
-    expect(screen.getByRole("heading", { name: "Registration" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /^Registration/ })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Fields", selected: true })).toBeTruthy();
 
     await advanceTimers(200);

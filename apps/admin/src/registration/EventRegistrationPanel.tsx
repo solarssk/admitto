@@ -10,7 +10,7 @@ import { SettingsFooter } from "../settings/mailTransportFormParts.js";
 import { PanelLoadError } from "../settings/PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "../settings/SettingsPanelSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
-import { AccessFormCard } from "./AccessFormCard.js";
+import { AccessFormCards } from "./AccessFormCard.js";
 import { ProblemMessage } from "./AccessFormParts.js";
 import { AccessSsoClaim } from "./AccessSsoClaim.js";
 import { AccessSsoProvider } from "./AccessSsoProvider.js";
@@ -33,7 +33,8 @@ export const SUPERADMIN_ONLY_NOTE = "Only a superadmin can change this.";
 
 /** The cards of the tab as its placeholder draws them: the real titles, over rows that make each card about as tall as the real one. */
 export const REGISTRATION_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
-  { id: "form", title: "Form", rows: 6, rowHeight: 64 },
+  { id: "requests", title: "Requests and limits", rows: 4, rowHeight: 64 },
+  { id: "questions", title: "Questions and consents", rows: 5, rowHeight: 64 },
   { id: "method", title: "Access method", intro: 1, rows: 1, rowHeight: 40 },
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
 ];
@@ -62,8 +63,7 @@ async function readAll(eventId: string, superadmin: boolean, signal: AbortSignal
 }
 
 /**
- * The "Registration" tab of Event settings, for every administrator of the event: what the form asks (and whether requests wait for
- * approval) and how guests open it. Whether registration is on is the switch in the header of the Registration page. The Form card has the
+ * The "Registration" tab of Event settings, for every administrator of the event: how requests are taken and what the form asks and how guests open it. Whether registration is on is the switch in the header of the Registration page. The two form cards have the
  * page's own Save; the access method (with the event password and the bot check) and Company SSO are a superadmin's, and show what is set
  * to everybody else. A different event is a fresh panel.
  */
@@ -242,7 +242,7 @@ function EventRegistrationCards({
         </Notice>
       )}
       {hasStopped(server.own_address) && <Notice variant="warning">{stoppedWarning(server.own_address)}</Notice>}
-      <AccessFormCard eventId={eventId} draft={draft} legalItems={form.legalItems} disabled={off} onChange={form.edit} />
+      <AccessFormCards eventId={eventId} draft={draft} legalItems={form.legalItems} disabled={off} onChange={form.edit} />
       <AccessWayInCard
         eventId={eventId}
         event={{ archived_at: archived ? "archived" : null }}

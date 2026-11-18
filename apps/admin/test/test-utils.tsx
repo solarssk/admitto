@@ -194,3 +194,15 @@ export function isOff(button: HTMLElement): boolean {
 export function plain(text: string | null | undefined): string {
   return (text ?? "").replaceAll("\u00A0", " ");
 }
+
+/** The width of the screen, as the header asks the browser about it (jsdom has no `matchMedia`): a desktop by default, a phone with `false`. */
+export function setViewport(desktop: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: desktop,
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+  }));
+}

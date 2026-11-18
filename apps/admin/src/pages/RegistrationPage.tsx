@@ -11,7 +11,14 @@ import { RegistrationChecklistTab } from "../registration/RegistrationChecklistT
 import { RegistrationFieldsTab } from "../registration/RegistrationFieldsTab.js";
 import { RegistrationLegalTab } from "../registration/RegistrationLegalTab.js";
 import { RegistrationRequestsTab } from "../registration/RegistrationRequestsTab.js";
-import { RegistrationSwitchControl, RegistrationSwitchOverlays, useRegistrationSwitch, type RegistrationSwitchState } from "../registration/RegistrationSwitch.js";
+import {
+  registrationHeaderStatus,
+  RegistrationHeaderActions,
+  RegistrationStatusBadge,
+  RegistrationSwitchOverlays,
+  useRegistrationSwitch,
+  type RegistrationSwitchState,
+} from "../registration/RegistrationSwitch.js";
 import { registrationTabFromSearch, registrationTabItems, type RegistrationTab } from "../registration/registrationTabs.js";
 import { useRegistrationCounts, useRegistrationSettings } from "../registration/useRegistrationCounts.js";
 
@@ -85,15 +92,20 @@ function RegistrationPageBody({ eventId }: Readonly<{ eventId: string | undefine
   const archived = isEventArchived(outlet?.event);
   // A read that failed says nothing on the page (the Checklist tab has the error and its Retry): without a switch, the header has none.
   const switchUnavailable = settings === null && settingsLoad.error !== null && !reportsItself;
+  const status = registrationHeaderStatus(reg, openSteps);
 
   return (
     <div className="screen">
       <PageHeader
-        title="Registration"
-        subtitle="How people get into this event, and what you ask them."
-        actions={
-          eventId && !switchUnavailable ? <RegistrationSwitchControl reg={reg} eventId={eventId} archived={archived} openSteps={openSteps} onChecklist={tab.id === "checklist"} /> : undefined
+        className="registration-pageheader"
+        title={
+          <>
+            Registration
+            {!switchUnavailable && <RegistrationStatusBadge status={status} />}
+          </>
         }
+        subtitle="Who gets in, and what you ask them."
+        actions={eventId && !switchUnavailable ? <RegistrationHeaderActions reg={reg} eventId={eventId} archived={archived} status={status} onChecklist={tab.id === "checklist"} /> : undefined}
       />
       {eventId && <RegistrationSwitchOverlays reg={reg} eventId={eventId} superadmin={superadmin} />}
       <Tabs

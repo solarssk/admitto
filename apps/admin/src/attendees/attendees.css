@@ -207,8 +207,10 @@
      pattern as .reports-pageheader/.checkin-pageheader). Still compacted the same way as the
      bulk bar: smaller buttons, decorative icons dropped (More's own trailing chevron
      survives), and "+ Add attendee" also shortens in AttendeesPage.tsx (via useIsDesktop()),
-     the one part CSS can't do. */
-  .attendees-pageheader .at-pageheader__row {
+     the one part CSS can't do. The Registration page header has the same anatomy (a main button and
+     "More actions"), so it shares every rule of this block as .registration-pageheader. */
+  .attendees-pageheader .at-pageheader__row,
+  .registration-pageheader .at-pageheader__row {
     flex-direction: row;
     align-items: flex-start;
   }
@@ -219,23 +221,27 @@
      rather than whatever further-up ancestor happens to be positioned; same mechanism as
      .attendees-bulkbar__actions below and the shared .more-actions-menu rule further down
      this file. */
-  .attendees-pageheader .at-pageheader__actions {
+  .attendees-pageheader .at-pageheader__actions,
+  .registration-pageheader .at-pageheader__actions {
     gap: var(--space-2);
     justify-content: flex-end;
     position: relative;
   }
 
-  .attendees-pageheader .at-pageheader__actions .at-btn {
+  .attendees-pageheader .at-pageheader__actions .at-btn,
+  .registration-pageheader .at-pageheader__actions .at-btn {
     height: var(--control-h-sm);
     font-size: var(--fs-sm);
     padding: 0 var(--space-2);
   }
 
-  .attendees-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+  .attendees-pageheader .at-pageheader__actions .at-btn .at-btn__icon,
+  .registration-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
     display: none;
   }
 
-  .attendees-pageheader .more-actions-menu .at-btn .at-btn__icon {
+  .attendees-pageheader .more-actions-menu .at-btn .at-btn__icon,
+  .registration-pageheader .more-actions-menu .at-btn .at-btn__icon {
     display: inline-flex;
   }
 
