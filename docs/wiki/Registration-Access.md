@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Turn guest registration on or off for an event, copy the link you give to guests, and set what the form asks. You turn registration on and off, and copy the link, with the buttons in the header of the event's **Registration** page, which is in the event menu after **Overview**. The same header is on every tab, with a badge next to the title that says **Open**, **Closed** or **Not ready**. What the form asks is on the **Registration** tab of the event's **Event settings**, in two cards: **Requests and limits** and **Questions and consents**. What registration still needs is on the **Checklist** tab of the **Registration** page.
+Turn guest registration on or off for an event, copy the link you give to guests, and set what the form asks. You turn registration on and off, and copy the link, with the buttons in the header of the event's **Registration** page, which is in the event menu after **Overview**. The same header is on every tab, with a badge next to the title that says **Open**, **Closed** or **Not ready**. What the form asks is on the **Registration** tab of the event's **Event settings**, in four cards, in the order of a guest's way: **Access method**, **Company SSO**, **Form** (the questions, the look of the boxes and the extra consents) and **After the form is sent** (**Confirm email addresses**, **Approve requests by hand** and **Waiting list**). **Guests can bring one person** is in the **Form** card, because it adds a part to the form. What registration still needs is on the **Checklist** tab of the **Registration** page.
 
 Registration is off for every event until you turn it on. Until then, the address of the form answers "not found".
 

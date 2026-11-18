@@ -32,13 +32,6 @@
   flex-direction: column;
 }
 
-/* The extra consents field and the line under it. */
-.access-consents {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
 /* The checklist: one row for each check, the icon, the heading with its sentence, and what to do about it. */
 .access-checklist,
 .access-missing {
