@@ -57,7 +57,7 @@ describe("RegistrationAccessTab: the first read", () => {
 
     const held = placeholder() as HTMLElement;
     expect(held.classList.contains("at-loading-hold")).toBe(true);
-    for (const title of ["Access method", "Company SSO", "Form", "After the form is sent"]) expect(within(held).getByText(title)).toBeTruthy();
+    for (const title of ["Access method", "Company SSO", "Form", "Handling requests"]) expect(within(held).getByText(title)).toBeTruthy();
     // The shapes are decoration; nothing claims that there is nothing yet.
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("switch")).toBeNull();
@@ -237,22 +237,32 @@ describe("RegistrationAccessTab: the consents", () => {
     expect(box.checked).toBe(true);
   });
 
-  it("sends the person to the Legal tab when no extra consent is published, and turns the choice off", async () => {
+  it("is off with nothing to choose yet when no extra consent is published, says how to get one, and has the way to the Legal tab in the same row", async () => {
     api.fetchLegalDocuments.mockResolvedValue(legalAnswer(texts()));
     await renderLoaded();
 
-    expect(isOff(screen.getByRole("button", { name: "Extra consents, none selected" }))).toBe(true);
-    expect(screen.getByText("No extra consent is published for this event.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Open Legal" }).getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=legal");
-    expect(screen.queryByRole("link", { name: /Write and publish/ })).toBeNull();
+    const select = screen.getByRole("button", { name: "Extra consents, none selected" });
+    expect(isOff(select)).toBe(true);
+    expect(select.textContent).toContain("Nothing to choose yet");
+    const hint = screen.getByText("Write a consent on the Legal tab, then choose it here.");
+    expect(select.getAttribute("aria-describedby")).toContain(hint.id);
+    expect(screen.queryByText("No extra consent is published for this event.")).toBeNull();
+    const link = screen.getByRole("link", { name: "Open Legal" });
+    expect(link.getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=legal");
+    // The button is beside the select, in the same half-width row.
+    expect(link.closest(".mail-test-send__controls")).toBe(select.closest(".mail-test-send__controls"));
   });
 
   it("explains what a consent does, and that the notice and the terms are always on the form", async () => {
     await renderLoaded();
 
-    expect(screen.getByText("Each consent you choose adds a checkbox to the form, for example a marketing consent. The privacy notice and the terms are always there.")).toBeTruthy();
-    // A short control takes half a row, as the fields of the company SSO do.
-    expect(screen.getByRole("button", { name: /^Extra consents/ }).closest(".mail-transport-section")).not.toBeNull();
+    const select = screen.getByRole("button", { name: /^Extra consents/ });
+    const hint = screen.getByText("Optional checkboxes on the form, for example a marketing consent. The privacy notice and the terms are always shown.");
+    expect(select.getAttribute("aria-describedby")).toContain(hint.id);
+    expect(screen.queryByText(/Write a consent on the Legal tab/)).toBeNull();
+    // Something to choose: no button beside the select, and it takes half a row.
+    expect(screen.queryByRole("link", { name: "Open Legal" })).toBeNull();
+    expect(select.closest(".mail-test-send__controls")).not.toBeNull();
   });
 });
 
@@ -264,14 +274,14 @@ describe("RegistrationAccessTab: the two cards of the form", () => {
     await renderLoaded();
 
     const titles = Array.from(document.querySelectorAll(".at-card__title")).map((node) => node.textContent);
-    expect(titles).toEqual(["Access method", "Company SSO", "Form", "After the form is sent"]);
+    expect(titles).toEqual(["Access method", "Company SSO", "Form", "Handling requests"]);
     for (const title of titles) expect(card(title as string).querySelector(".settings-card-intro")).not.toBeNull();
-    expect(card("Form").querySelector(".settings-card-intro")?.textContent).toBe("What guests fill in when they ask to join.");
+    expect(card("Form").querySelector(".settings-card-intro")?.textContent).toBe("The questions on the form, how it looks, and the consents guests agree to.");
     expect(switchNames(card("Form"))).toEqual(["Ask for the company", "Ask for the department", "Guests can bring one person", "Styled form boxes"]);
     expect(groupLabels(card("Form"))).toEqual(["Questions", "Look", "Consents"]);
     expect(within(card("Form")).getByRole("button", { name: /^Extra consents/ })).toBeTruthy();
-    expect(card("After the form is sent").querySelector(".settings-card-intro")?.textContent).toBe("What happens to a request once a guest has sent the form.");
-    expect(switchNames(card("After the form is sent"))).toEqual(["Confirm email addresses", "Approve requests by hand", "Waiting list"]);
+    expect(card("Handling requests").querySelector(".settings-card-intro")?.textContent).toBe("Decide how new requests are checked and accepted.");
+    expect(switchNames(card("Handling requests"))).toEqual(["Confirm email addresses", "Approve requests by hand", "Waiting list"]);
   });
 
   it("says each setting in one short line", async () => {
@@ -347,7 +357,7 @@ describe("RegistrationAccessTab: an archived event", () => {
 
   it("does not say again, in the panel, that the event is archived: the page above says it, and the access method is only read", () => {
     // The page says it. The buttons of the event password carry the reason in their tooltips, as in every guarded control.
-    const sayings = [card("Form"), card("After the form is sent")].flatMap((part) => Array.from(part.querySelectorAll("*"))).filter((node) => node.children.length === 0 && /archived/i.test(node.textContent ?? ""));
+    const sayings = [card("Form"), card("Handling requests")].flatMap((part) => Array.from(part.querySelectorAll("*"))).filter((node) => node.children.length === 0 && /archived/i.test(node.textContent ?? ""));
 
     expect(sayings).toHaveLength(0);
   });

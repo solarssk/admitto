@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Card, Switch } from "@admitto/ui";
 import type { LegalDocumentDto } from "../api/types.js";
@@ -96,38 +96,47 @@ function GoToRow({ title, text, label, to }: Readonly<{ title: string; text: str
   );
 }
 
-/** The extra consents a guest must accept, chosen from the texts the event has published (the Legal tab writes them). One that is chosen and not published stays in the list, marked, so that it can be taken off. The field is half a row, as a short control is. */
+const CONSENTS_HINT = "Optional checkboxes on the form, for example a marketing consent. The privacy notice and the terms are always shown.";
+const CONSENTS_NONE_HINT = "Write a consent on the Legal tab, then choose it here.";
+
+/**
+ * The extra consents a guest must accept, chosen from the texts the event has published (the Legal tab writes them). One that is chosen and
+ * not published stays in the list, marked, so that it can be taken off. The field is half a row, as a short control is. While there is
+ * nothing to choose it is off, says how to get something to choose, and has the way to the Legal tab beside it (the row of Send test email).
+ */
 function ConsentsField({ eventId, draft, legalItems, disabled, onChange }: Readonly<{ eventId: string; draft: AccessDraft; legalItems: readonly LegalDocumentDto[]; disabled: boolean; onChange: (change: FormChange) => void }>) {
   const options = consentOptions(legalItems, draft.consent_keys);
+  const none = options.length === 0;
+  const hintId = useId();
   return (
-    <>
-      <div className="mail-transport-section">
-        <MultiSelect
-          id="access-consents"
-          label="Extra consents"
-          placeholder="None"
-          searchPlaceholder="Search consents"
-          emptyLabel="No consents found"
-          value={draft.consent_keys}
-          options={options}
-          disabled={disabled || options.length === 0}
-          hint="Each consent you choose adds a checkbox to the form, for example a marketing consent. The privacy notice and the terms are always there."
-          onChange={(ids) => onChange({ consent_keys: ids })}
-        />
-      </div>
-      {options.length === 0 && (
-        <div className="settings-row settings-row--switch">
-          <div className="settings-row__text">
-            <p>No extra consent is published for this event.</p>
-          </div>
-          <div className="settings-row__controls">
-            <Link className="at-btn at-btn--secondary at-btn--sm" to={registrationTabPath(eventId, "legal")}>
-              Open Legal
-            </Link>
-          </div>
+    <div className="access-consents-row">
+      <div className="mail-test-send__row">
+        <div className="mail-test-send__controls">
+          <MultiSelect
+            id="access-consents"
+            label="Extra consents"
+            placeholder={none ? "Nothing to choose yet" : "None"}
+            searchPlaceholder="Search consents"
+            emptyLabel="No consents found"
+            value={draft.consent_keys}
+            options={options}
+            disabled={disabled || none}
+            describedBy={hintId}
+            onChange={(ids) => onChange({ consent_keys: ids })}
+          />
+          {none && (
+            <div className="mail-test-send__send-control">
+              <Link className="at-btn at-btn--secondary at-btn--sm" to={registrationTabPath(eventId, "legal")}>
+                Open Legal
+              </Link>
+            </div>
+          )}
         </div>
-      )}
-    </>
+      </div>
+      <span id={hintId} className="at-hint">
+        {none ? CONSENTS_NONE_HINT : CONSENTS_HINT}
+      </span>
+    </div>
   );
 }
 
@@ -139,7 +148,7 @@ export function AccessFormCard({ eventId, draft, legalItems, disabled, onChange 
   return (
     <Card title="Form">
       <div className="settings-card-stack">
-        <p className="settings-card-intro">What guests fill in when they ask to join.</p>
+        <p className="settings-card-intro">The questions on the form, how it looks, and the consents guests agree to.</p>
         <div className="access-form-groups">
           <Group label="Questions">
             {row("ask_company")}
@@ -157,12 +166,12 @@ export function AccessFormCard({ eventId, draft, legalItems, disabled, onChange 
   );
 }
 
-/** What happens to a request after the guest has sent the form: the confirmation of the address, the decision, and the waiting list. */
+/** How a new request is handled: the confirmation of the address, the decision by hand, and the waiting list. */
 export function AccessAfterFormCard({ draft, disabled, onChange }: CardProps) {
   return (
-    <Card title="After the form is sent">
+    <Card title="Handling requests">
       <div className="settings-card-stack">
-        <p className="settings-card-intro">What happens to a request once a guest has sent the form.</p>
+        <p className="settings-card-intro">Decide how new requests are checked and accepted.</p>
         <div className="access-form-group__rows">
           <ToggleRow name="verify_email" draft={draft} disabled={disabled} onChange={onChange} />
           <ApprovalRow draft={draft} disabled={disabled} onChange={onChange} />

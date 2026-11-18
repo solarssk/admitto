@@ -409,3 +409,22 @@ span.access-check__remedy {
     margin-top: var(--space-1);
   }
 }
+
+/* The extra consents: the field (half a row, with the way to the Legal tab beside it while there is nothing to choose) and its hint under it.
+ * On a narrow screen the field takes the row and the button goes under it. */
+.access-consents-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .access-consents-row .mail-test-send__controls {
+    max-width: none;
+    flex-wrap: wrap;
+  }
+
+  .access-consents-row .mail-test-send__controls .at-field {
+    flex-basis: 100%;
+  }
+}

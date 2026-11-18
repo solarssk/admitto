@@ -162,7 +162,7 @@ export function AccessWayInCard({
   return (
     <Card title="Access method">
       <div className="settings-card-stack">
-        <p className="settings-card-intro">Choose the access method for the registration form.</p>
+        <p className="settings-card-intro">How guests reach the form, and whether they must prove who they are.</p>
         {note !== undefined && <p className="settings-card-intro">{note}</p>}
         <Segmented
           className="access-seg"

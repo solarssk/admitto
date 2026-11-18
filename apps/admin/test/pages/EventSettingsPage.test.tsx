@@ -3232,7 +3232,7 @@ describe("EventSettingsPage Registration tab", () => {
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["General", "Location", "Ticket types", "Registration", "Images", "Check-in", "Danger zone"]);
   });
 
-  it("opens with the cards Access method, Company SSO, Form and After the form is sent, in that order, and no address card", async () => {
+  it("opens with the cards Access method, Company SSO, Form and Handling requests, in that order, and no address card", async () => {
     mockAssignments = superadminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
@@ -3242,7 +3242,7 @@ describe("EventSettingsPage Registration tab", () => {
     await screen.findByRole("switch", { name: "Waiting list" });
     const panel = screen.getByRole("tabpanel", { name: "Registration" });
     const titles = Array.from(panel.querySelectorAll(".at-card__title")).map((node) => node.textContent);
-    expect(titles).toEqual(["Access method", "Company SSO", "Form", "After the form is sent"]);
+    expect(titles).toEqual(["Access method", "Company SSO", "Form", "Handling requests"]);
     expect(within(panel).queryByLabelText("Own address")).toBeNull();
   });
 
