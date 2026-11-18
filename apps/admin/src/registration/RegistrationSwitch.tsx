@@ -276,9 +276,9 @@ export function RegistrationHeaderActions({
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({ align: "end" });
   if (status.kind === "loading") {
     return (
-      <div className="registration-switch" role="status" aria-label="Loading the registration buttons">
+      <output className="registration-switch" aria-label="Loading the registration buttons">
         <Skeleton variant="rect" width={150} height={36} />
-      </div>
+      </output>
     );
   }
   const url = reg.settings?.guest_url ?? null;
