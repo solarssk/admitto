@@ -3,7 +3,6 @@ import { Badge, Card, Notice } from "@admitto/ui";
 import type { RegistrationMode } from "@admitto/db/status";
 import type { RegistrationSettingsDto } from "../api/types.js";
 import {
-  ACCESS_METHOD_SET_BY,
   OWN_ADDRESS_KEY,
   accessMethodDetail,
   actionLabel,
@@ -48,10 +47,16 @@ function rowSentence(check: ChecklistCheck, copy: ReadinessCopy, context: RowCon
   return check.ok ? copy.met : copy.missing;
 }
 
-/** Where the button of a row leads: an open step, to where it is put right; the met row "Form questions", to where the questions are written. None for a row with nothing to do. */
-function actionLink(check: ChecklistCheck, tone: RowTone, copy: ReadinessCopy, superadmin: boolean): ReadinessLink | undefined {
-  if (tone === "open") return remedyFor(copy, superadmin)?.link;
-  return tone === "done" && check.key === "form_questions" ? "fields" : undefined;
+/** Where the button of a row leads: an open step, to where it is put right. A row that is done has nothing to do and no button. */
+function actionLink(tone: RowTone, copy: ReadinessCopy, superadmin: boolean): ReadinessLink | undefined {
+  return tone === "open" ? remedyFor(copy, superadmin)?.link : undefined;
+}
+
+/** The one line a row says under its name: what it is, and for an open step that has nobody here to do it, who to ask, in the same line. */
+function rowDetail(check: ChecklistCheck, tone: RowTone, copy: ReadinessCopy, context: RowContext): string {
+  const remedy = tone === "open" ? remedyFor(copy, context.superadmin) : undefined;
+  const ask = remedy && !remedy.link ? ` ${remedy.text}` : "";
+  return `${rowSentence(check, copy, context)}${ask}`;
 }
 
 /** The button of a row, at its right: a secondary small button to where the step is put right (or, for the questions, changed). One look for every row, open or done. */
@@ -73,12 +78,10 @@ function RowAction({ check, copy, link, context }: Readonly<{ check: ChecklistCh
 function StepRow({ check, tone, context }: Readonly<{ check: ChecklistCheck; tone: RowTone; context: RowContext }>) {
   const copy = readinessCopy(check.key);
   const look = ROW_LOOK[tone];
-  const remedy = remedyFor(copy, context.superadmin);
-  const link = actionLink(check, tone, copy, context.superadmin);
+  const link = actionLink(tone, copy, context.superadmin);
   // A step that only a superadmin can put right, for somebody who is not one: marked, and it says who to ask.
   const waits = tone === "open" && copy.superadminOnly === true && !context.superadmin;
   const icon = tone === "open" && check.key === OWN_ADDRESS_KEY ? "world-off" : look.icon;
-  const states = check.key === "access_method" && check.ok;
   return (
     <li className="access-check access-check--step">
       <span className={`overview-check__icon overview-check__icon--${look.tone}`} aria-hidden="true">
@@ -92,9 +95,7 @@ function StepRow({ check, tone, context }: Readonly<{ check: ChecklistCheck; ton
           </strong>
           {waits && <Badge variant="neutral">Superadmin</Badge>}
         </span>
-        <span className="overview-check__detail">{rowSentence(check, copy, context)}</span>
-        {states && <span className="overview-check__detail">{ACCESS_METHOD_SET_BY}</span>}
-        {tone === "open" && remedy && !remedy.link && <span className="access-check__remedy">{remedy.text}</span>}
+        <span className="overview-check__detail">{rowDetail(check, tone, copy, context)}</span>
       </span>
       {link && (
         <span className="access-check__aside">

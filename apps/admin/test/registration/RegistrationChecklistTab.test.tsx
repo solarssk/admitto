@@ -230,6 +230,49 @@ describe("RegistrationChecklistTab: the headers and the buttons", () => {
   });
 });
 
+describe("RegistrationChecklistTab: a row is its name and one line", () => {
+  const lines = (row: HTMLElement) => Array.from(row.querySelector(".overview-check__body")?.children ?? []).map((child) => child.className);
+
+  it("has no third line in any row: an open step, a step that waits for a superadmin, the address, and every step that is done", async () => {
+    await renderChecklistLoaded(settings({ own_address: STOPPED, readiness: checks("legal_documents", "mail_provider", "bot_protection") }));
+    openDone();
+
+    expect(checklistRows().length).toBeGreaterThan(8);
+    for (const row of checklistRows()) expect(lines(row), row.textContent ?? "").toEqual(["access-check__title", "overview-check__detail"]);
+  });
+
+  it("says who to ask in the same line as the reason, for a step of a superadmin", async () => {
+    await renderChecklistLoaded(settings({ readiness: checks("mail_provider") }));
+
+    expect(rowOf("Email sending").querySelector(".overview-check__detail")?.textContent).toBe(
+      "Email sending is not set up for this event, so guests would get no email. Ask a superadmin to set it up.",
+    );
+  });
+
+  it("says it the same way for the address that stopped working, and a superadmin gets the button and no sentence to ask", async () => {
+    await renderChecklistLoaded(settings({ mode: "automatic", own_address: STOPPED, readiness: checks() }));
+    expect(rowOf("Address for guests").querySelector(".overview-check__detail")?.textContent).toBe(
+      "The address of this event for guests stopped working, so guests may not be able to open their links. Ask a superadmin to check the address.",
+    );
+    cleanup();
+
+    assignments = [SUPERADMIN];
+    await renderChecklistLoaded(settings({ mode: "automatic", own_address: STOPPED, readiness: checks() }));
+    expect(rowOf("Address for guests").querySelector(".overview-check__detail")?.textContent).not.toContain("Ask a superadmin");
+    expect(within(rowOf("Address for guests")).getByRole("link", { name: "Open Event settings: Address for guests" })).toBeTruthy();
+  });
+
+  it("has no button or link on a row that is done", async () => {
+    assignments = [SUPERADMIN];
+    await renderChecklistLoaded(settings({ readiness: checks("legal_documents") }));
+    openDone();
+    const done = card("Done");
+
+    expect(within(done).getAllByRole("listitem").length).toBeGreaterThan(0);
+    expect(done.querySelectorAll("li a, li button")).toHaveLength(0);
+  });
+});
+
 describe("RegistrationChecklistTab: the banner", () => {
   it.each([
     ["steps are for the person and for a superadmin", settings({ readiness: checks("legal_documents", "mail_provider", "bot_protection") }), "1 for you, 2 waiting for a superadmin. Registration can be turned on when all are done.", "warning"],
@@ -293,7 +336,7 @@ describe("RegistrationChecklistTab: what an event administrator sees", () => {
     await renderChecklistLoaded(settings({ readiness: checks("bot_protection", "mail_provider", "instance_url") }));
 
     const waiting = within(card("Waiting for a superadmin"));
-    expect(waiting.getAllByText("Ask a superadmin to set it up.")).toHaveLength(3);
+    expect(waiting.getAllByText(/ Ask a superadmin to set it up\.$/)).toHaveLength(3);
     expect(waiting.queryByRole("link")).toBeNull();
   });
 
@@ -465,13 +508,13 @@ describe("RegistrationChecklistTab: the rows", () => {
     expect(within(card("Registration checklist")).getByText("8 of 8 done")).toBeTruthy();
   });
 
-  it("states the access method as text, with who sets it, and no control", async () => {
+  it("states the access method in one line, with no sentence about who sets it and no control", async () => {
     await renderChecklistLoaded(settings());
     openDone();
     const row = rowOf("Access method");
 
     expect(row.textContent).toContain("Link. Anyone who has the link can ask to join.");
-    expect(row.textContent).toContain("Set by a superadmin in Event settings, Registration.");
+    expect(row.textContent).not.toContain("Set by a superadmin");
     expect(within(row).queryByRole("link")).toBeNull();
     expect(within(row).queryByRole("button")).toBeNull();
   });
@@ -541,21 +584,17 @@ describe("RegistrationChecklistTab: the rows", () => {
   });
 
   it.each([
-    [[], "No question of yours is on the form. Guests give their name and email address, and what the switches on the Access tab add."],
+    [[], "No question of yours is on the form."],
     [[{ key: "a", label: "A", type: "text", required: true }], "1 question of yours is on the form."],
     [[{ key: "a", label: "A", type: "text", required: true }, { key: "b", label: "B", type: "text", required: false }], "2 questions of yours are on the form."],
-  ] as const)("says how many questions of the organiser are on the form, with a button to the Fields tab", async (fields, text) => {
+  ] as const)("says how many questions of the organiser are on the form, in one line, with no button or link: a row that is done has nothing to press", async (fields, text) => {
     await renderChecklistLoaded(settings({ public_fields: [...fields] }));
     openDone();
     const row = rowOf("Form questions");
 
-    expect(row.textContent).toContain(text);
-    // A done row has the same button, in the same place and look, as an open one: no link under the text.
-    const button = within(row).getByRole("link", { name: "Open Fields: Form questions" });
-    expect(button.getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=fields");
-    expect(button.className).toContain("at-btn--secondary");
-    expect(button.closest(".access-check__aside")).not.toBeNull();
-    expect(within(row).queryByText("Add or change questions on the Fields tab.")).toBeNull();
+    expect(row.querySelector(".overview-check__detail")?.textContent).toBe(text);
+    expect(within(row).queryByRole("link")).toBeNull();
+    expect(within(row).queryByRole("button")).toBeNull();
   });
 
   it("does not say how many questions there are for a form that cannot show a required one: the row says what is wrong", async () => {

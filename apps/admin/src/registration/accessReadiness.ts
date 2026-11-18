@@ -128,9 +128,6 @@ export const READINESS_COPY: Readonly<Record<RegistrationReadinessKey, Readiness
   },
 };
 
-/** The sentence of the row "Access method" that tells what is set, in plain words, and nothing to press: only a superadmin changes it. */
-export const ACCESS_METHOD_SET_BY = "Set by a superadmin in Event settings, Registration.";
-
 export function accessMethodDetail(method: "link" | "password" | "sso" | null, provider: { display_name: string | null; state: string } | null): string {
   if (method === "link") return "Link. Anyone who has the link can ask to join.";
   if (method === "password") return "Password. Guests need the link and the event password to open the form.";
@@ -154,7 +151,7 @@ export function botProtectionOffText(organisation: "required" | "not_used"): str
 
 /** The sentence of the row "Form questions" when it is met: how many questions of the organiser are on the form (the ones the form always asks are not counted). */
 export function formQuestionsText(count: number): string {
-  if (count === 0) return "No question of yours is on the form. Guests give their name and email address, and what the switches on the Access tab add.";
+  if (count === 0) return "No question of yours is on the form.";
   return count === 1 ? "1 question of yours is on the form." : `${count} questions of yours are on the form.`;
 }
 
