@@ -307,8 +307,10 @@ span.access-check__remedy {
 }
 
 /* The Checklist tab: a step has its action at the right, beside the sentence; a step that only a superadmin can do has a badge by its name. */
+/* The lines of what a step says stack like wrapped text: no gap between them, one line height. Only the name keeps a little room under it. */
 .access-check--step .overview-check__body {
   flex: 1;
+  gap: 0;
   min-width: 0;
 }
 
@@ -317,6 +319,7 @@ span.access-check__remedy {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
+  margin-bottom: var(--space-1);
 }
 
 .access-check__aside {
@@ -325,40 +328,14 @@ span.access-check__remedy {
   margin-left: auto;
 }
 
-/* The Done card is a header that opens and closes the list of what is done. */
-.access-done-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+/* The Done card is the app's disclosure (.disclosure) with no rule above it: the card is its frame. */
+.access-done.disclosure {
+  border-top: 0;
+  padding-top: 0;
 }
 
-.access-done-toggle__chevron {
-  color: var(--text-muted);
-  transition: transform var(--dur-fast);
-}
-
-.access-done-toggle[aria-expanded="true"] .access-done-toggle__chevron {
-  transform: rotate(90deg);
-}
-
-.access-done-toggle__state {
-  margin-left: auto;
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
-}
-
-.access-done-body {
-  margin-top: var(--space-3);
+.access-done .disclosure__body {
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
 }
 
 /* Nothing is left for this person: an icon, what it means and what to do. */

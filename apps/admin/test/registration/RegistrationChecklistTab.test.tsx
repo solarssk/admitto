@@ -9,7 +9,7 @@ import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-
 import { advanceTimers, deferred, hangUntilAborted } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
 import { archivedEvent, checks, notUsedChecks, settings, ssoChecks, ssoEventSettings } from "./accessData.js";
-import { card, checklistPanel, checklistRows, openDone, renderChecklist, renderChecklistLoaded, resetApi } from "./accessFixtures.js";
+import { card, checklistPanel, checklistRows, doneDetails, doneSummary, openDone, renderChecklist, renderChecklistLoaded, resetApi } from "./accessFixtures.js";
 
 let assignments: RoleAssignment[] = [];
 const goToLogin = vi.fn();
@@ -343,49 +343,44 @@ describe("RegistrationChecklistTab: an archived event", () => {
     expect(banner().textContent).toContain("This event is archived. Registration is closed and nothing here can be changed.");
     expect(banner().className).toContain("at-notice--info");
     expect(checklistTitles()).toEqual(["Registration checklist"]);
-    expect(within(checklistPanel()).getByRole("button", { name: /^Done/ })).toBeTruthy();
+    expect(doneSummary()).toBeTruthy();
     expect(screen.queryByText("Event status")).toBeNull();
   });
 });
 
 describe("RegistrationChecklistTab: the card Done", () => {
-  it("is closed, with how many steps are done, until it is opened with the mouse, and closes again", async () => {
+  it("is the disclosure of the app: closed, with how many steps are done, until its header is pressed, and closes again", async () => {
     await renderChecklistLoaded(settings({ readiness: checks("legal_documents") }));
-    const toggle = within(checklistPanel()).getByRole("button", { name: /^Done/ });
 
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(toggle.textContent).toContain("7");
+    expect(doneDetails().classList.contains("disclosure")).toBe(true);
+    expect(doneSummary().className).toBe("disclosure__summary");
+    expect(doneSummary().textContent).toContain("7");
+    expect(doneSummary().textContent).not.toMatch(/Show|Hide/);
+    expect(doneSummary().querySelector(".ti-chevron-right")).not.toBeNull();
+    expect(doneDetails().open).toBe(false);
     expect(checklistRows()).toHaveLength(1);
-    expect(toggle.getAttribute("aria-controls")).not.toBeNull();
 
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(doneSummary());
+    expect(doneDetails().open).toBe(true);
     expect(checklistRows()).toHaveLength(8);
-    expect(document.getElementById(toggle.getAttribute("aria-controls") as string)).not.toBeNull();
 
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(doneSummary());
+    expect(doneDetails().open).toBe(false);
     expect(checklistRows()).toHaveLength(1);
   });
 
-  it("is a native button in the tab order, so Enter and Space open and close it, and it keeps the focus", async () => {
+  it("is a native details with a summary, so the whole header is focusable and Enter and Space open it", async () => {
     await renderChecklistLoaded(settings({ readiness: checks() }));
-    const toggle = within(checklistPanel()).getByRole("button", { name: /^Done/ });
 
-    expect(toggle.tagName).toBe("BUTTON");
-    expect(toggle.getAttribute("type")).toBe("button");
-    expect(toggle.tabIndex).toBe(0);
-    toggle.focus();
-    // The browser turns Enter and Space on a button into a click.
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(document.activeElement).toBe(toggle);
+    expect(doneDetails().tagName).toBe("DETAILS");
+    expect(doneSummary().tagName).toBe("SUMMARY");
+    expect(doneSummary().closest(".at-card")).not.toBeNull();
   });
 
   it("is not drawn when nothing is done", async () => {
     await renderChecklistLoaded(settings({ readiness: [{ key: "legal_documents", ok: false }] }));
 
-    expect(within(checklistPanel()).queryByRole("button", { name: /^Done/ })).toBeNull();
+    expect(within(checklistPanel()).queryByText(/^Done/, { selector: "summary" })).toBeNull();
   });
 });
 

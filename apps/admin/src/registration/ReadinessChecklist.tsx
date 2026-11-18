@@ -1,4 +1,3 @@
-import { useId, useState } from "react";
 import { Link } from "react-router";
 import { Badge, Card, Notice } from "@admitto/ui";
 import type { RegistrationMode } from "@admitto/db/status";
@@ -143,23 +142,18 @@ function NothingToDo({ everythingDone, mode }: Readonly<{ everythingDone: boolea
   );
 }
 
-/** The steps that are done, behind a header that says how many: closed until it is opened. */
+/** The steps that are done, behind a header that says how many: closed until it is opened. The disclosure of the app (`.disclosure`, a `<details>` with a rotating chevron), as "Advanced tuning" and "Opening hours" in the settings. */
 function DoneCard({ checks, count, context }: Readonly<{ checks: readonly ChecklistCheck[]; count: number; context: RowContext }>) {
-  const [open, setOpen] = useState(false);
-  const bodyId = useId();
   return (
     <Card>
-      <button type="button" className="access-done-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((was) => !was)}>
-        <i className="ti ti-chevron-right access-done-toggle__chevron" aria-hidden="true" />
-        <strong>Done</strong>
-        <Badge variant="ok">{count}</Badge>
-        <span className="access-done-toggle__state">{open ? "Hide" : "Show"}</span>
-      </button>
-      {open && (
-        <div id={bodyId} className="access-done-body">
+      <details className="disclosure access-done">
+        <summary className="disclosure__summary">
+          <i className="ti ti-chevron-right" aria-hidden="true" /> Done <Badge variant="ok">{count}</Badge>
+        </summary>
+        <div className="disclosure__body">
           <StepList checks={checks} tone={doneTone} context={context} />
         </div>
-      )}
+      </details>
     </Card>
   );
 }
