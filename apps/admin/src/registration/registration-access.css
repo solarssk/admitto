@@ -41,8 +41,7 @@
 
 /* The checklist: one row for each check, the icon, the heading with its sentence, and what to do about it. */
 .access-checklist,
-.access-missing,
-.access-consequences {
+.access-missing {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -89,8 +88,7 @@ span.access-check__remedy {
   text-wrap: balance;
 }
 
-.access-missing,
-.access-consequences {
+.access-missing {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -98,10 +96,6 @@ span.access-check__remedy {
   list-style: disc;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
-}
-
-.access-consequences {
-  margin-bottom: var(--space-3);
 }
 
 /* The restriction of the company SSO sits in the Way in card, under the choice: its fields are spaced by the card's gap, and a

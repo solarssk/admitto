@@ -12,7 +12,7 @@ import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
 import { missingChecks } from "./accessSettings.js";
-import { ProblemMessage, TurnOffConsequences } from "./AccessFormParts.js";
+import { ProblemMessage, TURN_OFF_MESSAGE } from "./AccessFormParts.js";
 import type { AccessProblem } from "./useAccessForm.js";
 import "../attendees/attendees.css";
 import "./registration-access.css";
@@ -310,15 +310,13 @@ export function RegistrationSwitchOverlays({ reg, eventId, superadmin }: Readonl
       <ConfirmDialog
         open={confirmOffOpen}
         title="Turn off registration?"
-        message="Guests can no longer open the form. This is what changes:"
+        message={TURN_OFF_MESSAGE}
         confirmLabel="Turn off registration"
         errorMessage={problem?.kind === "message" ? problem.text : null}
         loading={busy}
         onConfirm={reg.confirmOff}
         onCancel={reg.cancelOff}
-      >
-        <TurnOffConsequences />
-      </ConfirmDialog>
+      />
     </>
   );
 }

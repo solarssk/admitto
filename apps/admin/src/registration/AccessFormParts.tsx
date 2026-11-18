@@ -22,13 +22,6 @@ export function ProblemMessage({ eventId, problem, superadmin }: Readonly<{ even
   );
 }
 
-/** The consequences of turning registration off, from the runbook of the abuse of the form (docs/security/INCIDENT-RESPONSE.md). */
-export function TurnOffConsequences() {
-  return (
-    <ul className="access-consequences">
-      <li>The requests you already have stay. You can still accept, reject and delete them on the Requests tab.</li>
-      <li>Confirmation links stop working. They work again if you turn registration on before they expire.</li>
-      <li>Emails that are already queued are still sent.</li>
-    </ul>
-  );
-}
+/** What turning registration off does, in the dialog that asks first (the runbook is docs/security/INCIDENT-RESPONSE.md). */
+export const TURN_OFF_MESSAGE =
+  "Guests can no longer open the form, and confirmation links stop working until you turn registration on again. Requests you already have stay on the Requests tab.";

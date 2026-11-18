@@ -162,11 +162,7 @@ When a check fails, the card names the reason:
 | Save a restriction to one company | The form accepts only guests whose sign-in matches. The change is recorded in the audit log as "Guest registration settings changed", with the claim and its values. They are settings, not guests' data |
 | Set, change or remove the password | The password is saved or removed at once. Removing it closes the form until you set a new one |
 
-When you turn registration off:
-
-- The requests you already have stay. You can still accept, reject and delete them on the **Requests** tab.
-- Confirmation links stop working. They work again if you turn registration on before they expire.
-- Emails that are already queued are still sent.
+When you turn registration off, guests can no longer open the form, and confirmation links stop working until you turn registration on again. The requests you already have stay on the **Requests** tab, where you can still accept, reject and delete them. Emails that are already queued are still sent.
 
 ## Common problems
 

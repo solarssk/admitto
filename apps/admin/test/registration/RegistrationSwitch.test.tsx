@@ -311,7 +311,8 @@ describe("the header of the Registration page: turning registration off", { time
   it("asks first, says what it does, and sends nothing until it is confirmed", async () => {
     const dialog = await open();
 
-    expect(within(dialog).getByText(/The requests you already have stay/)).toBeTruthy();
+    expect(within(dialog).getByText("Guests can no longer open the form, and confirmation links stop working until you turn registration on again. Requests you already have stay on the Requests tab.")).toBeTruthy();
+    expect(within(dialog).queryByRole("list")).toBeNull();
     expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
     expect(status()).toBe("Open");
     expect(screen.queryByRole("menu")).toBeNull();
