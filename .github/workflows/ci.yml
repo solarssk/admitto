@@ -277,7 +277,15 @@ jobs:
       - if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
-      - run: npm audit --audit-level=high
+      # One advisory is accepted on purpose: GHSA-fc5q-39xc-vjpf (picomatch ReDoS through repeated
+      # extglobs, published 2026-11-17, affects every version up to 4.0.7, NO patched release yet).
+      # picomatch reaches the repo only through dev tooling (vite, vitest, tinyglobby), not the
+      # production tree or the image. Remove ACCEPTED_ADVISORY once picomatch has a patched release
+      # (the step prints a notice when the advisory disappears from the report).
+      - name: Dependency audit (high and critical, one accepted advisory)
+        env:
+          ACCEPTED_ADVISORY: GHSA-fc5q-39xc-vjpf
+        run: bash scripts/audit-gate.sh
       - name: License compliance check (report-only - see scripts/check-licenses.mjs)
         continue-on-error: true
         run: node scripts/check-licenses.mjs
