@@ -27,12 +27,13 @@ describe("Card collapsible", () => {
   const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/styles/components.css"), "utf8");
   const renderCard = (props: { defaultOpen?: boolean } = {}) =>
     render(
-      <Card title={<>Done <span>7</span></>} collapsible {...props} footer="Foot">
-        Body text
+      <Card title={<>Done <span>7</span></>} collapsible {...props} footer={<button type="button">Foot</button>}>
+        <a href="#x">Body link</a>
       </Card>,
     );
+  const collapse = () => document.querySelector(".at-card__collapse") as HTMLElement;
 
-  it("is closed by default: a header that is one button, with the count, and no body, no footer", () => {
+  it("is closed by default: a header that is one button, with the count, and a body that is not mounted yet", () => {
     renderCard();
     const toggle = screen.getByRole("button", { name: /Done/ });
 
@@ -42,24 +43,40 @@ describe("Card collapsible", () => {
     expect(toggle.textContent).toContain("7");
     expect(toggle.querySelector(".at-card__title")).not.toBeNull();
     expect(toggle.querySelector(".at-card__chevron")).not.toBeNull();
-    expect(screen.queryByText("Body text")).toBeNull();
+    expect(screen.queryByText("Body link")).toBeNull();
     expect(screen.queryByText("Foot")).toBeNull();
+    // The element the button controls is always there, closed and inert.
+    expect(toggle.getAttribute("aria-controls")).toBe(collapse().id);
+    expect(collapse().getAttribute("data-open")).toBe("false");
+    expect(collapse().hasAttribute("inert")).toBe(true);
   });
 
-  it("opens and closes on a click, and says so with aria-expanded, aria-controls and the body it controls", () => {
+  it("opens on a click, mounts the body, and is reachable: aria-expanded, data-open and no inert", () => {
     renderCard();
     const toggle = screen.getByRole("button", { name: /Done/ });
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(toggle.classList.contains("at-card__header--closed")).toBe(false);
-    const body = document.getElementById(toggle.getAttribute("aria-controls") as string);
-    expect(body?.textContent).toBe("Body text");
+    expect(collapse().getAttribute("data-open")).toBe("true");
+    expect(collapse().hasAttribute("inert")).toBe(false);
+    expect(collapse().contains(screen.getByText("Body link"))).toBe(true);
     expect(screen.getByText("Foot")).toBeTruthy();
+  });
 
+  it("closes on a second click: the body stays mounted for the closing, and nothing in it can be reached", () => {
+    renderCard();
+    const toggle = screen.getByRole("button", { name: /Done/ });
     fireEvent.click(toggle);
+    fireEvent.click(toggle);
+
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Body text")).toBeNull();
+    expect(collapse().getAttribute("data-open")).toBe("false");
+    expect(collapse().hasAttribute("inert")).toBe(true);
+    expect(screen.getByText("Body link")).toBeTruthy();
+    // jsdom has no inert; what an inert subtree holds is never focusable in a browser, so the card must mark the one wrapper that holds all of it.
+    expect(collapse().querySelectorAll("a, button").length).toBe(2);
+    expect(Array.from(document.querySelectorAll("a, button")).filter((el) => !collapse().contains(el)).map((el) => el.textContent)).toEqual(["Done 7"]);
   });
 
   it("is a native button of type button that is in the tab order, so Enter and Space work, and keeps the focus", () => {
@@ -74,18 +91,20 @@ describe("Card collapsible", () => {
     expect(document.activeElement).toBe(toggle);
   });
 
-  it("starts open with defaultOpen", () => {
+  it("starts open with defaultOpen, with the body mounted", () => {
     renderCard({ defaultOpen: true });
 
     expect(screen.getByRole("button", { name: /Done/ }).getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("Body text")).toBeTruthy();
+    expect(screen.getByText("Body link")).toBeTruthy();
+    expect(collapse().hasAttribute("inert")).toBe(false);
   });
 
-  it("leaves a card that is not collapsible as it was: a div header, the body always there, no button", () => {
+  it("leaves a card that is not collapsible as it was: a div header, the body always there, no button, no wrapper", () => {
     render(<Card title="Plain">Body</Card>);
 
     expect(screen.queryByRole("button")).toBeNull();
     expect(document.querySelector(".at-card__header")?.tagName).toBe("DIV");
+    expect(document.querySelector(".at-card__collapse")).toBeNull();
     expect(screen.getByText("Body")).toBeTruthy();
   });
 
@@ -93,5 +112,20 @@ describe("Card collapsible", () => {
     expect(css).toMatch(/\.at-card__header--toggle:focus-visible \{ outline: none; box-shadow: inset 0 0 0 var\(--ring-width\) var\(--focus-ring\)/);
     expect(css).toMatch(/\.at-card__header--toggle\[aria-expanded="true"\] \.at-card__chevron \{ transform: rotate\(180deg\)/);
     expect(css).toMatch(/\.at-card__header--closed \{ border-bottom-color: transparent/);
+  });
+
+  it("opens by growing a grid row from 0fr to 1fr with the kit's duration and easing, and hides what is closed once the closing has finished", () => {
+    expect(css).toMatch(/\.at-card__collapse \{ display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows var\(--dur-slow\) var\(--ease-out\), opacity var\(--dur-slow\) var\(--ease-out\), visibility 0s linear var\(--dur-slow\)/);
+    expect(css).toMatch(/\.at-card__collapse\[data-open="true"\] \{ grid-template-rows: 1fr; opacity: 1; visibility: visible; transition: [^}]*visibility 0s;/);
+    expect(css).toMatch(/\.at-card__collapse-inner \{ min-height: 0; overflow: hidden;/);
+    // The border of the header changes with the body, and the chevron turns for as long.
+    expect(css).toMatch(/\.at-card__header--toggle \{[^}]*transition: border-color var\(--dur-slow\)/);
+    expect(css).toMatch(/\.at-card__chevron \{[^}]*transition: transform var\(--dur-slow\) var\(--ease-out\)/);
+  });
+
+  it("does not animate for a person who asked for less motion", () => {
+    const rule = /@media \(prefers-reduced-motion: reduce\) \{ \.at-card__chevron, \.at-card__header--toggle, \.at-card__collapse, \.at-card__collapse\[data-open="true"\] \{ transition: none; \} \}/;
+
+    expect(css).toMatch(rule);
   });
 });

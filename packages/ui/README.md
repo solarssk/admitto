@@ -9,7 +9,7 @@ Design system for the staff SPA: Tabler-flavoured CSS tokens plus shared React p
   - `Button`, `Input`, `Select`, `Checkbox`, `Switch`
   - `ModalBackdrop` (the shell the admin modals build on)
   - `Toast`, `Notice`, `EmptyState`, `PageHeader`
-  - `Avatar`, `Card` (`collapsible`: the whole header is a toggle, see [ui-gotchas.md](../../standards/admin-spa/ui-gotchas.md)), `Tooltip`, `HintLabel`, `IconButton`
+  - `Avatar`, `Card` (`collapsible`: the whole header is a toggle, it opens and closes smoothly and honours reduced motion, see [ui-gotchas.md](../../standards/admin-spa/ui-gotchas.md)), `Tooltip`, `HintLabel`, `IconButton`
   - `PasswordStrengthMeter`, `StatusBadge`, `TicketTypeBadge`, tabs, badges
   - Loading and busy states: `Skeleton` / `Spinner`, `PageLoader` / `SectionLoader` (the Admitto mark for a whole screen, a ring for a panel, each with a line saying what is loading), `TopProgressBar` (viewport or `placement="container"`), `Button loading` and `IconButton loading`
   - and others

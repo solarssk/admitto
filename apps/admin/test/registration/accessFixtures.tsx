@@ -60,8 +60,8 @@ export function renderChecklist({ withEvent = event, path = "/admin/events/evt-1
 }
 
 export const checklistPanel = () => screen.getByRole("tabpanel", { name: "Checklist" });
-/** Every row of the checklist that can be seen, in the order of the page, whichever card it is in (a closed Done has no rows). */
-export const checklistRows = () => Array.from(checklistPanel().querySelectorAll<HTMLElement>("li.access-check"));
+/** Every row of the checklist that can be seen, in the order of the page, whichever card it is in (what is in a closed Done is inert, and not among them). */
+export const checklistRows = () => Array.from(checklistPanel().querySelectorAll<HTMLElement>("li.access-check")).filter((row) => !row.closest("[inert]"));
 
 /** Opens the card Done, which is closed until it is opened: its rows are then among the rows of the checklist. */
 export function openDone() {
