@@ -256,7 +256,7 @@ function buildReadinessItems(
       status: "neutral",
       detail: eventItemsDetail,
       icon: "package",
-      to: `${eventPath}/requirements`,
+      to: `${eventPath}/event-items`,
     },
   ];
 }

@@ -16,7 +16,7 @@ A route that isn't behind a role-specific guard has no single reader, so it can'
 | Register | Reader | Can name technical detail? |
 |---|---|---|
 | **Superadmin** | IT/infra person configuring the instance: Identity/OIDC, Cloudflare Access, Mail transport, System Logs, Archiving | Yes. System/provider name, HTTP status, machine error code, alongside a plain sentence |
-| **Administrator** | Org-level event manager running day-to-day ops: Attendees, Communication, Check-in admin, Requirements, Reports | No. Zero codes, zero jargon |
+| **Administrator** | Org-level event manager running day-to-day ops: Attendees, Communication, Check-in admin, Event items, Reports | No. Zero codes, zero jargon |
 | **Operator** | Check-in desk, reading under time pressure at the door | No, and terser than Administrator: one line, one action |
 | **Shared staff surface** | Whoever is signed in: Superadmin, Administrator, or Operator, viewing their own password/passkeys/sessions | No. Treat every reader as the least technical one who can land here (an Operator can reach `/account` too). The same floor as Administrator, regardless of the account's actual role |
 | **Public attendee** | General public, no product context, may be their only interaction with Admitto | No. Plainest and most reassuring of all five |

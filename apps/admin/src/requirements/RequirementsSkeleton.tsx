@@ -6,7 +6,7 @@ import "./requirements.css";
 const ITEM_ROWS = 3;
 const FIELD_ROWS = 2;
 
-/** One row of a Requirements table as grey shapes, in the real row's cells (the row's height is the stylesheet's, not the
+/** One row of an Event items table as grey shapes, in the real row's cells (the row's height is the stylesheet's, not the
  * shapes'): an icon and a name, the description, the Active switch or the Required answer, and the row's buttons. */
 function PlaceholderRow({ buttons, status, formColumn }: Readonly<{ buttons: number; status: "switch" | "text"; formColumn: boolean }>) {
   return (
@@ -90,13 +90,13 @@ function PlaceholderCard({
 }
 
 /**
- * The Requirements page below its header while its first read is on its way: the Event items card with its real title and
+ * The Event items page below its header while its first read is on its way: the Event items card with its real title and
  * column headings over a few rows of grey shapes, in a status region named after what is loading (invisible for the first
  * 200ms, with the 8 second note). Decoration, so hidden from assistive tech.
  */
 export function RequirementsSkeleton({ held, slow }: Readonly<{ held: boolean; slow: boolean }>) {
   return (
-    <SettingsSkeletonRegion label="Loading requirements" held={held} slow={slow}>
+    <SettingsSkeletonRegion label="Loading event items" held={held} slow={slow}>
       <div aria-hidden="true">
         <PlaceholderCard title="Event items" action={64} headings={["Item", "Description", "Active"]} rows={ITEM_ROWS} buttons={1} status="switch" />
       </div>

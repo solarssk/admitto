@@ -1,10 +1,10 @@
-# Requirements and Fulfilment
+# Event items and Fulfilment
 
 **Audience:** Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
 
 Use this area to decide what attendee information the event needs, what operators hand out, and how check-in behaves.
 
-The **Requirements** page holds the event items. The attendee fields are on the **Fields** tab of the event's **Registration** page.
+The **Event items** page holds the event items. It used to be called **Requirements**. The attendee fields are on the **Fields** tab of the event's **Registration** page.
 
 ## Choose the right page
 

@@ -507,9 +507,9 @@ describe("RoleAssignmentsTab operator errors", () => {
 describe("RequirementsPage operator errors", () => {
   function renderRequirements() {
     renderWithToast(
-      <MemoryRouter initialEntries={["/admin/events/evt-1/requirements"]}>
+      <MemoryRouter initialEntries={["/admin/events/evt-1/event-items"]}>
         <Routes>
-          <Route path="/admin/events/:eventId/requirements" element={<RequirementsPage />} />
+          <Route path="/admin/events/:eventId/event-items" element={<RequirementsPage />} />
         </Routes>
       </MemoryRouter>,
     );
@@ -532,7 +532,7 @@ describe("RequirementsPage operator errors", () => {
     vi.mocked(fetchEventItems).mockRejectedValueOnce(new Error("network transport detail"));
     renderRequirements();
 
-    expect(await screen.findByText("Could not load requirements.")).toBeTruthy();
+    expect(await screen.findByText("Could not load event items.")).toBeTruthy();
     expect(screen.queryByText("network transport detail")).toBeNull();
   });
 

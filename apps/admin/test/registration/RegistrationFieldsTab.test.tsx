@@ -280,14 +280,14 @@ describe("RegistrationFieldsTab: what the read answers", () => {
     expect(screen.getByRole("button", { name: "Add field" })).toBeTruthy();
   });
 
-  it("is where the note on the Requirements page leads: the Fields tab of the same event, with the card and its fields", async () => {
+  it("is where the note on the Event items page leads: the Fields tab of the same event, with the card and its fields", async () => {
     fetchEventCustomFields.mockResolvedValue([dietary, shirt, parking]);
     render(
       <ToastProvider>
-        <MemoryRouter initialEntries={["/admin/events/evt-1/requirements"]}>
+        <MemoryRouter initialEntries={["/admin/events/evt-1/event-items"]}>
           <Routes>
             <Route element={<EventFrame />}>
-              <Route path="/admin/events/:eventId/requirements" element={<RequirementsPage />} />
+              <Route path="/admin/events/:eventId/event-items" element={<RequirementsPage />} />
               <Route path="/admin/events/:eventId/registration" element={<RegistrationPage />} />
             </Route>
           </Routes>

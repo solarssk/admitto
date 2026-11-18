@@ -71,9 +71,9 @@ const hintField = (source_field: string, label: string, applies_to?: "guest" | "
 function renderPage() {
   return render(
     <ToastProvider>
-      <MemoryRouter initialEntries={["/admin/events/evt-1/requirements"]}>
+      <MemoryRouter initialEntries={["/admin/events/evt-1/event-items"]}>
         <Routes>
-          <Route path="/admin/events/:eventId/requirements" element={<RequirementsPage />} />
+          <Route path="/admin/events/:eventId/event-items" element={<RequirementsPage />} />
         </Routes>
       </MemoryRouter>
     </ToastProvider>,
@@ -84,10 +84,10 @@ function renderPage() {
 function renderPageWithRegistration() {
   const router = createMemoryRouter(
     [
-      { path: "/admin/events/:eventId/requirements", element: <RequirementsPage /> },
+      { path: "/admin/events/:eventId/event-items", element: <RequirementsPage /> },
       { path: "/admin/events/:eventId/registration", element: <p>The Registration page</p> },
     ],
-    { initialEntries: ["/admin/events/evt-1/requirements"] },
+    { initialEntries: ["/admin/events/evt-1/event-items"] },
   );
   render(
     <ToastProvider>
@@ -97,8 +97,8 @@ function renderPageWithRegistration() {
   return router;
 }
 
-const placeholder = () => screen.queryByRole("status", { name: "Loading requirements" });
-const requirementsRegion = () => screen.getByRole("region", { name: "Requirements" });
+const placeholder = () => screen.queryByRole("status", { name: "Loading event items" });
+const requirementsRegion = () => screen.getByRole("region", { name: "Event items" });
 const FIELDS_LINK = "Fields tab of the Registration page";
 const fieldsLink = () => screen.getByRole("link", { name: FIELDS_LINK });
 
@@ -166,7 +166,7 @@ describe("RequirementsPage: the first read", () => {
     expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Add field" })).toBeNull();
     // The page's own header stays.
-    expect(screen.getByRole("heading", { name: "Requirements" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Event items" })).toBeTruthy();
 
     await advanceTimers(200);
     expect((placeholder() as HTMLElement).classList.contains("at-loading-hold")).toBe(false);
@@ -205,7 +205,7 @@ describe("RequirementsPage: the first read", () => {
     await advanceTimers(30_000);
     await advanceTimers(0);
     expect(screen.getByRole("alert").textContent).toContain(LOAD_TIMEOUT_MESSAGE);
-    expect(screen.getByRole("alert").textContent).toContain("Could not load requirements");
+    expect(screen.getByRole("alert").textContent).toContain("Could not load event items");
 
     const answer = deferred<EventItemDto[]>();
     fetchEventItems.mockReturnValueOnce(answer.promise);
@@ -231,13 +231,13 @@ describe("RequirementsPage: the first read", () => {
     renderPage();
     await advanceTimers(0);
 
-    const first = screen.getByText("Could not load requirements.");
+    const first = screen.getByText("Could not load event items.");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await advanceTimers(500);
     // The 400ms minimum of the busy Retry ends in a timer that is set when the answer is in.
     await advanceTimers(400);
 
-    expect(screen.getByText("Could not load requirements.")).not.toBe(first);
+    expect(screen.getByText("Could not load event items.")).not.toBe(first);
   });
 
   it("reads the items and the fields of the event once, with a signal that stops the request when the page goes", async () => {
@@ -262,8 +262,8 @@ describe("RequirementsPage: the first read", () => {
       if (eventId === "evt-b") return new Promise<never>(() => {});
       return [badgeItem];
     });
-    const router = createMemoryRouter([{ path: "/admin/events/:eventId/requirements", element: <RequirementsPage /> }], {
-      initialEntries: ["/admin/events/evt-a/requirements"],
+    const router = createMemoryRouter([{ path: "/admin/events/:eventId/event-items", element: <RequirementsPage /> }], {
+      initialEntries: ["/admin/events/evt-a/event-items"],
     });
     render(
       <ToastProvider>
@@ -274,7 +274,7 @@ describe("RequirementsPage: the first read", () => {
     expect(screen.getByRole("switch", { name: "Disable Badge" })).toBeTruthy();
 
     await act(async () => {
-      await router.navigate("/admin/events/evt-b/requirements");
+      await router.navigate("/admin/events/evt-b/event-items");
     });
     await advanceTimers(0);
 
@@ -292,14 +292,14 @@ describe("RequirementsPage load failure", () => {
 
     renderPage();
 
-    await screen.findByText("Could not load requirements");
+    await screen.findByText("Could not load event items");
     expect(screen.getByText("Something went wrong. Try again.")).toBeTruthy();
     expect(reportApiError).toHaveBeenCalledWith(500);
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => {
-      expect(screen.queryByText("Could not load requirements")).toBeNull();
+      expect(screen.queryByText("Could not load event items")).toBeNull();
     });
     expect(await screen.findByRole("switch", { name: "Disable Badge" })).toBeTruthy();
   });
@@ -314,7 +314,7 @@ describe("RequirementsPage load failure", () => {
     // The EmptyState title must match this specific cause, not the generic "Could not load
     // requirements" heading used for every other load failure.
     expect(screen.getByText("You do not have access to this event")).toBeTruthy();
-    expect(screen.queryByText("Could not load requirements")).toBeNull();
+    expect(screen.queryByText("Could not load event items")).toBeNull();
     // Access can be granted meanwhile, so the Retry stays.
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(reportApiError).toHaveBeenCalledWith(403);
@@ -325,8 +325,8 @@ describe("RequirementsPage load failure", () => {
 
     renderPage();
 
-    await screen.findByText("Could not load requirements");
-    expect(screen.getByText("Could not load requirements.")).toBeTruthy();
+    await screen.findByText("Could not load event items");
+    expect(screen.getByText("Could not load event items.")).toBeTruthy();
     expect(reportApiError).not.toHaveBeenCalled();
   });
 
@@ -337,13 +337,13 @@ describe("RequirementsPage load failure", () => {
     const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
     Object.defineProperty(window, "location", {
       configurable: true,
-      value: { pathname: "/admin/events/evt-1/requirements", assign: assignSpy },
+      value: { pathname: "/admin/events/evt-1/event-items", assign: assignSpy },
     });
     try {
       renderPage();
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(
-          "/login?next=%2Fadmin%2Fevents%2Fevt-1%2Frequirements",
+          "/login?next=%2Fadmin%2Fevents%2Fevt-1%2Fevent-items",
         ),
       );
       expect(reportApiError).toHaveBeenCalledWith(401);
@@ -632,7 +632,7 @@ describe("RequirementsPage: after an action", () => {
     renderPage();
     await addGiftBag();
 
-    expect(await screen.findByText("Could not load requirements")).toBeTruthy();
+    expect(await screen.findByText("Could not load event items")).toBeTruthy();
     expect(screen.queryByRole("switch", { name: "Disable Badge" })).toBeNull();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
@@ -731,7 +731,7 @@ describe("RequirementsPage: the attendee fields", () => {
 
     renderPage();
 
-    await screen.findByText("Could not load requirements");
+    await screen.findByText("Could not load event items");
     expect(screen.getByText("Something went wrong. Try again.")).toBeTruthy();
     expect(reportApiError).toHaveBeenCalledWith(500);
     expect(screen.queryByRole("switch", { name: "Disable Badge" })).toBeNull();

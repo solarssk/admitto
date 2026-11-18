@@ -26,9 +26,9 @@
 - [Registration Access](Registration-Access)
 - [Registration Requests](Registration-Requests)
 
-**Requirements and Fulfilment**
+**Event items and Fulfilment**
 
-- [Requirements and Fulfilment](Requirements-and-Fulfilment)
+- [Event items and Fulfilment](Requirements-and-Fulfilment)
 - [Event Items and Check-in Behaviour](Event-Items-and-Check-in-Behaviour)
 
 **Tickets and Passes**

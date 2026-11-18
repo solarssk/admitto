@@ -26,7 +26,7 @@ Confirm that your account has the Admin role for the organisation that owns the 
    - Once the event day has passed, it shows the last forecast Admitto saw for that day, labelled **Last forecast**. Weather providers cannot look back, so Admitto saves the latest forecast whenever someone opens the Events list, the event, or the check-in event list while the day is still ahead.
    - If no forecast was ever saved (for example, an event that ended before this existed, or one nobody opened in the days before), the chip is hidden. It never shows an error for an event that is over.
    - The chip uses °C or °F from your computer's timezone (`Europe/…` gives °C, typical US and Americas zones give °F), not the browser language.
-2. Create events and manage their attendees, requirements, communication, reports, and settings.
+2. Create events and manage their attendees, event items, communication, reports, and settings.
 3. Open **Users & roles** to review assignments available to your administration scope.
 4. Give operators event-scoped access only to the events where they work.
 5. Review event capacity, ticket types, custom fields, and check-in behaviour before event day.
@@ -37,7 +37,7 @@ The Organisation Admin can manage organisation events and their staff access but
 
 ## Important decisions
 
-- An **organisation** owns events. An **event** owns attendees, operator assignments, requirements, templates, and check-in history.
+- An **organisation** owns events. An **event** owns attendees, operator assignments, event items, templates, and check-in history.
 - Organisation Admin access applies only to events in the assigned organisation.
 - Event **Mailing**, **Wallet**, **Registration**, and **Integrations** tabs are Superadmin-only, even when other event settings are available to Organisation Admins.
 - Map thumbnails on the Events list show a **© OpenStreetMap** credit on the card. Ticket and mail maps still burn the credit into the PNG. CARTO appears in that burn-in only if you configure CARTO tiles under Organisation Settings → External services.

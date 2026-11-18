@@ -248,7 +248,7 @@ These are in the Attendees header **More actions**. Each appears once the event 
 ## Related pages
 
 - [Importing Attendees](Importing-Attendees)
-- [Requirements and Fulfilment](Requirements-and-Fulfilment)
+- [Event items and Fulfilment](Requirements-and-Fulfilment)
 - [Sending Messages and Delivery](Sending-Tickets-and-Delivery)
 - [Manual Lookup and Corrections](Manual-Lookup-and-Corrections)
 - [Pass Statuses](Pass-Statuses)

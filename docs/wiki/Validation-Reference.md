@@ -303,7 +303,7 @@ The rows that are wrong are marked in the list of suggestions. A row left empty 
 - A question is shown only when the answer it depends on is saved as Yes (yes/no field) or as the option (select field). No answer at all does not show it.
 - The Add attendee dialog and an attendee's edit form apply the same condition. They hide a question that is not shown, do not ask for it, even when it is Required, and do not send it. A text typed for it stays in the form while you work, so it is back when the answer shows the question again, but it is never saved while the question is hidden. A question that is shown for an answer is drawn right after the question it depends on.
 
-### Event items (Requirements page)
+### Event items (Event items page)
 
 - An item's name is required, up to 100 characters. Its internal key is derived automatically and kept unique.
 - An item that is currently issued to any attendee (and not yet returned) can't be disabled or deleted. Return it first.

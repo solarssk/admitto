@@ -111,6 +111,28 @@ describe("AdminShell", () => {
     expect(screen.getByRole("button", { name: "Post-event" })).toHaveProperty("disabled", true);
   });
 
+  it("lists Event items just before Check-in, under that name, at its own address", () => {
+    renderShell();
+    const items = within(screen.getByRole("navigation", { name: "Event lifecycle" })).getAllByText(/\S/, {
+      selector: "a span, button span",
+    });
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Overview",
+      "Registration",
+      "Attendees",
+      "Communication",
+      "Event items",
+      "Check-in",
+      "Post-event",
+      "Reports",
+      "Event settings",
+    ]);
+    expect(screen.getByRole("link", { name: "Event items" }).getAttribute("href")).toBe(
+      "/admin/events/evt-1/event-items",
+    );
+    expect(screen.queryByText("Requirements")).toBeNull();
+  });
+
   it("threads refreshEvent through to the nested route via Outlet context", () => {
     const refreshEvent = vi.fn().mockResolvedValue(undefined);
     render(

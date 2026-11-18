@@ -270,7 +270,7 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
       }),
     [eventId, reportApiError],
   );
-  const list = useListLoad({ fetcher: fetchRequirements, fallback: "Could not load requirements." });
+  const list = useListLoad({ fetcher: fetchRequirements, fallback: "Could not load event items." });
   const card = useCardLoad(list);
   const items = list.data?.items ?? NO_ITEMS;
   const customFields = list.data?.fields ?? NO_FIELDS;
@@ -360,7 +360,7 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   } else if (card.failure.error) {
     body = (
       <RetryEmptyState
-        title={accessDenied ? "You do not have access to this event" : "Could not load requirements"}
+        title={accessDenied ? "You do not have access to this event" : "Could not load event items"}
         message={accessDenied ? "You do not have access to this event." : card.failure.error}
         retrying={card.failure.retrying}
         onRetry={card.failure.retry}
@@ -372,7 +372,7 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     body = (
       // What replaces the placeholder fades in.
       <div className="at-fade-in">
-        <RefetchRegion refreshing={list.refreshing} label="Refreshing requirements">
+        <RefetchRegion refreshing={list.refreshing} label="Refreshing event items">
           <section className="requirements-section">
             <Card
               padded={false}
@@ -432,7 +432,7 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     <>
       <PageHeader
         className="requirements-pageheader"
-        title="Requirements"
+        title="Event items"
         subtitle="Configure what this event issues to attendees and operational behaviour."
         actions={
           <a
@@ -449,7 +449,7 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
         }
       />
       {/* The part of the page that stays whatever the read is doing, and where the focus goes when a Retry that held it works. */}
-      <section className="requirements-body" aria-label="Requirements">
+      <section className="requirements-body" aria-label="Event items">
         {body}
       </section>
 

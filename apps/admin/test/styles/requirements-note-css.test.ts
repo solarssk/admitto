@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * The note under Event items on the Requirements page ("Attendee fields are on the Fields tab of the Registration page") sits on the
+ * The note under Event items on the Event items page ("Attendee fields are on the Fields tab of the Registration page") sits on the
  * grey page background, not in a white card. axe-core in real Chrome measured the muted text colour there at 4.34:1, below the 4.5:1
  * that 13px text needs, so the note takes the secondary text colour, and its link is underlined so that it does not rest on its colour
  * alone. It is CSS, which the tests in jsdom cannot see, so the rules are pinned here.
@@ -25,7 +25,7 @@ function declarationsOf(selector: string): string {
   return text.slice(body, text.indexOf("}", body));
 }
 
-describe("the note under Event items on the Requirements page", () => {
+describe("the note under Event items on the Event items page", () => {
   it("is drawn with the class that gives it the secondary text colour, not the muted one that fails on the page background", () => {
     expect(page).toContain('className="requirements-section-hint requirements-section-hint--page"');
     expect(declarationsOf(".requirements-section-hint--page")).toMatch(/color:\s*var\(--text-secondary\)/);
