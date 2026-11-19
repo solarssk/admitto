@@ -394,3 +394,24 @@ describe("the Registration page's suggested questions: the card header, the wind
     expect(sets(bodyOf(suggested, ".suggested-questions__text"), "min-width", "0")).toBe(true);
   });
 });
+
+describe("Theme by surface (Branding): the controls of the three rows line up and stack", () => {
+  const controls = ".theme-surface-rows .settings-row__controls > *";
+
+  it("gives the colour control and the font select of every row the same fixed width, so the rows line up", () => {
+    const body = bodyOf(staff, controls);
+    expect(sets(body, "width", "220px")).toBe(true);
+    expect(sets(body, "flex", "0 0 220px")).toBe(true);
+  });
+
+  it("puts the controls under the text below 1024px, the two side by side while they fit, since a 768px screen has about 460px of content", () => {
+    const media = "@media (max-width: 1023px)";
+    expect(sets(bodyOf(staff, ".theme-surface-rows .settings-row", media), "flex-direction", "column")).toBe(true);
+    expect(sets(bodyOf(staff, ".theme-surface-rows .settings-row", media), "align-items", "stretch")).toBe(true);
+    expect(sets(bodyOf(staff, ".theme-surface-rows .settings-row__controls", media), "flex-wrap", "wrap")).toBe(true);
+  });
+
+  it("gives each control the whole row on a phone", () => {
+    expect(sets(bodyOf(staff, controls, "@media (max-width: 640px)"), "width", "100%")).toBe(true);
+  });
+});

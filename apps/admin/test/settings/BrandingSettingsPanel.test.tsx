@@ -1317,7 +1317,7 @@ describe("BrandingSettingsPanel - the Theme card", () => {
 
     const cards = [...screen.getByLabelText("Loading branding settings").querySelectorAll(".at-card")];
     const themeCard = cards.find((c) => c.textContent?.includes("Theme"))!;
-    const blocks = [...themeCard.querySelectorAll(".at-skeleton--rect")].filter((el) => (el as HTMLElement).style.height === "238px");
+    const blocks = [...themeCard.querySelectorAll(".at-skeleton--rect")].filter((el) => (el as HTMLElement).style.height === "226px");
     expect(blocks).toHaveLength(2);
   });
 });

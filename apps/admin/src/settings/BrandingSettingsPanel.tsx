@@ -41,7 +41,7 @@ const EMPTY_THEME_DRAFT: BrandingThemeDto = {};
 /** The cards of the panel, for its placeholder: the organisation's name and logo, and the theme with its fonts and surfaces. */
 const BRANDING_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "organisation", title: "Organisation branding", intro: true, fields: 1, controlHeight: 62, rows: 2, rowHeight: 102 },
-  { id: "theme", title: "Theme", intro: true, rows: 2, rowHeight: 238 },
+  { id: "theme", title: "Theme", intro: true, rows: 2, rowHeight: 226 },
 ];
 
 /** Collect `/uploads/…` font file URLs from a theme draft. */
