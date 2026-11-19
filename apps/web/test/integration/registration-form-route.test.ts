@@ -317,7 +317,7 @@ describe("the organiser's questions", () => {
     const html = await res.text();
     const doc = documentOf(html);
     expect(res.status).toBe(200);
-    expect(doc.querySelectorAll("script")).toHaveLength(2);
+    expect(doc.querySelectorAll("script")).toHaveLength(3);
     expect(doc.querySelectorAll("[onerror], [onload]")).toHaveLength(0);
     expect(html).not.toContain("<img src=x onerror");
     expect(doc.querySelector("[data-custom=mobile] .reg-slot__hint").textContent).toBe(`${payload}\nFor example: ${payload}`);
