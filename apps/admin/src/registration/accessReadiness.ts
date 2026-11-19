@@ -216,6 +216,23 @@ const steps = (count: number) => (count === 1 ? "1 step" : `${count} steps`);
 
 const ADDRESS_STOPPED_NOTE = "The address of this event for guests stopped working, so guests may not be able to open their links.";
 
+/** Registration is on: open when nothing is wrong, or what broke (a step of the server's, or the address for guests). */
+function bannerWhenOn(blocking: number, addressStopped: boolean): ChecklistBanner {
+  if (blocking === 0 && !addressStopped) return { variant: "success", text: "Registration is open.", action: "turn_off" };
+  const what = addressStopped ? "the address of this event stopped working" : "something it needs is missing";
+  return { variant: "error", text: `Registration is on, but ${what}. Guests may not be able to register.`, action: null };
+}
+
+/** Registration is off: ready to turn on (with a note when the address for guests stopped), or what is left and who does it. */
+function bannerWhenOff(forYou: number, waiting: number, addressStopped: boolean): ChecklistBanner {
+  if (forYou + waiting === 0) {
+    return { variant: "success", text: addressStopped ? `Ready. Registration can be turned on. ${ADDRESS_STOPPED_NOTE}` : "Ready. Registration can be turned on.", action: "turn_on" };
+  }
+  if (forYou === 0) return { variant: "info", text: `${steps(waiting)} ${waiting === 1 ? "waits" : "wait"} for a superadmin. Your steps are done.`, action: null };
+  if (waiting === 0) return { variant: "warning", text: `${steps(forYou)} ${forYou === 1 ? "is" : "are"} open. Registration can be turned on when ${forYou === 1 ? "it is" : "they are"} done.`, action: null };
+  return { variant: "warning", text: `${forYou} for you, ${waiting} waiting for a superadmin. Registration can be turned on when all are done.`, action: null };
+}
+
 /**
  * The sentence for the state: archived, all done (on or off), something broke while on, or what is left and who does it.
  * `forYou` and `waiting` count the steps that block turning registration on, the ones the server checks. A stopped address for
@@ -235,18 +252,7 @@ export function checklistBanner({
   addressStopped: boolean;
 }): ChecklistBanner {
   if (archived) return { variant: "info", text: "This event is archived. Registration is closed and nothing here can be changed.", action: null };
-  if (forYou + waiting === 0) {
-    if (mode !== null && addressStopped) return { variant: "error", text: `Registration is on, but the address of this event stopped working. Guests may not be able to register.`, action: null };
-    if (mode !== null) return { variant: "success", text: "Registration is open.", action: "turn_off" };
-    return { variant: "success", text: addressStopped ? `Ready. Registration can be turned on. ${ADDRESS_STOPPED_NOTE}` : "Ready. Registration can be turned on.", action: "turn_on" };
-  }
-  if (mode !== null) {
-    const what = addressStopped ? "the address of this event stopped working" : "something it needs is missing";
-    return { variant: "error", text: `Registration is on, but ${what}. Guests may not be able to register.`, action: null };
-  }
-  if (forYou === 0) return { variant: "info", text: `${steps(waiting)} ${waiting === 1 ? "waits" : "wait"} for a superadmin. Your steps are done.`, action: null };
-  if (waiting === 0) return { variant: "warning", text: `${steps(forYou)} ${forYou === 1 ? "is" : "are"} open. Registration can be turned on when ${forYou === 1 ? "it is" : "they are"} done.`, action: null };
-  return { variant: "warning", text: `${forYou} for you, ${waiting} waiting for a superadmin. Registration can be turned on when all are done.`, action: null };
+  return mode === null ? bannerWhenOff(forYou, waiting, addressStopped) : bannerWhenOn(forYou + waiting, addressStopped);
 }
 
 /** The words of a check, by the key the server sent. */

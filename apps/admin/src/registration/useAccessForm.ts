@@ -58,16 +58,12 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     // A password set and then removed, or a save, can start a read while an older one is still on its way: the older answer, if it
     // comes last, must not put back what the newer change took away, and neither may a slow read of the texts hold an old answer back.
     const mine = ++newestRead.current;
-    try {
-      const [latest, texts] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchLegalDocuments(eventId)]);
-      if (mine !== newestRead.current) return true;
-      if (latest.status === "fulfilled") setServer(latest.value);
-      if (texts.status === "fulfilled") setLegalItems(texts.value.items);
-      return latest.status === "fulfilled";
-    } catch {
-      // What the screen shows stays as it is, and so does the error that sent us here.
-      return false;
-    }
+    // A read that fails changes nothing on screen (the error that sent us here stays); the answer says whether the settings were read.
+    const [latest, texts] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchLegalDocuments(eventId)]);
+    if (mine !== newestRead.current) return true;
+    if (latest.status === "fulfilled") setServer(latest.value);
+    if (texts.status === "fulfilled") setLegalItems(texts.value.items);
+    return latest.status === "fulfilled";
   }
 
   /** A change was refused because the event is archived: the event is read again, so that the controls lock, and so are the settings, so that the checklist is true when it is restored. */
