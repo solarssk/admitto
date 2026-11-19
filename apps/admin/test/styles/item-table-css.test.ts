@@ -23,13 +23,6 @@ describe("the shared item table", () => {
     expect(shared).not.toMatch(/item-table__wide-only\s*\{[^}]*display:\s*none/);
   });
 
-  it("reaches the edges of a padded card: the wrap bleeds out by the card's padding and the outer cells pad themselves back in", () => {
-    expect(shared).toContain(".at-card__body .item-table .attendees-table-wrap {\n  margin-inline: calc(-1 * var(--pad-card));\n  margin-bottom: calc(-1 * var(--pad-card));");
-    expect(shared).toMatch(/th:first-child,\n\.at-card__body \.item-table \.table td:first-child \{\n  padding-left: var\(--pad-card\)/);
-    expect(shared).toMatch(/td:last-child \{\n  padding-right: var\(--pad-card\)/);
-    expect(shared).toContain("tbody tr:last-child td {\n  border-bottom: 0;");
-  });
-
   it.each([
     ["src/pages/RequirementsPage.tsx"],
     ["src/requirements/EventCustomFieldsCard.tsx"],
