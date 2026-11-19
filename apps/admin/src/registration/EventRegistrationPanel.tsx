@@ -50,6 +50,16 @@ interface Loaded {
   redirectUrisFailed: boolean;
 }
 
+/** The return addresses, or null when they could not be read (a lost session goes to the sign-in). */
+async function readReturnAddresses(): Promise<RegistrationRedirectUriDto[] | null> {
+  try {
+    return (await fetchRegistrationReturnAddresses()).redirect_uris;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirectToLogin();
+    return null;
+  }
+}
+
 async function readAll(eventId: string, superadmin: boolean, signal: AbortSignal): Promise<Loaded> {
   const [settings, legal] = await Promise.all([fetchRegistrationSettings(eventId, signal), fetchLegalDocuments(eventId, signal)]);
   const first = { settings, legalItems: legal.items };
@@ -239,16 +249,6 @@ function EventRegistrationCards({
     seenAddressVersion.current = addressVersion;
     onAddressChange.current();
   }, [addressVersion]);
-
-  /** The return addresses, or null when they could not be read (a lost session goes to the sign-in). */
-  async function readReturnAddresses(): Promise<RegistrationRedirectUriDto[] | null> {
-    try {
-      return (await fetchRegistrationReturnAddresses()).redirect_uris;
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) redirectToLogin();
-      return null;
-    }
-  }
 
   /**
    * The settings and the return addresses, read again, busy while it works. The Retry of the setup for IT does the same. Only a
