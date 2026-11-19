@@ -3,7 +3,6 @@ import { SSO_CLAIM_NAME_MAX, SSO_CLAIM_VALUE_MAX, SSO_CLAIM_VALUES_MAX } from "@
 import {
   chosenMethod,
   claimErrors,
-  consentOptions,
   draftFromSettings,
   missingChecks,
   parseClaim,
@@ -11,7 +10,7 @@ import {
   technicalPatch,
   type AccessDraft,
 } from "../../src/registration/accessSettings.js";
-import { checks, legalAnswer, settings, texts } from "./accessData.js";
+import { checks, settings } from "./accessData.js";
 
 const base = (overrides: Partial<AccessDraft> = {}): AccessDraft => ({ ...draftFromSettings(settings()), ...overrides });
 
@@ -32,7 +31,7 @@ describe("chosenMethod", () => {
 describe("draftFromSettings", () => {
   it("is the form of the settings as they are saved", () => {
     const draft = draftFromSettings(
-      settings({ mode: "approval", access_methods: ["password"], waitlist_enabled: false, verify_email: false, ask_company: true, ask_department: true, max_companions: 1, consent_keys: ["photo"] }),
+      settings({ mode: "approval", access_methods: ["password"], waitlist_enabled: false, verify_email: false, ask_company: true, ask_department: true, max_companions: 1 }),
     );
 
     expect(draft).toEqual({
@@ -43,7 +42,6 @@ describe("draftFromSettings", () => {
       ask_company: true,
       ask_department: true,
       companion: true,
-      consent_keys: ["photo"],
       bot_protection_enabled: true,
       sso_claim_name: "",
       sso_claim_values: "",
@@ -61,15 +59,6 @@ describe("draftFromSettings", () => {
     expect(draft.method).toBe("sso");
     expect(draft.sso_claim_name).toBe("tid");
     expect(draft.sso_claim_values).toBe("aaa\nbbb");
-  });
-
-  it("copies the consents, so editing the form never changes the settings it came from", () => {
-    const saved = settings({ consent_keys: ["photo"] });
-    const draft = draftFromSettings(saved);
-
-    draft.consent_keys.push("news");
-
-    expect(saved.consent_keys).toEqual(["photo"]);
   });
 
   it("takes any number of companions above none as one, since the screen offers no other", () => {
@@ -91,7 +80,6 @@ describe("settingsPatch", () => {
     ["the company", { ask_company: true }, { ask_company: true }],
     ["the department", { ask_department: true }, { ask_department: true }],
     ["a person to bring", { companion: true }, { max_companions: 1 }],
-    ["the consents", { consent_keys: ["photo"] }, { consent_keys: ["photo"] }],
   ])("holds only %s when that is all that changed", (_name, change, patch) => {
     const from = base({ mode: change.mode === null ? "approval" : null });
     expect(settingsPatch({ ...from, ...change }, from)).toEqual(patch);
@@ -105,21 +93,14 @@ describe("settingsPatch", () => {
   });
 
   it("holds the changed settings and no others when several changed", () => {
-    expect(settingsPatch(base({ waitlist_enabled: false, ask_company: true, consent_keys: ["photo"] }), base())).toEqual({
+    expect(settingsPatch(base({ waitlist_enabled: false, ask_company: true }), base())).toEqual({
       waitlist_enabled: false,
       ask_company: true,
-      consent_keys: ["photo"],
     });
   });
 
   it("sends a person to bring as none when it was taken away", () => {
     expect(settingsPatch(base({ companion: false }), base({ companion: true }))).toEqual({ max_companions: 0 });
-  });
-
-  it("does not count the order of the consents as a change, and does count a consent that was added or taken off", () => {
-    expect(settingsPatch(base({ consent_keys: ["b", "a"] }), base({ consent_keys: ["a", "b"] }))).toEqual({});
-    expect(settingsPatch(base({ consent_keys: ["a", "b", "c"] }), base({ consent_keys: ["a", "b"] }))).toEqual({ consent_keys: ["a", "b", "c"] });
-    expect(settingsPatch(base({ consent_keys: ["a"] }), base({ consent_keys: ["a", "b"] }))).toEqual({ consent_keys: ["a"] });
   });
 
   it("is made against the settings the form was made from, so a setting nobody touched is never written back", () => {
@@ -248,30 +229,5 @@ describe("missingChecks", () => {
   it("names the checks that are not met, in order, and none when all are", () => {
     expect(missingChecks(checks("mail_provider", "legal_documents"))).toEqual(["legal_documents", "mail_provider"]);
     expect(missingChecks(checks())).toEqual([]);
-  });
-});
-
-describe("consentOptions", () => {
-  it("offers the published extra consents by their title, and not a draft, the privacy notice or the terms", () => {
-    const items = texts(["photo", "Photos and video", true], ["news", "News about our events", false]);
-
-    expect(consentOptions(items, [])).toEqual([{ id: "photo", label: "Photos and video" }]);
-  });
-
-  it("keeps a consent that is chosen and is not published, marked, so that it can be taken off", () => {
-    const items = texts(["photo", "Photos and video", true], ["news", "News about our events", false]);
-
-    expect(consentOptions(items, ["photo", "news"])).toEqual([
-      { id: "photo", label: "Photos and video" },
-      { id: "news", label: "News about our events (not published)" },
-    ]);
-  });
-
-  it("names a chosen consent whose text is gone by its key", () => {
-    expect(consentOptions(texts(), ["gone"])).toEqual([{ id: "gone", label: "gone (not published)" }]);
-  });
-
-  it("offers nothing for an event without extra consents", () => {
-    expect(consentOptions(legalAnswer(texts()).items, [])).toEqual([]);
   });
 });

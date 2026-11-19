@@ -7,7 +7,7 @@ import { reportApiError } from "../../src/connection/ConnectionStateProvider.js"
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import { advanceTimers, deferred, getTooltipText, hangUntilAborted, isOff } from "../test-utils.js";
 import { addToast, api } from "./accessApiMocks.js";
-import { archivedEvent, checks, event, legalAnswer, settings, texts } from "./accessData.js";
+import { archivedEvent, checks, event, settings } from "./accessData.js";
 import { card, loaded, renderAccess, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 const goToLogin = vi.fn();
@@ -48,7 +48,6 @@ describe("RegistrationAccessTab: the first read", () => {
     vi.useFakeTimers();
     // A read that a test has not set up hangs, instead of answering with nothing.
     api.fetchRegistrationSettings.mockImplementation(hangUntilAborted as never);
-    api.fetchLegalDocuments.mockImplementation(hangUntilAborted as never);
   });
 
   it("holds the room of the cards invisibly for 200ms, then draws them grey with their real titles, and says it is taking longer after 8 seconds", async () => {
@@ -70,20 +69,6 @@ describe("RegistrationAccessTab: the first read", () => {
     expect(within(placeholder() as HTMLElement).getByText(SLOW_NOTICE_TEXT)).toBeTruthy();
   });
 
-  it("waits for both reads: the settings alone are not the form", async () => {
-    const legal = deferred<ReturnType<typeof legalAnswer>>();
-    api.fetchRegistrationSettings.mockResolvedValue(settings());
-    api.fetchLegalDocuments.mockReturnValue(legal.promise);
-    renderAccess();
-    await advanceTimers(500);
-
-    expect(screen.queryByRole("switch")).toBeNull();
-
-    await act(async () => legal.resolve(legalAnswer(texts())));
-    await advanceTimers(500);
-    expect(screen.getByRole("switch", { name: "Waiting list" })).toBeTruthy();
-  });
-
   it("ends in an error after 30 seconds, with a Retry that stays on screen, busy, with its focus", async () => {
     renderAccess();
     await advanceTimers(0);
@@ -95,7 +80,6 @@ describe("RegistrationAccessTab: the first read", () => {
 
     const read = deferred<RegistrationSettingsDto>();
     api.fetchRegistrationSettings.mockReturnValueOnce(read.promise);
-    api.fetchLegalDocuments.mockResolvedValue(legalAnswer(texts()));
     const retry = screen.getByRole("button", { name: "Retry" });
     retry.focus();
     fireEvent.click(retry);
@@ -138,14 +122,6 @@ describe("RegistrationAccessTab: a read that fails", () => {
     expect(reportApiError).toHaveBeenCalledWith(403);
   });
 
-  it("is an error when the legal texts cannot be read, although the settings could", async () => {
-    api.fetchLegalDocuments.mockRejectedValue(new ApiError(500, "internal_error", "internal_error"));
-    renderAccess();
-
-    expect((await screen.findByRole("alert")).textContent).toContain("Could not load the registration settings");
-    expect(screen.queryByRole("switch")).toBeNull();
-  });
-
   it("hands the browser to the login page when the session has ended, and shows nothing first", async () => {
     api.fetchRegistrationSettings.mockRejectedValue(new ApiError(401, "authentication_required"));
     renderAccess();
@@ -157,11 +133,11 @@ describe("RegistrationAccessTab: a read that fails", () => {
 });
 
 describe("RegistrationAccessTab: the settings", () => {
-  it("reads the settings and the legal texts of the event, with the signal that abandons them", async () => {
+  it("reads the settings of the event, with the signal that abandons them, and not its legal texts: the Legal tab owns them", async () => {
     await renderLoaded();
 
     expect(api.fetchRegistrationSettings).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
-    expect(api.fetchLegalDocuments).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
+    expect(api.fetchLegalDocuments).not.toHaveBeenCalled();
   });
 
   it("has no switch for the look of the form's boxes: every form draws its own", async () => {
@@ -183,7 +159,6 @@ describe("RegistrationAccessTab: the settings", () => {
         ask_company: true,
         ask_department: false,
         max_companions: 1,
-        consent_keys: ["photo"],
       }),
     );
 
@@ -193,7 +168,6 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(toggle("Ask for the company").checked).toBe(true);
     expect(toggle("Ask for the department").checked).toBe(false);
     expect(toggle("Guests can bring one person").checked).toBe(true);
-    expect(screen.getByRole("button", { name: "Extra consents, Photos and video" })).toBeTruthy();
     expect(isOff(saveButton())).toBe(true);
     expect(screen.queryByText("Unsaved changes")).toBeNull();
   });
@@ -205,74 +179,31 @@ describe("RegistrationAccessTab: the settings", () => {
     fireEvent.click(toggle("Ask for the company"));
 
     expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(1);
-    expect(api.fetchLegalDocuments).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("RegistrationAccessTab: the consents", () => {
-  it("offers the extra consents that are published, and no draft", async () => {
-    await renderLoaded();
+  it("has no row for the extra consents, and no button to the Legal tab: the Legal tab chooses which ones the form asks for", async () => {
+    await renderLoaded(settings({ consent_keys: ["photo"] }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Extra consents, none selected" }));
-
-    const list = screen.getByRole("list", { name: "Extra consents" });
-    expect(within(list).getAllByRole("checkbox").map((box) => (box as HTMLInputElement).labels?.[0]?.textContent)).toEqual(["Photos and video"]);
-  });
-
-  it("keeps a consent that is chosen and not published in the list, marked, so that it can be taken off", async () => {
-    await renderLoaded(settings({ consent_keys: ["news"] }));
-
-    expect(screen.getByRole("button", { name: "Extra consents, News about our events (not published)" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^Extra consents/ }));
-    const box = screen.getByRole("checkbox", { name: "News about our events (not published)" }) as HTMLInputElement;
-    expect(box.checked).toBe(true);
-  });
-
-  it("is the button Open Legal at the right of its row, with a line that says why, when no extra consent is published", async () => {
-    api.fetchLegalDocuments.mockResolvedValue(legalAnswer(texts()));
-    await renderLoaded();
-
-    const row = within(card("Form")).getByText("Extra consents").closest(".settings-row") as HTMLElement;
-    expect(within(row).getByText("You have no consent to choose from yet. Write one on the Legal tab.")).toBeTruthy();
-    const link = within(row).getByRole("link", { name: "Open Legal: Extra consents" });
-    expect(link.getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=legal");
-    // The same markup as the row "Your own questions": the button is the last thing in the row, in its controls.
-    expect(link.closest(".settings-row__controls")).toBe(row.lastElementChild);
-    expect(link.className).toBe("at-btn at-btn--secondary at-btn--sm");
-    expect(link.textContent).toBe("Open Legal");
-    // No field, no placeholder and no hint under a field.
+    expect(card("Form").textContent).not.toContain("Extra consents");
     expect(screen.queryByRole("button", { name: /^Extra consents/ })).toBeNull();
-    expect(screen.queryByText("Nothing to choose yet")).toBeNull();
-    expect(row.querySelector(".at-hint")).toBeNull();
-  });
-
-  it("is the choice of consents at the right of its row, described by the line of the row, when there is something to choose", async () => {
-    await renderLoaded();
-
-    const row = within(card("Form")).getByText("Extra consents", { selector: "strong" }).closest(".settings-row") as HTMLElement;
-    const description = within(row).getByText("Optional checkboxes on the form, for example a marketing consent. The privacy notice and the terms are always shown.");
-    const select = within(row).getByRole("button", { name: /^Extra consents/ });
-    expect(select.getAttribute("aria-describedby")).toBe(description.id);
-    expect(select.closest(".settings-row__controls")).toBe(row.lastElementChild);
-    expect(within(row).queryByRole("link", { name: /Open Legal/ })).toBeNull();
-    expect(within(row).queryByText("Extra consents", { selector: "label" })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Open Legal/ })).toBeNull();
   });
 });
 
 describe("RegistrationAccessTab: the two cards of the form", () => {
   const switchNames = (part: HTMLElement) => within(part).getAllByRole("switch").map((node) => node.getAttribute("aria-label"));
-  const groupLabels = (part: HTMLElement) => Array.from(part.querySelectorAll(".attendees-section-label")).map((node) => node.textContent);
 
-  it("has an intro line in each card, the questions and the consents first, in three labelled groups, and what happens after the form is sent second", async () => {
+  it("has an intro line in each card, the questions first and what happens after the form is sent second", async () => {
     await renderLoaded();
 
     const titles = Array.from(document.querySelectorAll(".at-card__title")).map((node) => node.textContent);
     expect(titles).toEqual(["Access method", "Company SSO", "Form", "Handling requests"]);
     for (const title of titles) expect(card(title as string).querySelector(".settings-card-intro")).not.toBeNull();
-    expect(card("Form").querySelector(".settings-card-intro")?.textContent).toBe("The questions on the form and the consents guests agree to.");
+    expect(card("Form").querySelector(".settings-card-intro")?.textContent).toBe("The questions on the form.");
     expect(switchNames(card("Form"))).toEqual(["Ask for the company", "Ask for the department", "Guests can bring one person"]);
-    expect(groupLabels(card("Form"))).toEqual(["Questions", "Consents"]);
-    expect(within(card("Form")).getByRole("button", { name: /^Extra consents/ })).toBeTruthy();
+    expect(card("Form").querySelector(".attendees-section-label")).toBeNull();
     expect(card("Handling requests").querySelector(".settings-card-intro")?.textContent).toBe("Decide how new requests are checked and accepted.");
     expect(switchNames(card("Handling requests"))).toEqual(["Confirm email addresses", "Approve requests by hand", "Waiting list"]);
   });
@@ -354,7 +285,6 @@ describe("RegistrationAccessTab: an archived event", () => {
     for (const name of ["Approve requests by hand", "Waiting list", "Confirm email addresses", "Ask for the company", "Ask for the department", "Guests can bring one person"]) {
       expect(toggle(name).disabled, name).toBe(true);
     }
-    expect(screen.getByRole("button", { name: /^Extra consents/ }).hasAttribute("disabled")).toBe(true);
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
   });

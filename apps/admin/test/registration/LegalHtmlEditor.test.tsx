@@ -168,6 +168,14 @@ describe("LegalHtmlEditor: the link field", () => {
     expect(button("Link").getAttribute("aria-pressed")).toBe("false");
   });
 
+  it("draws the buttons of the link bar at the height of the address field, not the small size (#1885)", () => {
+    renderEditor();
+    selectWords(tiptap());
+    fireEvent.click(button("Link"));
+
+    for (const name of ["Apply", "Cancel"]) expect(screen.getByRole("button", { name }).className).not.toContain("at-btn--sm");
+  });
+
   it("makes the selected words a link, written the way the server stores it", () => {
     const { onHtml } = renderEditor();
     selectWords(tiptap());

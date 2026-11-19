@@ -8,7 +8,7 @@ import type { EventDto, LegalDocumentDto, LegalDocumentLimitsDto, LegalDocuments
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 import { RegistrationPage } from "../../src/pages/RegistrationPage.js";
 import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
-import { advanceTimers, deferred, hangUntilAborted, isOff, setViewport } from "../test-utils.js";
+import { advanceTimers, deferred, getTooltipText, hangUntilAborted, isOff, setViewport } from "../test-utils.js";
 import { LEGAL_LIMITS, legalDoc, legalDocWithContent } from "./legalFixtures.js";
 import { stubProseMirrorLayout } from "./proseMirrorJsdom.js";
 
@@ -16,7 +16,9 @@ const fetchLegalDocuments = vi.fn();
 const fetchLegalDocument = vi.fn();
 const saveLegalDocument = vi.fn();
 const publishLegalDocument = vi.fn();
+const unpublishLegalDocument = vi.fn();
 const deleteLegalDocument = vi.fn();
+const saveRegistrationSettings = vi.fn();
 const fetchAdminEvents = vi.fn();
 const fetchRegistrationSettings = vi.fn();
 
@@ -26,6 +28,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   fetchLegalDocument: (...args: unknown[]) => fetchLegalDocument(...args),
   saveLegalDocument: (...args: unknown[]) => saveLegalDocument(...args),
   publishLegalDocument: (...args: unknown[]) => publishLegalDocument(...args),
+  unpublishLegalDocument: (...args: unknown[]) => unpublishLegalDocument(...args),
+  saveRegistrationSettings: (...args: unknown[]) => saveRegistrationSettings(...args),
   deleteLegalDocument: (...args: unknown[]) => deleteLegalDocument(...args),
   fetchAdminEvents: (...args: unknown[]) => fetchAdminEvents(...args),
   fetchRegistrationSettings: (...args: unknown[]) => fetchRegistrationSettings(...args),
@@ -76,13 +80,13 @@ function renderTab({ withEvent = event, path = "/admin/events/evt-1/registration
 
 const legalPanel = () => screen.getByRole("tabpanel", { name: "Legal" });
 const placeholder = () => screen.queryByRole("status", { name: "Loading legal texts" });
-const rows = () => within(legalPanel()).getAllByRole("listitem").filter((item) => item.classList.contains("legal-row"));
-const rowTitles = () => rows().map((row) => row.querySelector(".legal-row__title")?.textContent);
+const rows = () => Array.from(legalPanel().querySelectorAll<HTMLElement>("tbody tr"));
+const rowTitles = () => rows().map((row) => row.querySelector(".requirements-item-name")?.textContent);
 
 /** Waits until the list is on screen: the placeholder draws the card's title too, so the title alone is not the answer. */
 async function listLoaded() {
   await waitFor(() => expect(placeholder()).toBeNull());
-  await screen.findByText("Legal texts");
+  await screen.findByText("Required texts");
 }
 
 beforeAll(() => {
@@ -125,7 +129,8 @@ describe("RegistrationLegalTab: the first read", () => {
 
     const held = placeholder() as HTMLElement;
     expect(held.classList.contains("at-loading-hold")).toBe(true);
-    expect(within(held).getByText("Legal texts")).toBeTruthy();
+    expect(within(held).getByText("Required texts")).toBeTruthy();
+    expect(within(held).getByText("Extra consents")).toBeTruthy();
     // The shapes are decoration; nothing claims that there is nothing yet.
     expect(held.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByText("Privacy notice")).toBeNull();
@@ -180,33 +185,63 @@ describe("RegistrationLegalTab: a read that fails", () => {
 });
 
 describe("RegistrationLegalTab: the list", () => {
-  it("shows the privacy notice and the terms first, whether they are written or not, then the consents", async () => {
+  it("is two cards, Required texts and Extra consents, each with a plain table of the shared kind", async () => {
+    fetchLegalDocuments.mockResolvedValue(answer([privacy, photo]));
+    renderTab();
+    await listLoaded();
+
+    const titles = Array.from(legalPanel().querySelectorAll(".at-card__title")).map((node) => node.textContent);
+    expect(titles).toEqual(["Required texts", "Extra consents"]);
+    const sections = Array.from(legalPanel().querySelectorAll("section"));
+    expect(sections).toHaveLength(2);
+    for (const section of sections) {
+      expect(section.classList.contains("item-table")).toBe(true);
+      expect(section.querySelector(".attendees-table-wrap > table.table")).not.toBeNull();
+    }
+    expect(screen.getByText("Always on the form. Both must be published before registration can be turned on.")).toBeTruthy();
+    expect(screen.getByText("Optional checkboxes the form asks guests to tick.")).toBeTruthy();
+  });
+
+  it("names the columns Text and Status, and Asked for the consents only, with the rule behind an info hint", async () => {
+    fetchLegalDocuments.mockResolvedValue(answer([privacy, photo]));
+    renderTab();
+    await listLoaded();
+
+    const [required, consents] = Array.from(legalPanel().querySelectorAll("table"));
+    const heads = (table: Element | undefined) => Array.from(table?.querySelectorAll("thead th") ?? []).map((th) => th.textContent?.trim());
+    expect(heads(required)).toEqual(["Text", "Status", ""]);
+    expect(heads(consents)).toEqual(["Text", "Status", "Asked", ""]);
+    expect(within(consents as HTMLElement).getByText("Asked").closest("th")?.querySelector(".ti-info-circle, [data-hint], button, svg, i")).not.toBeNull();
+  });
+
+  it("shows the privacy notice and the terms first, whether they are written or not, then the consents, each with what it is for", async () => {
     fetchLegalDocuments.mockResolvedValue(answer([privacy, photo]));
     renderTab();
     await listLoaded();
 
     expect(rowTitles()).toEqual(["Privacy notice", "Event terms", "Photos and video"]);
     const [noticeRow, termsRow, consentRow] = rows();
-    expect(within(noticeRow!).getByText("Published")).toBeTruthy();
-    expect(within(termsRow!).getByText("Not written")).toBeTruthy();
-    expect(within(consentRow!).getByText("Draft")).toBeTruthy();
-    expect(within(noticeRow!).getByRole("button", { name: "Edit Privacy notice" })).toBeTruthy();
-    expect(within(termsRow!).getByRole("button", { name: "Write Event terms" })).toBeTruthy();
-    expect(noticeRow!.textContent).toContain("needed before registration can be turned on");
-    expect(consentRow!.textContent).toContain("Extra consent, key photo, asked on the form");
+    expect(within(noticeRow!).getAllByText("Published").length).toBeGreaterThan(0);
+    expect(within(termsRow!).getAllByText("Not written").length).toBeGreaterThan(0);
+    expect(within(consentRow!).getAllByText("Draft").length).toBeGreaterThan(0);
+    expect(noticeRow!.textContent).toContain("Tells guests how their data is used. Linked from the form.");
+    expect(termsRow!.textContent).toContain("Not written yet. Registration cannot open without it.");
+    expect(consentRow!.textContent).toContain("Key: photo");
   });
 
-  it("links a published text to its public page in a new tab, and a draft to nothing", async () => {
+  it("has one visible action in a row, Edit or Write, and the vertical kebab", async () => {
     fetchLegalDocuments.mockResolvedValue(answer([privacy, photo]));
     renderTab();
     await listLoaded();
 
-    const links = within(legalPanel()).getAllByRole("link");
-    expect(links).toHaveLength(1);
-    expect(links[0]!.getAttribute("href")).toBe("/legal/demo/privacy-notice");
-    expect(links[0]!.getAttribute("target")).toBe("_blank");
-    expect(links[0]!.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(links[0]!.textContent).toContain("of Privacy notice (opens in a new tab)");
+    const [noticeRow, termsRow] = rows();
+    const visible = (row: HTMLElement) => within(row).getAllByRole("button").map((control) => control.textContent?.trim()).filter(Boolean);
+    expect(visible(noticeRow!)).toEqual(["Edit"]);
+    expect(visible(termsRow!)).toEqual(["Write"]);
+    expect(within(noticeRow!).getByRole("button", { name: "Edit Privacy notice" }).className).toContain("at-btn--secondary");
+    expect(within(noticeRow!).getByRole("button", { name: "More actions for Privacy notice" }).querySelector(".ti-dots-vertical")).not.toBeNull();
+    // A text that is not written has nothing to publish or delete: no menu.
+    expect(within(termsRow!).queryByRole("button", { name: /More actions/ })).toBeNull();
   });
 
   it("says what registration still needs published, by the names the list shows, and says nothing when nothing is missing", async () => {
@@ -225,28 +260,39 @@ describe("RegistrationLegalTab: the list", () => {
     expect(screen.queryByText(/Registration cannot be turned on/)).toBeNull();
   });
 
-  it("puts the two header buttons in the card header's look: small and secondary, as on the Fields tab (#1883)", async () => {
+  it("puts Copy from another event in the first card and Add consent in the second, both small and secondary, as on the Fields tab (#1883)", async () => {
     renderTab();
     await listLoaded();
 
-    for (const name of ["Copy from another event", "Add consent"]) {
-      const { className } = screen.getByRole("button", { name });
-      expect(className).toContain("at-btn--sm");
-      expect(className).toContain("at-btn--secondary");
+    const [requiredCard, consentsCard] = Array.from(legalPanel().querySelectorAll<HTMLElement>(".at-card"));
+    expect(within(requiredCard!).getByRole("button", { name: "Copy from another event" })).toBeTruthy();
+    // No consents yet: the empty state has its own button, and the header keeps its own.
+    expect(within(consentsCard!).getAllByRole("button", { name: "Add consent" })).toHaveLength(2);
+    for (const control of [screen.getByRole("button", { name: "Copy from another event" }), ...screen.getAllByRole("button", { name: "Add consent" })]) {
+      expect(control.className).toContain("at-btn--sm");
+      expect(control.className).toContain("at-btn--secondary");
     }
+  });
+
+  it("says in the second card that there is no consent yet, with an Add consent inside the card, and no table", async () => {
+    renderTab();
+    await listLoaded();
+
+    expect(screen.getByText("No extra consents yet")).toBeTruthy();
+    expect(legalPanel().querySelectorAll("table")).toHaveLength(1);
   });
 
   it("turns Copy and Add consent off, with the reason, for an archived event", async () => {
     renderTab({ withEvent: archivedEvent });
     await listLoaded();
 
-    for (const name of ["Copy from another event", "Add consent"]) {
-      const control = screen.getByRole("button", { name });
+    for (const control of [screen.getByRole("button", { name: "Copy from another event" }), ...screen.getAllByRole("button", { name: "Add consent" })]) {
       expect(isOff(control)).toBe(true);
       expect(document.getElementById(control.getAttribute("aria-describedby") ?? "")?.textContent).toBe("This event is archived. Editing is disabled.");
     }
-    // Reading goes on: a text can still be opened.
-    expect(isOff(screen.getByRole("button", { name: "Edit Privacy notice" }))).toBe(false);
+    // Reading goes on: a text can still be opened, and the button says View.
+    expect(isOff(screen.getByRole("button", { name: "View Privacy notice" }))).toBe(false);
+    expect(screen.queryByRole("button", { name: "Edit Privacy notice" })).toBeNull();
   });
 
   it("turns Add consent off at the limit, with the reason, and leaves Copy on", async () => {
@@ -270,9 +316,9 @@ describe("RegistrationLegalTab: opening a text", () => {
 
     expect(await screen.findByRole("textbox", { name: "Text" })).toBeTruthy();
     expect(fetchLegalDocument).toHaveBeenCalledWith("evt-1", "privacy-notice", expect.any(AbortSignal));
-    expect(screen.queryByText("Legal texts")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Back to legal texts" }));
-    expect(await screen.findByText("Legal texts")).toBeTruthy();
+    expect(screen.queryByText("Required texts")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByText("Required texts")).toBeTruthy();
     expect(rowTitles()).toEqual(["Privacy notice", "Event terms"]);
   });
 
@@ -291,7 +337,7 @@ describe("RegistrationLegalTab: opening a text", () => {
     renderTab();
     await listLoaded();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add consent" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Add consent" })[0]!);
 
     expect(await screen.findByRole("textbox", { name: "Key" })).toBeTruthy();
     expect(screen.getByRole("textbox", { name: "Checkbox label" })).toBeTruthy();
@@ -302,7 +348,7 @@ describe("RegistrationLegalTab: opening a text", () => {
     fetchLegalDocuments.mockResolvedValue(answer([privacy, photo]));
     renderTab();
     await listLoaded();
-    fireEvent.click(screen.getByRole("button", { name: "Add consent" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Add consent" })[0]!);
 
     fireEvent.change(await screen.findByRole("textbox", { name: "Key" }), { target: { value: "photo" } });
 
@@ -328,9 +374,9 @@ describe("RegistrationLegalTab: opening a text", () => {
     await waitFor(() => expect(fetchLegalDocuments).toHaveBeenCalledTimes(2));
     // What the checklist needs may have changed with the text: the page reads the checks again, once.
     await waitFor(() => expect(fetchRegistrationSettings).toHaveBeenCalledTimes(2));
-    fireEvent.click(screen.getByRole("button", { name: "Back to legal texts" }));
-    await screen.findByText("Legal texts");
-    expect(within(rows()[1]!).getByText("Draft")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await screen.findByText("Required texts");
+    expect(within(rows()[1]!).getAllByText("Draft")[0]).toBeTruthy();
     expect(screen.queryByText(/Registration cannot be turned on/)).toBeNull();
   });
 
@@ -345,8 +391,8 @@ describe("RegistrationLegalTab: opening a text", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
 
-    await screen.findByText("Legal texts");
-    await waitFor(() => expect(within(rows()[0]!).getByText("Not written")).toBeTruthy());
+    await screen.findByText("Required texts");
+    await waitFor(() => expect(within(rows()[0]!).getAllByText("Not written")[0]).toBeTruthy());
     expect(deleteLegalDocument).toHaveBeenCalledWith("evt-1", "privacy-notice");
   });
 
@@ -383,7 +429,7 @@ describe("RegistrationLegalTab: the list after a change that could not be read b
     expect(rowTitles()).toEqual(["Privacy notice", "Event terms"]);
     fetchLegalDocuments.mockResolvedValue(answer([], [{ ref: "privacy-notice", kind: "privacy_notice", key: null }]));
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => expect(within(rows()[0]!).getByText("Not written")).toBeTruthy());
+    await waitFor(() => expect(within(rows()[0]!).getAllByText("Not written")[0]).toBeTruthy());
   });
 });
 
@@ -411,6 +457,251 @@ describe("RegistrationLegalTab: copying from another event", () => {
     await waitFor(() => expect(addToast).toHaveBeenCalledWith("Copied 1 legal text from Autumn Gala.", "success"));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(saveLegalDocument).toHaveBeenCalledWith("evt-1", "event-terms", { title: "Event terms", content_html: "<h2>Heading</h2><p>Some words.</p>" });
-    await waitFor(() => expect(within(rows()[1]!).getByText("Draft")).toBeTruthy());
+    await waitFor(() => expect(within(rows()[1]!).getAllByText("Draft")[0]).toBeTruthy());
+  });
+});
+
+describe("RegistrationLegalTab: what a row does", () => {
+  const publishedNow = { published: true, published_at: "2026-10-20T10:00:00.000Z" };
+  const terms = doc("event-terms", publishedNow);
+  const news = doc("consent-news", { title: "News", ...publishedNow, required: false });
+  const asked = doc("consent-photo", { title: "Photos and video", ...publishedNow, required: true });
+  const draftConsent = doc("consent-diet", { title: "Diet" });
+
+  async function loaded(items: LegalDocumentDto[], { registrationOn = false, withEvent = event } = {}) {
+    fetchRegistrationSettings.mockResolvedValue({ mode: registrationOn ? "approval" : null, guest_url: null, readiness: [], own_address: null });
+    fetchLegalDocuments.mockResolvedValue(answer(items));
+    renderTab({ withEvent });
+    await listLoaded();
+    await waitFor(() => expect(fetchRegistrationSettings).toHaveBeenCalled());
+  }
+  const rowOf = (title: string) => rows().find((row) => row.querySelector(".requirements-item-name")?.textContent === title) as HTMLElement;
+  const askedSwitch = (title: string) => within(rowOf(title)).getByRole("switch", { name: `Asked on the form: ${title}` }) as HTMLInputElement;
+  const openMenu = (title: string) => fireEvent.click(within(rowOf(title)).getByRole("button", { name: `More actions for ${title}` }));
+  const item = (name: string) => screen.getByRole("menuitem", { name: new RegExp(`^${name}`) });
+
+  it("shows the Asked switch on for a published consent the form asks for, off for one it does not, and off with its reason for a draft", async () => {
+    await loaded([privacy, terms, asked, news, draftConsent]);
+
+    expect(askedSwitch("Photos and video").checked).toBe(true);
+    expect(askedSwitch("News").checked).toBe(false);
+    expect(askedSwitch("News").disabled).toBe(false);
+    const draft = askedSwitch("Diet");
+    expect(draft.checked).toBe(false);
+    expect(draft.disabled).toBe(true);
+    expect(document.getElementById(draft.getAttribute("aria-describedby") ?? "")?.textContent).toBe("Publish it first.");
+  });
+
+  it("has no Asked switch for the two required texts", async () => {
+    await loaded([privacy, terms, news]);
+
+    expect(within(rowOf("Privacy notice")).queryByRole("switch")).toBeNull();
+    expect(within(legalPanel()).getAllByRole("switch")).toHaveLength(1);
+  });
+
+  it("writes the consents the form asks for when Asked is switched on, keeping the ones it already asks for, and reads the checks again", async () => {
+    saveRegistrationSettings.mockResolvedValue({});
+    await loaded([privacy, terms, asked, news]);
+    const settingsReads = fetchRegistrationSettings.mock.calls.length;
+
+    fireEvent.click(askedSwitch("News"));
+
+    await waitFor(() => expect(saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { consent_keys: ["photo", "news"] }));
+    expect(addToast).toHaveBeenCalledWith("The form now asks for this consent.", "success");
+    await waitFor(() => expect(fetchLegalDocuments).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchRegistrationSettings.mock.calls.length).toBeGreaterThan(settingsReads));
+  });
+
+  it("writes the list without the consent when Asked is switched off", async () => {
+    saveRegistrationSettings.mockResolvedValue({});
+    await loaded([privacy, terms, asked, news]);
+
+    fireEvent.click(askedSwitch("Photos and video"));
+
+    await waitFor(() => expect(saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { consent_keys: [] }));
+    expect(addToast).toHaveBeenCalledWith("The form no longer asks for this consent.", "success");
+  });
+
+  it("keeps the switch busy, and does nothing for a second click, while its request runs", async () => {
+    const write = deferred<object>();
+    saveRegistrationSettings.mockReturnValue(write.promise);
+    await loaded([privacy, terms, news, asked]);
+
+    fireEvent.click(askedSwitch("News"));
+    await waitFor(() => expect(askedSwitch("News").getAttribute("aria-busy")).toBe("true"));
+    fireEvent.click(askedSwitch("Photos and video"));
+    expect(saveRegistrationSettings).toHaveBeenCalledTimes(1);
+
+    await act(async () => write.resolve({}));
+  });
+
+  it.each([
+    [409, "legal_document_in_use", "Registration is on for this event and needs this text. Turn registration off first, then withdraw or delete it."],
+    [422, "consent_not_published", "One of the extra consents you chose is not published for this event. Publish its text first, or leave it out."],
+    [403, "event_archived", "This event is archived."],
+  ])("tells a %i %s in the words of the app, in a toast, and reads the list again", async (status, code, message) => {
+    saveRegistrationSettings.mockRejectedValue(new ApiError(status, code, code));
+    await loaded([privacy, terms, news]);
+
+    fireEvent.click(askedSwitch("News"));
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith(message, "error"));
+    await waitFor(() => expect(fetchLegalDocuments).toHaveBeenCalledTimes(2));
+  });
+
+  it("says nothing, and sends the browser to sign-in, for a session that ended", async () => {
+    saveRegistrationSettings.mockRejectedValue(new ApiError(401, "authentication_required"));
+    await loaded([privacy, terms, news]);
+
+    fireEvent.click(askedSwitch("News"));
+
+    await waitFor(() => expect(fetchLegalDocuments).toHaveBeenCalledTimes(2));
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("locks every control for an archived event, with the reason, and the menu keeps View as a guest", async () => {
+    await loaded([privacy, terms, asked], { withEvent: archivedEvent });
+
+    expect(askedSwitch("Photos and video").disabled).toBe(true);
+    openMenu("Photos and video");
+    for (const name of ["Unpublish", "Delete"]) {
+      expect(isOff(item(name))).toBe(true);
+      expect(item(name).textContent).toContain("This event is archived. Editing is disabled.");
+    }
+    expect(isOff(item("View as a guest"))).toBe(false);
+  });
+
+  it("has Publish for a draft, View as a guest only for a published text, and Delete, in the kebab", async () => {
+    await loaded([privacy, terms, draftConsent, news]);
+
+    openMenu("Diet");
+    expect(item("Publish")).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /View as a guest/ })).toBeNull();
+    expect(item("Delete")).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    openMenu("News");
+    expect(item("Unpublish")).toBeTruthy();
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    fireEvent.click(item("View as a guest"));
+    expect(open).toHaveBeenCalledWith("/legal/demo/consent-news", "_blank", "noopener");
+    open.mockRestore();
+    expect(screen.queryByText(/Public page/)).toBeNull();
+  });
+
+  it("publishes from the menu, with the item busy, and reads the list again", async () => {
+    const answerNow = deferred<LegalDocumentDto>();
+    publishLegalDocument.mockReturnValue(answerNow.promise);
+    await loaded([privacy, terms, draftConsent]);
+
+    openMenu("Diet");
+    fireEvent.click(item("Publish"));
+    await waitFor(() => expect(item("Publish").getAttribute("aria-busy")).toBe("true"));
+    await act(async () => answerNow.resolve(doc("consent-diet", publishedNow)));
+
+    expect(publishLegalDocument).toHaveBeenCalledWith("evt-1", "consent-diet");
+    expect(addToast).toHaveBeenCalledWith("Text published.", "success");
+    await waitFor(() => expect(fetchLegalDocuments).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("tells why a publish failed, and keeps the list", async () => {
+    publishLegalDocument.mockRejectedValue(new ApiError(500, "unexpected_failure"));
+    await loaded([privacy, terms, draftConsent]);
+
+    openMenu("Diet");
+    fireEvent.click(item("Publish"));
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Could not publish this text.", "error"));
+  });
+
+  it("asks before it unpublishes, then does, and says so", async () => {
+    unpublishLegalDocument.mockResolvedValue(doc("consent-news", { title: "News" }));
+    await loaded([privacy, terms, news]);
+
+    openMenu("News");
+    fireEvent.click(item("Unpublish"));
+    const dialog = await screen.findByRole("dialog", { name: 'Unpublish "News"?' });
+    expect(dialog.textContent).toContain("Guests can no longer read it.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unpublish" }));
+
+    await waitFor(() => expect(unpublishLegalDocument).toHaveBeenCalledWith("evt-1", "consent-news"));
+    expect(saveRegistrationSettings).not.toHaveBeenCalled();
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Text unpublished. Guests can no longer read it.", "success"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("takes a consent the form asks for off the form first, when registration is off, then unpublishes", async () => {
+    saveRegistrationSettings.mockResolvedValue({});
+    unpublishLegalDocument.mockResolvedValue(doc("consent-photo"));
+    await loaded([privacy, terms, asked, news]);
+
+    openMenu("Photos and video");
+    fireEvent.click(item("Unpublish"));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Unpublish" }));
+
+    await waitFor(() => expect(unpublishLegalDocument).toHaveBeenCalled());
+    expect(saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { consent_keys: [] });
+  });
+
+  it("asks before it deletes, and deletes", async () => {
+    deleteLegalDocument.mockResolvedValue(undefined);
+    await loaded([privacy, terms, news]);
+
+    openMenu("News");
+    fireEvent.click(item("Delete"));
+    const dialog = await screen.findByRole("dialog", { name: 'Delete "News"?' });
+    expect(dialog.textContent).toContain("Its page stops working. This cannot be undone.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(deleteLegalDocument).toHaveBeenCalledWith("evt-1", "consent-news"));
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Text deleted.", "success"));
+  });
+
+  it("keeps the delete dialog open with the reason when the server refuses, and Cancel closes it", async () => {
+    deleteLegalDocument.mockRejectedValue(new ApiError(409, "legal_document_in_use", "legal_document_in_use"));
+    await loaded([privacy, terms, news]);
+
+    openMenu("News");
+    fireEvent.click(item("Delete"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect((await within(dialog).findByText(/Registration is on for this event/))).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("blocks Unpublish and Delete of the texts registration needs while it is on, with the reason as tooltip and as visible text", async () => {
+    await loaded([privacy, terms, asked, news], { registrationOn: true });
+    await waitFor(() => {
+      openMenu("Privacy notice");
+      expect(isOff(item("Unpublish"))).toBe(true);
+    });
+
+    expect(item("Unpublish").textContent).toContain("Registration is on. Turn it off first.");
+    expect(isOff(item("Delete"))).toBe(true);
+    expect(getTooltipText(item("Delete"))).toBe("Registration is on. Turn it off first.");
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    openMenu("Photos and video");
+    expect(isOff(item("Unpublish"))).toBe(true);
+    expect(item("Delete").textContent).toContain("The form asks for it. Switch off Asked first.");
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    // A consent the form does not ask for is free, and so is its switch.
+    openMenu("News");
+    expect(isOff(item("Unpublish"))).toBe(false);
+    expect(isOff(item("Delete"))).toBe(false);
+    expect(askedSwitch("Photos and video").disabled).toBe(false);
+  });
+
+  it("opens the text from the menu too, for the screen where the Edit button has gone", async () => {
+    await loaded([privacy, terms, news]);
+
+    openMenu("News");
+    fireEvent.click(item("Edit"));
+
+    expect(await screen.findByRole("textbox", { name: "Checkbox label" })).toBeTruthy();
   });
 });

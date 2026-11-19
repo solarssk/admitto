@@ -22,7 +22,7 @@ Write, publish and copy the texts that guests read before they register for an e
 4. Write the text. The toolbar has a heading, a subheading, bold, a bulleted list, a numbered list and a link.
 5. To add a link, select the words, choose the link button, type the address and select **Apply**. A link can be a web address (`https://example.com`) or an email address.
 6. Select **Save**.
-7. Select **Publish** when the text is ready. Select **View the public page** to see what guests see.
+7. Select **Publish** when the text is ready. Select **View as a guest** to see what guests see.
 
 **Add an extra consent**
 
@@ -30,7 +30,7 @@ Write, publish and copy the texts that guests read before they register for an e
 2. Enter a key, such as `photo-consent`. It is part of the page address and cannot be changed later.
 3. Enter the checkbox label. Guests read it next to the checkbox.
 4. Write the text, select **Save**, then **Publish**.
-5. To make the form ask for the consent, choose it under **Extra consents** in the **Form** card of **Event settings → Registration**. Until a consent is published, that row has the button **Open Legal** instead of a list. See [Registration Access](Registration-Access).
+5. To make the form ask for the consent, switch on **Asked** in its row in the **Extra consents** card. The switch is off until the consent is published. See [Registration Access](Registration-Access).
 
 **Copy the texts of another event**
 
@@ -41,7 +41,7 @@ Write, publish and copy the texts that guests read before they register for an e
 
 ## Expected result
 
-Each text has its own public page, and the list shows whether it is **Published**, a **Draft** or **Not written**. A published text can be opened from the **Public page** link in its row.
+The tab has two cards. **Required texts** holds the privacy notice and the event terms, which the form always shows. **Extra consents** holds your own checkboxes. Each row shows whether the text is **Published**, a **Draft** or **Not written**, with **Edit** (or **Write**) and a menu (⋮). The menu has **Publish** or **Unpublish**, **View as a guest** (published texts only) and **Delete**. In the editor, **Back** is in the footer next to **Save**, and **View as a guest** is in the card header.
 
 ## Important decisions
 
@@ -64,7 +64,8 @@ Each text has its own public page, and the list shows whether it is **Published*
 
 **Some texts cannot be taken away**
 
-- While registration is on, a text it needs cannot be unpublished or deleted. Turn registration off first.
+- While registration is on, the privacy notice and the terms cannot be unpublished or deleted. Turn registration off first.
+- A consent the form asks for cannot be unpublished or deleted while registration is on. Switch off **Asked** first. With registration off, switching it off is done for you.
 - An archived event keeps its texts, and you can read them, but you cannot change them.
 
 ## What changes after this action
@@ -73,6 +74,7 @@ Each text has its own public page, and the list shows whether it is **Published*
 |---|---|
 | **Save** | The text replaces the one that was saved before. A published text changes on its public page. |
 | **Publish** | Guests can open the public page. |
+| **Asked** on | The form shows the checkbox. Only a published consent can be switched on. |
 | **Unpublish** | The public page stops working. The text stays in the list as a draft. |
 | **Delete** | The text is removed for good, and its page stops working. |
 | **Copy texts** | The texts are saved here one after another, like your own saves. |
@@ -82,6 +84,8 @@ Each text has its own public page, and the list shows whether it is **Published*
 | Problem | What to do |
 |---|---|
 | **Publish** is grey | The text has unsaved changes. Save it first. |
+| The **Asked** switch is grey | The consent is a draft. Publish it first. |
+| **Unpublish** or **Delete** in the menu is grey | The line under it says why: registration is on, or the form asks for the consent. |
 | "There is no text left to save once unsupported formatting is removed" | Write some words before you save. |
 | A link is refused | Use an address that starts with `http://` or `https://`, or an email address. Other kinds of link, such as phone numbers, are not allowed. |
 | "Registration is on for this event and needs this text" | Turn registration off, then unpublish or delete the text. |

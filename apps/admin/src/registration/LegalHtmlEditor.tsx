@@ -167,15 +167,15 @@ function LinkForm({ editor, onClose }: Readonly<{ editor: Editor; onClose: () =>
         }}
       />
       <div className="legal-link-form__actions">
-        <Button type="button" size="sm" onClick={apply} onKeyDown={onEscape}>
+        <Button type="button" onClick={apply} onKeyDown={onEscape}>
           Apply
         </Button>
         {inLink && (
-          <Button type="button" size="sm" variant="secondary" onClick={remove} onKeyDown={onEscape}>
+          <Button type="button" variant="secondary" onClick={remove} onKeyDown={onEscape}>
             Remove link
           </Button>
         )}
-        <Button type="button" size="sm" variant="ghost" onClick={onClose} onKeyDown={onEscape}>
+        <Button type="button" variant="ghost" onClick={onClose} onKeyDown={onEscape}>
           Cancel
         </Button>
       </div>

@@ -1,5 +1,6 @@
 import { Card, Skeleton } from "@admitto/ui";
 import { SettingsSkeletonRegion } from "../settings/SettingsPanelSkeleton.js";
+import "../components/item-table.css";
 import "./requirements.css";
 
 /** How many rows each table draws: the first read does not know how many items or fields the event has. */
@@ -64,7 +65,7 @@ function PlaceholderCard({
   status: "switch" | "text";
 }>) {
   return (
-    <section className={formHeading ? "requirements-section requirements-section--registration" : "requirements-section"}>
+    <section className={formHeading ? "requirements-section item-table requirements-section--registration" : "requirements-section item-table"}>
       <Card padded={false} title={title} actions={<Skeleton variant="rect" width={action} height={32} />}>
         <div className="attendees-table-wrap">
           <table className="table">

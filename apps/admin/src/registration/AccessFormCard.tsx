@@ -1,10 +1,6 @@
-import { useId, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Card, Switch } from "@admitto/ui";
-import type { LegalDocumentDto } from "../api/types.js";
-import { SectionLabel } from "../attendees/SectionLabel.js";
-import { MultiSelect } from "../components/MultiSelect.js";
-import { consentOptions, type AccessDraft } from "./accessSettings.js";
+import type { AccessDraft } from "./accessSettings.js";
 import { registrationTabPath } from "./registrationTabs.js";
 import "./registration-access.css";
 
@@ -30,17 +26,7 @@ const APPROVAL_TITLE = "Approve requests by hand";
 const APPROVAL_TEXT = "You accept or reject each request on the Requests tab.";
 const APPROVAL_OFF_TEXT = "You can choose this once registration is on.";
 
-type FormChange = Partial<Pick<AccessDraft, ToggleKey | "consent_keys" | "mode">>;
-
-/** One labelled group of a card. Each group is its own list of rows, so the first and the last row of a group are spaced as such. */
-function Group({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
-  return (
-    <div className="access-form-group">
-      <SectionLabel>{label}</SectionLabel>
-      <div className="access-form-group__rows">{children}</div>
-    </div>
-  );
-}
+type FormChange = Partial<Pick<AccessDraft, ToggleKey | "mode">>;
 
 function ToggleRow({ name, draft, disabled, onChange }: Readonly<{ name: ToggleKey; draft: AccessDraft; disabled: boolean; onChange: (change: FormChange) => void }>) {
   const { title, text } = TOGGLES[name];
@@ -92,71 +78,20 @@ function GoToRow({ title, text, label, to }: Readonly<{ title: string; text: str
   );
 }
 
-const CONSENTS_TITLE = "Extra consents";
-const CONSENTS_TEXT = "Optional checkboxes on the form, for example a marketing consent. The privacy notice and the terms are always shown.";
-const CONSENTS_NONE_TEXT = "You have no consent to choose from yet. Write one on the Legal tab.";
-
-/**
- * The extra consents a guest must accept, as a settings row like the ones above it: the title and one line at the left, the control at
- * the right. The control is the choice from the texts the event has published (the Legal tab writes them; one that is chosen and not
- * published stays in the list, marked, so that it can be taken off). With nothing to choose from it is the button to the Legal tab.
- */
-function ConsentsRow({ eventId, draft, legalItems, disabled, onChange }: Readonly<{ eventId: string; draft: AccessDraft; legalItems: readonly LegalDocumentDto[]; disabled: boolean; onChange: (change: FormChange) => void }>) {
-  const options = consentOptions(legalItems, draft.consent_keys);
-  const textId = useId();
-  const none = options.length === 0;
-  return (
-    <div className="settings-row settings-row--switch">
-      <div className="settings-row__text">
-        <strong>{CONSENTS_TITLE}</strong>
-        <p id={textId}>{none ? CONSENTS_NONE_TEXT : CONSENTS_TEXT}</p>
-      </div>
-      <div className="settings-row__controls">
-        {none ? (
-          <Link className="at-btn at-btn--secondary at-btn--sm" to={registrationTabPath(eventId, "legal")} aria-label={`Open Legal: ${CONSENTS_TITLE}`}>
-            Open Legal
-          </Link>
-        ) : (
-          <div className="access-consents-select">
-            <MultiSelect
-              id="access-consents"
-              label={CONSENTS_TITLE}
-              showLabel={false}
-              placeholder="None"
-              searchPlaceholder="Search consents"
-              emptyLabel="No consents found"
-              value={draft.consent_keys}
-              options={options}
-              disabled={disabled}
-              describedBy={textId}
-              onChange={(ids) => onChange({ consent_keys: ids })}
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 type CardProps = Readonly<{ draft: AccessDraft; disabled: boolean; onChange: (change: FormChange) => void }>;
 
-/** What guests fill in: the questions (the company, the department, one more person, and the event's own on the Fields tab) and the extra consents. */
-export function AccessFormCard({ eventId, draft, legalItems, disabled, onChange }: CardProps & Readonly<{ eventId: string; legalItems: readonly LegalDocumentDto[] }>) {
+/** What guests fill in: the questions (the company, the department, one more person, and the event's own on the Fields tab). The consents the form asks for are chosen on the Legal tab. */
+export function AccessFormCard({ eventId, draft, disabled, onChange }: CardProps & Readonly<{ eventId: string }>) {
   const row = (name: ToggleKey) => <ToggleRow name={name} draft={draft} disabled={disabled} onChange={onChange} />;
   return (
     <Card title="Form">
       <div className="settings-card-stack">
-        <p className="settings-card-intro">The questions on the form and the consents guests agree to.</p>
-        <div className="access-form-groups">
-          <Group label="Questions">
-            {row("ask_company")}
-            {row("ask_department")}
-            {row("companion")}
-            <GoToRow title="Your own questions" text="Add or change them on the Fields tab." label="Open Fields" to={registrationTabPath(eventId, "fields")} />
-          </Group>
-          <Group label="Consents">
-            <ConsentsRow eventId={eventId} draft={draft} legalItems={legalItems} disabled={disabled} onChange={onChange} />
-          </Group>
+        <p className="settings-card-intro">The questions on the form.</p>
+        <div className="access-form-group__rows">
+          {row("ask_company")}
+          {row("ask_department")}
+          {row("companion")}
+          <GoToRow title="Your own questions" text="Add or change them on the Fields tab." label="Open Fields" to={registrationTabPath(eventId, "fields")} />
         </div>
       </div>
     </Card>

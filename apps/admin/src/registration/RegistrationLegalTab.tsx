@@ -3,6 +3,7 @@ import { useOutletContext, useParams } from "react-router";
 import { useToast } from "@admitto/ui";
 import { ApiError, fetchLegalDocuments } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { RefreshWarning } from "../components/RefreshWarning.js";
 import { RetryEmptyState } from "../components/RetryEmptyState.js";
@@ -16,7 +17,8 @@ import { pluralSuffix } from "../utils/pluralize.js";
 import { CopyLegalTextsDialog } from "./CopyLegalTextsDialog.js";
 import { LegalTextEditor } from "./LegalTextEditor.js";
 import { LegalTextsList } from "./LegalTextsList.js";
-import { legalTextRows, missingTextName, type LegalTextRow, type LegalTextTarget } from "./legalTexts.js";
+import { useLegalTextActions } from "./useLegalTextActions.js";
+import { WITHDRAW_COPY, legalTextRows, missingTextName, type LegalTextRow, type LegalTextTarget } from "./legalTexts.js";
 import { useAfterFirstAnswer } from "./useAfterFirstAnswer.js";
 
 /** The text open in the editor: one the event has, one it has not written yet, or a consent that is about to be added. */
@@ -25,10 +27,10 @@ type OpenText = { target: LegalTextTarget; exists: boolean; newConsent: boolean 
 const NEW_CONSENT: OpenText = { target: { ref: "", kind: "consent", key: null }, exists: false, newConsent: true };
 
 /** One event, one tab: a different `:eventId` is a fresh tab (its own read and editor), never the previous one's. */
-export function RegistrationLegalTab({ onChecksStale }: Readonly<{ onChecksStale?: () => void }>) {
+export function RegistrationLegalTab({ registrationOn = false, onChecksStale }: Readonly<{ registrationOn?: boolean; onChecksStale?: () => void }>) {
   const { eventId } = useParams();
   if (!eventId) return <p>Missing event.</p>;
-  return <RegistrationLegalBody key={eventId} eventId={eventId} onChecksStale={onChecksStale} />;
+  return <RegistrationLegalBody key={eventId} eventId={eventId} registrationOn={registrationOn} onChecksStale={onChecksStale} />;
 }
 
 /**
@@ -37,7 +39,7 @@ export function RegistrationLegalTab({ onChecksStale }: Readonly<{ onChecksStale
  * `useCardLoad`): a placeholder in the card's own shape for the first read, an error with a busy Retry that stays on screen
  * until the answer is in, and the list kept, blocked and dimmed, while the read that follows a change runs.
  */
-function RegistrationLegalBody({ eventId, onChecksStale }: Readonly<{ eventId: string; onChecksStale?: () => void }>) {
+function RegistrationLegalBody({ eventId, registrationOn, onChecksStale }: Readonly<{ eventId: string; registrationOn: boolean; onChecksStale?: () => void }>) {
   // What the checklist needs (a required text published, a required question) changes with this list: the page reads it again.
   const onData = useAfterFirstAnswer(onChecksStale);
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -61,6 +63,9 @@ function RegistrationLegalBody({ eventId, onChecksStale }: Readonly<{ eventId: s
   );
   const list = useListLoad({ fetcher: fetchList, fallback: "Could not load the legal texts.", onData });
   const card = useCardLoad(list);
+  const actions = useLegalTextActions({ eventId, items: list.data?.items ?? [], reload: list.reload });
+  const { confirm } = actions;
+  const confirmCopy = WITHDRAW_COPY[confirm?.action ?? "unpublish"];
 
   if (!card.gate.showContent) {
     return (
@@ -68,7 +73,10 @@ function RegistrationLegalBody({ eventId, onChecksStale }: Readonly<{ eventId: s
         label="Loading legal texts"
         held={!card.gate.showIndicator}
         slow={card.slow}
-        cards={[{ id: "legal", title: "Legal texts", intro: 2, rows: 3, rowHeight: 60 }]}
+        cards={[
+          { id: "required", title: "Required texts", intro: 1, rows: 2, rowHeight: 60 },
+          { id: "consents", title: "Extra consents", intro: 1, rows: 2, rowHeight: 60 },
+        ]}
         footer={false}
       />
     );
@@ -120,15 +128,34 @@ function RegistrationLegalBody({ eventId, onChecksStale }: Readonly<{ eventId: s
       {list.refreshError && <RefreshWarning message={list.refreshError} onRetry={list.reload} />}
       <RefetchRegion refreshing={list.refreshing} label="Refreshing legal texts">
         <LegalTextsList
-          event={event}
+          controls={{
+            event,
+            registrationOn,
+            pending: actions.pending,
+            onOpen: openRow,
+            onToggleAsked: actions.toggleAsked,
+            onPublish: actions.publish,
+            onUnpublish: actions.askToUnpublish,
+            onDelete: actions.askToDelete,
+          }}
           rows={legalTextRows(items)}
           missingNames={missing.map((entry) => missingTextName(entry, items))}
           limits={limits}
-          onOpen={openRow}
           onAddConsent={() => setOpen(NEW_CONSENT)}
           onCopy={() => setCopyOpen(true)}
         />
       </RefetchRegion>
+      <ConfirmDialog
+        open={confirm !== null}
+        title={`${confirmCopy.verb} "${confirm?.row.document?.title ?? ""}"?`}
+        message={confirmCopy.message}
+        confirmLabel={confirmCopy.verb}
+        confirmVariant={confirmCopy.variant}
+        errorMessage={actions.confirmError}
+        loading={actions.confirmBusy}
+        onConfirm={actions.answerYes}
+        onCancel={actions.cancelConfirm}
+      />
       <CopyLegalTextsDialog
         open={copyOpen}
         eventId={eventId}

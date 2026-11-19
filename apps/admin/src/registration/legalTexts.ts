@@ -124,3 +124,44 @@ export function legalFormState(input: LegalFormInput): LegalFormState {
   const keyReady = !isNewConsent || (keyText !== "" && keyProblem === undefined);
   return { dirty, empty, tooLong, canSave: dirty && !empty && !tooLong && title.trim() !== "" && keyReady };
 }
+
+/** What a row says under its title: what the text is for. A consent has no fixed purpose, so it says the key it is recorded under. */
+export function textDescription(row: LegalTextRow): string {
+  const { target, document } = row;
+  if (document === null) return "Not written yet. Registration cannot open without it.";
+  if (target.kind === "privacy_notice") return "Tells guests how their data is used. Linked from the form.";
+  if (target.kind === "event_terms") return "The rules guests agree to when they come.";
+  return `Key: ${target.key ?? ""}`;
+}
+
+/** Why a text cannot be unpublished or deleted now, and why a consent cannot be switched on yet. */
+export const LOCKED_FIXED_REASON = "Registration is on. Turn it off first.";
+export const LOCKED_CONSENT_REASON = "The form asks for it. Switch off Asked first.";
+export const PUBLISH_FIRST_REASON = "Publish it first.";
+
+/**
+ * Why a text cannot be unpublished or deleted now, or null when it can: registration needs the privacy notice and the terms while it
+ * is on, and a consent while the form asks for it. The server holds the same rule (409 `legal_document_in_use`).
+ */
+export function lockReason(row: LegalTextRow, registrationOn: boolean): string | null {
+  if (!registrationOn || row.document === null) return null;
+  if (row.target.kind !== "consent") return LOCKED_FIXED_REASON;
+  return row.document.required ? LOCKED_CONSENT_REASON : null;
+}
+
+/** The keys of the consents the form asks for, as the list tells them. */
+export function askedKeys(items: readonly LegalDocumentDto[]): string[] {
+  return items.flatMap((item) => (item.kind === "consent" && item.required && item.key !== null ? [item.key] : []));
+}
+
+/** The keys the form asks for after one consent is switched on or off. */
+export function askedKeysWith(items: readonly LegalDocumentDto[], key: string, asked: boolean): string[] {
+  const others = askedKeys(items).filter((other) => other !== key);
+  return asked ? [...others, key] : others;
+}
+
+/** What the dialog says before a text is unpublished or deleted from the list. */
+export const WITHDRAW_COPY = {
+  unpublish: { verb: "Unpublish", message: "Guests can no longer read it.", variant: "primary" },
+  delete: { verb: "Delete", message: "Its page stops working. This cannot be undone.", variant: "danger" },
+} as const;

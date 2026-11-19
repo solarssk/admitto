@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { useToast } from "@admitto/ui";
-import { ApiError, fetchLegalDocuments, fetchRegistrationSettings, saveRegistrationSettings } from "../api/client.js";
+import { ApiError, fetchRegistrationSettings, saveRegistrationSettings } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { LegalDocumentDto, RegistrationSettingsDto } from "../api/types.js";
+import type { RegistrationSettingsDto } from "../api/types.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
 import { claimErrors, draftFromSettings, settingsPatch, technicalOf, technicalPatch, type AccessDraft } from "./accessSettings.js";
 
@@ -11,9 +11,8 @@ export type AccessProblem = { kind: "not_ready"; blockers: readonly string[] } |
 
 export interface AccessFormInput {
   eventId: string;
-  /** The settings and the event's legal texts, as the first read of the tab found them. */
+  /** The settings, as the first read of the tab found them. */
   settings: RegistrationSettingsDto;
-  legalItems: readonly LegalDocumentDto[];
   /** Reads the event again, so that the page learns it was archived. */
   refreshEvent?: () => Promise<unknown>;
   /** Only a superadmin sends how guests open the form (the access method, the bot check, the identity provider and the restriction). */
@@ -27,10 +26,9 @@ export interface AccessFormInput {
  * back, and the answer of the server becomes both the new `base` and the new `draft`. Whether registration is on is the switch of the Registration page, not this form. For a
  * superadmin the difference includes how guests open the form (`technicalPatch`), sent with the provider the form was made from.
  */
-export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, refreshEvent, superadmin }: AccessFormInput) {
+export function useAccessForm({ eventId, settings, refreshEvent, superadmin }: AccessFormInput) {
   const { addToast } = useToast();
   const [server, setServer] = useState(settings);
-  const [legalItems, setLegalItems] = useState(firstLegalItems);
   const [base, setBase] = useState(() => draftFromSettings(settings));
   const [draft, setDraft] = useState(base);
   const [saving, setSaving] = useState(false);
@@ -53,17 +51,20 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     setProblem(null);
   }
 
-  /** Reads the settings and the texts again, quietly: the checklist and the list of consents learn what changed, and the form does not move. Says whether the settings could be read (true too when a newer read took over). */
+  /** Reads the settings again, quietly: the checklist learns what changed, and the form does not move. Says whether the settings could be read (true too when a newer read took over). */
   async function refresh(): Promise<boolean> {
     // A password set and then removed, or a save, can start a read while an older one is still on its way: the older answer, if it
-    // comes last, must not put back what the newer change took away, and neither may a slow read of the texts hold an old answer back.
+    // comes last, must not put back what the newer change took away.
     const mine = ++newestRead.current;
     // A read that fails changes nothing on screen (the error that sent us here stays); the answer says whether the settings were read.
-    const [latest, texts] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchLegalDocuments(eventId)]);
-    if (mine !== newestRead.current) return true;
-    if (latest.status === "fulfilled") setServer(latest.value);
-    if (texts.status === "fulfilled") setLegalItems(texts.value.items);
-    return latest.status === "fulfilled";
+    let latest: RegistrationSettingsDto;
+    try {
+      latest = await fetchRegistrationSettings(eventId);
+    } catch {
+      return mine !== newestRead.current;
+    }
+    if (mine === newestRead.current) setServer(latest);
+    return true;
   }
 
   /** A change was refused because the event is archived: the event is read again, so that the controls lock, and so are the settings, so that the checklist is true when it is restored. */
@@ -107,7 +108,7 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     // These answers say that what the screen shows is out of date (the event lost something, a text was withdrawn, the event was
     // archived): read it again, and let the answer be the truth.
     if (hasApiErrorCode(err, "sso_provider_changed")) void startAgain();
-    else if (hasApiErrorCode(err, "registration_not_ready") || hasApiErrorCode(err, "consent_not_published") || hasApiErrorCode(err, "sso_provider_not_available")) void refresh();
+    else if (hasApiErrorCode(err, "registration_not_ready") || hasApiErrorCode(err, "sso_provider_not_available")) void refresh();
     if (hasApiErrorCode(err, "event_archived")) eventArchived();
     // Only a 409 `registration_not_ready` carries `blockers`: the keys of the checks that are not met, which the screen words itself.
     const blockers = err instanceof ApiError ? err.blockers : undefined;
@@ -147,5 +148,5 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     }
   }
 
-  return { server, legalItems, base, draft, dirty, saving, problem, edit, reset, save: () => void save(), passwordChanged, eventArchived, refresh };
+  return { server, base, draft, dirty, saving, problem, edit, reset, save: () => void save(), passwordChanged, eventArchived, refresh };
 }

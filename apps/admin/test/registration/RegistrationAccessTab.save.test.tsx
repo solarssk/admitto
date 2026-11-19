@@ -5,7 +5,7 @@ import { ApiError } from "../../src/api/client.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
 import { deferred, isOff } from "../test-utils.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
-import { checks, legalAnswer, settings, texts } from "./accessData.js";
+import { checks, settings } from "./accessData.js";
 import { onDirtyChange, onSavingChange, radio, renderLoaded, resetApi, saveButton, toggle } from "./accessFixtures.js";
 
 const goToLogin = vi.fn();
@@ -126,17 +126,6 @@ describe("RegistrationAccessTab: what a save sends", () => {
     expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { max_companions: 0 });
   });
 
-  it("sends the consents that were chosen", async () => {
-    await renderLoaded();
-    api.saveRegistrationSettings.mockResolvedValue(settings({ consent_keys: ["photo"] }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Extra consents, none selected" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Photos and video" }));
-    await save();
-
-    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { consent_keys: ["photo"] });
-  });
-
   it("does not send a setting it did not change, even when the server holds a way in the screen does not offer", async () => {
     await renderLoaded(settings({ access_methods: ["sso"], readiness: checks("access_method") }));
     api.saveRegistrationSettings.mockResolvedValue(settings({ access_methods: ["sso"], ask_company: true }));
@@ -167,7 +156,7 @@ describe("RegistrationAccessTab: what a save sends", () => {
 
   it("shows what the server says it saved, which is not always what was sent", async () => {
     await renderLoaded();
-    // The server turned a consent away: the form shows what it kept.
+    // The server kept another setting than the one sent: the form shows what it kept.
     api.saveRegistrationSettings.mockResolvedValue(settings({ ask_company: false, waitlist_enabled: false }));
 
     fireEvent.click(toggle("Ask for the company"));
@@ -271,7 +260,7 @@ describe("RegistrationAccessTab: a save that the server refuses because registra
     expect(unsavedNote()).toBeTruthy();
   });
 
-  it("reads the settings and the texts again, so the checklist is the truth, and the warning that registration is on without what it needs shows", async () => {
+  it("reads the settings again, so the checklist is the truth, and the warning that registration is on without what it needs shows", async () => {
     await renderLoaded(settings({ mode: "approval" }));
     refuse("legal_documents");
     api.fetchRegistrationSettings.mockResolvedValue(settings({ mode: "approval", readiness: checks("legal_documents") }));
@@ -280,7 +269,7 @@ describe("RegistrationAccessTab: a save that the server refuses because registra
     await save();
 
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
-    expect(api.fetchLegalDocuments).toHaveBeenCalledTimes(2);
+    expect(api.fetchLegalDocuments).not.toHaveBeenCalled();
     expect(await screen.findByText(/Registration is on, but something it needs is missing/)).toBeTruthy();
   });
 
@@ -320,21 +309,6 @@ describe("RegistrationAccessTab: a save that the server refuses because registra
 });
 
 describe("RegistrationAccessTab: other refusals", () => {
-  it("says that a consent is not published, in the words of the app, at the buttons, and reads the texts again so that it is marked", async () => {
-    await renderLoaded(settings({ consent_keys: [] }));
-    api.saveRegistrationSettings.mockRejectedValue(refusal(422, "consent_not_published"));
-    api.fetchLegalDocuments.mockResolvedValue(legalAnswer(texts(["photo", "Photos and video", false])));
-
-    fireEvent.click(screen.getByRole("button", { name: "Extra consents, none selected" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Photos and video" }));
-    await save();
-
-    expect((await screen.findByRole("alert")).textContent).toBe("One of the extra consents you chose is not published for this event. Publish its text first, or leave it out.");
-    await waitFor(() => expect(api.fetchLegalDocuments).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole("button", { name: "Extra consents, Photos and video (not published)" })).toBeTruthy();
-    expect(addToast).not.toHaveBeenCalled();
-  });
-
   it("says that the event is archived, and has the page read the event again so that it locks", async () => {
     await renderLoaded();
     api.saveRegistrationSettings.mockRejectedValue(refusal(403, "event_archived"));

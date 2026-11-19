@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Card, HintLabel, Notice } from "@admitto/ui";
-import { ApiError, fetchLegalDocuments, fetchRegistrationReturnAddresses, fetchRegistrationSettings } from "../api/client.js";
-import type { LegalDocumentDto, RegistrationRedirectUriDto, RegistrationSettingsDto } from "../api/types.js";
+import { ApiError, fetchRegistrationReturnAddresses, fetchRegistrationSettings } from "../api/client.js";
+import type { RegistrationRedirectUriDto, RegistrationSettingsDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { orLoginRedirect, redirectToLogin } from "../identity/loginRedirect.js";
@@ -35,15 +35,14 @@ export const SUPERADMIN_ONLY_NOTE = "Only a superadmin can change this.";
 export const REGISTRATION_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "method", title: "Access method", intro: 1, rows: 1, rowHeight: 40 },
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
-  { id: "form", title: "Form", intro: 1, rows: 5, rowHeight: 64 },
+  { id: "form", title: "Form", intro: 1, rows: 4, rowHeight: 64 },
   { id: "after", title: "Handling requests", intro: 1, rows: 3, rowHeight: 64 },
 ];
 
-/** The first read: the settings of the event, its legal texts (the list of consents is made from them) and, for a superadmin, the return
+/** The first read: the settings of the event and, for a superadmin, the return
  * addresses of the company SSO. A read of the addresses that fails leaves them out, and the panel still works. */
 interface Loaded {
   settings: RegistrationSettingsDto;
-  legalItems: LegalDocumentDto[];
   /** Every return address of the company SSO that the instance lists, for the setup for IT. */
   redirectUris: RegistrationRedirectUriDto[];
   /** The read of the return addresses failed (not for want of a session): they are not known, which is not the same as none. */
@@ -61,8 +60,7 @@ async function readReturnAddresses(): Promise<RegistrationRedirectUriDto[] | nul
 }
 
 async function readAll(eventId: string, superadmin: boolean, signal: AbortSignal): Promise<Loaded> {
-  const [settings, legal] = await Promise.all([fetchRegistrationSettings(eventId, signal), fetchLegalDocuments(eventId, signal)]);
-  const first = { settings, legalItems: legal.items };
+  const first = { settings: await fetchRegistrationSettings(eventId, signal) };
   if (!superadmin) return { ...first, redirectUris: [], redirectUrisFailed: false };
   try {
     return { ...first, redirectUris: (await fetchRegistrationReturnAddresses(signal)).redirect_uris, redirectUrisFailed: false };
@@ -221,7 +219,7 @@ function EventRegistrationCards({
   onSavingChange?: (saving: boolean) => void;
   addressVersion?: number;
 }>) {
-  const form = useAccessForm({ eventId, settings: loaded.settings, legalItems: loaded.legalItems, refreshEvent, superadmin });
+  const form = useAccessForm({ eventId, settings: loaded.settings, refreshEvent, superadmin });
   const { server, base, draft, dirty, saving, problem } = form;
   const [returnAddresses, setReturnAddresses] = useState(loaded.redirectUris);
   const [returnAddressesFailed, setReturnAddressesFailed] = useState(loaded.redirectUrisFailed);
@@ -327,7 +325,7 @@ function EventRegistrationCards({
         }
         onChange={form.edit}
       />
-      <AccessFormCard eventId={eventId} draft={draft} legalItems={form.legalItems} disabled={off} onChange={form.edit} />
+      <AccessFormCard eventId={eventId} draft={draft} disabled={off} onChange={form.edit} />
       <AccessAfterFormCard draft={draft} disabled={off} onChange={form.edit} />
       {problem && <ProblemMessage eventId={eventId} problem={problem} superadmin={superadmin} />}
       {!archived && <SettingsFooter hasUnsavedChanges={dirty} saving={saving} onReset={form.reset} onSave={form.save} />}
