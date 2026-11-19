@@ -121,6 +121,18 @@ describe("the placement of the list of countries", { timeout: 30_000 }, () => {
     expect(moved(panel)).toBe("translate(20px, 96px)");
   });
 
+  it("fits a short visual viewport: a 40 pixel box in 120 pixels leaves the list the room under it, and the list stays inside", () => {
+    const page = phone();
+    screen(page);
+    Object.defineProperty(page.win, "visualViewport", { value: { offsetLeft: 0, offsetTop: 0, width: 400, height: 120, ...listeners(page).target }, configurable: true });
+    anchorAt(scopeOf(page), 20, 20, 200, 40);
+    size(page, phonePanel(page), 280, 300);
+    openPhone(page);
+    // below: 120 - 60 - 12 = 48, above: 20 - 12 = 8: below, no taller than 48, so it ends at 64 + 48 = 112, inside 120 - 8
+    expect(phonePanel(page).style.maxHeight).toBe("48px");
+    expect(moved(phonePanel(page))).toBe("translate(20px, 64px)");
+  });
+
   it("is moved in from the right edge of the screen, and from the left one", () => {
     const right = phone();
     screen(right);
