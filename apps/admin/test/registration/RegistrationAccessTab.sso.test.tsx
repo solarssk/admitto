@@ -47,7 +47,8 @@ describe("the company SSO as the way in of an event, on the Access tab", () => {
   it("shows the access method, the provider and the claim to an administrator who is not a superadmin, with no control that works, and says who can change them", async () => {
     await renderLoaded(ssoEventSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }), { superadmin: false });
 
-    expect(radio("Company SSO").hasAttribute("disabled") || radio("Company SSO").getAttribute("aria-checked") === "true").toBe(true);
+    expect(radio("Company SSO").getAttribute("aria-checked")).toBe("true");
+    expect(isOff(radio("Company SSO"))).toBe(true);
     expect(isOff(radio("Link"))).toBe(true);
     expect((screen.getByLabelText("Claim name") as HTMLInputElement).value).toBe("tid");
     expect(isOff(screen.getByLabelText("Claim name"))).toBe(true);

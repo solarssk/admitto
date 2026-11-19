@@ -66,7 +66,7 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - The secret key is stored encrypted and is never shown again. Use **Set**, **Change** or **Clear** on it, then Save once for the whole tab.
 - In Cloudflare, add the address of this instance to the hostnames of the widget.
 - Cloudflare sees each visitor's IP address and browser details when the form opens. Name it in your privacy notice. See [SUBPROCESSORS.md](https://github.com/solarssk/admitto/blob/main/docs/security/SUBPROCESSORS.md).
-- An administrator turns registration on for each event, on the **Registration** tab of its **Event settings**. See [Registration Access](Registration-Access).
+- An administrator turns registration on for each event with the main button in the header of the event's **Registration** page. See [Registration Access](Registration-Access).
 - **Company SSO for guests.** Identity providers are set up under **Identity**. A Superadmin chooses the provider of each event in **Event settings → Registration**. At the identity provider, enter the return address `https://<address of this instance>/sso/callback` once for the whole instance (that tab also lists it, and an event's own address, under **Setup for your IT team**). If a gateway such as Cloudflare Access stands in front of Admitto, it must let `/sso/callback`, `/r/*` and `/legal/*` through without asking for a sign-in. See [Registration Access](Registration-Access).
 
 **Support contact and Test connection**

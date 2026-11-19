@@ -284,6 +284,7 @@ describe("RegistrationChecklistTab: the banner", () => {
     ["two of a superadmin's steps are open", settings({ readiness: checks("mail_provider", "instance_url") }), "2 steps wait for a superadmin. Your steps are done.", "info"],
     ["everything is done and registration is off", settings({ readiness: checks() }), "Ready. Registration can be turned on.", "success"],
     ["everything is done and registration is on", settings({ mode: "approval", readiness: checks() }), "Registration is open.", "success"],
+    ["the address stopped while registration is off and every check is met", settings({ own_address: STOPPED, readiness: checks() }), "Ready. Registration can be turned on. The address of this event for guests stopped working, so guests may not be able to open their links.", "success"],
     ["a step is open while registration is on", settings({ mode: "automatic", readiness: checks("mail_provider") }), "Registration is on, but something it needs is missing. Guests may not be able to register.", "error"],
     ["the address stopped while registration is on", settings({ mode: "automatic", own_address: STOPPED, readiness: checks() }), "Registration is on, but the address of this event stopped working. Guests may not be able to register.", "error"],
   ])("says, when %s, the sentence for it", async (_case, saved, text, variant) => {
@@ -291,6 +292,13 @@ describe("RegistrationChecklistTab: the banner", () => {
 
     expect(banner().textContent).toContain(text);
     expect(banner().className).toContain(`at-notice--${variant}`);
+  });
+
+  it("has the button to turn registration on when only the address stopped, since the server does not refuse for it, and still lists the address as an open step", async () => {
+    await renderChecklistLoaded(settings({ own_address: STOPPED, readiness: checks() }));
+
+    expect(within(banner()).getByRole("button", { name: "Turn registration on" })).toBeTruthy();
+    expect(within(card("Waiting for a superadmin")).getByText("Address for guests")).toBeTruthy();
   });
 
   it("is an alert only when something broke while registration is on", async () => {
@@ -371,7 +379,7 @@ describe("RegistrationChecklistTab: what an event administrator sees", () => {
     await renderChecklistLoaded(settings({ readiness: checks() }));
     expect(checklistTitles()).toEqual(["Registration checklist", "For you", "Done"]);
     expect(within(card("For you")).getByText("Everything is ready")).toBeTruthy();
-    expect(within(card("For you")).getByText(/Turn registration on in Event settings, Registration/)).toBeTruthy();
+    expect(within(card("For you")).getByText(/Turn registration on in the page header/)).toBeTruthy();
     cleanup();
 
     await renderChecklistLoaded(settings({ mode: "automatic", readiness: checks() }));

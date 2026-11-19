@@ -3352,7 +3352,7 @@ describe("EventSettingsPage General tab: the card Address for guests", () => {
     await waitFor(() => expect(leave()).toBe(true));
   });
 
-  it("shows the address as set, not checked yet, once it is saved, and the Registration tab reads the settings again", async () => {
+  it("shows the address as set, not checked yet, once it is saved", async () => {
     mockAssignments = superadminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(saveCustomDomain).mockResolvedValue({
@@ -3372,7 +3372,7 @@ describe("EventSettingsPage General tab: the card Address for guests", () => {
     expect(await screen.findByText("events.example.com: Not checked yet")).toBeTruthy();
   });
 
-  it("keeps the unsaved changes of the Registration tab when the address is saved, and does not read that tab again", async () => {
+  it("reads the settings and the return addresses of the Registration tab again when the address is saved, and keeps what is typed there", async () => {
     mockAssignments = superadminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(saveCustomDomain).mockResolvedValue({
@@ -3393,12 +3393,19 @@ describe("EventSettingsPage General tab: the card Address for guests", () => {
     await waitFor(() => expect(leave()).toBe(true));
     fireEvent.click(screen.getByRole("tab", { name: "General" }));
     const field = await screen.findByLabelText("Own address");
+    const settingsReads = vi.mocked(fetchRegistrationSettings).mock.calls.length;
+    const addressReads = vi.mocked(fetchRegistrationReturnAddresses).mock.calls.length;
 
     fireEvent.change(field, { target: { value: "events.example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Set address" }));
 
     expect(await screen.findByText("events.example.com: Not checked yet")).toBeTruthy();
+    // The card of the address reads once more, and so does the Registration tab: the settings and the return addresses.
+    await waitFor(() => expect(vi.mocked(fetchRegistrationReturnAddresses).mock.calls.length).toBeGreaterThan(addressReads));
+    expect(vi.mocked(fetchRegistrationSettings).mock.calls.length).toBeGreaterThanOrEqual(settingsReads + 1);
     expect(leave()).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: "Registration" }));
+    expect((screen.getByRole("switch", { name: "Ask for the company" }) as HTMLInputElement).checked).toBe(true);
   });
 
   it("says the event has no address of its own when it has none", async () => {

@@ -68,8 +68,16 @@ function RegistrationPageBody({ eventId }: Readonly<{ eventId: string | undefine
   // tabs the page reads them (once for each visit to such a tab), and a save of the switch brings the answer.
   const [settings, setSettings] = useState<RegistrationSettingsDto | null>(null);
   const reportsItself = tab.id === "checklist";
-  const settingsLoad = useRegistrationSettings(reportsItself ? undefined : eventId, setSettings);
   const reg = useRegistrationSwitch({ eventId, settings, onSettings: setSettings, refreshEvent: outlet?.refreshEvent });
+  // An answer of a read that began before a save of the switch is not shown: it would put the old mode back.
+  const { accept } = reg;
+  const onRead = useCallback(
+    (read: RegistrationSettingsDto) => {
+      if (accept(read)) setSettings(read);
+    },
+    [accept],
+  );
+  const settingsLoad = useRegistrationSettings(reportsItself ? undefined : eventId, reg.readSettings, onRead);
   // The Fields and Legal tabs change what the checklist needs, and tell the page when their list changes: a burst of edits is one read.
   const stale = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reloadSettings = settingsLoad.reload;

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext, useParams } from "react-router";
 import { HintLabel } from "@admitto/ui";
-import { ApiError, fetchRegistrationSettings } from "../api/client.js";
+import { ApiError } from "../api/client.js";
 import type { EventDto, RegistrationSettingsDto } from "../api/types.js";
 import { isEventArchived } from "../components/ArchivedGuard.js";
 import { useOptionalAuth } from "../auth/AuthProvider.js";
@@ -53,22 +53,23 @@ function RegistrationChecklistBody({ eventId, shared, reg, onSettings }: Readonl
   const superadmin = isSuperadmin(useOptionalAuth()?.assignments ?? []);
   const [read, setRead] = useState<RegistrationSettingsDto | null>(null);
   // A failure is told to the connection state when the answer is in; a 401 hands the browser to the login page, and no error flashes up first.
+  const { readSettings, accept } = reg;
   const fetchSettings = useMemo(
     () =>
       orLoginRedirect(async (signal: AbortSignal) => {
         try {
-          return await fetchRegistrationSettings(eventId, signal);
+          return await readSettings(eventId, signal);
         } catch (err) {
           if (err instanceof ApiError) reportApiError(err.status);
           throw err;
         }
       }),
-    [eventId, reportApiError],
+    [eventId, reportApiError, readSettings],
   );
   const panel = usePanelLoad({ fetch: fetchSettings, apply: setRead, fallback: "Could not load the checklist." });
   useEffect(() => {
-    if (read) onSettings(read);
-  }, [read, onSettings]);
+    if (read && accept(read)) onSettings(read);
+  }, [read, onSettings, accept]);
   // What the page holds is what this tab read, or what a save of the switch brought after it.
   const settings = shared ?? read;
   const checks = useMemo(() => (settings ? checklistFromSettings(settings) : null), [settings]);

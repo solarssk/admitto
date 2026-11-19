@@ -85,6 +85,14 @@ describe("the header of the Registration page: its states", { timeout: 30_000 },
     expect(getTooltipText(menuItem("Copy link"))).toBe("This link works once registration is on.");
   });
 
+  it("is Closed and can be turned on when only the address for guests stopped working: the server does not refuse for it, and the Checklist keeps it as an open step", async () => {
+    await renderHeader(settings({ own_address: { domain: "events.example.com", status: "failing", check_result: "unreachable", verified: true, checked_at: null }, readiness: checks() }));
+
+    expect(status()).toBe("Closed");
+    expect(isOff(mainButton("Turn registration on"))).toBe(false);
+    expect(screen.getByRole("tab", { name: "Checklist, 1 step open" })).toBeTruthy();
+  });
+
   it("holds the room with a grey block until the first read is in, so the header does not jump", async () => {
     api.fetchRegistrationSettings.mockReturnValue(new Promise(() => undefined));
     renderPage({ path: "/admin/events/evt-1/registration?tab=legal" });
@@ -339,6 +347,52 @@ describe("the switch of registration: requests that must not start", { timeout: 
     const none = renderHook(() => useRegistrationSwitch({ eventId: undefined, settings: null, onSettings: vi.fn() }));
     act(() => none.result.current.request("approval"));
     expect(api.saveRegistrationSettings).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the header of the Registration page: a read that was on its way when registration was turned on", { timeout: 30_000 }, () => {
+  it("does not put the old mode back when the page's own read answers after the save", async () => {
+    await renderHeader();
+    const older = deferred<RegistrationSettingsDto>();
+    api.fetchRegistrationSettings.mockReturnValueOnce(older.promise);
+    // Moving to another tab that does not read the checks itself has the page read them again, a moment later.
+    fireEvent.click(screen.getByRole("tab", { name: "Fields" }));
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    api.saveRegistrationSettings.mockResolvedValue(settings({ mode: "approval", readiness: checks() }));
+
+    fireEvent.click(mainButton("Turn registration on"));
+    await waitFor(() => expect(status()).toBe("Open"));
+    await act(async () => older.resolve(settings({ readiness: checks() })));
+
+    expect(status()).toBe("Open");
+  });
+
+  it("does not put the old mode back when the Checklist tab's read answers after the save", async () => {
+    await renderHeader();
+    const older = deferred<RegistrationSettingsDto>();
+    api.fetchRegistrationSettings.mockReturnValueOnce(older.promise);
+    fireEvent.click(screen.getByRole("tab", { name: "Checklist" }));
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    api.saveRegistrationSettings.mockResolvedValue(settings({ mode: "approval", readiness: checks() }));
+
+    fireEvent.click(mainButton("Turn registration on"));
+    await waitFor(() => expect(status()).toBe("Open"));
+    await act(async () => older.resolve(settings({ readiness: checks() })));
+
+    expect(status()).toBe("Open");
+    await waitFor(() => expect(banner().textContent).toContain("Registration is open."));
+  });
+
+  it("shows the answer of a read that began after the save", async () => {
+    await renderHeader();
+    api.saveRegistrationSettings.mockResolvedValue(settings({ mode: "approval", readiness: checks() }));
+    fireEvent.click(mainButton("Turn registration on"));
+    await waitFor(() => expect(status()).toBe("Open"));
+    api.fetchRegistrationSettings.mockResolvedValue(settings({ mode: "approval", readiness: checks("legal_documents") }));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Fields" }));
+
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Checklist, 1 step open" })).toBeTruthy());
   });
 });
 

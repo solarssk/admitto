@@ -1157,6 +1157,8 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const [checkinBehaviourCardResetKey, setCheckinBehaviourCardResetKey] = useState(0);
   // Same reasoning as mailCardResetKey above, applied to the Registration tab's draft.
   const [registrationResetKey, setRegistrationResetKey] = useState(0);
+  // The address for guests changed (General): the Registration tab reads it again, quietly, and keeps what is typed in it.
+  const [registrationAddressVersion, setRegistrationAddressVersion] = useState(0);
   const basicValidationErrorsRef = useRef<HTMLUListElement>(null);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
@@ -1520,10 +1522,8 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
             archived={isArchived}
             superadmin={isSa}
             refreshEvent={refreshLayoutEvent}
-            // The Registration tab shows the address in the setup for IT: it reads again, unless it holds changes that would be lost.
-            onChanged={() => {
-              if (!registrationDirty) setRegistrationResetKey((n) => n + 1);
-            }}
+            // The Registration tab shows the address in the setup for IT: it reads it again, without a remount, so nothing typed there is lost.
+            onChanged={() => setRegistrationAddressVersion((n) => n + 1)}
             onBusyChange={setAddressBusy}
           />
         </EventGeneralInfoPanel>
@@ -1720,6 +1720,7 @@ function EventSettingsPageBody({ eventId }: Readonly<{ eventId: string }>) {
       <EventSettingsTabPanel tab="registration" activeTab={tab} visited={visitedTabs} label="Registration">
         <EventRegistrationPanel
           key={registrationResetKey}
+          addressVersion={registrationAddressVersion}
           eventId={eventId}
           archived={isArchived}
           superadmin={isSa}

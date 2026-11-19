@@ -21,7 +21,9 @@ Registration is off for every event until you turn it on. Until then, the addres
 **Check what registration needs**
 
 1. Open the event, then **Registration**, then the **Checklist** tab. The tab has the number of steps that are still open next to its name. The number is the same for everybody.
-2. Read the card **Registration checklist** at the top. The bar and the pill "N of M done" at the right of the header say how far you are. Every card on the tab shows its status as a pill at the right of its header. The message under the bar says what state registration is in: "Ready. Registration can be turned on." (with a **Turn registration on**
+2. Read the card **Registration checklist** at the top. The bar and the pill "N of M done" at the right of the header say how far you are. Every card on the tab shows its status as a pill at the right of its header. The message under the bar says what state registration is in: "Ready. Registration can be turned on." (with a **Turn registration on** button), "Registration is open." (with a **Turn off** button), or what is still missing.
+
+**Turn registration on**
 
 1. Open the event's **Registration** page. The badge next to the title says **Closed**, and the main button is **Turn registration on**. While the **Checklist** tab has a row that is not done, the badge says **Not ready** with the number of open steps, and the main button is **See the Checklist**.
 2. Select **Turn registration on**. Registration starts with the mode that holds every request for you to accept or reject. To accept guests by themselves, go to **Event settings → Registration** and switch **Approve requests by hand** off, then select **Save**. That switch is grey while registration is off.

@@ -141,7 +141,7 @@ function NothingToDo({ everythingDone, mode }: Readonly<{ everythingDone: boolea
         <i className="ti ti-circle-check" />
       </span>
       <strong className="access-ready__title">{on ? "Everything is in place" : "Everything is ready"}</strong>
-      <p>{on ? "Guests can register. Check this tab again when something changes, for example an address or a key." : "Every step is done. Turn registration on in Event settings, Registration, when you want guests to start."}</p>
+      <p>{on ? "Guests can register. Check this tab again when something changes, for example an address or a key." : "Every step is done. Turn registration on in the page header when you want guests to start."}</p>
     </div>
   );
 }
@@ -211,7 +211,9 @@ export function ReadinessChecklist({
   const open = forYou.length + waiting.length;
   const doneCount = total - open;
   const addressStopped = [...forYou, ...waiting].some((check) => check.key === OWN_ADDRESS_KEY);
-  const banner = checklistBanner({ mode, archived, forYou: forYou.length, waiting: waiting.length, addressStopped });
+  // The own address is not one of the checks the server makes, so it does not stand in the way of turning registration on (nor does the header say "Not ready" for it).
+  const blocking = (checks: readonly ChecklistCheck[]) => checks.filter((check) => check.key !== OWN_ADDRESS_KEY).length;
+  const banner = checklistBanner({ mode, archived, forYou: blocking(forYou), waiting: blocking(waiting), addressStopped });
   const tone = barTone(open, mode);
   return (
     <>

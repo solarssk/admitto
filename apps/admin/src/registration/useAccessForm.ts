@@ -83,9 +83,13 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
       const latest = await fetchRegistrationSettings(eventId);
       if (mine !== newestRead.current) return;
       const next = technicalOf(draftFromSettings(latest));
+      // Registration may have been turned off (or its mode changed) by somebody else meanwhile. A form that has not touched the mode takes
+      // what is saved, and one that has keeps its edit, unless registration is off: then the mode is not a choice, and a Save that sent
+      // the old one would turn registration on again without the activation of the Registration page.
+      const mode = latest.mode;
       setServer(latest);
-      setBase((current) => ({ ...current, ...next }));
-      setDraft((current) => ({ ...current, ...next }));
+      setBase((current) => ({ ...current, ...next, mode }));
+      setDraft((current) => ({ ...current, ...next, mode: mode === null || current.mode === base.mode ? mode : current.mode }));
     } catch {
       // What the form shows stays as it is, and so does the message that sent us here.
     }
@@ -145,5 +149,5 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     }
   }
 
-  return { server, legalItems, base, draft, dirty, saving, problem, edit, reset, save: () => void save(), passwordChanged, eventArchived };
+  return { server, legalItems, base, draft, dirty, saving, problem, edit, reset, save: () => void save(), passwordChanged, eventArchived, refresh };
 }

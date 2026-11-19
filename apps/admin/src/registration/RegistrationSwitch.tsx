@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Badge, Button, Skeleton, Tooltip, useToast } from "@admitto/ui";
 import type { RegistrationMode } from "@admitto/db/status";
@@ -36,6 +36,10 @@ export interface RegistrationSwitchState {
   request: (mode: RegistrationMode | null) => void;
   confirmOff: () => void;
   cancelOff: () => void;
+  /** Reads the settings of the event, and notes how many saves of the switch had been made when the read began (see `accept`). */
+  readSettings: (eventId: string, signal?: AbortSignal) => Promise<RegistrationSettingsDto>;
+  /** Whether an answer of `readSettings` (and of nothing else) may be shown: not when a save of the switch has come after the read began, since the answer would put the old mode back. */
+  accept: (settings: RegistrationSettingsDto) => boolean;
 }
 
 /**
@@ -59,6 +63,16 @@ export function useRegistrationSwitch({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<AccessProblem | null>(null);
   const [confirmOffOpen, setConfirmOffOpen] = useState(false);
+  // A read that began before a save of the mode is older than the save, whenever its answer comes: the page and the Checklist tab both read.
+  const saves = useRef(0);
+  const readAt = useRef(new WeakMap<object, number>());
+  const readSettings = useCallback(async (id: string, signal?: AbortSignal) => {
+    const began = saves.current;
+    const answer = await fetchRegistrationSettings(id, signal);
+    readAt.current.set(answer, began);
+    return answer;
+  }, []);
+  const accept = useCallback((answer: RegistrationSettingsDto) => (readAt.current.get(answer) as number) >= saves.current, []);
 
   /** What the screen shows is out of date (the event lost something, or was archived): read it again, quietly. */
   async function reread(id: string) {
@@ -89,6 +103,7 @@ export function useRegistrationSwitch({
     try {
       const answer = await saveRegistrationSettings(eventId, { mode });
       addToast(mode === null ? "Registration is off." : "Registration is on.", "success");
+      saves.current += 1;
       onSettings(answer);
       setConfirmOffOpen(false);
     } catch (err) {
@@ -108,6 +123,8 @@ export function useRegistrationSwitch({
       if (mode === null) setConfirmOffOpen(true);
       else void submit(mode);
     },
+    readSettings,
+    accept,
     confirmOff: () => void submit(null),
     cancelOff: () => {
       setConfirmOffOpen(false);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Card, HintLabel, Notice } from "@admitto/ui";
 import { ApiError, fetchLegalDocuments, fetchRegistrationReturnAddresses, fetchRegistrationSettings } from "../api/client.js";
@@ -79,9 +79,11 @@ interface PanelProps {
   /** The page asks first before it is left while the form has changes, as for its other tabs. */
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
+  /** Changes when the address for guests of the event changed elsewhere: the settings and the return addresses are read again, and the form is left as it is. */
+  addressVersion?: number;
 }
 
-function EventRegistrationBody({ eventId, archived, superadmin, refreshEvent, onDirtyChange, onSavingChange }: Readonly<PanelProps>) {
+function EventRegistrationBody({ eventId, archived, superadmin, refreshEvent, onDirtyChange, onSavingChange, addressVersion }: Readonly<PanelProps>) {
   const { reportApiError } = useConnectionState();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   // A failure is told to the connection state when the answer is in; a 401 hands the browser to the login page, and no error flashes up first.
@@ -123,6 +125,7 @@ function EventRegistrationBody({ eventId, archived, superadmin, refreshEvent, on
       refreshEvent={refreshEvent}
       onDirtyChange={onDirtyChange}
       onSavingChange={onSavingChange}
+      addressVersion={addressVersion}
     />
   );
 }
@@ -197,6 +200,7 @@ function EventRegistrationCards({
   refreshEvent,
   onDirtyChange,
   onSavingChange,
+  addressVersion,
 }: Readonly<{
   eventId: string;
   archived: boolean;
@@ -205,6 +209,7 @@ function EventRegistrationCards({
   refreshEvent?: () => Promise<unknown>;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
+  addressVersion?: number;
 }>) {
   const form = useAccessForm({ eventId, settings: loaded.settings, legalItems: loaded.legalItems, refreshEvent, superadmin });
   const { server, base, draft, dirty, saving, problem } = form;
@@ -217,6 +222,21 @@ function EventRegistrationCards({
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   useEffect(() => onSavingChange?.(saving), [saving, onSavingChange]);
+
+  // The address for guests was changed on General while this tab stayed mounted: what the setup for IT shows is read again, and what is typed stays.
+  // The effect runs on the change of the version only, and calls the latest of the functions below through a ref.
+  const readAgain = () => {
+    void form.refresh();
+    if (superadmin) void retryReturnAddresses();
+  };
+  const onAddressChange = useRef(readAgain);
+  onAddressChange.current = readAgain;
+  const seenAddressVersion = useRef(addressVersion);
+  useEffect(() => {
+    if (addressVersion === seenAddressVersion.current) return;
+    seenAddressVersion.current = addressVersion;
+    onAddressChange.current();
+  }, [addressVersion]);
 
   /** The Retry of the return addresses: reads them again, busy while it works, and the answer replaces the failure. */
   async function retryReturnAddresses() {

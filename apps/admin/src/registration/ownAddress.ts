@@ -2,7 +2,7 @@ import { parseCustomDomain, type CustomDomainCheckResult, type CustomDomainProbl
 import type { CustomDomainDto, RegistrationOwnAddressDto } from "../api/types.js";
 
 /**
- * The event's own address for guests, as the Access tab words it (D-C6, PR 120). The rules of what an address may be are
+ * The event's own address for guests, as Event settings words it (D-C6, PR 120). The rules of what an address may be are
  * `parseCustomDomain` in `@admitto/shared`, the same function the server judges a save by; this file only gives each refusal and
  * each result of a check its sentence.
  */

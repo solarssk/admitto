@@ -214,7 +214,13 @@ export interface ChecklistBanner {
 
 const steps = (count: number) => (count === 1 ? "1 step" : `${count} steps`);
 
-/** The sentence for the state: archived, all done (on or off), something broke while on, or what is left and who does it. */
+const ADDRESS_STOPPED_NOTE = "The address of this event for guests stopped working, so guests may not be able to open their links.";
+
+/**
+ * The sentence for the state: archived, all done (on or off), something broke while on, or what is left and who does it.
+ * `forYou` and `waiting` count the steps that block turning registration on, the ones the server checks. A stopped address for
+ * guests is not one of them (the server does not refuse for it): it is told in the sentence and stays an open step of the list.
+ */
 export function checklistBanner({
   mode,
   archived,
@@ -230,8 +236,9 @@ export function checklistBanner({
 }): ChecklistBanner {
   if (archived) return { variant: "info", text: "This event is archived. Registration is closed and nothing here can be changed.", action: null };
   if (forYou + waiting === 0) {
+    if (mode !== null && addressStopped) return { variant: "error", text: `Registration is on, but the address of this event stopped working. Guests may not be able to register.`, action: null };
     if (mode !== null) return { variant: "success", text: "Registration is open.", action: "turn_off" };
-    return { variant: "success", text: "Ready. Registration can be turned on.", action: "turn_on" };
+    return { variant: "success", text: addressStopped ? `Ready. Registration can be turned on. ${ADDRESS_STOPPED_NOTE}` : "Ready. Registration can be turned on.", action: "turn_on" };
   }
   if (mode !== null) {
     const what = addressStopped ? "the address of this event stopped working" : "something it needs is missing";
