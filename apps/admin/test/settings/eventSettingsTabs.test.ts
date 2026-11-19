@@ -33,10 +33,10 @@ describe("inPageTabFromSearch", () => {
     expect(inPageTabFromSearch(paramsWithTab("mail"), true)).toBe("mail");
   });
 
-  it("keeps the registration tab for a superadmin only", () => {
+  it("opens the registration tab for every administrator of the event", () => {
     expect(inPageTabFromSearch(paramsWithTab("registration"), true)).toBe("registration");
-    expect(inPageTabFromSearch(paramsWithTab("registration"), false)).toBe("general");
-    expect(SUPERADMIN_ONLY_TABS.has("registration")).toBe(true);
+    expect(inPageTabFromSearch(paramsWithTab("registration"), false)).toBe("registration");
+    expect(SUPERADMIN_ONLY_TABS.has("registration")).toBe(false);
   });
 
   it("lists the tabs in the order an event is set up", () => {

@@ -14,6 +14,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...(await importOriginal<typeof import("../../src/api/client.js")>()),
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
+    fetchLegalDocuments: (...args: unknown[]) => mocks.fetchLegalDocuments(...args),
     saveRegistrationSettings: (...args: unknown[]) => mocks.saveRegistrationSettings(...args),
     fetchRegistrationReturnAddresses: (...args: unknown[]) => mocks.fetchRegistrationReturnAddresses(...args),
     saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
@@ -71,7 +72,7 @@ describe("the bot protection card of an event, in Event settings", () => {
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { access_methods: ["password"], expected_sso_provider_id: null }));
   });
 
-  it("is a row inside the Access method card, under the notice of the method, in the pattern of the switch rows of the Form card, and not a card of its own", async () => {
+  it("is a row inside the Access method card, under the notice of the method, in the pattern of the switch rows of the form cards, and not a card of its own", async () => {
     await renderPanel(settings());
 
     expect(botCard().querySelector(".at-card__title")?.textContent).toBe("Access method");

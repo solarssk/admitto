@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import axe from "axe-core";
+import { MemoryRouter } from "react-router";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RegistrationRedirectUriDto, RegistrationSettingsDto } from "../../src/api/types.js";
 import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
-import { plain } from "../test-utils.js";
+import { deferred, plain } from "../test-utils.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import { settings, ssoChecks } from "./accessData.js";
 import { card, resetApi } from "./accessFixtures.js";
@@ -16,6 +17,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...(await importOriginal<typeof import("../../src/api/client.js")>()),
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
+    fetchLegalDocuments: (...args: unknown[]) => mocks.fetchLegalDocuments(...args),
     fetchRegistrationReturnAddresses: (...args: unknown[]) => mocks.fetchRegistrationReturnAddresses(...args),
     saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
   };
@@ -44,8 +46,21 @@ const css = () => readFileSync(join(__dirname, "../../src/registration/registrat
 async function renderPanel(saved: RegistrationSettingsDto, uris: RegistrationRedirectUriDto[] = [INSTANCE]) {
   api.fetchRegistrationSettings.mockResolvedValue(saved);
   api.fetchRegistrationReturnAddresses.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: uris });
-  render(<EventRegistrationPanel eventId="evt-1" archived={false} refreshEvent={refreshEvent} />);
-  await screen.findByLabelText("Own address");
+  const { rerender } = render(
+    <MemoryRouter>
+      <EventRegistrationPanel eventId="evt-1" archived={false} superadmin refreshEvent={refreshEvent} addressVersion={0} />
+    </MemoryRouter>,
+  );
+  await screen.findByRole("switch", { name: "Waiting list" });
+  return {
+    /** The address for guests changed on General: the page gives the panel a new version. */
+    addressChanged: (version: number) =>
+      rerender(
+        <MemoryRouter>
+          <EventRegistrationPanel eventId="evt-1" archived={false} superadmin refreshEvent={refreshEvent} addressVersion={version} />
+        </MemoryRouter>,
+      ),
+  };
 }
 
 beforeEach(() => {
@@ -103,34 +118,109 @@ describe("the setup for IT in the Company SSO card", () => {
     expect(panel().textContent).not.toContain("other.acme.example");
   });
 
-  it("adds the return address of an address that was just saved, to the panel and to the copied text", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
-    api.saveCustomDomain.mockResolvedValue({ custom_domain: "summit.acme.example", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
-    await renderPanel(ssoSettings(), [INSTANCE]);
-    expect(panel().textContent).not.toContain("summit.acme.example");
-    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: { ...OWN, status: "unchecked", verified: false } }));
-    api.fetchRegistrationReturnAddresses.mockResolvedValue({ provider_id: "idp-1", state: "ready", providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }], redirect_uri: null, redirect_uris: [INSTANCE, { ...EVENT, verified: false }] });
+  describe("when the address for guests changed meanwhile", () => {
+    const answer = (uris: RegistrationRedirectUriDto[]) => ({ provider_id: "idp-1", state: "ready" as const, providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" as const }], redirect_uri: null, redirect_uris: uris });
 
-    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "summit.acme.example" } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
+    it("shows the new address once the settings and the return addresses are read again", async () => {
+      const { addressChanged } = await renderPanel(ssoSettings({ own_address: OWN }), [INSTANCE, EVENT]);
+      fireEvent.click(toggle());
+      api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: { ...OWN, domain: "other.acme.example" } }));
+      api.fetchRegistrationReturnAddresses.mockResolvedValue(answer([INSTANCE, OTHER_EVENT]));
 
-    await waitFor(() => expect(field("Return address for summit.acme.example").value).toBe(EVENT.uri));
-    fireEvent.click(copyButton());
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    expect(writeText.mock.calls[0]?.[0]).toContain(`${INSTANCE.uri}, ${EVENT.uri}`);
-  });
+      addressChanged(1);
 
-  it("keeps the return addresses it has when they cannot be read again after the address was saved", async () => {
-    api.saveCustomDomain.mockResolvedValue({ custom_domain: "summit.acme.example", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
-    await renderPanel(ssoSettings(), [INSTANCE]);
-    api.fetchRegistrationReturnAddresses.mockRejectedValue(new Error("down"));
+      await waitFor(() => expect(field("Return address for other.acme.example").value).toBe(OTHER_EVENT.uri));
+      expect(panel().textContent).not.toContain("summit.acme.example");
+    });
 
-    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "summit.acme.example" } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
+    it("shows and copies no old address while the new ones are being read, then the new one", async () => {
+      const { addressChanged } = await renderPanel(ssoSettings({ own_address: OWN }), [INSTANCE, EVENT]);
+      fireEvent.click(toggle());
+      const settingsRead = deferred<RegistrationSettingsDto>();
+      const addressesRead = deferred<ReturnType<typeof answer>>();
+      api.fetchRegistrationSettings.mockReturnValue(settingsRead.promise);
+      api.fetchRegistrationReturnAddresses.mockReturnValue(addressesRead.promise);
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
 
-    await waitFor(() => expect(api.fetchRegistrationReturnAddresses).toHaveBeenCalledTimes(2));
-    expect(field("Return address").value).toBe(INSTANCE.uri);
+      addressChanged(1);
+
+      await waitFor(() => expect(within(panel()).queryByLabelText("Return address for summit.acme.example")).toBeNull());
+      expect(within(panel()).queryByLabelText("Return address")).toBeNull();
+      fireEvent.click(copyButton());
+      await waitFor(() => expect(writeText).toHaveBeenCalled());
+      expect(String(writeText.mock.calls[0]?.[0])).not.toContain("summit.acme.example");
+      expect(String(writeText.mock.calls[0]?.[0])).not.toContain("admitto.example.com/sso/callback");
+      await act(async () => {
+        settingsRead.resolve(ssoSettings({ own_address: { ...OWN, domain: "other.acme.example" } }));
+        addressesRead.resolve(answer([INSTANCE, OTHER_EVENT]));
+      });
+
+      await waitFor(() => expect(field("Return address for other.acme.example").value).toBe(OTHER_EVENT.uri));
+    });
+
+    it("drops the answer of an older read when the address changed again, and stays busy until the newest read answers", async () => {
+      const { addressChanged } = await renderPanel(ssoSettings({ own_address: OWN }), [INSTANCE, EVENT]);
+      fireEvent.click(toggle());
+      const firstSettings = deferred<RegistrationSettingsDto>();
+      const firstAddresses = deferred<ReturnType<typeof answer>>();
+      const secondSettings = deferred<RegistrationSettingsDto>();
+      const secondAddresses = deferred<ReturnType<typeof answer>>();
+      api.fetchRegistrationSettings.mockReturnValueOnce(firstSettings.promise).mockReturnValueOnce(secondSettings.promise);
+      api.fetchRegistrationReturnAddresses.mockReturnValueOnce(firstAddresses.promise).mockReturnValueOnce(secondAddresses.promise);
+      addressChanged(1);
+      await waitFor(() => expect(api.fetchRegistrationReturnAddresses).toHaveBeenCalledTimes(2));
+      addressChanged(2);
+      await waitFor(() => expect(api.fetchRegistrationReturnAddresses).toHaveBeenCalledTimes(3));
+
+      // The first read answers last-but-one: its answer is not shown, and the setup is still being read.
+      await act(async () => {
+        firstSettings.resolve(ssoSettings({ own_address: { ...OWN, domain: "first.acme.example" } }));
+        firstAddresses.resolve(answer([INSTANCE, { ...EVENT, uri: "https://first.acme.example/sso/callback" }]));
+      });
+      expect(panel().textContent).not.toContain("first.acme.example");
+      expect(within(panel()).queryByLabelText("Return address")).toBeNull();
+
+      await act(async () => {
+        secondSettings.resolve(ssoSettings({ own_address: { ...OWN, domain: "other.acme.example" } }));
+        secondAddresses.resolve(answer([INSTANCE, OTHER_EVENT]));
+      });
+      await waitFor(() => expect(field("Return address for other.acme.example").value).toBe(OTHER_EVENT.uri));
+    });
+
+    it.each([
+      ["both reads fail", true, true],
+      ["only the return addresses fail", false, true],
+      ["only the settings fail", true, false],
+    ])("shows no old address, only a Retry, when %s, and the new address once the Retry works", async (_case, settingsFail, addressesFail) => {
+      const { addressChanged } = await renderPanel(ssoSettings({ own_address: OWN }), [INSTANCE, EVENT]);
+      fireEvent.click(toggle());
+      expect(field("Return address for summit.acme.example")).toBeTruthy();
+      if (settingsFail) api.fetchRegistrationSettings.mockRejectedValue(new Error("down"));
+      else api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: { ...OWN, domain: "other.acme.example" } }));
+      if (addressesFail) api.fetchRegistrationReturnAddresses.mockRejectedValue(new Error("down"));
+      else api.fetchRegistrationReturnAddresses.mockResolvedValue(answer([INSTANCE, OTHER_EVENT]));
+
+      addressChanged(1);
+
+      expect(await within(panel()).findByText("Could not read the return addresses.")).toBeTruthy();
+      expect(panel().textContent).not.toContain("summit.acme.example");
+      expect(within(panel()).queryByLabelText("Return address")).toBeNull();
+      // Nothing old is copied either.
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+      fireEvent.click(copyButton());
+      await waitFor(() => expect(writeText).toHaveBeenCalled());
+      expect(String(writeText.mock.calls[0]?.[0])).not.toContain("summit.acme.example");
+      expect(String(writeText.mock.calls[0]?.[0])).not.toContain("admitto.example.com/sso/callback");
+      api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: { ...OWN, domain: "other.acme.example" } }));
+      api.fetchRegistrationReturnAddresses.mockResolvedValue(answer([INSTANCE, OTHER_EVENT]));
+
+      fireEvent.click(within(panel()).getByRole("button", { name: "Retry reading the return addresses" }));
+
+      await waitFor(() => expect(field("Return address for other.acme.example").value).toBe(OTHER_EVENT.uri));
+      expect(within(panel()).queryByText("Could not read the return addresses.")).toBeNull();
+    });
   });
 
   it("tells the unverified own address to be entered now", async () => {

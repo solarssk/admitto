@@ -204,12 +204,12 @@ describe("checklistBanner", () => {
   const base = { mode: null, archived: false, forYou: 0, waiting: 0, addressStopped: false } as const;
 
   it("is about the archive first, whatever is open", () => {
-    expect(checklistBanner({ ...base, archived: true, forYou: 2 })).toMatchObject({ variant: "info", goToAccess: false });
+    expect(checklistBanner({ ...base, archived: true, forYou: 2 })).toMatchObject({ variant: "info", action: null });
   });
 
-  it("is ready, with the way to the Access tab, when registration is off and nothing is open", () => {
-    expect(checklistBanner(base)).toEqual({ variant: "success", text: "Ready. Registration can be turned on.", goToAccess: true });
-    expect(checklistBanner({ ...base, mode: "automatic" })).toMatchObject({ variant: "success", goToAccess: false });
+  it("is ready, with the button to turn registration on, when registration is off and nothing is open, and open, with the button to turn it off, when it is on", () => {
+    expect(checklistBanner(base)).toEqual({ variant: "success", text: "Ready. Registration can be turned on.", action: "turn_on" });
+    expect(checklistBanner({ ...base, mode: "automatic" })).toEqual({ variant: "success", text: "Registration is open.", action: "turn_off" });
   });
 
   it("is an error while registration is on and a step is open, and names the address when that is the step", () => {

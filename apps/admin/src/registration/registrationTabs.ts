@@ -4,12 +4,16 @@ import type { TabItem } from "@admitto/ui";
 export const REGISTRATION_TABS = [
   { id: "requests", label: "Requests" },
   { id: "fields", label: "Fields" },
-  { id: "access", label: "Access" },
   { id: "legal", label: "Legal" },
   { id: "checklist", label: "Checklist" },
 ] as const;
 
 export type RegistrationTab = (typeof REGISTRATION_TABS)[number];
+
+/** The address of a tab of the Registration page of an event, for a link from another page (Event settings). */
+export function registrationTabPath(eventId: string, tab: RegistrationTab["id"]): string {
+  return `/admin/events/${encodeURIComponent(eventId)}/registration?tab=${tab}`;
+}
 
 /** The open tab from `?tab=` (the address is the source of truth). A missing or unknown value opens Requests. */
 export function registrationTabFromSearch(searchParams: URLSearchParams): RegistrationTab {

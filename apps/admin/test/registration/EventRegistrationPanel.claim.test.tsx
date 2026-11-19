@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import axe from "axe-core";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
@@ -19,6 +20,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...(await importOriginal<typeof import("../../src/api/client.js")>()),
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
+    fetchLegalDocuments: (...args: unknown[]) => mocks.fetchLegalDocuments(...args),
     saveRegistrationSettings: (...args: unknown[]) => mocks.saveRegistrationSettings(...args),
     fetchRegistrationReturnAddresses: (...args: unknown[]) => mocks.fetchRegistrationReturnAddresses(...args),
     saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
@@ -297,201 +299,32 @@ describe("the Company SSO card", () => {
   });
 });
 
-describe("the address card and the typed restriction", () => {
-  const DOMAIN = "summit.acme.example";
-  const own = { domain: DOMAIN, status: "unchecked" as const, check_result: null, verified: false, checked_at: null };
-  const state = { custom_domain: DOMAIN, custom_domain_status: "unchecked" as const, custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null };
-
-  it.each([
-    ["Set address", () => api.saveCustomDomain.mockResolvedValue(state), settings, "Set address"],
-    ["Check now", () => api.checkCustomDomain.mockResolvedValue(state), () => settings({ own_address: own }), "Check now"],
-    ["Remove", () => api.saveCustomDomain.mockResolvedValue({ ...state, custom_domain: null }), () => settings({ own_address: own }), "Remove"],
-  ])("keeps an unsaved claim, and Unsaved changes, when %s is used on the address card and the settings are read again", async (_what, mock, make, button) => {
-    mock();
-    await renderPanel(ssoSettings({ ...make(), access_methods: ["sso"], readiness: ssoChecks() }));
-    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: button === "Remove" ? null : own }));
-    type(claimName(), "tid");
-    type(claimValues(), "aaa-111");
-    if (button === "Set address") fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
-
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: button }));
-    if (button === "Remove") fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove" }));
-
-    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
-    // The settings that were read again are on screen by now.
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
-    expect(claimName()?.value).toBe("tid");
-    expect(claimValues()?.value).toBe("aaa-111");
-    expect(screen.getByText("Unsaved changes")).toBeTruthy();
-    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
-  });
-
-  it("does not take a restriction that somebody else changed meanwhile for an edit, when the address card reads the settings again", async () => {
-    api.saveCustomDomain.mockResolvedValue(state);
-    await renderPanel(restricted());
-    api.fetchRegistrationSettings.mockResolvedValue(restricted({ own_address: own, sso_claim_name: "groups", sso_claim_values: ["staff"] }));
-    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
-
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
-    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
-
-    // The address is what was read again; the restriction is what the person saw.
-    expect(await within(card("Address for guests")).findByText(`${DOMAIN}: Not checked yet`)).toBeTruthy();
-    // The person did not touch the restriction: it is not a change, and Save has nothing of it to send.
-    expect(claimName()?.value).toBe("tid");
-    expect(screen.queryByText("Unsaved changes")).toBeNull();
-    expect(isOff(saveButton())).toBe(true);
-    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
-    fireEvent.click(saveButton());
-    expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
-  });
-
-  it("takes an edit back, with Reset, to the restriction the person saw, not to the one another superadmin set meanwhile", async () => {
-    api.saveCustomDomain.mockResolvedValue(state);
-    await renderPanel(restricted());
-    api.fetchRegistrationSettings.mockResolvedValue(restricted({ own_address: own, sso_claim_name: "groups", sso_claim_values: ["staff"] }));
-    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
-    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
-    type(claimValues(), "aaa-111\nbbb-222");
-
-    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
-
-    expect(claimName()?.value).toBe("tid");
-    expect(claimValues()?.value).toBe("aaa-111");
-  });
-
-  it("blocks the address card while the restriction is being saved, and does not send what is tried", async () => {
-    await renderPanel(ssoSettings({ own_address: own }));
-    let finish: (answer: RegistrationSettingsDto) => void = () => undefined;
-    api.saveRegistrationSettings.mockReturnValue(new Promise<RegistrationSettingsDto>((resolve) => (finish = resolve)));
-    type(claimName(), "tid");
-    type(claimValues(), "aaa-111");
-
-    fireEvent.click(saveButton());
-    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(true));
-
-    const addressCard = card("Address for guests");
-    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "other.acme.example" } });
-    expect((screen.getByLabelText("Own address") as HTMLInputElement).disabled).toBe(true);
-    for (const name of ["Set address", "Check now", "Remove"]) {
-      expect(isOff(within(addressCard).getByRole("button", { name }))).toBe(true);
-      fireEvent.click(within(addressCard).getByRole("button", { name }));
-    }
-    expect(api.saveCustomDomain).not.toHaveBeenCalled();
-    expect(api.checkCustomDomain).not.toHaveBeenCalled();
-    expect(screen.queryByRole("dialog")).toBeNull();
-    finish(ssoSettings({ own_address: own, sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
-    await waitFor(() => expect((screen.getByLabelText("Own address") as HTMLInputElement).disabled).toBe(false));
-  });
-
-  it("blocks the Save and Reset of the restriction while an address request is out", async () => {
-    let finish: (value: unknown) => void = () => undefined;
-    api.checkCustomDomain.mockReturnValue(new Promise((resolve) => (finish = resolve)));
-    await renderPanel(ssoSettings({ own_address: own }));
-    type(claimName(), "tid");
-    type(claimValues(), "aaa-111");
-
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Check now" }));
-    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(true));
-
-    expect(isOff(saveButton())).toBe(true);
-    expect(isOff(screen.getByRole("button", { name: "Reset" }))).toBe(true);
-    fireEvent.click(saveButton());
-    expect(api.saveRegistrationSettings).not.toHaveBeenCalled();
-    finish(state);
-    await waitFor(() => expect(isOff(saveButton())).toBe(false));
-  });
-
-  it("does not take the address back to what the save of the restriction knew, when the address was saved first", async () => {
-    api.saveCustomDomain.mockResolvedValue(state);
-    await renderPanel(ssoSettings());
-    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
-    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: own }));
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
-    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
-    expect(await within(card("Address for guests")).findByText(`${DOMAIN}: Not checked yet`)).toBeTruthy();
-    // The answer of the save is made of what the server knew before the address: no address.
-    api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: null, sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
-    type(claimName(), "tid");
-    type(claimValues(), "aaa-111");
-
-    await save();
-    await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
-
-    expect(within(card("Address for guests")).getByText(`${DOMAIN}: Not checked yet`)).toBeTruthy();
-    expect((screen.getByLabelText("Own address") as HTMLInputElement).value).toBe(DOMAIN);
-    expect(claimName()?.value).toBe("tid");
-  });
-
-  it("still saves the typed claim after the address card was used", async () => {
-    api.saveCustomDomain.mockResolvedValue(state);
-    await renderPanel(ssoSettings());
-    api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: own }));
-    type(claimName(), "tid");
-    type(claimValues(), "aaa-111");
-    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: DOMAIN } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
-    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
-    api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ own_address: own, sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
-
-    await save();
-
-    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["aaa-111"], expected_sso_provider_id: "idp-entra" });
-  });
-});
-
-describe("the requests of the address card, for the page", () => {
-  it.each([
-    ["Set address", (resolve: (value: unknown) => void) => api.saveCustomDomain.mockReturnValue(new Promise(resolve)), "Set address"],
-    ["Check now", (resolve: (value: unknown) => void) => api.checkCustomDomain.mockReturnValue(new Promise(resolve)), "Check now"],
-  ])("tells the page that a request is out while %s runs, and that it is over", async (_what, hold, button) => {
-    let finish: (value: unknown) => void = () => undefined;
-    hold((resolve) => (finish = resolve));
-    await renderPanel(ssoSettings({ own_address: { domain: "summit.acme.example", status: "unchecked", check_result: null, verified: false, checked_at: null } }));
-    if (button === "Set address") fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "other.acme.example" } });
-
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: button }));
-
-    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(true));
-    finish({ custom_domain: "other.acme.example", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
-    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(false));
-  });
-
-  it("keeps the page told that a save is out while the claim saves and an address request has ended", async () => {
-    await renderPanel(ssoSettings());
-    let finish: (answer: RegistrationSettingsDto) => void = () => undefined;
-    api.saveRegistrationSettings.mockReturnValue(new Promise<RegistrationSettingsDto>((resolve) => (finish = resolve)));
-    type(claimName(), "tid");
-    type(claimValues(), "aaa-111");
-
-    fireEvent.click(saveButton());
-    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(true));
-    finish(ssoSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }));
-
-    await waitFor(() => expect(onSavingChange).toHaveBeenLastCalledWith(false));
-  });
-});
-
 describe("reading the tab", () => {
   it("is an error with a Retry when the settings cannot be read, tells the connection state, and loads when the Retry works", async () => {
     api.fetchRegistrationSettings.mockRejectedValueOnce(new ApiError(500, "internal_error", "internal_error"));
     api.fetchRegistrationSettings.mockResolvedValue(ssoSettings());
-    render(<EventRegistrationPanel eventId="evt-1" archived={false} refreshEvent={refreshEvent} />);
+    render(
+    <MemoryRouter>
+      <EventRegistrationPanel eventId="evt-1" archived={false} superadmin refreshEvent={refreshEvent} />
+    </MemoryRouter>,
+  );
 
     expect((await screen.findByRole("alert")).textContent).toMatch(/Could not load the registration settings|Something went wrong/);
     expect(reportApiError).toHaveBeenCalledWith(500);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-    expect(await screen.findByLabelText("Own address")).toBeTruthy();
+    expect(await screen.findByRole("switch", { name: "Waiting list" })).toBeTruthy();
     expect(claimName()).toBeTruthy();
   });
 
   it("hands a lost session to the sign-in when the name of the provider cannot be read for want of one", async () => {
     api.fetchRegistrationReturnAddresses.mockRejectedValue(new ApiError(401, "unauthorized"));
     api.fetchRegistrationSettings.mockResolvedValue(ssoSettings());
-    render(<EventRegistrationPanel eventId="evt-1" archived={false} refreshEvent={refreshEvent} />);
+    render(
+    <MemoryRouter>
+      <EventRegistrationPanel eventId="evt-1" archived={false} superadmin refreshEvent={refreshEvent} />
+    </MemoryRouter>,
+  );
 
     await waitFor(() => expect(goToLogin).toHaveBeenCalled());
   });

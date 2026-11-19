@@ -268,7 +268,7 @@ function eventAddressesGuidance(check: HealthCheckRowDto): HealthCheckGuidance |
   return {
     cause: "An event's own address worked once, and its last check failed. The name, the certificate or the route to Admitto may have changed.",
     impact: "Guests are still sent links on that address, and the pages behind those links may not open. Guests with an older link on the main address are not affected.",
-    nextStep: "Open the Access tab of Registration for the event. It says what the check found and what to ask IT to fix. Select Check now once it is fixed.",
+    nextStep: "Open Event settings for the event, General, card Address for guests. It says what the check found and what to ask IT to fix. Select Check now once it is fixed.",
   };
 }
 

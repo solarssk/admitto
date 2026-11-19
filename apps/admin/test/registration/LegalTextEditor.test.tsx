@@ -726,7 +726,7 @@ describe("LegalTextEditor: leaving with unsaved changes", () => {
     await write("Words.");
 
     await act(async () => {
-      await router.navigate("/admin/events/evt-1/registration?tab=access");
+      await router.navigate("/admin/events/evt-1/registration?tab=checklist");
     });
 
     expect(screen.getByRole("dialog", { name: "Discard unsaved changes?" })).toBeTruthy();

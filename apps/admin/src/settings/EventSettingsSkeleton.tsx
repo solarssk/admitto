@@ -1,3 +1,5 @@
+import { ADDRESS_SKELETON_CARDS } from "../registration/EventAddressCard.js";
+import { REGISTRATION_SKELETON_CARDS } from "../registration/EventRegistrationPanel.js";
 import { CHECKIN_BEHAVIOUR_SKELETON_CARDS } from "./CheckInBehaviourPanel.js";
 import { BOUNCE_SKELETON_CARDS } from "./EventBounceIngestPanel.js";
 import { EVENT_MAIL_SKELETON_CARDS } from "./EventMailSettingsCard.js";
@@ -23,6 +25,7 @@ const TAB_SKELETONS: Readonly<Record<EventSettingsTab, TabSkeleton>> = {
     cards: [
       { id: "status", title: "Status", rows: 1, rowHeight: 62 },
       { id: "basic", title: "Basic information", intro: true, fields: 4, controlHeight: 64 },
+      ...ADDRESS_SKELETON_CARDS,
     ],
     footer: true,
   },
@@ -32,13 +35,7 @@ const TAB_SKELETONS: Readonly<Record<EventSettingsTab, TabSkeleton>> = {
   "checkin-behaviour": { cards: CHECKIN_BEHAVIOUR_SKELETON_CARDS, footer: true },
   mail: { cards: [...EVENT_MAIL_SKELETON_CARDS, ...BOUNCE_SKELETON_CARDS], footer: true },
   wallet: { cards: rowsCard("wallet", "Wallet", 4, 76), footer: true },
-  registration: {
-    cards: [
-      { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
-      { id: "address", title: "Address for guests", intro: 2, fields: 1 },
-    ],
-    footer: true,
-  },
+  registration: { cards: REGISTRATION_SKELETON_CARDS, footer: true },
   integrations: { cards: rowsCard("integrations", "Integrations", 3, 76), footer: false },
   "danger-zone": { cards: rowsCard("danger-zone", "Danger zone", 5, 72, false), footer: false },
 };

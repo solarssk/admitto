@@ -5,6 +5,7 @@ import type { RegistrationSettingsDto } from "../../src/api/types.js";
 import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
 import { isOff } from "../test-utils.js";
 import { api, refreshEvent } from "./accessApiMocks.js";
+import { legalAnswer } from "./accessData.js";
 
 export const onDirtyChange = vi.fn();
 export const onSavingChange = vi.fn();
@@ -23,21 +24,22 @@ export function resetPanelApi(): void {
 }
 
 /** The "Registration" tab of Event settings with these settings, read and on screen. */
-export async function renderPanel(saved: RegistrationSettingsDto, { archived = false, withRefresh = true } = {}) {
+export async function renderPanel(saved: RegistrationSettingsDto, { archived = false, withRefresh = true, superadmin = true } = {}) {
   api.fetchRegistrationSettings.mockResolvedValue(saved);
+  api.fetchLegalDocuments.mockResolvedValue(legalAnswer([]));
   render(
     <MemoryRouter>
       <EventRegistrationPanel
         eventId="evt-1"
         archived={archived}
+        superadmin={superadmin}
         refreshEvent={withRefresh ? refreshEvent : undefined}
         onDirtyChange={onDirtyChange}
         onSavingChange={onSavingChange}
       />
     </MemoryRouter>,
   );
-  await screen.findByText("Company SSO", { selector: ".at-card__title" });
-  await waitFor(() => expect(screen.queryByLabelText("Own address")).toBeTruthy());
+  await screen.findByRole("switch", { name: "Waiting list" });
 }
 
 /** Save of the tab, once the address card has lifted its hold (a click before that is dropped, as it is for a person). */

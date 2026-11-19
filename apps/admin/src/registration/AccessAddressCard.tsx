@@ -42,7 +42,7 @@ function recordName(own: OwnAddress, address: RegistrationOwnAddressDto | null, 
 }
 
 const INTRO =
-  "Guests get links on the address of this instance. An event can have its own address instead, such as events.example.com. Guests get links on it only after a check finds it working. If it later stops working, fix it or remove it: guests are still sent links on it.";
+  "Guests get links on the address of this instance, for tickets, QR codes, emails and registration. An event can have its own address instead, such as events.example.com. Guests get links on it only after a check finds it working. If it later stops working, fix it or remove it: guests are still sent links on it.";
 
 const FIELD_HINT = "The host name only, such as events.example.com. The buttons act at once, not with Save below.";
 
@@ -52,7 +52,7 @@ const NAME_PLACEHOLDER = "events.example.com";
 function instructionsText(name: string, target: string): string {
   const address = name === "" ? NAME_PLACEHOLDER : name;
   return [
-    "Set up the own address of an event for guest registration in Admitto.",
+    "Set up the own address of an event for guests in Admitto.",
     "",
     `1. DNS: create a CNAME record (a DNS entry that makes one name an alias of another) from ${address} to ${target}.`,
     `2. Serve HTTPS on ${address} with a valid certificate. Admitto does not issue certificates.`,
@@ -188,20 +188,33 @@ function AddressControls({
   );
 }
 
+const READ_ONLY_NOTE = "Only a superadmin can change this.";
+const NO_OWN_ADDRESS = "This event has no address of its own. Guests get links on the address of this instance.";
+
+/** What every other administrator of the event reads: how the address stands, and who can change it. */
+function ReadOnlyAddressCard({ address, instanceHost }: Readonly<{ address: RegistrationOwnAddressDto | null; instanceHost: string | null }>) {
+  return (
+    <Card title="Address for guests">
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">{keepLastWords(INTRO)}</p>
+        {address === null ? <p className="settings-card-intro">{NO_OWN_ADDRESS}</p> : <AddressStatus address={address} instanceHost={instanceHost} />}
+        <p className="settings-card-intro">{READ_ONLY_NOTE}</p>
+      </div>
+    </Card>
+  );
+}
+
 /**
- * The event's own address for guests (D-C6): how it stands, the field with its buttons and the setup for IT. It is on the Registration tab
- * of Event settings, which only a superadmin reaches. It is not one of the settings that Save sends: each request here is made at once.
+ * The event's own address for guests (D-C6): how it stands, the field with its buttons and the setup for IT. It is on the General tab of
+ * Event settings, because guests get links on it everywhere: ticket pages, QR links, emails and registration. A superadmin sets it;
+ * for everybody else the card shows how it stands. It is not one of the settings that Save sends: each request here is made at once.
  */
 export function AccessAddressCard({
-  eventId,
-  event,
-  address,
-  instanceHost,
-  disabled,
-  onChanged,
-  onArchived,
-  onBusyChange,
+  superadmin,
+  ...props
 }: Readonly<{
+  /** Only a superadmin changes the address; the card shows it to everybody else. */
+  superadmin: boolean;
   eventId: string;
   event: ArchivedGuardEvent;
   address: RegistrationOwnAddressDto | null;
@@ -212,6 +225,20 @@ export function AccessAddressCard({
   /** Whether a request of the card (save, check, remove) is out, for a page that warns before it is left. */
   onBusyChange?: (busy: boolean) => void;
 }>) {
+  if (!superadmin) return <ReadOnlyAddressCard address={props.address} instanceHost={props.instanceHost} />;
+  return <EditableAddressCard {...props} />;
+}
+
+function EditableAddressCard({
+  eventId,
+  event,
+  address,
+  instanceHost,
+  disabled,
+  onChanged,
+  onArchived,
+  onBusyChange,
+}: Readonly<Omit<Parameters<typeof AccessAddressCard>[0], "superadmin">>) {
   const own = useOwnAddress({ eventId, saved: address, instanceHost, onChanged, onArchived });
   const busy = own.saving || own.checking || own.removing;
   useEffect(() => onBusyChange?.(busy), [busy, onBusyChange]);

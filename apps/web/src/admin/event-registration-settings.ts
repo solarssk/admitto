@@ -90,7 +90,7 @@ export function defaultSettings(): SettingsValues {
 }
 
 /**
- * How the event's own address for guests stands (D-C6), for the warning on the Access tab. Read only here: a superadmin sets the
+ * How the event's own address for guests stands (D-C6), for the warning on the Registration tab of Event settings. Read only here: a superadmin sets the
  * address and asks for a check elsewhere (./event-custom-domain-routes.ts). The address is not personal data, and guests see it in
  * every link they are sent.
  */

@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Card, HintLabel, Notice, useToast } from "@admitto/ui";
-import {
-  ApiError,
-  fetchRegistrationSettings,
-  fetchRegistrationReturnAddresses,
-  saveRegistrationSettings,
-} from "../api/client.js";
-import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { CustomDomainDto, RegistrationRedirectUriDto, RegistrationSettingsDto } from "../api/types.js";
-import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
+import { Link } from "react-router";
+import { Card, HintLabel, Notice } from "@admitto/ui";
+import { ApiError, fetchLegalDocuments, fetchRegistrationReturnAddresses, fetchRegistrationSettings } from "../api/client.js";
+import type { LegalDocumentDto, RegistrationRedirectUriDto, RegistrationSettingsDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
 import { orLoginRedirect, redirectToLogin } from "../identity/loginRedirect.js";
@@ -16,52 +10,72 @@ import { SettingsFooter } from "../settings/mailTransportFormParts.js";
 import { PanelLoadError } from "../settings/PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "../settings/SettingsPanelSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
-import { AccessAddressCard } from "./AccessAddressCard.js";
+import { AccessAfterFormCard, AccessFormCard } from "./AccessFormCard.js";
+import { ProblemMessage } from "./AccessFormParts.js";
 import { AccessSsoClaim } from "./AccessSsoClaim.js";
 import { AccessSsoProvider } from "./AccessSsoProvider.js";
 import { AccessWayInCard } from "./AccessWayInCard.js";
 import { EventBotProtectionRow } from "./EventBotProtectionRow.js";
-import { claimErrors, draftFromSettings, parseClaim, technicalPatch, type AccessDraft } from "./accessSettings.js";
-import { ownAddressOf } from "./ownAddress.js";
+import { claimErrors, missingChecks, parseClaim, type AccessDraft, type Technical } from "./accessSettings.js";
+import { hasStopped, stoppedWarning } from "./ownAddress.js";
+import { registrationTabPath } from "./registrationTabs.js";
 import { methodEdit } from "./ssoProviderChoice.js";
 import { eventReturnAddress, SsoItSetup } from "./SsoItSetup.js";
+import { useAccessForm } from "./useAccessForm.js";
 import "./registration-access.css";
 
-const PANEL_HINT = "The access method of the registration form, and the address guests use. Only a superadmin can change these.";
+const PANEL_HINT = "How guests register for this event: whether they can, what the form asks, and how they open it.";
 
 const NOT_USED_NOTE = "This event does not use Company SSO, so these fields are off. To use it, choose Company SSO under Access method, above.";
 
-const SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
+/** What a person who is not a superadmin reads on the cards that only a superadmin changes. */
+export const SUPERADMIN_ONLY_NOTE = "Only a superadmin can change this.";
+
+/** The cards of the tab as its placeholder draws them: the real titles, over rows that make each card about as tall as the real one. */
+export const REGISTRATION_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "method", title: "Access method", intro: 1, rows: 1, rowHeight: 40 },
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
-  { id: "address", title: "Address for guests", intro: 2, fields: 1 },
+  { id: "form", title: "Form", intro: 1, rows: 6, rowHeight: 64 },
+  { id: "after", title: "Handling requests", intro: 1, rows: 3, rowHeight: 64 },
 ];
 
-/** The first read: the settings of the event (the address, the restriction and the identity provider come from them) and the return
- * addresses of the company SSO, which a superadmin may read. A read of the addresses that fails leaves them out, and the panel still works. */
+/** The first read: the settings of the event, its legal texts (the list of consents is made from them) and, for a superadmin, the return
+ * addresses of the company SSO. A read of the addresses that fails leaves them out, and the panel still works. */
 interface Loaded {
   settings: RegistrationSettingsDto;
+  legalItems: LegalDocumentDto[];
   /** Every return address of the company SSO that the instance lists, for the setup for IT. */
   redirectUris: RegistrationRedirectUriDto[];
   /** The read of the return addresses failed (not for want of a session): they are not known, which is not the same as none. */
   redirectUrisFailed: boolean;
 }
 
-async function readBoth(eventId: string, signal: AbortSignal): Promise<Loaded> {
-  const settings = await fetchRegistrationSettings(eventId, signal);
+/** The return addresses, or null when they could not be read (a lost session goes to the sign-in). */
+async function readReturnAddresses(): Promise<RegistrationRedirectUriDto[] | null> {
   try {
-    return { settings, redirectUris: (await fetchRegistrationReturnAddresses(signal)).redirect_uris, redirectUrisFailed: false };
+    return (await fetchRegistrationReturnAddresses()).redirect_uris;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirectToLogin();
+    return null;
+  }
+}
+
+async function readAll(eventId: string, superadmin: boolean, signal: AbortSignal): Promise<Loaded> {
+  const [settings, legal] = await Promise.all([fetchRegistrationSettings(eventId, signal), fetchLegalDocuments(eventId, signal)]);
+  const first = { settings, legalItems: legal.items };
+  if (!superadmin) return { ...first, redirectUris: [], redirectUrisFailed: false };
+  try {
+    return { ...first, redirectUris: (await fetchRegistrationReturnAddresses(signal)).redirect_uris, redirectUrisFailed: false };
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) throw err;
-    return { settings, redirectUris: [], redirectUrisFailed: true };
+    return { ...first, redirectUris: [], redirectUrisFailed: true };
   }
 }
 
 /**
- * The "Registration" tab of Event settings, for a superadmin: how guests open the form of one event (the access method, the
- * event password and, for Company SSO, the identity provider and the restriction to the people of one company), and the event's own
- * address for guests. A different event is a fresh
- * panel. The cards save themselves, as they did on the Access tab of the Registration page.
+ * The "Registration" tab of Event settings, for every administrator of the event: how guests open the form, what it asks, and what happens to a request after it is sent. Whether registration is on is set in the header of the Registration page. The two form cards have the
+ * page's own Save; the access method (with the event password and the bot check) and Company SSO are a superadmin's, and show what is set
+ * to everybody else. A different event is a fresh panel.
  */
 export function EventRegistrationPanel(props: Readonly<PanelProps>) {
   return <EventRegistrationBody key={props.eventId} {...props} />;
@@ -70,31 +84,35 @@ export function EventRegistrationPanel(props: Readonly<PanelProps>) {
 interface PanelProps {
   eventId: string;
   archived: boolean;
+  superadmin: boolean;
   refreshEvent?: () => Promise<unknown>;
-  /** The page asks first before it is left while the restriction has changes, as for its other tabs. */
+  /** The page asks first before it is left while the form has changes, as for its other tabs. */
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
+  /** Changes when the address for guests of the event changed elsewhere: the settings and the return addresses are read again, and the form is left as it is. */
+  addressVersion?: number;
 }
 
-function EventRegistrationBody({ eventId, archived, refreshEvent, onDirtyChange, onSavingChange }: Readonly<PanelProps>) {
+function EventRegistrationBody({ eventId, archived, superadmin, refreshEvent, onDirtyChange, onSavingChange, addressVersion }: Readonly<PanelProps>) {
   const { reportApiError } = useConnectionState();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  // A failure is told to the connection state when the answer is in; a 401 hands the browser to the login page, and no error flashes up first.
   const fetchAll = useMemo(
     () =>
       orLoginRedirect(async (signal: AbortSignal) => {
         try {
-          return await readBoth(eventId, signal);
+          return await readAll(eventId, superadmin, signal);
         } catch (err) {
           if (err instanceof ApiError) reportApiError(err.status);
           throw err;
         }
       }),
-    [eventId, reportApiError],
+    [eventId, superadmin, reportApiError],
   );
   const panel = usePanelLoad({ fetch: fetchAll, apply: setLoaded, fallback: "Could not load the registration settings." });
 
   if (!panel.gate.showContent) {
-    return <SettingsPanelSkeleton label="Loading registration settings" held={!panel.gate.showIndicator} slow={panel.slow} cards={SKELETON_CARDS} />;
+    return <SettingsPanelSkeleton label="Loading registration settings" held={!panel.gate.showIndicator} slow={panel.slow} cards={REGISTRATION_SKELETON_CARDS} />;
   }
   if (panel.error !== null) {
     return (
@@ -112,17 +130,23 @@ function EventRegistrationBody({ eventId, archived, refreshEvent, onDirtyChange,
     <EventRegistrationCards
       eventId={eventId}
       archived={archived}
-      initial={loaded.settings}
-      redirectUris={loaded.redirectUris}
-      redirectUrisFailed={loaded.redirectUrisFailed}
+      superadmin={superadmin}
+      loaded={loaded}
       refreshEvent={refreshEvent}
       onDirtyChange={onDirtyChange}
       onSavingChange={onSavingChange}
+      addressVersion={addressVersion}
     />
   );
 }
 
-/** The card of Company SSO: the identity provider, the claim and its values. The Save of the tab saves it. While the event uses another method the fields are grey. */
+/** What the Company SSO card says above its fields: why they are off, when they are. */
+function claimNote(usesSso: boolean, readOnly: boolean): string | undefined {
+  if (readOnly) return usesSso ? SUPERADMIN_ONLY_NOTE : `This event does not use Company SSO. ${SUPERADMIN_ONLY_NOTE}`;
+  return usesSso ? undefined : NOT_USED_NOTE;
+}
+
+/** The card of Company SSO: the identity provider, the claim and its values. The Save of the tab saves it. While the event uses another method the fields are grey; for anybody but a superadmin they show what is set. */
 function SsoClaimCard({
   usesSso,
   archived,
@@ -132,6 +156,7 @@ function SsoClaimCard({
   savedMethod,
   setup,
   onChange,
+  readOnly,
 }: Readonly<{
   /** The way in in the form is the company SSO: the restriction belongs to that way alone, and the server refuses it for another. */
   usesSso: boolean;
@@ -144,8 +169,10 @@ function SsoClaimCard({
   /** The setup for IT, under the fields. */
   setup: ReactNode;
   onChange: (change: Partial<Technical>) => void;
+  /** Only a superadmin changes it: for everybody else the card shows what is set. */
+  readOnly: boolean;
 }>) {
-  const off = !usesSso || archived || saving;
+  const off = !usesSso || archived || saving || readOnly;
   return (
     <Card title="Company SSO">
       <div className="settings-card-stack">
@@ -161,11 +188,11 @@ function SsoClaimCard({
               value={draft.sso_provider_id}
               saved={{ method: savedMethod, providerId: settings.sso_provider_id }}
               disabled={off}
-              showNotice={usesSso}
+              showNotice={usesSso && !readOnly}
               onChange={(providerId) => onChange({ sso_provider_id: providerId })}
             />
           }
-          note={usesSso ? undefined : NOT_USED_NOTE}
+          note={claimNote(usesSso, readOnly)}
           onChange={onChange}
         />
         {setup}
@@ -174,240 +201,136 @@ function SsoClaimCard({
   );
 }
 
-/** What this tab edits besides the address: how guests open the form, with the identity provider and the restriction of Company SSO. */
-type Technical = Pick<AccessDraft, "method" | "bot_protection_enabled" | "sso_provider_id" | "sso_claim_name" | "sso_claim_values">;
-
-function technicalOf(draft: AccessDraft): Technical {
-  return { method: draft.method, bot_protection_enabled: draft.bot_protection_enabled, sso_provider_id: draft.sso_provider_id, sso_claim_name: draft.sso_claim_name, sso_claim_values: draft.sso_claim_values };
-}
 
 function EventRegistrationCards({
   eventId,
   archived,
-  initial,
-  redirectUris,
-  redirectUrisFailed,
+  superadmin,
+  loaded,
   refreshEvent,
   onDirtyChange,
   onSavingChange,
+  addressVersion,
 }: Readonly<{
   eventId: string;
   archived: boolean;
-  initial: RegistrationSettingsDto;
-  redirectUris: readonly RegistrationRedirectUriDto[];
-  redirectUrisFailed: boolean;
+  superadmin: boolean;
+  loaded: Loaded;
   refreshEvent?: () => Promise<unknown>;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
+  addressVersion?: number;
 }>) {
-  const { addToast } = useToast();
-  const [settings, setSettings] = useState(initial);
-  // The restriction as the first read found it, and as typed. Both are kept apart from the settings: what the address card does, and the
-  // settings that are read again after it, change the address and nothing else. What is saved moves only with a save of its own (as the
-  // base of the Access form does), so a setting that somebody else changed meanwhile is not taken for an edit of this person.
-  const [saved, setSaved] = useState(() => technicalOf(draftFromSettings(initial)));
-  const [typed, setTyped] = useState(saved);
-  const [returnAddresses, setReturnAddresses] = useState(redirectUris);
-  const [returnAddressesFailed, setReturnAddressesFailed] = useState(redirectUrisFailed);
+  const form = useAccessForm({ eventId, settings: loaded.settings, legalItems: loaded.legalItems, refreshEvent, superadmin });
+  const { server, base, draft, dirty, saving, problem } = form;
+  const [returnAddresses, setReturnAddresses] = useState(loaded.redirectUris);
+  const [returnAddressesFailed, setReturnAddressesFailed] = useState(loaded.redirectUrisFailed);
   const [retryingAddresses, setRetryingAddresses] = useState(false);
-  const [addressBusy, setAddressBusy] = useState(false);
-  // The newest read of the settings: a read that was started before a newer read never replaces what is newer.
-  const newestRead = useRef(0);
-  const base = useMemo(() => ({ ...draftFromSettings(settings), ...saved }), [settings, saved]);
-  const draft = useMemo(() => ({ ...base, ...typed }), [base, typed]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const patch = technicalPatch(draft, base);
-  const dirty = Object.keys(patch).length > 0;
-  const guardEvent: ArchivedGuardEvent = { archived_at: archived ? "archived" : null };
+  // The address for guests changed and the settings could not be read again: the setup for IT would show the old one.
+  const [addressStale, setAddressStale] = useState(false);
+  const newestAddressRead = useRef(0);
+  const missing = missingChecks(server.readiness);
+  const readOnly = !superadmin;
+  const off = archived || saving;
+  // Also while they are being read again: the old address is not shown or copied from the moment the address changed.
+  const setupUnsure = returnAddressesFailed || addressStale || retryingAddresses;
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
-  // The page warns before it is left while a request of this tab is out: the save of the restriction, and the requests of the address card.
-  useEffect(() => onSavingChange?.(saving || addressBusy), [saving, addressBusy, onSavingChange]);
+  useEffect(() => onSavingChange?.(saving), [saving, onSavingChange]);
 
-  /** Reads the settings and the return addresses again, quietly: the link for guests, the state of the address and the callback of a new
-   * address move with a change. A read that fails leaves what the cards show as it is. */
-  async function refresh() {
-    const mine = ++newestRead.current;
-    const [latest, addresses] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchRegistrationReturnAddresses()]);
-    // A save that started meanwhile, or a newer read, has made this snapshot old.
-    if (mine !== newestRead.current) return;
-    if (latest.status === "fulfilled") setSettings(latest.value);
-    if (addresses.status === "fulfilled") {
-      setReturnAddresses(addresses.value.redirect_uris);
-      setReturnAddressesFailed(false);
-    }
-  }
+  // The address for guests was changed on General while this tab stayed mounted: what the setup for IT shows is read again, and what is typed stays.
+  // The effect runs on the change of the version only, and calls the latest of the functions below through a ref.
+  const readAgain = () => void readAddressesAgain();
+  const onAddressChange = useRef(readAgain);
+  onAddressChange.current = readAgain;
+  const seenAddressVersion = useRef(addressVersion);
+  useEffect(() => {
+    if (addressVersion === seenAddressVersion.current) return;
+    seenAddressVersion.current = addressVersion;
+    onAddressChange.current();
+  }, [addressVersion]);
 
-  /** Somebody else changed the provider of the event: nothing was saved. The settings are read again and the form takes them, so that
-   * the person sees what is saved now and decides again. A read that fails leaves the form as it is. */
-  async function startAgain() {
-    const mine = ++newestRead.current;
-    try {
-      const latest = await fetchRegistrationSettings(eventId);
-      if (mine !== newestRead.current) return;
-      const next = technicalOf(draftFromSettings(latest));
-      setSettings(latest);
-      setSaved(next);
-      setTyped(next);
-    } catch {
-      // What the cards show stays as it is, and so does the message that sent us here.
-    }
-  }
-
-  /** The Retry of the return addresses: reads them again, busy while it works, and the answer replaces the failure. */
-  async function retryReturnAddresses() {
+  /**
+   * The settings and the return addresses, read again, busy while it works. The Retry of the setup for IT does the same. Only a
+   * superadmin changes the address or sees the setup, so only a superadmin gets here. Reads can overlap (the address changed again):
+   * only the latest may write what it found and end the busy state.
+   */
+  async function readAddressesAgain() {
+    const mine = ++newestAddressRead.current;
     setRetryingAddresses(true);
-    try {
-      setReturnAddresses((await fetchRegistrationReturnAddresses()).redirect_uris);
-      setReturnAddressesFailed(false);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) redirectToLogin();
-    } finally {
-      setRetryingAddresses(false);
-    }
-  }
-
-  function edit(change: Partial<Technical>) {
-    setTyped((current) => ({ ...current, ...change }));
-    setError(null);
-  }
-
-  /** The password was set or removed by its own request: the card says so now, and the settings are read again. */
-  function passwordChanged(isSet: boolean) {
-    setSettings((current) => ({ ...current, password_set: isSet }));
-    void refresh();
-  }
-
-  function archivedMeanwhile() {
-    void refreshEvent?.();
-    void refresh();
-  }
-
-  function addressChanged(state: CustomDomainDto) {
-    setSettings((current) => ({ ...current, own_address: ownAddressOf(state) }));
-    void refresh();
-  }
-
-  async function save() {
-    // The Save button is off while nothing changed and busy while a save runs.
-    /* v8 ignore if */
-    if (saving || !dirty) return;
-    if (Object.keys(claimErrors(draft)).length > 0) {
-      setError("Fix the restriction to one company before you save.");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      // The provider the form was made from (the baseline of the draft), not the one a later read found and not the one picked: a read that
-      // finds another provider does not change what the person saw, so a save made after somebody else changed it is refused.
-      const answer = await saveRegistrationSettings(eventId, { ...patch, expected_sso_provider_id: saved.sso_provider_id });
-      // A read that started before this answer is older than it.
-      newestRead.current += 1;
-      // The answer says what these settings are now, and nothing else is the save's to say: the address, and what was read of it, stay as they are.
-      setSettings((current) => ({
-        ...current,
-        access_methods: answer.access_methods,
-        sso_claim_name: answer.sso_claim_name,
-        sso_claim_values: answer.sso_claim_values,
-        sso_provider_id: answer.sso_provider_id,
-        sso_provider: answer.sso_provider,
-        sso_providers: answer.sso_providers,
-        password_set: answer.password_set,
-      }));
-      const next = technicalOf(draftFromSettings(answer));
-      setSaved(next);
-      setTyped(next);
-      addToast("Registration settings saved.", "success");
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        redirectToLogin();
-        return;
-      }
-      if (hasApiErrorCode(err, "event_archived")) archivedMeanwhile();
-      // The provider was turned off or deleted, or registration lost something it needs, since the page was read: read it again.
-      else if (hasApiErrorCode(err, "sso_provider_changed")) void startAgain();
-      else if (hasApiErrorCode(err, "sso_provider_not_available") || hasApiErrorCode(err, "registration_not_ready")) void refresh();
-      setError(operatorApiErrorMessage(err, "Could not save the registration settings."));
-    } finally {
-      setSaving(false);
-    }
+    const [settingsRead, addresses] = await Promise.all([form.refresh(), readReturnAddresses()]);
+    if (mine !== newestAddressRead.current) return;
+    if (addresses !== null) setReturnAddresses(addresses);
+    setReturnAddressesFailed(addresses === null);
+    setAddressStale(!settingsRead);
+    setRetryingAddresses(false);
   }
 
   return (
     <div className="settings-sections at-fade-in">
+      {server.mode !== null && missing.length > 0 && (
+        <Notice variant="warning">
+          Registration is on, but something it needs is missing, so guests may not be able to register.{" "}
+          <Link className="access-text-link" to={registrationTabPath(eventId, "checklist")}>
+            The Checklist tab says what.
+          </Link>
+        </Notice>
+      )}
+      {hasStopped(server.own_address) && <Notice variant="warning">{stoppedWarning(server.own_address)}</Notice>}
       <AccessWayInCard
         eventId={eventId}
-        event={guardEvent}
+        event={{ archived_at: archived ? "archived" : null }}
         method={draft.method}
         savedMethod={base.method}
-        passwordSet={settings.password_set}
-        ssoAvailable={settings.sso_providers.length > 0}
+        passwordSet={server.password_set}
+        ssoAvailable={server.sso_providers.length > 0}
         // The notice says a bot check protects the form only while the organisation has it on AND this event does (the draft, so it follows the switch).
-        botCheck={settings.bot_protection === "required" && draft.bot_protection_enabled}
+        botCheck={server.bot_protection === "required" && draft.bot_protection_enabled}
+        note={readOnly ? SUPERADMIN_ONLY_NOTE : undefined}
         extra={
           <EventBotProtectionRow
-            organisationOn={settings.bot_protection === "required"}
+            organisationOn={server.bot_protection === "required"}
             enabled={draft.bot_protection_enabled}
             usesSso={draft.method === "sso"}
-            disabled={archived || saving}
-            onChange={(enabled) => edit({ bot_protection_enabled: enabled })}
+            disabled={off || readOnly}
+            onChange={(enabled) => form.edit({ bot_protection_enabled: enabled })}
           />
         }
-        disabled={archived || saving}
+        disabled={off || readOnly}
         // Pressing the method that is chosen already changes nothing: not the provider, not the claim.
         onMethodChange={(method) => {
-          if (method !== draft.method) edit(methodEdit(method, base.sso_provider_id, settings.sso_providers));
+          if (method !== draft.method) form.edit(methodEdit(method, base.sso_provider_id, server.sso_providers));
         }}
-        onPasswordChanged={passwordChanged}
-        onArchived={archivedMeanwhile}
+        onPasswordChanged={form.passwordChanged}
+        onArchived={form.eventArchived}
       />
       <SsoClaimCard
         usesSso={draft.method === "sso"}
         archived={archived}
         saving={saving}
+        readOnly={readOnly}
         draft={draft}
-        settings={settings}
+        settings={server}
         savedMethod={base.method}
         setup={
-          <SsoItSetup
-            instanceUri={returnAddresses.find((entry) => entry.host === "instance")?.uri ?? null}
-            eventUri={eventReturnAddress(returnAddresses, settings.own_address?.domain ?? null)}
-            claim={{ name: base.sso_claim_name === "" ? null : base.sso_claim_name, values: parseClaim(base).values }}
-            readFailed={returnAddressesFailed}
-            retrying={retryingAddresses}
-            onRetry={() => void retryReturnAddresses()}
-          />
+          readOnly ? null : (
+            <SsoItSetup
+              // While the addresses could not be read again, none is shown or copied: an old one would send IT to the wrong place.
+              instanceUri={setupUnsure ? null : (returnAddresses.find((entry) => entry.host === "instance")?.uri ?? null)}
+              eventUri={setupUnsure ? null : eventReturnAddress(returnAddresses, server.own_address?.domain ?? null)}
+              claim={{ name: base.sso_claim_name === "" ? null : base.sso_claim_name, values: parseClaim(base).values }}
+              readFailed={setupUnsure}
+              retrying={retryingAddresses}
+              onRetry={() => void readAddressesAgain()}
+            />
+          )
         }
-        onChange={edit}
+        onChange={form.edit}
       />
-      <AccessAddressCard
-        eventId={eventId}
-        event={guardEvent}
-        address={settings.own_address}
-        instanceHost={settings.instance_host}
-        disabled={archived || saving}
-        onChanged={addressChanged}
-        onArchived={archivedMeanwhile}
-        onBusyChange={setAddressBusy}
-      />
-      {error !== null && (
-        <Notice variant="error" role="alert">
-          {error}
-        </Notice>
-      )}
-      {!archived && (
-        <SettingsFooter
-          hasUnsavedChanges={dirty}
-          saving={saving || addressBusy}
-          onReset={() => {
-            setTyped(saved);
-            setError(null);
-          }}
-          onSave={() => void save()}
-        />
-      )}
+      <AccessFormCard eventId={eventId} draft={draft} legalItems={form.legalItems} disabled={off} onChange={form.edit} />
+      <AccessAfterFormCard draft={draft} disabled={off} onChange={form.edit} />
+      {problem && <ProblemMessage eventId={eventId} problem={problem} superadmin={superadmin} />}
+      {!archived && <SettingsFooter hasUnsavedChanges={dirty} saving={saving} onReset={form.reset} onSave={form.save} />}
     </div>
   );
 }

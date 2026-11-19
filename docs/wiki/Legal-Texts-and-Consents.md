@@ -30,7 +30,7 @@ Write, publish and copy the texts that guests read before they register for an e
 2. Enter a key, such as `photo-consent`. It is part of the page address and cannot be changed later.
 3. Enter the checkbox label. Guests read it next to the checkbox.
 4. Write the text, select **Save**, then **Publish**.
-5. To make the form ask for the consent, choose it under **Extra consents** on the **Access** tab. See [Registration Access](Registration-Access).
+5. To make the form ask for the consent, choose it under **Extra consents** in the **Form** card of **Event settings → Registration**. Until a consent is published, that row has the button **Open Legal** instead of a list. See [Registration Access](Registration-Access).
 
 **Copy the texts of another event**
 

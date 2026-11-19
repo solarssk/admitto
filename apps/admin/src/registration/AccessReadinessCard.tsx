@@ -1,8 +1,9 @@
 import { Link } from "react-router";
 import { readinessCopy, remedyFor, type ReadinessCopy, type ReadinessLink } from "./accessReadiness.js";
+import { registrationTabPath } from "./registrationTabs.js";
 import "./registration-access.css";
 
-/** Where a link of a missing check goes: another tab of this page (the address keeps its path), the settings of the event, or the settings of the organisation. */
+/** Where a link of a missing check goes: another tab of the Registration page, the settings of the event, or the settings of the organisation. */
 export function linkTarget(link: ReadinessLink, eventId: string) {
   const settings = `/admin/events/${encodeURIComponent(eventId)}/settings`;
   switch (link) {
@@ -17,7 +18,7 @@ export function linkTarget(link: ReadinessLink, eventId: string) {
     case "organisation_external":
       return "/admin/settings?tab=external";
     default:
-      return { search: `?tab=${link}` };
+      return registrationTabPath(eventId, link);
   }
 }
 

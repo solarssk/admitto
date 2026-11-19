@@ -353,7 +353,7 @@ describe("healthCheckGuidance", () => {
     const guidance = healthCheckGuidance(checkRow("event_addresses", "degraded", [{ key: "reason", value: "address_stopped" }]));
     expect(guidance?.cause).toContain("worked once");
     expect(guidance?.impact).toContain("Guests are still sent links on that address");
-    expect(guidance?.nextStep).toContain("Access tab of Registration");
+    expect(guidance?.nextStep).toContain("Event settings for the event, General");
     expect(guidance?.link).toBeUndefined();
   });
 

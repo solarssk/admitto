@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
-import { getTooltipText, isOff, plain } from "../test-utils.js";
+import { deferred, getTooltipText, isOff, plain } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
 import { PROVIDERS, settings, ssoEventSettings } from "./accessData.js";
-import { card, radio, resetApi, saveButton } from "./accessFixtures.js";
+import { card, radio, resetApi, saveButton, toggle } from "./accessFixtures.js";
 import { renderPanel, resetPanelApi } from "./panelFixtures.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -15,6 +15,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...(await importOriginal<typeof import("../../src/api/client.js")>()),
     fetchRegistrationSettings: (...args: unknown[]) => mocks.fetchRegistrationSettings(...args),
+    fetchLegalDocuments: (...args: unknown[]) => mocks.fetchLegalDocuments(...args),
     saveRegistrationSettings: (...args: unknown[]) => mocks.saveRegistrationSettings(...args),
     fetchRegistrationReturnAddresses: (...args: unknown[]) => mocks.fetchRegistrationReturnAddresses(...args),
     saveCustomDomain: (...args: unknown[]) => mocks.saveCustomDomain(...args),
@@ -58,8 +59,8 @@ describe("the access method of an event, in Event settings", () => {
   it("is the first card, named Access method, with one short instruction and the choice in the narrow group of the segmented control", async () => {
     await renderPanel(settings({ access_methods: [] }));
 
-    expect([...document.querySelectorAll(".at-card__title")].map((title) => title.textContent?.trim())).toEqual(["Access method", "Company SSO", "Address for guests"]);
-    expect(within(methodCard()).getByText("Choose the access method for the registration form.")).toBeTruthy();
+    expect([...document.querySelectorAll(".at-card__title")].map((title) => title.textContent?.trim())).toEqual(["Access method", "Company SSO", "Form", "Handling requests"]);
+    expect(within(methodCard()).getByText("How guests reach the form, and whether they must prove who they are.")).toBeTruthy();
     expect(within(methodCard()).getByRole("radiogroup", { name: "Access method" }).classList.contains("access-seg")).toBe(true);
     expect(methodCard().querySelector(".at-notice")).toBeNull();
   });
@@ -368,12 +369,13 @@ describe("the identity provider of Company SSO, in Event settings", () => {
 
   it("keeps sending the provider the form was made from when a later read finds another one, so the save is refused and not applied to it", async () => {
     await renderPanel(ssoSettings());
-    // Somebody else moves the event to Google; the address card reads the settings again.
+    // Somebody else moves the event to Google; a refused save reads the settings again.
     api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ sso_provider_id: "idp-google", sso_provider: { ...ENTRA, id: "idp-google", display_name: "Contoso Google", kind: "google" } }));
-    api.saveCustomDomain.mockResolvedValue({ custom_domain: "events.example.com", custom_domain_status: "unchecked", custom_domain_check_result: null, custom_domain_verified_at: null, custom_domain_checked_at: null });
-    fireEvent.change(screen.getByLabelText("Own address"), { target: { value: "events.example.com" } });
-    fireEvent.click(within(card("Address for guests")).getByRole("button", { name: "Set address" }));
+    api.saveRegistrationSettings.mockRejectedValueOnce(new ApiError(409, "registration_not_ready"));
+    fireEvent.click(screen.getByRole("radio", { name: "Link" }));
+    fireEvent.click(saveButton());
     await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("radio", { name: "Company SSO" }));
     api.saveRegistrationSettings.mockRejectedValue(new ApiError(409, "sso_provider_changed"));
 
     fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid" } });
@@ -424,6 +426,80 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "a" } });
     fireEvent.click(saveButton());
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["a"], expected_sso_provider_id: "idp-google" }));
+  });
+
+  describe("when the provider was changed by somebody else, and the registration was changed too", () => {
+    const google = { id: "idp-google", display_name: "Contoso Google", kind: "google" as const };
+    async function refuseOnce(latest: Partial<RegistrationSettingsDto>) {
+      await renderPanel(ssoSettings({ mode: "approval" }));
+      fireEvent.click(toggle("Approve requests by hand"));
+      fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid" } });
+      fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "a" } });
+      api.saveRegistrationSettings.mockRejectedValueOnce(new ApiError(409, "sso_provider_changed"));
+      api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ sso_provider_id: google.id, sso_provider: { ...ENTRA, ...google }, ...latest }));
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(trigger().getAttribute("aria-label")).toBe("Identity provider, Contoso Google"));
+      api.saveRegistrationSettings.mockClear();
+      api.saveRegistrationSettings.mockResolvedValue(ssoSettings({ sso_provider_id: google.id }));
+    }
+
+    it("does not turn registration on again with the old mode when the read finds it closed, and keeps the other edits", async () => {
+      await refuseOnce({ mode: null });
+
+      expect(isOff(toggle("Approve requests by hand"))).toBe(true);
+      expect(toggle("Approve requests by hand").checked).toBe(false);
+      fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid2" } });
+      fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "b" } });
+      fireEvent.click(saveButton());
+
+      await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid2", sso_claim_values: ["b"], expected_sso_provider_id: "idp-google" }));
+    });
+
+    it("keeps the mode that was chosen while registration is still on", async () => {
+      await refuseOnce({ mode: "approval" });
+
+      expect(toggle("Approve requests by hand").checked).toBe(false);
+      fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid2" } });
+      fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "b" } });
+      fireEvent.click(saveButton());
+
+      await waitFor(() =>
+        expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { mode: "automatic", sso_claim_name: "tid2", sso_claim_values: ["b"], expected_sso_provider_id: "idp-google" }),
+      );
+    });
+
+    it("takes the mode that is saved when the mode was not touched and somebody else changed it", async () => {
+      await renderPanel(ssoSettings({ mode: "approval" }));
+      fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid" } });
+      fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "a" } });
+      api.saveRegistrationSettings.mockRejectedValueOnce(new ApiError(409, "sso_provider_changed"));
+      api.fetchRegistrationSettings.mockResolvedValue(ssoSettings({ mode: "automatic", sso_provider_id: google.id, sso_provider: { ...ENTRA, ...google } }));
+
+      fireEvent.click(saveButton());
+
+      await waitFor(() => expect(trigger().getAttribute("aria-label")).toBe("Identity provider, Contoso Google"));
+      expect(toggle("Approve requests by hand").checked).toBe(false);
+    });
+  });
+
+  it("shows what the newest read found, not an older read that answers last, when the provider changed twice in a row", async () => {
+    await renderPanel(ssoSettings());
+    const google = ssoSettings({ sso_provider_id: "idp-google", sso_provider: { ...ENTRA, id: "idp-google", display_name: "Contoso Google", kind: "google" } });
+    const older = deferred<RegistrationSettingsDto>();
+    api.fetchRegistrationSettings.mockReset();
+    api.fetchRegistrationSettings.mockReturnValueOnce(older.promise).mockResolvedValue(google);
+    api.saveRegistrationSettings.mockRejectedValue(new ApiError(409, "sso_provider_changed"));
+
+    fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid" } });
+    fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "a" } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid2" } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(trigger().getAttribute("aria-label")).toBe("Identity provider, Contoso Google"));
+    await act(async () => older.resolve(ssoSettings()));
+
+    expect(trigger().getAttribute("aria-label")).toBe("Identity provider, Contoso Google");
   });
 
   it("is told when the server refuses a change of the access method because registration is not ready, and reads the settings again", async () => {

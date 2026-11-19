@@ -1,7 +1,6 @@
 import { useCallback } from "react";
-import { ApiError, fetchRegistrationCounts, fetchRegistrationSettings } from "../api/client.js";
-import type { RegistrationCountsDto } from "../api/types.js";
-import { checklistFromSettings, type ChecklistCheck } from "./accessReadiness.js";
+import { ApiError, fetchRegistrationCounts } from "../api/client.js";
+import type { RegistrationCountsDto, RegistrationSettingsDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useListLoad, type ListLoad } from "../hooks/useListLoad.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
@@ -55,13 +54,14 @@ export function useRegistrationCounts(eventId: string | undefined): ListLoad<Reg
 }
 
 /**
- * The checks of what registration needs, for the number on the Checklist tab (an extra, see `useEventExtra`). `onData` hears each
- * answer. With no event nothing is read: the page passes none while a tab that reads the checks itself is open.
+ * The settings of the registration of the event, for the switch in the header and the number on the Checklist tab (an extra, see
+ * `useEventExtra`). `read` is the read of the page's switch (it notes which saves came before it), and `onData` hears each answer. With no event nothing is read: the page passes none while the Checklist tab, which reads
+ * the settings itself and tells the page, is open.
  */
-export function useRegistrationChecks(eventId: string | undefined, onData: (checks: ChecklistCheck[]) => void): ListLoad<ChecklistCheck[]> {
-  return useEventExtra(eventId, readChecks, "Could not load the checklist.", onData);
-}
-
-async function readChecks(eventId: string, signal: AbortSignal): Promise<ChecklistCheck[]> {
-  return checklistFromSettings(await fetchRegistrationSettings(eventId, signal));
+export function useRegistrationSettings(
+  eventId: string | undefined,
+  read: (eventId: string, signal: AbortSignal) => Promise<RegistrationSettingsDto>,
+  onData: (settings: RegistrationSettingsDto) => void,
+): ListLoad<RegistrationSettingsDto> {
+  return useEventExtra(eventId, read, "Could not load the registration settings.", onData);
 }

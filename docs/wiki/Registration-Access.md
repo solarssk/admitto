@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Turn guest registration on or off for an event, set what the form asks, and copy the link you give to guests. You do this on the **Access** tab of the event's **Registration** page. The page is in the event menu, after **Overview**. What registration still needs is on the **Checklist** tab of the same page.
+Turn guest registration on or off for an event, copy the link you give to guests, and set what the form asks. You turn registration on and off, and copy the link, with the buttons in the header of the event's **Registration** page, which is in the event menu after **Overview**. The same header is on every tab, with a badge next to the title that says **Open**, **Closed** or **Not ready**. What the form asks is on the **Registration** tab of the event's **Event settings**, in four cards, in the order of a guest's way: **Access method**, **Company SSO**, **Form** (the questions, the look of the boxes and the extra consents) and **Handling requests** (**Confirm email addresses**, **Approve requests by hand** and **Waiting list**). **Guests can bring one person** is in the **Form** card, because it adds a part to the form. What registration still needs is on the **Checklist** tab of the **Registration** page.
 
 Registration is off for every event until you turn it on. Until then, the address of the form answers "not found".
 
@@ -12,7 +12,7 @@ Registration is off for every event until you turn it on. Until then, the addres
 
 - You must be the Administrator of the event's organisation, or a Superadmin. An Operator cannot open this page.
 - Some things are set up for the whole instance, by a Superadmin: bot protection, the list of identity providers for Company SSO (under **Identity**), email sending and the address of the instance. You cannot change them here, and the **Checklist** tab tells you when one is missing.
-- Only a Superadmin sets the access method (with the event password and the identity provider), the address of the event for guests and the restriction to one company, on the **Registration** tab of **Event settings** (see **Set the access method**, **Give the event an address of its own** and **Restrict Company SSO to one company** below). Every Administrator of the event is warned on this page when the address stops working.
+- Only a Superadmin sets the access method (with the event password and the identity provider), the bot protection of the event and the restriction to one company, on the **Registration** tab of **Event settings**, and the address of the event for guests, on its **General** tab (see **Set the access method**, **Give the event an address of its own** and **Restrict Company SSO to one company** below). An Administrator sees the same cards, with the controls grey and the line "Only a superadmin can change this." The address card shows how the address stands. Every Administrator of the event is warned on the **Registration** tab when the address stops working.
 - You write the legal texts and the questions yourself. See [Legal Texts and Consents](Legal-Texts-and-Consents) and [Registration Form Fields](Registration-Form-Fields).
 - An archived event keeps its settings. You can read them and copy the link, but you cannot change anything.
 
@@ -21,84 +21,35 @@ Registration is off for every event until you turn it on. Until then, the addres
 **Check what registration needs**
 
 1. Open the event, then **Registration**, then the **Checklist** tab. The tab has the number of steps that are still open next to its name. The number is the same for everybody.
-2. Read the card **Registration checklist** at the top. The bar and the pill "N of M done" at the right of the header say how far you are. Every card on the tab shows its status as a pill at the right of its header. The message under the bar says what state registration is in: "Ready. Registration can be turned on." (with a **Go to Access** button), how many steps are open, how many wait for a Superadmin, or, when registration is on and something stopped working, a red message.
-3. Read the card **For you**. Each row is one step that you can do, with a button (for example **Open Legal** or **Open Event settings**) that takes you to the place where it is put right. When nothing is left for you, the card says so.
-4. Read the card **Waiting for a superadmin**. It is there when a step needs a Superadmin and you are not one. Each row has the badge **Superadmin** and says who to ask. A Superadmin has no such card: every open step is under **For you**, with a button to where it is put right (Event settings, or Organisation settings).
-5. The card **Done** is closed, and its header has the number of steps that are met at the right. Select the header to see them. Select it again to close it. A row that is done has a name and one line of text and no button: only the steps in **For you** have a button at the right, such as **Open Legal**. A row in **Waiting for a superadmin** says in its one line what is wrong and who to ask.
-6. Come back to the tab after you have put a step right. The tab reads the settings each time you open it, so it is the state of now. It stays when registration is on: an address or a key can stop working later. An event with an address of its own for guests has the row **Address for guests**, which is open while the last check of the address fails.
-7. An archived event has only the message at the top and the card **Done**.
-
-When registration is on and a step stops being done, the **Access** tab shows a warning with a link to the **Checklist** tab. When registration is off and a step is open, the **Access** tab says that registration can be turned on when the steps on the **Checklist** tab are done.
-
-**Read the access method**
-
-The **Access method** row of the **Done** card on the **Checklist** tab says what is set, in one line: "Link. Anyone who has the link can ask to join.", "Password. Guests need the link and the event password to open the form." or "Company SSO. Guests sign in with" and the name of the identity provider. It has no button. Only a Superadmin sets it, in **Event settings → Registration**. When no method is chosen, the row is open, under **Waiting for a superadmin** for an Administrator, and says "No access method is chosen yet. Guests cannot open the form. Ask a superadmin to choose it in Event settings, Registration."
-
-**Set the access method**
-
-A Superadmin does this, in **Event settings → Registration**, on the **Access method** card. The tab has one **Save** at the bottom for the method, the identity provider and the restriction. The event password is saved at once, apart from **Save**.
-
-1. Under **Access method**, choose **Link**, **Password** or **Company SSO**. An event has one method at a time. Link and Password can always be chosen. **Company SSO** is grey while no identity provider is turned on. Hover over it to read why: "No identity provider is turned on. Add one under Identity."
-2. For **Password**, select **Set**, type a password of 8 to 128 characters and select **Save** in the window that opens.
-3. For **Company SSO**, go to the **Company SSO** card and pick the **Identity provider** guests of this event sign in with. The list holds the providers that are turned on, by the name given to them under **Identity**. If there is only one, it is picked for you. A provider that is turned off stays in the list with "(turned off)", and the form stays closed until you choose another one or turn it on under **Identity**. When you change the provider of an event that already has one, guests who are filling in the form have to sign in again.
-4. Optionally restrict the form to one company on the same card. See **Restrict Company SSO to one company** below.
-5. Select **Save** at the bottom of the tab.
-
-**Restrict Company SSO to one company**
-
-A Superadmin does this, in **Event settings → Registration**, on the **Company SSO** card, which also holds the identity provider. The fields are grey, with a note, while the access method is not **Company SSO**. An Administrator cannot see or change this restriction.
-
-1. On the **Access method** card, choose **Company SSO**, then pick the identity provider on the **Company SSO** card.
-2. In **Claim name**, type the name of the claim that the identity provider puts in the sign-in. With Microsoft Entra ID it is usually `tid`.
-3. In **Allowed values**, type one value on each line. With `tid`, the value is the tenant ID of the company, a GUID.
-4. Select **Save** at the bottom of the tab. Leave both fields empty for no restriction.
-5. Under **Setup for your IT team** on the same card, give IT the return addresses to enter at the identity provider (the instance's, and the event's own address when it has one), the note about a gateway such as Cloudflare Access, and the claim you set. **Copy instructions for an AI agent** puts all of it on the clipboard as plain text.
-
-**Choose what the form asks**
-
-1. Under **Form**, switch on what you need: **Ask for the company**, **Ask for the department** or **Guests can bring one person**.
-2. Switch **Waiting list** and **Confirm email addresses** off only when you do not need them.
-3. Switch **Styled form boxes** on if you want the form to draw its own boxes instead of the browser's. See [Styled boxes](#styled-boxes).
-4. Under **Extra consents**, tick each consent that guests must accept. The list holds the consents that you published on the **Legal** tab.
-5. Select **Save**.
-
-**Give the event an address of its own**
-
-A Superadmin does this. By default guests get links on the address of the instance. An event can have an address of its own instead, such as `events.example.com`, and then every link a guest is sent points at it.
-
-1. Open **Event settings → Registration**. Under **Address for guests**, type the address in **Own address**. Type the host name only: no `https://`, port or path.
-2. Select **Set address**. It applies at once and is not part of the **Save** button at the bottom of the tab. The card says the address is not checked yet. Guests still get links on the main address. **Set address**, **Check now** and **Remove** stand in one row beside the field.
-3. Ask your IT team to set it up. Under **Setup for your IT team** the card shows the DNS record (type, name and target; name and target have a copy button) and the steps. **Copy instructions for an AI agent** puts all of them on the clipboard as plain text, for a mail to IT or for a tool that can change DNS. The steps are: a CNAME record (a DNS entry that makes one name an alias of another) that points the address to the instance, HTTPS with a valid certificate, the original `Host` header (the address the guest typed) passed on to Admitto, and no sign-in gateway in front of the pages guests open. If the form uses the bot check (Turnstile), the address also has to be added to the hostnames of its widget, or guests on the address fail the check. Admitto does not issue certificates.
-4. When IT says it is ready, select **Check now**. The card says what the check found.
-5. When the card says **Working**, guests get links on the address.
-
-Admitto also checks the address by itself soon after you save it, and again every day.
+2. Read the card **Registration checklist** at the top. The bar and the pill "N of M done" at the right of the header say how far you are. Every card on the tab shows its status as a pill at the right of its header. The message under the bar says what state registration is in: "Ready. Registration can be turned on." (with a **Turn registration on** button), "Registration is open." (with a **Turn off** button), or what is still missing.
 
 **Turn registration on**
 
-1. Under **Guest registration**, choose **Automatic** or **With approval**. Both are off while the **Checklist** tab has a row that is not done.
-2. Select **Save**.
-3. Copy the address under **Link for guests** with the copy button, and give it to your guests.
+1. Open the event's **Registration** page. The badge next to the title says **Closed**, and the main button is **Turn registration on**. While the **Checklist** tab has a row that is not done, the badge says **Not ready** with the number of open steps, and the main button is **See the Checklist**.
+2. Select **Turn registration on**. Registration starts with the mode that holds every request for you to accept or reject. To accept guests by themselves, go to **Event settings → Registration** and switch **Approve requests by hand** off, then select **Save**. That switch is grey while registration is off.
+3. Select **Copy link** in the header, and give the link to your guests. When registration is on, **Copy link** is the main button. **Open the form**, in **More actions**, opens the form in a new tab.
+
+On the **Checklist** tab, when every step is done, the green message has the button **Turn registration on**. It does the same as the main button in the header.
 
 **Turn registration off**
 
-1. Under **Guest registration**, choose **Off** and select **Save**.
+1. In the header of the **Registration** page, open **More actions** and select **Turn registration off**. On the **Checklist** tab, the message "Registration is open." has the button **Turn off**.
 2. Read what changes, then select **Turn off registration**.
 
 ## Expected result
 
 - The toast says "Registration is on." or "Registration is off."
-- The mode you chose is selected, and **Save** is off again.
-- With registration on, the address under **Link for guests** opens the form.
+- The badge in the header shows **Open** or **Closed**, and the number on the **Checklist** tab follows it.
+- With registration on, the link that **Copy link** copies opens the form.
 
 ## Important decisions
 
-**Automatic or with approval**
+**Accept by hand or automatically**
 
 | Mode | What happens to a guest who registers |
 |---|---|
-| **Automatic** | The guest is accepted without waiting for you, until the event is full |
-| **With approval** | The request waits on the **Requests** tab until you accept or reject it |
+| **Approve requests by hand** off | The guest is accepted without waiting for you, until the event is full |
+| **Approve requests by hand** on (the mode when you turn registration on) | The request waits on the **Requests** tab until you accept or reject it |
 
 When the event is full, a new request goes on the waiting list. You accept people from the list by hand, in either mode. Without the **Waiting list** switch, a full event says that no places are left and saves nothing.
 
@@ -111,7 +62,7 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 | **Company SSO** | Anyone who has the link and signs in with the identity provider chosen for the event |
 
 - The link and the password are protected by a bot check, unless a Superadmin turned bot protection **Off** for your organisation. Then the **Checklist** tab shows **Bot protection** in grey, as information, and a script can send the form or guess an event password within the usual limits. Use the company SSO or a strong password for an event that matters. The company SSO needs no bot check, because the form opens only after the sign-in.
-- A Superadmin can switch the bot check off for one event, in **Event settings → Registration**, as the **Bot protection** row at the bottom of the **Access method** card. While the check is **Off** for the organisation, the switch shows **Off**, is greyed and says so in its tooltip, and nothing is saved for it. Turning it **Off** asks first, and it is saved with the **Save** of the tab. That event's link and password forms then need no Turnstile keys and have no check, and the limits stay the same. The switch is greyed for an event that uses Company SSO, which never has the check. An Administrator cannot change it; on the **Access** tab the checklist row says "Off for this event" or "Off for this organisation". Turning it on again for an event that has registration on needs the keys to be saved.
+- A Superadmin can switch the bot check off for one event, in **Event settings → Registration**, as the **Bot protection** row at the bottom of the **Access method** card. While the check is **Off** for the organisation, the switch shows **Off**, is greyed and says so in its tooltip, and nothing is saved for it. Turning it **Off** asks first, and it is saved with the **Save** of the tab. That event's link and password forms then need no Turnstile keys and have no check, and the limits stay the same. The switch is greyed for an event that uses Company SSO, which never has the check. An Administrator cannot change it; the checklist row says "Off for this event" or "Off for this organisation". Turning it on again for an event that has registration on needs the keys to be saved.
 - You cannot read the password again after you save it. Keep a copy where you share it with guests.
 - A new password does not change the requests that guests already sent.
 - Choosing another method while a password is set asks "Remove the event password?" first. Cancel keeps the password; Remove changes the choice, and the password is removed when a Superadmin selects **Save** at the bottom of **Event settings → Registration**.
@@ -159,7 +110,7 @@ By default the guest's browser draws the boxes of the form. With **Styled form b
 | **Email sending** | Ask a Superadmin to set up email sending. A Superadmin is sent to **Organisation settings → Mail** |
 | **Instance address** | Ask a Superadmin to set the address of the instance. A Superadmin is sent to **Organisation settings → General** |
 | **Event status** | The event is archived. Ask a Superadmin to restore it |
-| **Address for guests** | Only when the event has an address of its own that was found working once. If the last check fails, ask a Superadmin to look at it. A Superadmin is sent to **Event settings → Registration** |
+| **Address for guests** | Only when the event has an address of its own that was found working once. If the last check fails, ask a Superadmin to look at it. A Superadmin is sent to **Event settings → General** |
 | **Event dates** | The event has ended. Check the date and hours in **Event settings** |
 
 **Saving**
@@ -193,7 +144,7 @@ When a check fails, the card names the reason:
 | The name answers, but not as this event on this instance | Point the name at the instance, and pass the `Host` header on |
 | The address did not answer in time | Allow HTTPS connections from the internet to the address |
 
-- An address that worked and then fails is never taken back by itself. Guests are not sent back to the main address, and links already sent keep pointing at the address. The tab warns every Administrator of the event, and **Organisation settings → Health check** shows the row **Event addresses**.
+- An address that worked and then fails is never taken back by itself. Guests are not sent back to the main address, and links already sent keep pointing at the address. The **Registration** tab of **Event settings** warns every Administrator of the event, and **Organisation settings → Health check** shows the row **Event addresses**.
 - A wrong address, or a change of it, starts again: the verification is cleared and guests get the main address until the check passes.
 - With the company SSO, the identity provider must also list `https://<address>/sso/callback` as an allowed redirect. See [Organisation Settings](Organisation-Settings).
 - IT also keeps the guest pages public on the address. A gateway or Cloudflare Access needs a bypass for `/` (the root, exactly), `/r/*`, `/sso/callback`, `/legal/*`, `/t/*`, `/q/*`, `/m/*`, `/assets/*`, `/uploads/*`, `/vendor/*`, the icon files and `/.well-known/admitto-domain-check`. Everything else on the address answers a plain "not found", so the panel is not reachable there. IT finds the full checklist, including the proxy and HSTS notes, in the deployment guide (`deploy/README.md`, "An event's own address for guests").
@@ -203,27 +154,23 @@ When a check fails, the card names the reason:
 | Action | Result |
 |---|---|
 | **Save** | Only the settings you changed are saved. Each save is recorded in the audit log as "Guest registration settings changed", with the names and the new values of what changed, and never a password |
-| Turn registration on | The form opens at once. It is refused while a row of the checklist is not done |
+| Turn registration on (the button in the header or the one on the **Checklist** tab) | The form opens at once. It is refused while a row of the checklist is not done |
 | Change the access method or the consents of an event that is on | Refused while a row is not done, like turning on |
-| Move between **Automatic** and **With approval** | The new mode applies to new requests |
+| Switch **Approve requests by hand** | The new mode applies to new requests. **Save** it in **Event settings → Registration** |
 | Switch **Styled form boxes** on or off | The next guest who opens the form gets the boxes you chose. A form that is already open keeps the boxes it has |
 | Turn registration off | The form answers "not found" at once |
-| Save, change or remove the address for guests | Saved at once, apart from the **Save** button of the page. The check starts again from "not checked yet", and the audit log records "Guest registration own address updated" |
+| Save, change or remove the address for guests | Saved at once, apart from the **Save** button of the page. Found on **Event settings → General**. The check starts again from "not checked yet", and the audit log records "Guest registration own address updated" |
 | Check now | Asks the address and shows what it found. The first success switches the links to the address. At most five checks a minute |
 | Save a restriction to one company | The form accepts only guests whose sign-in matches. The change is recorded in the audit log as "Guest registration settings changed", with the claim and its values. They are settings, not guests' data |
 | Set, change or remove the password | The password is saved or removed at once. Removing it closes the form until you set a new one |
 
-When you turn registration off:
-
-- The requests you already have stay. You can still accept, reject and delete them on the **Requests** tab.
-- Confirmation links stop working. They work again if you turn registration on before they expire.
-- Emails that are already queued are still sent.
+When you turn registration off, guests can no longer open the form, and confirmation links stop working until you turn registration on again. The requests you already have stay on the **Requests** tab, where you can still accept, reject and delete them. Emails that are already queued are still sent.
 
 ## Common problems
 
 | Problem | What to do |
 |---|---|
-| **Automatic** and **With approval** are off | The **Checklist** tab has a row that is not done. Put it right, save, and try again |
+| The badge in the header says **Not ready**, and **Turn registration on** in **More actions** is grey | The **Checklist** tab has a row that is not done. The badge says how many. Select **See the Checklist**, put it right, and try again |
 | The page says "This change needs something that is not set up yet" | Nothing was saved. The rows it lists are what is missing. Put them right and select **Save** again |
 | An extra consent is marked "(not published)" | Publish its text on the **Legal** tab, or take the consent off the list |
 | "One of the extra consents you chose is not published" | Someone took a text back while you were editing. Publish it again or take it off the list |
@@ -232,8 +179,8 @@ When you turn registration off:
 | A guest sees "Your company account did not give us a verified email address" | The identity provider sent no email address, or says the address is not verified. A Superadmin maps the email claim of the provider |
 | Saving says "Only a superadmin can change the access method" or "Only a superadmin can change the restriction to one company" | The access method and the restriction to one company are a Superadmin's to set, in **Event settings → Registration**. Ask a Superadmin to change it |
 | The restriction says "The restriction to one company works with Company SSO only" | Choose **Company SSO** under **Access method** in **Event settings → Registration**, or clear both fields |
-| There is no link under **Link for guests** | The address of the instance is not set. Ask a Superadmin |
-| The tab warns that the address of the event stopped working | Ask a Superadmin or your IT team. The card under **Address for guests** names the reason |
+| **Copy link** is grey while registration is on | The address of the instance is not set. Ask a Superadmin |
+| The Registration tab warns that the address of the event stopped working | Ask a Superadmin or your IT team. The card under **Address for guests** names the reason |
 | **Check now** is off | The field holds an address that is not set. Select **Set address** first |
 | "Another event already uses this address" | One address belongs to one event. Remove it from the other event first |
 | Registration is on, but the page warns that something is missing | A row of the **Checklist** tab stopped being done, for example the bot protection keys. The form may be closed to guests until it is fixed |

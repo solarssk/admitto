@@ -117,7 +117,7 @@ Turn on **Sensitive** in the field editor for a question whose answers should no
 
 ### Questions about a companion
 
-When an event lets a guest bring a companion (the setting on the **Access** tab of the **Registration** page), you can ask questions about that person. Under **Applies to**, choose **Companion** instead of **Guest**. The field list marks such a question with a **Companion** badge under its name.
+When an event lets a guest bring a companion (the setting on the **Registration** tab of **Event settings**), you can ask questions about that person. Under **Applies to**, choose **Companion** instead of **Guest**. The field list marks such a question with a **Companion** badge under its name.
 
 | | A question about the guest | A question about the companion |
 |---|---|---|

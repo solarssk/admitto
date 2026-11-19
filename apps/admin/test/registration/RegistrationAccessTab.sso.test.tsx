@@ -44,33 +44,46 @@ afterEach(() => {
 });
 
 describe("the company SSO as the way in of an event, on the Access tab", () => {
-  it("has no control that changes it on this tab, and the checklist states it with the identity provider", async () => {
-    await renderLoaded(ssoEventSettings());
+  it("shows the access method, the provider and the claim to an administrator who is not a superadmin, with no control that works, and says who can change them", async () => {
+    await renderLoaded(ssoEventSettings({ sso_claim_name: "tid", sso_claim_values: ["aaa-111"] }), { superadmin: false });
 
-    expect(screen.queryByRole("radio", { name: "Company SSO" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
-    expect(screen.queryByText("Event password")).toBeNull();
-    expect(screen.queryByLabelText("Claim name")).toBeNull();
-    expect(screen.queryByLabelText("Allowed values")).toBeNull();
+    expect(radio("Company SSO").getAttribute("aria-checked")).toBe("true");
+    expect(isOff(radio("Company SSO"))).toBe(true);
+    expect(isOff(radio("Link"))).toBe(true);
+    expect((screen.getByLabelText("Claim name") as HTMLInputElement).value).toBe("tid");
+    expect(isOff(screen.getByLabelText("Claim name"))).toBe(true);
+    expect(isOff(screen.getByLabelText("Allowed values"))).toBe(true);
+    expect(screen.getAllByText("Only a superadmin can change this.").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("Setup for your IT team")).toBeNull();
+    expect(api.fetchRegistrationReturnAddresses).not.toHaveBeenCalled();
     cleanup();
 
-    await renderChecklistLoaded(ssoEventSettings());
-    openDone();
-    expect(checklistPanel().textContent).toContain("Company SSO. Guests sign in with Contoso Entra.");
+    await renderLoaded(ssoEventSettings(), { superadmin: true });
+    expect(isOff(radio("Link"))).toBe(false);
+    expect(isOff(screen.getByLabelText("Claim name"))).toBe(false);
+  });
+
+  it("does not offer the bot protection switch to an administrator who is not a superadmin, and keeps it for a superadmin", async () => {
+    await renderLoaded(settings({ bot_protection: "required" }), { superadmin: false });
+    expect(isOff(screen.getByRole("switch", { name: "On" }))).toBe(true);
+    cleanup();
+
+    await renderLoaded(settings({ bot_protection: "required" }), { superadmin: true });
+    expect(isOff(screen.getByRole("switch", { name: "On" }))).toBe(false);
   });
 
   it("greys out the confirmation of the address for the company SSO and says why, and gives the switch back, unchanged, with the other ways in", async () => {
     await renderLoaded(ssoEventSettings({ verify_email: true }));
 
     expect(isOff(toggle("Confirm email addresses"))).toBe(true);
-    expect(screen.getByText(/Not used with Company SSO\. The address comes from the identity provider, so no confirmation link is sent\./)).toBeTruthy();
-    expect(screen.queryByText(/Guests confirm their address with a link/)).toBeNull();
+    expect(screen.getByText(/Not used with Company SSO\. The identity provider confirms the address\./)).toBeTruthy();
+    expect(screen.queryByText(/Guests confirm by a link/)).toBeNull();
     cleanup();
 
     await renderLoaded(settings({ verify_email: true }));
     expect(isOff(toggle("Confirm email addresses"))).toBe(false);
     expect(toggle("Confirm email addresses").checked).toBe(true);
-    expect(screen.getByText(/Guests confirm their address with a link/)).toBeTruthy();
+    expect(screen.getByText(/Guests confirm by a link/)).toBeTruthy();
   });
 
   it("sends no access method, provider or restriction when another setting is saved", async () => {

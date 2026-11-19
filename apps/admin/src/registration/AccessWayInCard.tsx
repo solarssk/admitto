@@ -80,6 +80,7 @@ export function AccessWayInCard({
   passwordSet,
   ssoAvailable,
   botCheck,
+  note,
   extra,
   disabled,
   onMethodChange,
@@ -96,6 +97,8 @@ export function AccessWayInCard({
   ssoAvailable: boolean;
   /** The organisation checks guests for bots on the link and password forms (a superadmin has not switched it off). */
   botCheck: boolean;
+  /** One line under the intro, such as who can change the method. */
+  note?: string;
   /** What goes at the bottom of the card, set off from the method: the bot check of the event. */
   extra?: ReactNode;
   disabled: boolean;
@@ -159,7 +162,8 @@ export function AccessWayInCard({
   return (
     <Card title="Access method">
       <div className="settings-card-stack">
-        <p className="settings-card-intro">Choose the access method for the registration form.</p>
+        <p className="settings-card-intro">How guests reach the form, and whether they must prove who they are.</p>
+        {note !== undefined && <p className="settings-card-intro">{note}</p>}
         <Segmented
           className="access-seg"
           ariaLabel="Access method"

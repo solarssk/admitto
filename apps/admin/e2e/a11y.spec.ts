@@ -202,21 +202,22 @@ const ADMIN_SURFACES: {
     // itself is read by the page frame, as for every page).
     name: "admin-registration",
     path: (i) => `/admin/events/${i.event}/registration`,
-    data: (i) => [`/api/admin/events/${i.event}/registrations`, `/api/admin/events/${i.event}/registrations/counts`],
+    // The header has the registration switch, which reads the registration settings of the event.
+    data: (i) => [`/api/admin/events/${i.event}/registrations`, `/api/admin/events/${i.event}/registrations/counts`, `/api/admin/events/${i.event}/registration/settings`],
     blocking: true,
   },
   {
     // Its Legal tab: the list of the event's legal texts. The editor, and the code it needs, load only when a text is opened.
     name: "admin-registration-legal",
     path: (i) => `/admin/events/${i.event}/registration?tab=legal`,
-    data: (i) => [`/api/admin/events/${i.event}/legal-documents`],
+    data: (i) => [`/api/admin/events/${i.event}/legal-documents`, `/api/admin/events/${i.event}/registration/settings`],
     blocking: true,
   },
   {
-    // Its Access tab: the registration settings of the event and the legal texts the
+    // The Registration tab of the event's settings: the registration settings of the event and the legal texts the
     // list of consents is made from. The event of this suite has nothing set up, so the page is the one a new event has.
     name: "admin-registration-access",
-    path: (i) => `/admin/events/${i.event}/registration?tab=access`,
+    path: (i) => `/admin/events/${i.event}/settings?tab=registration`,
     data: (i) => [`/api/admin/events/${i.event}/registration/settings`, `/api/admin/events/${i.event}/legal-documents`],
     blocking: true,
   },
