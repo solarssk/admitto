@@ -17,6 +17,22 @@ describe("the shared item table", () => {
     expect(read("src/requirements/requirements.css")).not.toMatch(/\.requirements-section \.(table|attendees-table-wrap)/);
   });
 
+  it("is a table in a box inside the padding of its card: a border, rounded corners, a grey header, hairlines and none under the last row", () => {
+    expect(shared).toMatch(/\.item-table \.attendees-table-wrap \{[^}]*border: 1px solid var\(--border\);[^}]*border-radius: var\(--radius-md\);[^}]*overflow: hidden;/);
+    expect(shared).toMatch(/\.item-table \.table thead th \{[^}]*background: var\(--surface-sunken\)/);
+    expect(shared).toMatch(/\.item-table \.table tbody tr:last-child td \{[^}]*border-bottom: 0/);
+    expect(shared).toMatch(/th:first-child,\s*\.item-table \.table td:first-child \{[^}]*padding-left: var\(--space-4\)/);
+    expect(shared).toMatch(/th:last-child,\s*\.item-table \.table td:last-child \{[^}]*padding-right: var\(--space-3\)/);
+    expect(shared).not.toMatch(/margin(-inline)?:\s*-/);
+  });
+
+  it.each([["src/pages/RequirementsPage.tsx"], ["src/requirements/EventCustomFieldsCard.tsx"], ["src/requirements/RequirementsSkeleton.tsx"]])(
+    "%s draws its card padded, so the box is inset by the card",
+    (path) => {
+      expect(readFileSync(join(ROOT, path), "utf8")).not.toContain("padded={false}");
+    },
+  );
+
   it("takes the narrow column out with no width and no content, not display none, and shows the status under the name instead (a media query)", () => {
     expect(shared).toMatch(/@media \(max-width: 700px\)[\s\S]*width: 0;[\s\S]*padding: 0;/);
     expect(shared).not.toContain("@container");

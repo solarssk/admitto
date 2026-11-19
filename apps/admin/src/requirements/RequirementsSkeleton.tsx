@@ -66,7 +66,7 @@ function PlaceholderCard({
 }>) {
   return (
     <section className={formHeading ? "requirements-section item-table requirements-section--registration" : "requirements-section item-table"}>
-      <Card padded={false} title={title} actions={<Skeleton variant="rect" width={action} height={32} />}>
+      <Card title={title} actions={<Skeleton variant="rect" width={action} height={32} />}>
         <div className="attendees-table-wrap">
           <table className="table">
             <thead>

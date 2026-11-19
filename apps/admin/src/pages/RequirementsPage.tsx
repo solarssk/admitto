@@ -376,7 +376,6 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
         <RefetchRegion refreshing={list.refreshing} label="Refreshing event items">
           <section className="requirements-section item-table">
             <Card
-              padded={false}
               title={<HintLabel hint={EVENT_ITEMS_HINT}>Event items</HintLabel>}
               actions={
                 <ArchivedGuard event={event} reasonId="add-item-reason">

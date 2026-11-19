@@ -15,6 +15,32 @@
   width: 28%;
 }
 
+/* The table sits in a box inside the card's own padding (the inset of the intro text above it): a border, rounded corners, a grey header
+   row, hairlines between the rows and none under the last. A card that lists items is a padded Card, never `padded={false}`. */
+.item-table .attendees-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.item-table .table thead th {
+  background: var(--surface-sunken);
+}
+
+.item-table .table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.item-table .table th:first-child,
+.item-table .table td:first-child {
+  padding-left: var(--space-4);
+}
+
+.item-table .table th:last-child,
+.item-table .table td:last-child {
+  padding-right: var(--space-3);
+}
+
 /* One row height for all of them. Rows with a Switch in them would otherwise look taller than rows of text and icon buttons. */
 .item-table .table tbody td {
   padding-block: var(--space-3);

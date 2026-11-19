@@ -125,7 +125,7 @@ describe("EventCustomFieldsCard", () => {
     expect(screen.queryByRole("table")).toBeNull();
   });
 
-  it("keeps the card's padding for the empty state and lets the table bleed edge to edge", () => {
+  it("keeps the card's padding for the empty state and for the table, which sits in its own box inside it", () => {
     const { container, unmount } = renderWithToast(
       <EventCustomFieldsCard eventId="evt-1" event={event} fields={[]} onChanged={vi.fn()} />,
     );
@@ -135,8 +135,8 @@ describe("EventCustomFieldsCard", () => {
     const withFields = renderWithToast(
       <EventCustomFieldsCard eventId="evt-1" event={event} fields={[dietaryField]} onChanged={vi.fn()} />,
     );
-    expect(withFields.container.querySelector(".at-card__body")).toBeNull();
-    expect(withFields.container.querySelector(".at-card > .attendees-table-wrap")).not.toBeNull();
+    expect(withFields.container.querySelector(".at-card__body > .attendees-table-wrap")).not.toBeNull();
+    expect(withFields.container.querySelector(".at-card > .attendees-table-wrap")).toBeNull();
   });
 
   it("lists fields with description and required status", () => {
