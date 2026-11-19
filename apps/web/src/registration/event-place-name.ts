@@ -12,8 +12,8 @@ const PLAIN_WORD = /^[A-Z][a-z]+$/;
 
 function longName(zone: string): string | null {
   try {
-    const part = new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "long" }).formatToParts(new Date(0)).find((item) => item.type === "timeZoneName");
-    return part?.value ?? null;
+    const parts = new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "long" }).formatToParts(new Date(0));
+    return parts.filter((item) => item.type === "timeZoneName").map((item) => item.value).join("");
   } catch {
     return null;
   }
@@ -21,7 +21,7 @@ function longName(zone: string): string | null {
 
 export function eventPlaceName(zone: string): string {
   const parts = zone.split("/");
-  const last = (parts.at(-1) ?? "").replaceAll("_", " ");
+  const last = zone.slice(zone.lastIndexOf("/") + 1).replaceAll("_", " ");
   if (parts.length > 1 && parts[0] !== "Etc") return last;
   if (UTC_NAMES.has(last.toUpperCase())) return "UTC";
   if (parts.length === 1 && PLAIN_WORD.test(last)) return last;
