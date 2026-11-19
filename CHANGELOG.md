@@ -69,6 +69,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a Registration tab to Event settings for superadmins, with the Company SSO restriction and the Address for guests, moved from the Registration page ([#1928](https://github.com/solarssk/admitto/pull/1928))
 
 ### Changed
+- Remove the "Styled form boxes" switch: every guest form now has its own phone, date and time boxes, and the time list offers quarter hours while any typed time still works ([#1954](https://github.com/solarssk/admitto/pull/1954))
 - Use one name, "access method" (Link, Password, Company SSO), instead of "how guests open the form" and "way in" in the screens, the Wiki and the security documents ([#1942](https://github.com/solarssk/admitto/pull/1942))
 
 - Show an icon beside the title of every confirmation window, so they all look alike ([#1931](https://github.com/solarssk/admitto/pull/1931))
@@ -122,7 +123,6 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Changed
 
-- Remove the "Styled form boxes" switch: every guest form now has its own phone, date and time boxes, and the time list offers quarter hours while any typed time still works ([#1954](https://github.com/solarssk/admitto/pull/1954))
 - Show times with no recorded time zone in UTC, the same for every viewer: Wallet card, Activity, delivery history, notes, import history, Recent activity ([#1743](https://github.com/solarssk/admitto/pull/1743))
 - Show a wallet pass as "Pending" on the attendee's page while it is being made ([#1690](https://github.com/solarssk/admitto/pull/1690))
 - Document `migrate` and P3009 recovery, `app` memory sizing, container hardening, the sign-in limit, SSO two-factor and what Redis holds ([#1695](https://github.com/solarssk/admitto/pull/1695))

@@ -26,7 +26,9 @@ describe("the name of the event's place", () => {
   it("keeps a one-word zone that is a place, and gives the long name to one that is a code", () => {
     expect(eventPlaceName("Poland")).toBe("Poland");
     expect(eventPlaceName("Japan")).toBe("Japan");
-    expect(eventPlaceName("EST5EDT")).toBe("Eastern Standard Time");
+    // A zone that observes daylight saving gets the name that fits both halves of the year, not the one of January.
+    expect(eventPlaceName("EST5EDT")).toBe("Eastern Time");
+    expect(eventPlaceName("PST8PDT")).toBe("Pacific Time");
     expect(eventPlaceName("CET")).toBe("Central European Standard Time");
   });
 

@@ -125,13 +125,13 @@ const STYLED_PHONE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFor
  * changes on purpose, the PR that does it records the new value, and the reviewer sees the page it changed.
  */
 const STYLED_HASH = {
-  script: "21c81a6fb8cea97e-18207",
+  script: "d6556eff1c516614-18667",
   css: "9036c763940f6130-1469",
   styleSheet: "dbe3e69a979fcdd6-58879",
   phoneKit: "d72fe234ef011226-13580",
-  phone: "0dcb196eff3ddfa1-73230",
-  phoneRequired: "6572ed654127a1ea-73302",
-  companionPhone: "1a0e3b66516bfb5d-75020",
+  phone: "e59637cc764ec723-73690",
+  phoneRequired: "73a8d73157aa1440-73762",
+  companionPhone: "02ac2e532aeeec9f-75480",
 } as const;
 
 describe("the page of a form with a phone and no date or time", () => {
@@ -486,7 +486,7 @@ describe("the second script is a fixed text", () => {
     // The weight of the addition: a form without a date or a time does not carry any of it.
     expect(withDate.length).toBeGreaterThan(phoneOnly.length);
     expect(withTime.length).toBeGreaterThan(withDate.length);
-    expect([phoneOnly.length, withDate.length, withTime.length]).toEqual([18207, expect.any(Number), expect.any(Number)]);
+    expect([phoneOnly.length, withDate.length, withTime.length]).toEqual([18667, expect.any(Number), expect.any(Number)]);
   });
 
   it("is the same text every time it is made", () => {

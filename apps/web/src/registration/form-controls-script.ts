@@ -85,7 +85,7 @@ const PHONE_AND_WINDOW_SCRIPT = String.raw`
       var up = panel.offsetHeight > below && above > below;
       var room = up ? above : below;
       if (panel.offsetHeight > room) {
-        panel.style.maxHeight = Math.max(room, 120) + "px";
+        panel.style.maxHeight = Math.max(room, 0) + "px";
         panel.style.overflowY = "auto";
       }
       var y = up ? rect.top - gap - panel.offsetHeight : rect.bottom + gap;
@@ -112,6 +112,11 @@ const PHONE_AND_WINDOW_SCRIPT = String.raw`
       place();
       window.addEventListener("resize", place);
       document.addEventListener("scroll", onScroll, true);
+      // A keyboard that covers the lower part of a phone changes the visual viewport and not the layout one.
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", place);
+        window.visualViewport.addEventListener("scroll", place);
+      }
       if (typeof ResizeObserver !== "undefined") {
         resizer = new ResizeObserver(place);
         resizer.observe(panel);
@@ -126,6 +131,10 @@ const PHONE_AND_WINDOW_SCRIPT = String.raw`
       panel.hidden = true;
       window.removeEventListener("resize", place);
       document.removeEventListener("scroll", onScroll, true);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", place);
+        window.visualViewport.removeEventListener("scroll", place);
+      }
       if (resizer) resizer.disconnect();
       resizer = null;
       trigger.setAttribute("aria-expanded", "false");
