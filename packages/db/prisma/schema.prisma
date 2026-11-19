@@ -901,9 +901,6 @@ model EventRegistrationSettings {
   ask_department             Boolean           @default(false)
   // Keys of the extra consents this event's form asks for (D-F2). Event-scoped.
   consent_keys               String[]          @default([])
-  // The guest form draws its date, time and phone boxes in the product's own style instead of the browser's (D-E9).
-  // One switch for the event, not one per field; off until an organiser turns it on.
-  styled_form_controls       Boolean           @default(false)
   // The bot check (Cloudflare Turnstile) of the link and password forms of THIS event. On by default, so every event that exists keeps its
   // check. Only a superadmin turns it off, and it has an effect only while the organisation's own switch is on (SystemSettings
   // "registration_bot_protection"). The company sign-in never has a check. Not personal data.

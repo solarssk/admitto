@@ -52,7 +52,6 @@ const row = {
     ask_department: false,
     consent_keys: [],
     max_companions: 0,
-    styled_form_controls: false,
     bot_protection_enabled: true,
     sso_provider_id: null,
     sso_claim_name: null,
@@ -630,33 +629,17 @@ describe("the password as the way in (D-C3)", () => {
   });
 });
 
-describe("the styled boxes switch (D-E9)", () => {
-  const formOf = async (settings: Record<string, unknown>) => {
-    const fake = { event: { findUnique: vi.fn(async () => ({ ...row, registration_settings: { ...row.registration_settings, ...settings } })) } };
-    const state = await loadRegistrationPage(fake as unknown as PrismaClient, "northwind-summit", NOW);
-    if (state.kind !== "open") throw new Error(`the form is ${state.kind}`);
-    return state.form;
-  };
-
+describe("the own boxes of the form (D-E9)", () => {
   beforeEach(() => {
     vi.mocked(resolveAccessMethodAvailability).mockResolvedValue(availability(true));
   });
 
-  it("is off for the form of an event that has not switched it on", async () => {
-    expect((await formOf({})).styledControls).toBe(false);
-    expect((await formOf({ styled_form_controls: false })).styledControls).toBe(false);
-  });
-
-  it("is on for the form of an event that has", async () => {
-    expect((await formOf({ styled_form_controls: true })).styledControls).toBe(true);
-  });
-
-  it("reads the column with the rest of the settings, in the one read of the event", async () => {
+  it("reads no column for the look of the boxes: every form has its own", async () => {
     const fake = { event: { findUnique: vi.fn(async () => row) } };
     await loadRegistrationPage(fake as unknown as PrismaClient, "northwind-summit", NOW);
     expect(fake.event.findUnique).toHaveBeenCalledTimes(1);
     const select = (fake.event.findUnique.mock.calls[0] as unknown as [{ select: { registration_settings: { select: Record<string, boolean> } } }])[0].select;
-    expect(select.registration_settings.select.styled_form_controls).toBe(true);
+    expect(select.registration_settings.select).not.toHaveProperty("styled_form_controls");
   });
 });
 

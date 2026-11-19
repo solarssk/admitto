@@ -674,9 +674,9 @@ describe("limits and failures", () => {
   });
 });
 
-describe("the styled boxes of the guest form (D-E9)", { timeout: 30_000 }, () => {
-  async function addPhoneEvent(slug: string, styled: boolean): Promise<string> {
-    const id = await addEvent(slug, { settings: { styled_form_controls: styled } });
+describe("the own boxes of the guest form (D-E9)", { timeout: 30_000 }, () => {
+  async function addPhoneEvent(slug: string): Promise<string> {
+    const id = await addEvent(slug);
     await addField(id, { source_field: "mobile", label: "Mobile phone", type: "phone" });
     return id;
   }
@@ -689,8 +689,8 @@ describe("the styled boxes of the guest form (D-E9)", { timeout: 30_000 }, () =>
     };
   };
 
-  it("serves the plain form of an event that has not switched them on: one script of ours, no marker, no list of countries", async () => {
-    await addPhoneEvent("reg113g-plain", false);
+  it("serves a form with no question the boxes take over as one script of ours, no marker, no list of countries", async () => {
+    await addEvent("reg113g-plain");
 
     const res = await get("/r/reg113g-plain");
 
@@ -700,15 +700,15 @@ describe("the styled boxes of the guest form (D-E9)", { timeout: 30_000 }, () =>
     expect(doc.querySelector("[data-controls], [data-styled], template, #reg-phone-countries")).toBeNull();
   });
 
-  it("serves the marked form of an event that has: the second script under the nonce of the response, the kit and the countries", async () => {
-    await addPhoneEvent("reg113g-styled", true);
+  it("serves a form with a phone question with the second script under the nonce of the response, the kit and the countries, and no setting needed", async () => {
+    await addPhoneEvent("reg113g-styled");
 
     const res = await get("/r/reg113g-styled");
 
     expect(res.status).toBe(200);
     const nonce = /script-src 'nonce-([^']+)'/.exec(res.headers.get("content-security-policy") ?? "")?.[1];
     const doc = documentOf(await res.text());
-    expect(doc.getElementById("reg-form").getAttribute("data-controls")).toBe("styled");
+    expect(doc.getElementById("reg-form").hasAttribute("data-controls")).toBe(false);
     const scripts = [...doc.querySelectorAll("script:not([src])[nonce]")] as Dom[];
     expect(scripts).toHaveLength(2);
     expect(scripts.map((script) => script.getAttribute("nonce"))).toEqual([nonce, nonce]);
@@ -718,9 +718,9 @@ describe("the styled boxes of the guest form (D-E9)", { timeout: 30_000 }, () =>
     expect(doc.getElementById("reg-phone-countries").children.length).toBeGreaterThan(200);
   });
 
-  it("sends the same headers as the plain form: the second script and the list need no new source, and no cookie", async () => {
-    await addPhoneEvent("reg113g-headers-plain", false);
-    await addPhoneEvent("reg113g-headers-styled", true);
+  it("sends the same headers with and without the boxes: the second script and the list need no new source, and no cookie", async () => {
+    await addEvent("reg113g-headers-plain");
+    await addPhoneEvent("reg113g-headers-styled");
 
     const [plain, styled] = [await get("/r/reg113g-headers-plain"), await get("/r/reg113g-headers-styled")];
 
@@ -731,18 +731,9 @@ describe("the styled boxes of the guest form (D-E9)", { timeout: 30_000 }, () =>
     expect(styled.headers.getSetCookie()).toEqual([]);
   });
 
-  it("follows the setting at once: switched off again, the form is the plain one", async () => {
-    const id = await addPhoneEvent("reg113g-toggle", true);
-    expect((await (await get("/r/reg113g-toggle")).text()).includes("data-controls")).toBe(true);
-
-    await prisma.eventRegistrationSettings.update({ where: { event_id: id }, data: { styled_form_controls: false } });
-
-    expect((await (await get("/r/reg113g-toggle")).text()).includes("data-controls")).toBe(false);
-  });
-
   it("does not change the one 404 or the closed page: an event that is off or over answers as it did", async () => {
-    await addEvent("reg113g-off", { settings: { mode: null, styled_form_controls: true } });
-    await addEvent("reg113g-over", { date: PAST, settings: { styled_form_controls: true } });
+    await addEvent("reg113g-off", { settings: { mode: null } });
+    await addEvent("reg113g-over", { date: PAST });
 
     const off = await get("/r/reg113g-off");
     const over = await get("/r/reg113g-over");
@@ -753,7 +744,6 @@ describe("the styled boxes of the guest form (D-E9)", { timeout: 30_000 }, () =>
     expect(over.status).toBe(200);
     const closed = await over.text();
     expect(closed).toContain("Registration is closed");
-    expect(closed.includes("data-controls")).toBe(false);
     expect(documentOf(closed).querySelectorAll("script")).toHaveLength(0);
   });
 });

@@ -164,19 +164,12 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(api.fetchLegalDocuments).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
   });
 
-  it("has the switch for the styled boxes in the Form card: a switch named by its title, off by default, with its words in the same row", async () => {
+  it("has no switch for the look of the form's boxes: every form draws its own", async () => {
     await renderLoaded();
 
-    const styled = within(card("Form")).getByRole("switch", { name: "Styled form boxes" }) as HTMLInputElement;
-    expect(styled.type).toBe("checkbox");
-    expect(styled.checked).toBe(false);
-    expect(styled.disabled).toBe(false);
-    const row = styled.closest(".settings-row") as HTMLElement;
-    expect(within(row).getByText("Styled form boxes").tagName).toBe("STRONG");
-    // One short line: what the boxes are, and the one case that keeps the browser's own box.
-    expect(row.textContent).toContain("Own calendar, time list and phone country list.");
-    expect(row.textContent).toContain("A phone question for digits only keeps the browser's box.");
-    expect(screen.queryByText("Unsaved changes")).toBeNull();
+    expect(within(card("Form")).queryByRole("switch", { name: "Styled form boxes" })).toBeNull();
+    expect(card("Form").textContent).not.toContain("Styled form boxes");
+    expect(card("Form").textContent).not.toContain("Look");
   });
 
   it("shows each setting as it is saved, and nothing to save yet", async () => {
@@ -191,7 +184,6 @@ describe("RegistrationAccessTab: the settings", () => {
         ask_department: false,
         max_companions: 1,
         consent_keys: ["photo"],
-        styled_form_controls: true,
       }),
     );
 
@@ -201,7 +193,6 @@ describe("RegistrationAccessTab: the settings", () => {
     expect(toggle("Ask for the company").checked).toBe(true);
     expect(toggle("Ask for the department").checked).toBe(false);
     expect(toggle("Guests can bring one person").checked).toBe(true);
-    expect(toggle("Styled form boxes").checked).toBe(true);
     expect(screen.getByRole("button", { name: "Extra consents, Photos and video" })).toBeTruthy();
     expect(isOff(saveButton())).toBe(true);
     expect(screen.queryByText("Unsaved changes")).toBeNull();
@@ -278,9 +269,9 @@ describe("RegistrationAccessTab: the two cards of the form", () => {
     const titles = Array.from(document.querySelectorAll(".at-card__title")).map((node) => node.textContent);
     expect(titles).toEqual(["Access method", "Company SSO", "Form", "Handling requests"]);
     for (const title of titles) expect(card(title as string).querySelector(".settings-card-intro")).not.toBeNull();
-    expect(card("Form").querySelector(".settings-card-intro")?.textContent).toBe("The questions on the form, how it looks, and the consents guests agree to.");
-    expect(switchNames(card("Form"))).toEqual(["Ask for the company", "Ask for the department", "Guests can bring one person", "Styled form boxes"]);
-    expect(groupLabels(card("Form"))).toEqual(["Questions", "Look", "Consents"]);
+    expect(card("Form").querySelector(".settings-card-intro")?.textContent).toBe("The questions on the form and the consents guests agree to.");
+    expect(switchNames(card("Form"))).toEqual(["Ask for the company", "Ask for the department", "Guests can bring one person"]);
+    expect(groupLabels(card("Form"))).toEqual(["Questions", "Consents"]);
     expect(within(card("Form")).getByRole("button", { name: /^Extra consents/ })).toBeTruthy();
     expect(card("Handling requests").querySelector(".settings-card-intro")?.textContent).toBe("Decide how new requests are checked and accepted.");
     expect(switchNames(card("Handling requests"))).toEqual(["Confirm email addresses", "Approve requests by hand", "Waiting list"]);
@@ -300,7 +291,7 @@ describe("RegistrationAccessTab: the two cards of the form", () => {
   it("is changed by every administrator of the event, not by a superadmin alone", async () => {
     await renderLoaded(settings({ mode: "approval" }), { superadmin: false });
 
-    for (const name of ["Approve requests by hand", "Waiting list", "Confirm email addresses", "Guests can bring one person", "Ask for the company", "Ask for the department", "Styled form boxes"]) {
+    for (const name of ["Approve requests by hand", "Waiting list", "Confirm email addresses", "Guests can bring one person", "Ask for the company", "Ask for the department"]) {
       expect(isOff(toggle(name)), name).toBe(false);
     }
   });
@@ -360,7 +351,7 @@ describe("RegistrationAccessTab: an archived event", () => {
   });
 
   it("locks every control that would change a setting, and has no Save or Reset", () => {
-    for (const name of ["Approve requests by hand", "Waiting list", "Confirm email addresses", "Ask for the company", "Ask for the department", "Guests can bring one person", "Styled form boxes"]) {
+    for (const name of ["Approve requests by hand", "Waiting list", "Confirm email addresses", "Ask for the company", "Ask for the department", "Guests can bring one person"]) {
       expect(toggle(name).disabled, name).toBe(true);
     }
     expect(screen.getByRole("button", { name: /^Extra consents/ }).hasAttribute("disabled")).toBe(true);

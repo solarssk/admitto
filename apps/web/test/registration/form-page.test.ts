@@ -8,6 +8,7 @@ import {
   registrantRawLimit,
 } from "@admitto/tickets";
 import { describe, expect, it } from "vitest";
+import { registrationStyledControlsScript } from "../../src/registration/form-controls-script.js";
 import { botChallengeCData } from "../../src/registration/bot-challenge.js";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
 import { REGISTRATION_FORM_SCRIPT } from "../../src/registration/form-script.js";
@@ -501,11 +502,13 @@ describe("a form whose bot protection is not used", () => {
     expect(doc.querySelector("script[src]")).toBeNull();
   });
 
-  it("carries only the script of the form, under the nonce, and the fixed fields in their order without the check", () => {
+  it("carries only the scripts of the form, under the nonce, and the fixed fields in their order without the check", () => {
     const scripts = [...doc.querySelectorAll("script")] as Dom[];
-    expect(scripts).toHaveLength(1);
-    expect(scripts[0]!.hasAttribute("src")).toBe(false);
-    expect(scripts[0]!.getAttribute("nonce")).toBe(NONCE);
+    expect(scripts).toHaveLength(2);
+    for (const script of scripts) {
+      expect(script.hasAttribute("src")).toBe(false);
+      expect(script.getAttribute("nonce")).toBe(NONCE);
+    }
     const keys = [...doc.querySelectorAll("[data-field]")].map((el: Dom) => el.getAttribute("data-field"));
     expect(keys).not.toContain("challenge");
     expect(keys).toContain("terms");
@@ -513,13 +516,14 @@ describe("a form whose bot protection is not used", () => {
 });
 
 describe("scripts, nonce and what the page loads", () => {
-  it("has one inline script, under the nonce of the response, and Cloudflare's widget script", () => {
+  it("has two inline scripts, under the nonce of the response (the form's and its own boxes'), and Cloudflare's widget script", () => {
     const scripts = [...documentOf(render()).querySelectorAll("script")] as Dom[];
-    expect(scripts).toHaveLength(2);
+    expect(scripts).toHaveLength(3);
     const inline = scripts.filter((s) => !s.hasAttribute("src"));
-    expect(inline).toHaveLength(1);
-    expect(inline[0]!.getAttribute("nonce")).toBe(NONCE);
+    expect(inline).toHaveLength(2);
+    expect(inline.map((s) => s.getAttribute("nonce"))).toEqual([NONCE, NONCE]);
     expect(inline[0]!.textContent).toBe(REGISTRATION_FORM_SCRIPT);
+    expect(inline[1]!.textContent).toBe(registrationStyledControlsScript({ date: true, time: true }));
     const external = scripts.filter((s) => s.hasAttribute("src"));
     expect(external.map((s) => s.getAttribute("src"))).toEqual(["https://challenges.cloudflare.com/turnstile/v0/api.js"]);
   });

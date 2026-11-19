@@ -359,13 +359,13 @@ describe("the page with panels, icons and suggestions", () => {
   const html = render();
   const doc = documentOf(html);
 
-  it("has no inline style, event handler or extra script: the data is markup and the one script is the page's own", () => {
+  it("has no inline style, event handler or extra script: the data is markup and the scripts are the page's own", () => {
     expect(doc.querySelectorAll("[style]")).toHaveLength(0);
     for (const el of doc.querySelectorAll("*") as Iterable<Dom>) {
       for (const attribute of [...el.attributes] as Array<{ name: string }>) expect(attribute.name.startsWith("on"), `${el.tagName} ${attribute.name}`).toBe(false);
     }
-    expect(doc.querySelectorAll("script")).toHaveLength(2);
-    expect(doc.querySelectorAll("script:not([src])")).toHaveLength(1);
+    expect(doc.querySelectorAll("script")).toHaveLength(3);
+    expect(doc.querySelectorAll("script:not([src])")).toHaveLength(2);
   });
 
   it("is the same page for the same model, byte for byte, apart from the nonce", () => {

@@ -1,15 +1,13 @@
 /**
- * The styled boxes of the registration form (D-E9), as far as the server writes them.
+ * The product's own boxes of the registration form (D-E9), as far as the server writes them.
  *
- * An event can switch on "styled boxes" (`styled_form_controls`, one switch for the event and none per field). The form is then
- * the same form: every box is still the browser's own control in the HTML, with the same ids, names and messages, and a second
- * script (./form-controls-script.ts) turns the ones it knows into the product's own boxes. If that script does not run, the
- * browser's boxes are what the guest has, and they work. Only this page's markup for an event that has the switch on carries
- * anything of this file; the page of every other event is the page it was.
+ * Every form has them: there is no switch. Every box is still the browser's own control in the HTML, with the same ids, names and
+ * messages, and a second script (./form-controls-script.ts) turns the ones it knows into the product's own boxes. If that script
+ * does not run, the browser's boxes are what the guest has, and they work.
  *
- * What the server adds, only when the switch is on and the form has a question that needs it:
- * - `data-controls="styled"` on the form (./form-page.ts) and `data-styled="<kind>"` on the field of a question that the second
- *   script is to take over (./form-fields.ts). The kind is `phone`, `date` or `datetime`;
+ * What the server adds, only when the form has a question that needs it:
+ * - `data-styled="<kind>"` on the field of a question that the second script is to take over (./form-fields.ts). The kind is
+ *   `phone`, `date` or `datetime`;
  * - a `<template>` with the markup of each box's parts (the phone's country button and its list, the calendar button and its
  *   month, the clock button and its lists of hours and minutes), so that the script clones markup that was written, tested and
  *   escaped here, and builds none of its own. A form gets the templates of the boxes it has and no other, and the script gets the
@@ -21,22 +19,22 @@
  *
  * A date and a date and time have no rule an organiser can set that a calendar could not keep (the rules of a question are
  * lengths, digits, an example, an icon and a condition, and only the first three touch the answer, which they do for text and
- * phone only), so every question of those two types is taken over when the switch is on. A phone question with a rule that
- * shapes the number stays the browser's box.
+ * phone only), so every question of those two types is taken over. A phone question with a rule that shapes the number stays the
+ * browser's box. A form with no question that the script would take over has none of this: no script, no style rules, no template.
  */
 import { PHONE_COUNTRIES } from "@admitto/shared/phone-countries";
 import { esc } from "../ticket-page.js";
 import { icon } from "./form-icons.js";
 import type { FormQuestion, RegistrationFormModel } from "./form-model.js";
 
-/** What a form with the switch on needs beyond the phone box, which every such page carries. `date`: some question is a date
- * or a date and time. `time`: some question is a date and time. */
+/** What a form needs beyond the phone box. `date`: some question is a date or a date and time. `time`: some question is a
+ * date and time. */
 export interface StyledNeeds {
   date: boolean;
   time: boolean;
 }
 
-/** The kind of box a question gets with the switch on, or undefined when the browser's box stays. */
+/** The kind of own box a question gets, or undefined when the browser's box stays. */
 export type StyledKind = "phone" | "date" | "datetime";
 
 /**
@@ -66,7 +64,7 @@ const COUNTRY_DATA = `<ul id="reg-phone-countries" hidden>${PHONE_COUNTRIES.map(
   (country) => `<li data-iso="${esc(country.iso2)}" data-dial="${esc(country.dialCode)}">${esc(country.name)}</li>`,
 ).join("")}</ul>`;
 
-/** The kind of styled box a question gets when the event switched them on, or undefined when the question keeps the browser's box:
+/** The kind of own box a question gets, or undefined when the question keeps the browser's box:
  * a phone question the rules of which leave room for a country code, and every date and every date and time. */
 export function styledKindOf(question: FormQuestion): StyledKind | undefined {
   if (question.type === "date" || question.type === "datetime") return question.type;
@@ -78,11 +76,11 @@ function allQuestions(model: RegistrationFormModel): readonly FormQuestion[] {
   return [...model.questions, ...(model.companion?.questions ?? [])];
 }
 
-/** What the page of this form needs besides the phone box, or null for an event without the switch. */
+/** What the page of this form needs, or null for a form with no question the script would take over. */
 export function styledNeedsOf(model: RegistrationFormModel): StyledNeeds | null {
-  if (!model.styledControls) return null;
   const kinds = new Set(allQuestions(model).map(styledKindOf));
-  return { date: kinds.has("date") || kinds.has("datetime"), time: kinds.has("datetime") };
+  const date = kinds.has("date") || kinds.has("datetime");
+  return date || kinds.has("phone") ? { date, time: kinds.has("datetime") } : null;
 }
 
 /**
@@ -101,8 +99,7 @@ const DATE_KIT = `<template id="reg-date-kit"><div class="reg-dt__pop" data-date
  */
 const TIME_KIT = `<template id="reg-time-kit"><div class="reg-dt__time" data-time-root><div class="at-control"><input class="at-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" data-time-input></div><div class="reg-dt__pop" data-time-pop><button type="button" class="reg-dt__button" aria-haspopup="dialog" aria-expanded="false" data-time-trigger>${icon("clock")}</button><div class="reg-dt__panel reg-time" role="dialog" aria-label="Choose time" data-time-panel hidden><div class="reg-time__col"><span class="reg-time__label" aria-hidden="true">Hour</span><ul class="reg-time__list" role="listbox" aria-label="Hour" tabindex="-1" data-time-hours></ul></div><div class="reg-time__col"><span class="reg-time__label" aria-hidden="true">Minute</span><ul class="reg-time__list" role="listbox" aria-label="Minute" tabindex="-1" data-time-minutes></ul></div><div class="reg-time__col" data-time-meridiem-col hidden><span class="reg-time__label" aria-hidden="true">AM/PM</span><ul class="reg-time__list" role="listbox" aria-label="AM or PM" tabindex="-1" data-time-meridiem></ul></div></div></div></div></template>`;
 
-/** What the second script needs in the page, or nothing: for an event without the switch, and for a form with no question that
- * the script would take over. The phone's markup and data come first, as they did before the date and the time were added. */
+/** What the second script needs in the page, or nothing for a form with no question that the script would take over. The phone's markup and data come first, as they did before the date and the time were added. */
 export function renderStyledControls(model: RegistrationFormModel): string {
   const needs = styledNeedsOf(model);
   if (!needs) return "";

@@ -32,7 +32,7 @@ describe("chosenMethod", () => {
 describe("draftFromSettings", () => {
   it("is the form of the settings as they are saved", () => {
     const draft = draftFromSettings(
-      settings({ mode: "approval", access_methods: ["password"], waitlist_enabled: false, verify_email: false, ask_company: true, ask_department: true, max_companions: 1, consent_keys: ["photo"], styled_form_controls: true }),
+      settings({ mode: "approval", access_methods: ["password"], waitlist_enabled: false, verify_email: false, ask_company: true, ask_department: true, max_companions: 1, consent_keys: ["photo"] }),
     );
 
     expect(draft).toEqual({
@@ -44,7 +44,6 @@ describe("draftFromSettings", () => {
       ask_department: true,
       companion: true,
       consent_keys: ["photo"],
-      styled_form_controls: true,
       bot_protection_enabled: true,
       sso_claim_name: "",
       sso_claim_values: "",
@@ -62,10 +61,6 @@ describe("draftFromSettings", () => {
     expect(draft.method).toBe("sso");
     expect(draft.sso_claim_name).toBe("tid");
     expect(draft.sso_claim_values).toBe("aaa\nbbb");
-  });
-
-  it("has the styled boxes off for settings that do not have them on", () => {
-    expect(draftFromSettings(settings()).styled_form_controls).toBe(false);
   });
 
   it("copies the consents, so editing the form never changes the settings it came from", () => {
@@ -97,7 +92,6 @@ describe("settingsPatch", () => {
     ["the department", { ask_department: true }, { ask_department: true }],
     ["a person to bring", { companion: true }, { max_companions: 1 }],
     ["the consents", { consent_keys: ["photo"] }, { consent_keys: ["photo"] }],
-    ["the styled boxes", { styled_form_controls: true }, { styled_form_controls: true }],
   ])("holds only %s when that is all that changed", (_name, change, patch) => {
     const from = base({ mode: change.mode === null ? "approval" : null });
     expect(settingsPatch({ ...from, ...change }, from)).toEqual(patch);

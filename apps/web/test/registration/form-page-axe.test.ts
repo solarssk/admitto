@@ -24,13 +24,14 @@ function open(html: string) {
   return dom.window;
 }
 
-/** The page with its own scripts running (the first, and the second of an event with the styled boxes), a fetch that answers
- * `status` and `body`, and a fake widget. */
-function running(html: string, answer: { status: number; body: unknown } = { status: 200, body: { ok: true } }) {
+/** The page with its own scripts running (the first, and the second, where the form has an own box), a fetch that answers
+ * `status` and `body`, and a fake widget. `firstScriptOnly`: the second script did not run, so the boxes are the browser's own. */
+function running(html: string, answer: { status: number; body: unknown } = { status: 200, body: { ok: true } }, firstScriptOnly = false) {
   const window = open(html);
   window.fetch = vi.fn(async () => ({ status: answer.status, json: async () => answer.body }));
   window.turnstile = { reset: vi.fn() };
-  for (const script of window.document.querySelectorAll("script[nonce]")) window.eval(script.textContent ?? "");
+  const scripts = [...window.document.querySelectorAll("script[nonce]")];
+  for (const script of firstScriptOnly ? scripts.slice(0, 1) : scripts) window.eval(script.textContent ?? "");
   return window;
 }
 
@@ -93,8 +94,8 @@ describe("axe-core finds nothing to report", () => {
     expect(await violations(window)).toEqual([]);
   });
 
-  it("on a form whose long text, date, time and phone questions are required, with every one of them left empty", async () => {
-    const window = running(renderRegistrationFormPage(formModel({ questions: requiredNewKinds() }), { nonce: NONCE }));
+  it("on a form whose long text, date, time and phone questions are required, with every one of them left empty, in the browser's own boxes", async () => {
+    const window = running(renderRegistrationFormPage(formModel({ questions: requiredNewKinds() }), { nonce: NONCE }), undefined, true);
     window.document.getElementById("reg-submit").click();
     for (const id of ["f-q0", "f-q1", "f-q2", "f-q3"]) expect(window.document.getElementById(id).getAttribute("aria-invalid"), id).toBe("true");
     expect(await violations(window)).toEqual([]);
@@ -105,7 +106,7 @@ describe("axe-core finds nothing to report", () => {
     const window = running(renderRegistrationFormPage(formModel({ questions: requiredNewKinds() }), { nonce: NONCE }), {
       status: 422,
       body: { errors },
-    });
+    }, true);
     const set = (id: string, value: string) => {
       window.document.getElementById(id).value = value;
     };
@@ -300,12 +301,12 @@ describe("axe-core finds nothing to report on the part of the form for a guest's
   });
 });
 
-describe("axe-core finds nothing to report on the styled phone box of an event that switched the styled boxes on", { timeout: 30_000 }, () => {
+describe("axe-core finds nothing to report on the own phone box", { timeout: 30_000 }, () => {
   const phones = [
     question({ key: "mobile", label: "Mobile phone", type: "phone", required: true, icon: "phone", rules: { example: "+1 555 0100" } }),
     question({ key: "office", label: "Office phone", type: "phone" }),
   ];
-  const styled = (overrides = {}) => renderRegistrationFormPage(formModel({ styledControls: true, questions: phones, ...overrides }), { nonce: NONCE });
+  const styled = (overrides = {}) => renderRegistrationFormPage(formModel({ questions: phones, ...overrides }), { nonce: NONCE });
   const listOf = (window: ReturnType<typeof open>, id: string): Dom => window.document.getElementById(id);
 
   it("in the page as the server writes it, before the script runs", async () => {
@@ -349,7 +350,7 @@ describe("axe-core finds nothing to report on the styled phone box of an event t
   });
 });
 
-describe("axe-core finds nothing to report on the date, the time and the date and time, with the styled boxes on and off", { timeout: 30_000 }, () => {
+describe("axe-core finds nothing to report on the date, the time and the date and time", { timeout: 30_000 }, () => {
   const questions = [
     question({ key: "arrival", label: "Arrival date", type: "date", required: true, icon: "calendar", description: "The day you land.", rules: { example: "04/11/2026" } }),
     question({ key: "departure", label: "Departure date", type: "date" }),
@@ -358,14 +359,9 @@ describe("axe-core finds nothing to report on the date, the time and the date an
     question({ key: "car", label: "I will drive", type: "boolean" }),
     question({ key: "parking", label: "Parking from", type: "datetime", required: true, showWhen: { field: "car", value: true } }),
   ];
-  const page = (overrides = {}) => renderRegistrationFormPage(formModel({ styledControls: true, questions, ...overrides }), { nonce: NONCE });
+  const page = (overrides = {}) => renderRegistrationFormPage(formModel({ questions, ...overrides }), { nonce: NONCE });
   const byId = (window: ReturnType<typeof open>, id: string): Dom => window.document.getElementById(id);
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-  it("with the switch off, where the browser draws the boxes", async () => {
-    expect(await violations(open(page({ styledControls: false })))).toEqual([]);
-    expect(await violations(running(page({ styledControls: false })))).toEqual([]);
-  });
 
   it("in the page as the server writes it, before the script runs", async () => {
     expect(await violations(open(page()))).toEqual([]);
@@ -402,7 +398,7 @@ describe("axe-core finds nothing to report on the date, the time and the date an
   it("with the list of times open, and with a time chosen", async () => {
     const window = running(page());
     byId(window, "f-q2-clock").click();
-    expect(window.document.querySelectorAll("#f-q2-clockpanel [role=option]").length).toBeGreaterThan(70);
+    expect(window.document.querySelectorAll("#f-q2-clockpanel [role=option]").length).toBeGreaterThan(17);
     expect(await violations(window)).toEqual([]);
     window.document.querySelector("#f-q2-clockpanel [role=option]")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(byId(window, "f-q2-time").value).not.toBe("");

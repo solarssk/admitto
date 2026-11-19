@@ -36,7 +36,7 @@ describe("the password screen of the page", () => {
     const doc = page();
     const order = [...doc.querySelector("main").children].map((el: Dom) => el.id || el.className.split(" ")[0]);
 
-    expect(order).toEqual(["ticket__top", "reg-password", "reg-hero", "reg-notices", "reg-form", "reg-done", "ticket__foot"]);
+    expect(order).toEqual(["ticket__top", "reg-password", "reg-hero", "reg-notices", "reg-form", "reg-phone-kit", "reg-phone-countries", "reg-date-kit", "reg-time-kit", "reg-done", "ticket__foot"]);
     expect(text(doc.querySelector(".ticket__foot"))).toContain("Powered by Admitto");
   });
 

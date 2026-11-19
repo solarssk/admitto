@@ -42,7 +42,7 @@ const COMPANION = {
   ],
 };
 
-/** The models of the page of an event without the switch, as they were drawn before the styled boxes existed. */
+/** The models of the page as it was drawn before the own boxes existed (each asks a phone, a date or a date and time, or a phone for digits only). */
 const NATIVE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFormModel]> = [
   ["default", () => formModel()],
   ["panels", () => panelModel()],
@@ -52,9 +52,9 @@ const NATIVE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFormModel
 
 /**
  * Fingerprint of the fixed script of the page and of each model's page without its stylesheet (the stylesheet is tested apart, in
- * guest-page-css.test.ts, and follows the product's own CSS), as they were at the base of PR 113g-1, before the styled boxes
- * existed. The page of an event that has not switched them on is to stay byte for byte what it was: if one of these changes on
- * purpose, the PR that does it records the new value, and the reviewer sees the page it changed.
+ * guest-page-css.test.ts, and follows the product's own CSS), as they were at the base of PR 113g-1, before the own boxes
+ * existed. The page of a form is to be that page and the additions of the own boxes (see `withoutOwnBoxes`) and no other change: if
+ * one of these changes on purpose, the PR that does it records the new value, and the reviewer sees the page it changed.
  */
 const NATIVE_HASH = {
   script: "fd4e7e41d681d7b5-26848",
@@ -64,40 +64,42 @@ const NATIVE_HASH = {
   required: "46cc95506c591fd5-43727",
 } as const;
 
-describe("the page of an event that has not switched the styled boxes on", () => {
+describe("the page of a form with no question that an own box takes over", () => {
+  const textOnly = () => formModel({ questions: [question({ key: "t", label: "Text", type: "text" })], companion: null });
+
   it("has the fixed script it had, byte for byte", () => {
     expect(fingerprint(REGISTRATION_FORM_SCRIPT), "the fixed script of the registration page changed").toBe(NATIVE_HASH.script);
   });
 
-  it.each(NATIVE_MODELS)("is the page it was, byte for byte (%s)", (name, build) => {
-    const hash = fingerprint(withoutStyle(render(build())));
-    expect(hash, `the page of an event without the styled boxes changed (${name}); the new value is ${hash}`).toBe(NATIVE_HASH[name as keyof typeof NATIVE_HASH]);
-  });
-
-  it.each(NATIVE_MODELS)("carries nothing of the styled boxes (%s)", (_name, build) => {
+  it.each([
+    ["a text only", textOnly],
+    ["no question", () => formModel({ questions: [], companion: null })],
+  ])("carries nothing of the own boxes: %s", (_name, build) => {
     const html = render(build());
     const doc = documentOf(html);
+    expect(styledNeedsOf(build())).toBeNull();
+    expect(renderStyledControls(build())).toBe("");
     expect(doc.querySelector("[data-controls], [data-styled], template, #reg-phone-countries, .reg-phone, .reg-phone__code")).toBeNull();
     expect(doc.querySelectorAll("script[nonce]")).toHaveLength(1);
     expect(doc.querySelector("script[nonce]").textContent).toBe(REGISTRATION_FORM_SCRIPT);
     expect(html).not.toContain("reg-phone");
     expect(html).not.toContain("data-phone");
+    expect(html).not.toContain(REGISTRATION_STYLED_CONTROLS_CSS);
   });
 
-  it("writes one script element for the fixed script, whether or not the switch is asked about", () => {
+  it("writes one script element for the fixed script, whether or not a form needs the second", () => {
     const one = `<script nonce="${NONCE}">${REGISTRATION_FORM_SCRIPT}</script>`;
     expect(renderFormScript(NONCE)).toBe(one);
     expect(renderFormScript(NONCE, null)).toBe(one);
   });
 
-  it("has the stylesheet it had: none of the rules of the styled boxes", () => {
+  it("has the stylesheet it had: none of the rules of the own boxes", () => {
     expect(buildRegistrationPageStyles()).toBe(buildRegistrationPageStyles(undefined, null));
     expect(buildRegistrationPageStyles()).not.toContain(".reg-phone");
-    expect(render(formModel())).not.toContain(REGISTRATION_STYLED_CONTROLS_CSS);
   });
 });
 
-/** What a form with the switch on and no date or time needs: the phone box and nothing else. */
+/** What a form with a phone and no date or time needs: the phone box and nothing else. */
 const PHONE_ONLY = { date: false, time: false } as const;
 const WITH_DATE = { date: true, time: false } as const;
 const WITH_DATE_AND_TIME = { date: true, time: true } as const;
@@ -108,19 +110,17 @@ const COMPANION_PHONE = {
   questions: [question({ key: "badge_phone", label: "Guest phone", type: "phone", required: true, rules: { example: "+48 600 100 200" } })],
 };
 
-/** The models of the page of an event with the switch on and no date and no time in its form, as PR 113g-1 left them. */
+/** The models of the page of a form with a phone and no date and no time, as PR 113g-1 left them (less the marker of the form, which is gone). */
 const STYLED_PHONE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFormModel]> = [
-  ["phone", () => formModel({ styledControls: true, questions: [question({ key: "mobile", label: "Mobile phone", type: "phone" })] })],
-  ["phoneRequired", () => formModel({ styledControls: true, questions: [question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })] })],
-  ["companionPhone", () => formModel({ styledControls: true, questions: [], companion: COMPANION_PHONE })],
-  ["textOnly", () => formModel({ styledControls: true, questions: [question({ key: "t", label: "Text", type: "text" })], companion: null })],
-  ["noQuestions", () => formModel({ styledControls: true, questions: [], companion: null })],
+  ["phone", () => formModel({ questions: [question({ key: "mobile", label: "Mobile phone", type: "phone" })] })],
+  ["phoneRequired", () => formModel({ questions: [question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })] })],
+  ["companionPhone", () => formModel({ questions: [], companion: COMPANION_PHONE })],
 ];
 
 /**
- * Fingerprints of the text of the styled boxes and of the pages above (without their stylesheets) as they were at the end of PR 113g-1,
- * before the date and the time had a box of their own. PR 113g-2 adds the date and the time to the page of a form that asks them and to
- * no other, so these do not change: a form with the switch on and no date or time is to stay byte for byte what it was. If one of these
+ * Fingerprints of the text of the phone box and of the pages above (without their stylesheets) as they were at the end of PR 113g-1,
+ * before the date and the time had a box of their own, less the marker `data-controls` of the form, which is gone. PR 113g-2 adds the
+ * date and the time to the page of a form that asks them and to no other, so these do not change. If one of these
  * changes on purpose, the PR that does it records the new value, and the reviewer sees the page it changed.
  */
 const STYLED_HASH = {
@@ -128,15 +128,13 @@ const STYLED_HASH = {
   css: "ab92d1d67262b09d-1322",
   styleSheet: "127afbc2e3a113a3-58063",
   phoneKit: "d72fe234ef011226-13580",
-  phone: "9588a1b1e01c3567-70908",
-  phoneRequired: "673ae726e1e8afb2-70980",
-  companionPhone: "d2a62d6d87bf7107-72698",
-  textOnly: "85d835a6dccfa2c0-57242",
-  noQuestions: "75534076b6334248-56594",
+  phone: "d69dd81b60e1bdfc-70885",
+  phoneRequired: "00bb700b1db55ab5-70957",
+  companionPhone: "9f19e5b7a3ee8168-72675",
 } as const;
 
-describe("the page of an event with the switch on and no date or time in its form", () => {
-  it("has the script, the rules and the kit of the styled boxes it had after PR 113g-1, byte for byte", () => {
+describe("the page of a form with a phone and no date or time", () => {
+  it("has the script, the rules and the kit of the phone box it had after PR 113g-1, byte for byte", () => {
     expect(fingerprint(REGISTRATION_STYLED_CONTROLS_SCRIPT), "the script of the phone box changed").toBe(STYLED_HASH.script);
     expect(fingerprint(REGISTRATION_STYLED_CONTROLS_CSS), "the rules of the phone box changed").toBe(STYLED_HASH.css);
     expect(fingerprint(buildRegistrationPageStyles(undefined, PHONE_ONLY)), "the stylesheet of the page changed").toBe(STYLED_HASH.styleSheet);
@@ -151,7 +149,7 @@ describe("the page of an event with the switch on and no date or time in its for
 
   it.each(STYLED_PHONE_MODELS)("is the page it was after PR 113g-1, byte for byte (%s)", (name, build) => {
     const hash = fingerprint(withoutStyle(render(build())));
-    expect(hash, `the page of an event with the styled boxes and no date or time changed (${name}); the new value is ${hash}`).toBe(
+    expect(hash, `the page of a form with a phone and no date or time changed (${name}); the new value is ${hash}`).toBe(
       STYLED_HASH[name as keyof typeof STYLED_HASH],
     );
   });
@@ -168,12 +166,11 @@ describe("the page of an event with the switch on and no date or time in its for
   });
 });
 
-/** The styled page without what the styled boxes add: it must be the page of the same event without the switch. */
-function withoutStyledAdditions(html: string, model: RegistrationFormModel): string {
+/** The page without what the own boxes add: it must be the page the form had before them. */
+function withoutOwnBoxes(html: string, model: RegistrationFormModel): string {
   const kit = renderStyledControls(model);
   const needs = styledNeedsOf(model)!;
   const stripped = html
-    .replace(' data-controls="styled"', "")
     .replaceAll(/ data-styled="(?:phone|date|datetime)"/g, "")
     .replace(`\n  <script nonce="${NONCE}">${registrationStyledControlsScript(needs)}</script>`, "")
     .replace(`\n${REGISTRATION_STYLED_CONTROLS_CSS}`, "")
@@ -181,18 +178,18 @@ function withoutStyledAdditions(html: string, model: RegistrationFormModel): str
   return kit === "" ? stripped : stripped.replace(`\n    ${kit}`, "");
 }
 
-describe("the page of an event that switched the styled boxes on", () => {
-  it.each(NATIVE_MODELS)("is the same page with these additions and no other (%s)", (_name, build) => {
-    const native = build();
-    const styled = { ...native, styledControls: true };
-    const html = render(styled);
-    expect(html).not.toBe(render(native));
-    expect(withoutStyledAdditions(html, styled)).toBe(render(native));
+describe("the page of a form that has own boxes", () => {
+  it.each(NATIVE_MODELS)("is the page it was before them, with these additions and no other (%s)", (name, build) => {
+    const model = build();
+    const html = render(model);
+    const hash = fingerprint(withoutStyle(withoutOwnBoxes(html, model)));
+    expect(hash, `the page changed beyond the own boxes (${name}); the new value is ${hash}`).toBe(NATIVE_HASH[name as keyof typeof NATIVE_HASH]);
+    expect(html).toContain("data-styled=");
   });
 
-  it("marks the form, and carries the second script after the first, under the same nonce", () => {
-    const doc = documentOf(render(formModel({ styledControls: true })));
-    expect(doc.getElementById("reg-form").getAttribute("data-controls")).toBe("styled");
+  it("carries the second script after the first, under the same nonce, and does not mark the form", () => {
+    const doc = documentOf(render(formModel()));
+    expect(doc.getElementById("reg-form").hasAttribute("data-controls")).toBe(false);
     const scripts = [...doc.querySelectorAll("script")] as Dom[];
     expect(scripts.map((script) => script.getAttribute("nonce"))).toEqual([NONCE, NONCE, null]);
     expect(scripts[0].textContent).toBe(REGISTRATION_FORM_SCRIPT);
@@ -201,19 +198,19 @@ describe("the page of an event that switched the styled boxes on", () => {
     expect(scripts[2].getAttribute("src")).toBe("https://challenges.cloudflare.com/turnstile/v0/api.js");
   });
 
-  it("has the rules of the styled boxes after the form's own, in the one stylesheet, and the rules of the date and the time last", () => {
+  it("has the rules of the own boxes after the form's own, in the one stylesheet, and the rules of the date and the time last", () => {
     const css = buildRegistrationPageStyles(undefined, WITH_DATE_AND_TIME);
     expect(css.endsWith(REGISTRATION_DATE_CONTROLS_CSS)).toBe(true);
     expect(css.indexOf(".reg-phone {")).toBeGreaterThan(css.indexOf(REGISTRATION_PAGE_CSS));
     expect(css.indexOf(".reg-dt {")).toBeGreaterThan(css.indexOf(REGISTRATION_STYLED_CONTROLS_CSS));
     expect(buildRegistrationPageStyles(undefined, PHONE_ONLY).endsWith(REGISTRATION_STYLED_CONTROLS_CSS)).toBe(true);
-    expect(documentOf(render(formModel({ styledControls: true }))).querySelectorAll("style")).toHaveLength(1);
-    expect(render(formModel({ styledControls: true }))).toContain(REGISTRATION_STYLED_CONTROLS_CSS);
-    expect(render(formModel({ styledControls: true }))).toContain(REGISTRATION_DATE_CONTROLS_CSS);
+    expect(documentOf(render(formModel())).querySelectorAll("style")).toHaveLength(1);
+    expect(render(formModel())).toContain(REGISTRATION_STYLED_CONTROLS_CSS);
+    expect(render(formModel())).toContain(REGISTRATION_DATE_CONTROLS_CSS);
   });
 
   it("keeps the browser's own number box in the page, with its id, name, type and label", () => {
-    const doc = documentOf(render(formModel({ styledControls: true, questions: [question({ key: "mobile", label: "Mobile phone", type: "phone" })] })));
+    const doc = documentOf(render(formModel({ questions: [question({ key: "mobile", label: "Mobile phone", type: "phone" })] })));
     const box = doc.querySelector('[data-custom="mobile"]');
     const input = box.querySelector("input");
     expect(box.getAttribute("data-styled")).toBe("phone");
@@ -226,7 +223,7 @@ describe("the page of an event that switched the styled boxes on", () => {
   });
 });
 
-describe("which phone questions the styled box takes", () => {
+describe("which phone questions the own box takes", () => {
   const phone = (rules: FormQuestion["rules"]) => question({ key: "p", label: "Phone", type: "phone", rules });
 
   it.each([
@@ -239,7 +236,7 @@ describe("which phone questions the styled box takes", () => {
     ["digits only and lengths (a desk extension)", { digits_only: true, min_length: 3, max_length: 6 }, false],
   ] as const)("with %s", (_name, rules, wanted) => {
     expect(wantsCountryPicker(phone(rules as FormQuestion["rules"]))).toBe(wanted);
-    const doc = documentOf(render(formModel({ styledControls: true, questions: [phone(rules as FormQuestion["rules"])] })));
+    const doc = documentOf(render(formModel({ questions: [phone(rules as FormQuestion["rules"])] })));
     expect(doc.querySelector("[data-custom=p]").hasAttribute("data-styled")).toBe(wanted);
     expect(doc.getElementById("reg-phone-kit") !== null).toBe(wanted);
     expect(doc.getElementById("reg-phone-countries") !== null).toBe(wanted);
@@ -249,7 +246,6 @@ describe("which phone questions the styled box takes", () => {
     const doc = documentOf(
       render(
         formModel({
-          styledControls: true,
           questions: [
             question({ key: "t", label: "Text", type: "text", suggestions: ["a"] }),
             question({ key: "l", label: "Long", type: "long_text" }),
@@ -264,21 +260,20 @@ describe("which phone questions the styled box takes", () => {
   });
 
   it("takes the companion's phone question too, and writes the kit for it when the guest has none", () => {
-    const doc = documentOf(render(formModel({ styledControls: true, questions: [], companion: COMPANION })));
+    const doc = documentOf(render(formModel({ questions: [], companion: COMPANION })));
     expect(doc.querySelector("[data-custom=badge_phone]").getAttribute("data-styled")).toBe("phone");
     expect(doc.getElementById("reg-phone-kit")).not.toBeNull();
   });
 
-  it("writes neither the kit nor the countries when the form has no phone question, and still marks the form", () => {
-    const html = render(formModel({ styledControls: true, questions: [question({ key: "t", label: "Text", type: "text" })], companion: null }));
+  it("writes neither the kit nor the countries nor the second script when the form has no question to take", () => {
+    const html = render(formModel({ questions: [question({ key: "t", label: "Text", type: "text" })], companion: null }));
     const doc = documentOf(html);
-    expect(doc.getElementById("reg-form").getAttribute("data-controls")).toBe("styled");
     expect(doc.querySelectorAll("template, #reg-phone-countries")).toHaveLength(0);
-    expect(doc.querySelectorAll("script[nonce]")).toHaveLength(2);
+    expect(doc.querySelectorAll("script[nonce]")).toHaveLength(1);
   });
 });
 
-describe("which date questions the styled boxes take", () => {
+describe("which date questions the own boxes take", () => {
   const date = (type: "date" | "datetime", rules: FormQuestion["rules"], extra: Partial<FormQuestion> = {}) => question({ key: "d", label: "When", type, rules, ...extra });
 
   it.each([
@@ -291,14 +286,14 @@ describe("which date questions the styled boxes take", () => {
     for (const type of ["date", "datetime"] as const) {
       const q = date(type, rules as FormQuestion["rules"]);
       expect(styledKindOf(q)).toBe(type);
-      const doc = documentOf(render(formModel({ styledControls: true, questions: [q] })));
+      const doc = documentOf(render(formModel({ questions: [q] })));
       expect(doc.querySelector("[data-custom=d]").getAttribute("data-styled")).toBe(type);
     }
   });
 
   it("keeps the browser's own date box in the page, with its id, name, type and label", () => {
     const doc = documentOf(
-      render(formModel({ styledControls: true, questions: [date("date", null, { required: true }), date("datetime", null, { key: "dt", description: "Roughly" })] })),
+      render(formModel({ questions: [date("date", null, { required: true }), date("datetime", null, { key: "dt", description: "Roughly" })] })),
     );
     const day = doc.querySelector("[data-custom=d]");
     expect(day.querySelector("input").getAttribute("type")).toBe("date");
@@ -313,7 +308,7 @@ describe("which date questions the styled boxes take", () => {
   });
 
   it("writes the kit of the date for a date, and the kit of the time as well for a date and time, and neither for a form without them", () => {
-    const only = (type: "date" | "datetime" | "phone") => documentOf(render(formModel({ styledControls: true, questions: [question({ key: "q", label: "Q", type })] })));
+    const only = (type: "date" | "datetime" | "phone") => documentOf(render(formModel({ questions: [question({ key: "q", label: "Q", type })] })));
     const dateOnly = only("date");
     expect(dateOnly.getElementById("reg-date-kit")).not.toBeNull();
     expect(dateOnly.getElementById("reg-time-kit")).toBeNull();
@@ -329,34 +324,25 @@ describe("which date questions the styled boxes take", () => {
   });
 
   it("takes the companion's date and time, and writes the kits for them when the guest has none", () => {
-    const doc = documentOf(render(formModel({ styledControls: true, questions: [], companion: COMPANION })));
+    const doc = documentOf(render(formModel({ questions: [], companion: COMPANION })));
     expect(doc.querySelector("[data-custom=when]").getAttribute("data-styled")).toBe("datetime");
     expect(doc.getElementById("reg-date-kit")).not.toBeNull();
     expect(doc.getElementById("reg-time-kit")).not.toBeNull();
   });
 
   it("puts the kits after the phone's markup and data, in the same place in the page", () => {
-    const html = render(formModel({ styledControls: true }));
+    const html = render(formModel());
     const at = (id: string) => html.indexOf(`<template id="${id}">`);
     expect(at("reg-phone-kit")).toBeGreaterThan(html.indexOf("</form>"));
     expect(html.indexOf('<ul id="reg-phone-countries"')).toBeGreaterThan(at("reg-phone-kit"));
     expect(at("reg-date-kit")).toBeGreaterThan(html.indexOf('<ul id="reg-phone-countries"'));
     expect(at("reg-time-kit")).toBeGreaterThan(at("reg-date-kit"));
-    expect(renderStyledControls(formModel({ styledControls: true, questions: [], companion: null }))).toBe("");
-  });
-
-  it("writes a native page for an event without the switch, whatever its date questions", () => {
-    const model = formModel({ questions: [date("date", null), date("datetime", null, { key: "dt" })] });
-    expect(styledNeedsOf(model)).toBeNull();
-    const html = render(model);
-    expect(html).not.toContain("reg-dt");
-    expect(html).not.toContain("data-styled");
-    expect(html).not.toContain("reg-date-kit");
+    expect(renderStyledControls(formModel({ questions: [], companion: null }))).toBe("");
   });
 });
 
 describe("the kits of the date and the time", () => {
-  const doc = documentOf(render(formModel({ styledControls: true })));
+  const doc = documentOf(render(formModel()));
 
   it("hold markup with no id, no text of an organiser and no style, and the words of the form in English", () => {
     for (const id of ["reg-date-kit", "reg-time-kit"]) {
@@ -405,7 +391,7 @@ describe("the kits of the date and the time", () => {
 });
 
 describe("the countries in the page", () => {
-  const doc = documentOf(render(formModel({ styledControls: true })));
+  const doc = documentOf(render(formModel()));
   const data = doc.getElementById("reg-phone-countries");
 
   it("are a hidden list of data rows, the staff app's list in its order", () => {
@@ -431,12 +417,12 @@ describe("the countries in the page", () => {
       expect(data.querySelector(`[data-iso="${iso}"]`).textContent).toBe(country.name);
     }
     expect(PHONE_COUNTRIES.every((country) => !/[<>&"']/.test(country.name))).toBe(true);
-    expect(render(formModel({ styledControls: true })).includes(">Türkiye</li>")).toBe(true);
+    expect(render(formModel()).includes(">Türkiye</li>")).toBe(true);
   });
 
   it("are the same for every event", () => {
-    const other = formModel({ styledControls: true, event: { ...formModel().event, slug: "other", title: "Another event" }, askCompany: false });
-    expect(renderStyledControls(other)).toBe(renderStyledControls(formModel({ styledControls: true })));
+    const other = formModel({ event: { ...formModel().event, slug: "other", title: "Another event" }, askCompany: false });
+    expect(renderStyledControls(other)).toBe(renderStyledControls(formModel()));
   });
 
   it("come with a kit of markup for the script to clone, which has no id, no text of an organiser and no style", () => {
@@ -459,9 +445,8 @@ const ALL_SCRIPTS = [REGISTRATION_STYLED_CONTROLS_SCRIPT, registrationStyledCont
 
 describe("the second script is a fixed text", () => {
   it("is the same for every event and every request: nothing of the database is put into it", () => {
-    const first = formModel({ styledControls: true });
+    const first = formModel();
     const second = formModel({
-      styledControls: true,
       event: { slug: "another-event", title: "A <b>different</b> event", when: "1 January 2030", venue: "Elsewhere", logoUrl: null, timezone: "Asia/Tokyo" },
       questions: [
         question({ key: "dietary", label: "Dietary needs", type: "text", suggestions: ["No pork"] }),
@@ -564,12 +549,12 @@ function injected(doc: Dom): string[] {
   return found;
 }
 
-describe.each(PAYLOADS)("organiser text %j on a form with the styled boxes on", (payload) => {
+describe.each(PAYLOADS)("organiser text %j", (payload) => {
   const questions = [
     question({ key: "mobile", label: payload, type: "phone", description: payload, icon: payload as never, rules: { example: payload } }),
     question({ key: payload, label: `${payload} 2`, type: "phone", description: payload }),
   ];
-  const model = formModel({ styledControls: true, questions, companion: { max: 1, questions: [question({ key: "c", label: payload, type: "phone" })] } });
+  const model = formModel({ questions, companion: { max: 1, questions: [question({ key: "c", label: payload, type: "phone" })] } });
 
   it("stays text in the page the server writes", () => {
     const doc = documentOf(render(model));
@@ -580,7 +565,7 @@ describe.each(PAYLOADS)("organiser text %j on a form with the styled boxes on", 
   });
 
   it("stays text once the script has drawn its boxes and opened a list", () => {
-    const page = bootPage(questions, { model: { styledControls: true, companion: model.companion } });
+    const page = bootPage(questions, { model: { companion: model.companion } });
     page.doc.getElementById("f-q0-country").click();
     expect(injected(page.doc)).toEqual([]);
     expect(page.doc.querySelectorAll("script")).toHaveLength(3);
@@ -589,12 +574,12 @@ describe.each(PAYLOADS)("organiser text %j on a form with the styled boxes on", 
   });
 });
 
-describe.each(PAYLOADS)("organiser text %j on a form with a date and a date and time with the styled boxes on", (payload) => {
+describe.each(PAYLOADS)("organiser text %j on a form with a date and a date and time", (payload) => {
   const questions = [
     question({ key: "d", label: payload, type: "date", description: payload, icon: payload as never, rules: { example: payload } }),
     question({ key: payload, label: `${payload} 2`, type: "datetime", description: payload }),
   ];
-  const model = formModel({ styledControls: true, questions, companion: { max: 1, questions: [question({ key: "c", label: payload, type: "datetime" })] } });
+  const model = formModel({ questions, companion: { max: 1, questions: [question({ key: "c", label: payload, type: "datetime" })] } });
 
   it("stays text in the page the server writes", () => {
     const doc = documentOf(render(model));
@@ -606,7 +591,7 @@ describe.each(PAYLOADS)("organiser text %j on a form with a date and a date and 
   });
 
   it("stays text once the script has drawn its boxes and opened a calendar and a list of times", () => {
-    const page = bootPage(questions, { model: { styledControls: true, companion: model.companion } });
+    const page = bootPage(questions, { model: { companion: model.companion } });
     page.doc.getElementById("f-q0-cal").click();
     page.doc.getElementById("f-q1-clock").click();
     expect(injected(page.doc)).toEqual([]);
@@ -616,11 +601,11 @@ describe.each(PAYLOADS)("organiser text %j on a form with a date and a date and 
     expect(page.doc.getElementById("f-q1").getAttribute("aria-label")).toBe(`${payload} 2, date`);
     expect(page.doc.getElementById("f-q1-time").getAttribute("aria-label")).toBe(`${payload} 2, time`);
     expect(page.doc.getElementById("f-q1-clock").getAttribute("aria-label")).toBe(`${payload} 2, choose time`);
-    expect(page.doc.querySelectorAll("#f-q1-clockpanel [role=option]").length).toBeGreaterThan(70);
+    expect(page.doc.querySelectorAll("#f-q1-clockpanel [role=option]").length).toBeGreaterThan(17);
   });
 });
 
-describe("the styles of the styled boxes", () => {
+describe("the styles of the own boxes", () => {
   const css = REGISTRATION_STYLED_CONTROLS_CSS;
 
   it("use the product's tokens and no colour of their own", () => {
@@ -648,7 +633,7 @@ describe("the styles of the styled boxes", () => {
   });
 
   it("have a rule for every class the box and its list use, so that a misspelt class is caught", () => {
-    const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })], { model: { styledControls: true } });
+    const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })]);
     page.doc.getElementById("f-q0-country").click();
     const used = new Set<string>();
     for (const el of page.doc.querySelectorAll(".reg-phone, .reg-phone *") as Iterable<Dom>) {
@@ -699,7 +684,7 @@ describe("the styles of the date and the time boxes", () => {
   });
 
   it("keep the 16 px of the text boxes of the product on a phone: the boxes are its own .at-control, which has the rule", () => {
-    const page = bootPage([question({ key: "dt", label: "When", type: "datetime" })], { model: { styledControls: true } });
+    const page = bootPage([question({ key: "dt", label: "When", type: "datetime" })]);
     for (const input of [page.doc.getElementById("f-q0"), page.doc.getElementById("f-q0-time")] as Dom[]) {
       expect(input.classList.contains("at-input")).toBe(true);
       expect(input.parentElement.matches(".at-control, .at-inputgroup")).toBe(true);
@@ -724,7 +709,6 @@ describe("the styles of the date and the time boxes", () => {
   it("have a rule for every class the boxes, the month and the lists use, so that a misspelt class is caught", () => {
     const page = bootPage(
       [question({ key: "d", label: "Day", type: "date", required: true }), question({ key: "dt", label: "When", type: "datetime" })],
-      { model: { styledControls: true } },
     );
     page.doc.getElementById("f-q0-cal").click();
     page.doc.getElementById("f-q1-clock").click();

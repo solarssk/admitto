@@ -55,8 +55,6 @@ export type SettingsValues = {
   ask_company: boolean;
   ask_department: boolean;
   consent_keys: string[];
-  /** The guest form draws its date, time and phone boxes in the product's style, not the browser's (D-E9). */
-  styled_form_controls: boolean;
   /** The bot check of the link and password forms of this event. Only a superadmin changes it, and it counts only while the organisation's
    * own switch (`bot_protection` of the answer) is on. */
   bot_protection_enabled: boolean;
@@ -81,7 +79,6 @@ export function defaultSettings(): SettingsValues {
     ask_company: false,
     ask_department: false,
     consent_keys: [],
-    styled_form_controls: false,
     bot_protection_enabled: true,
     sso_claim_name: null,
     sso_claim_values: [],
@@ -183,7 +180,6 @@ const SETTINGS_SELECT = {
   ask_company: true,
   ask_department: true,
   consent_keys: true,
-  styled_form_controls: true,
   bot_protection_enabled: true,
   sso_claim_name: true,
   sso_claim_values: true,
@@ -209,7 +205,6 @@ function valuesOf(row: StoredRow): SettingsValues {
     ask_company: row.ask_company,
     ask_department: row.ask_department,
     consent_keys: [...row.consent_keys],
-    styled_form_controls: row.styled_form_controls,
     bot_protection_enabled: row.bot_protection_enabled,
     // Both or none, as the table checks; a row that holds one without the other reads as no restriction.
     sso_claim_name: row.sso_claim_values.length > 0 ? row.sso_claim_name : null,
@@ -294,7 +289,6 @@ function mergeSettings(current: SettingsValues, patch: RegistrationSettingsPatch
     ask_company: patch.ask_company ?? current.ask_company,
     ask_department: patch.ask_department ?? current.ask_department,
     consent_keys: patch.consent_keys === undefined ? current.consent_keys : [...new Set(patch.consent_keys)],
-    styled_form_controls: patch.styled_form_controls ?? current.styled_form_controls,
     bot_protection_enabled: patch.bot_protection_enabled ?? current.bot_protection_enabled,
     ...claimAfter(current, patch, accessMethods.includes("sso")),
     sso_provider_id: providerAfter(current, patch, accessMethods.includes("sso")),
@@ -320,7 +314,7 @@ function sameMembers(a: readonly string[], b: readonly string[]): boolean {
 /**
  * Whether a save has to find the event ready: when it turns registration on, and when it changes the way in (or the provider
  * of the company sign-in) or the consents of an event that has it on. Turning registration off is never judged, and neither is a switch that does not
- * touch what the form needs (the waiting list, the check of the address, the companion, the company and department, the styled boxes).
+ * touch what the form needs (the waiting list, the check of the address, the companion, the company and department).
  */
 function needsReadiness(before: SettingsValues, after: SettingsValues): boolean {
   if (after.mode === null) return false;

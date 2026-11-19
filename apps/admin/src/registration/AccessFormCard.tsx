@@ -8,7 +8,7 @@ import { consentOptions, type AccessDraft } from "./accessSettings.js";
 import { registrationTabPath } from "./registrationTabs.js";
 import "./registration-access.css";
 
-type ToggleKey = "waitlist_enabled" | "verify_email" | "ask_company" | "ask_department" | "companion" | "styled_form_controls";
+type ToggleKey = "waitlist_enabled" | "verify_email" | "ask_company" | "ask_department" | "companion";
 
 const TOGGLES: Readonly<Record<ToggleKey, { title: string; text: string }>> = {
   waitlist_enabled: { title: "Waiting list", text: "When the event is full, new requests wait for a free place." },
@@ -16,10 +16,6 @@ const TOGGLES: Readonly<Record<ToggleKey, { title: string; text: string }>> = {
   ask_company: { title: "Ask for the company", text: "Adds a company question to the form." },
   ask_department: { title: "Ask for the department", text: "Adds a department question to the form." },
   companion: { title: "Guests can bring one person", text: "That person takes a place too." },
-  styled_form_controls: {
-    title: "Styled form boxes",
-    text: "Own calendar, time list and phone country list. A phone question for digits only keeps the browser's box.",
-  },
 };
 
 /** What the confirmation switch says under the company SSO: the address comes from the identity provider, so no link is sent. */
@@ -144,13 +140,13 @@ function ConsentsRow({ eventId, draft, legalItems, disabled, onChange }: Readonl
 
 type CardProps = Readonly<{ draft: AccessDraft; disabled: boolean; onChange: (change: FormChange) => void }>;
 
-/** What guests fill in: the questions (the company, the department, one more person, and the event's own on the Fields tab), how the boxes look, and the extra consents. */
+/** What guests fill in: the questions (the company, the department, one more person, and the event's own on the Fields tab) and the extra consents. */
 export function AccessFormCard({ eventId, draft, legalItems, disabled, onChange }: CardProps & Readonly<{ eventId: string; legalItems: readonly LegalDocumentDto[] }>) {
   const row = (name: ToggleKey) => <ToggleRow name={name} draft={draft} disabled={disabled} onChange={onChange} />;
   return (
     <Card title="Form">
       <div className="settings-card-stack">
-        <p className="settings-card-intro">The questions on the form, how it looks, and the consents guests agree to.</p>
+        <p className="settings-card-intro">The questions on the form and the consents guests agree to.</p>
         <div className="access-form-groups">
           <Group label="Questions">
             {row("ask_company")}
@@ -158,7 +154,6 @@ export function AccessFormCard({ eventId, draft, legalItems, disabled, onChange 
             {row("companion")}
             <GoToRow title="Your own questions" text="Add or change them on the Fields tab." label="Open Fields" to={registrationTabPath(eventId, "fields")} />
           </Group>
-          <Group label="Look">{row("styled_form_controls")}</Group>
           <Group label="Consents">
             <ConsentsRow eventId={eventId} draft={draft} legalItems={legalItems} disabled={disabled} onChange={onChange} />
           </Group>

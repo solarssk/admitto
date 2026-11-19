@@ -1,10 +1,10 @@
 /**
- * The second script of the registration page: the styled boxes of an event that switched them on (D-E9).
+ * The second script of the registration page: the own boxes of the form: phone, date and time (D-E9).
  *
  * Like the first script (./form-script.ts) it is a fixed text, the same for every event and every request: nothing from the
  * database is put into it, what it reads is `data-*` attributes and text the server wrote, and everything it draws is set as text
  * or as an attribute, never as HTML. It runs under the same nonce, and the page's policy is the one it was: no new source, no
- * inline style, no `eval`. Only a page of an event with the switch on carries it. The first script runs first and is not changed
+ * inline style, no `eval`. Only a page with a question it takes over carries it. The first script runs first and is not changed
  * by this one: the two meet only in the page.
  *
  * What it does, for a field marked `data-styled="phone"` (./form-controls.ts says which questions are):
@@ -48,7 +48,7 @@ import type { StyledNeeds } from "./form-controls.js";
 import { DATE_BOX_SCRIPT, DATE_FIELD_SCRIPT } from "./form-date-script.js";
 import { TIME_BOX_SCRIPT } from "./form-time-script.js";
 
-/** The window and the phone box: the part of the script that every page with the switch on has. It stops short of the closing of the
+/** The window and the phone box: the part of the script that every page that has it has. It stops short of the closing of the
  * script, so that the date and the time can be added after it. */
 const PHONE_AND_WINDOW_SCRIPT = String.raw`
 (function () {
@@ -424,12 +424,12 @@ const PHONE_AND_WINDOW_SCRIPT = String.raw`
 const SCRIPT_END = `})();
 `;
 
-/** The script of a form that has no date and no time: the phone box, which every page with the switch on carries. This is the text
+/** The script of a form that has no date and no time: the phone box, which every page that has the script carries. This is the text
  * of PR 113g-1, byte for byte, and a test keeps it so. */
 export const REGISTRATION_STYLED_CONTROLS_SCRIPT = `${PHONE_AND_WINDOW_SCRIPT}${SCRIPT_END}`;
 
 /**
- * The script of the page of a form with the switch on. It is one fixed text for each combination of the boxes the form has: the
+ * The script of the page of a form that has an own box. It is one fixed text for each combination of the boxes the form has: the
  * window and the phone box always, the date box (and the field that holds a date or a date and time) when the form asks a date
  * or a date and time, and the time box when it asks a date and time. Nothing of the database is in any of them, and a form that
  * asks no date or time is no heavier than it was.

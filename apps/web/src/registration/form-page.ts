@@ -209,10 +209,8 @@ export function renderRegistrationFormPage(model: RegistrationFormModel, options
   }
   const gate = behindPassword(model);
   const signedInAs = sso?.signedInAs ?? null;
-  // An event that switched the styled boxes on marks its form; the page of every other event has not a byte of it.
-  const controls = model.styledControls ? ' data-controls="styled"' : "";
-  const questions = renderQuestions(model.questions, { timeZone: model.event.timezone, styledControls: model.styledControls });
-  const form = `<form class="reg-form" id="reg-form" method="post" action="/r/${esc(model.event.slug)}" novalidate${controls} data-hide-when-done${gate}>
+  const questions = renderQuestions(model.questions, { timeZone: model.event.timezone });
+  const form = `<form class="reg-form" id="reg-form" method="post" action="/r/${esc(model.event.slug)}" novalidate data-hide-when-done${gate}>
       <p class="reg-legend"><span class="reg-req" aria-hidden="true">*</span> Required</p>
       ${renderPersonalFields(model, signedInAs)}${questions}${renderCompanion(model)}${renderAgreement(model)}
     </form>`;

@@ -134,8 +134,8 @@ export const REGISTRATION_PAGE_CSS = `
 `;
 
 /**
- * What the styled boxes add (D-E9), only to the page of an event that switched them on: the page of every other event does not
- * carry a byte of it. The phone box is the country button beside the number, laid out as the staff app lays out its phone fields
+ * What the own boxes add (D-E9), only to the page of a form that has a question one of them takes over: the page of a form
+ * with none does not carry a byte of it. The phone box is the country button beside the number, laid out as the staff app lays out its phone fields
  * (the phone row of `apps/admin/src/attendees/custom-data-field-input.css`: the button keeps 8.5rem and the number takes the rest).
  * The button is the product's searchable-select trigger and the list under it its panel, so they come from the product's own rules
  * (above); these rules place them. Every colour is a token.
@@ -294,8 +294,8 @@ export function inkOnPrimaryRule(theme?: BrandingTheme | null): string {
   return `:root { --text-on-primary: ${ink}; --primary-hover: ${towardWhite(primary, 0.12)}; --primary-active: ${towardWhite(primary, 0.22)}; }`;
 }
 
-/** The whole stylesheet of a guest page, for the instance branding `theme`. `styled`: what the form of an event that switched the
- * styled boxes on needs (see `styledNeedsOf` of ./form-controls.ts); only that page has their rules, and the rules of the date and
+/** The whole stylesheet of a guest page, for the instance branding `theme`. `styled`: what the form needs of the own
+ * boxes (see `styledNeedsOf` of ./form-controls.ts); only a page with such a question has their rules, and the rules of the date and
  * the time only when the form asks a date or a time. `companySignIn`: the page is one of an event whose way in is the company
  * sign-in, which has the rules of REGISTRATION_SSO_CSS and no other page has. */
 export function buildRegistrationPageStyles(

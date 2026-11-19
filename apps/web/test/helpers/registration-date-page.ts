@@ -25,11 +25,11 @@ function freezeToday(win: Dom, iso: string): void {
   win.Date = Fixed;
 }
 
-/** The page of an event with the styled boxes on and these questions, with the guest's browser set up as asked. The default browser is
+/** The page of a form with these questions, with the guest's browser set up as asked. The default browser is
  * a British English one on 4 November 2026 (a Wednesday): day first, the week from Monday, a 24-hour clock. */
 export function bootDates(questions: readonly FormQuestion[], options: DatePageOptions = {}): ScriptPage {
   return bootPage(questions, {
-    model: { styledControls: true, ...options.model },
+    model: options.model,
     before: (doc) => {
       const win = doc.defaultView;
       const languages = options.languages ?? ["en-GB"];

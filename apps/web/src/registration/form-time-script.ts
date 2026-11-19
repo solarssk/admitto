@@ -6,8 +6,9 @@
  * What it is. Beside the date box of a date and time (the browser's own box, turned into a text box) the script puts a second text box
  * for the time of day and a clock button. The text takes what the staff app's time box takes (`18`, `1800`, `18:00`, `6pm`, `6:30 PM`,
  * `630p.m.`): the rule of its `parseFlexibleTime`, ported, and a test runs this script against a table of texts. The list that the clock
- * opens is the staff app's too: a column of hours, a column of minutes and, for a 12-hour clock, a column of AM and PM; the same range
- * (hours 0 to 23, minutes 0 to 59) and the same step (one minute). Nothing of a time zone is here: the answer is the clock at the
+ * opens is the staff app's, with a shorter column of minutes: a column of hours (0 to 23), a column of minutes in steps of a quarter
+ * of an hour (00, 15, 30, 45, see GUEST_MINUTE_STEP) and, for a 12-hour clock, a column of AM and PM. The list is only what is offered:
+ * the text box takes and keeps any minute, so a time typed as 18:07 stays 18:07, and then no option of the minute column is chosen. Nothing of a time zone is here: the answer is the clock at the
  * event and the server reads it in the zone of the event, which the note under the box names.
  *
  * The keys. Each column is a listbox whose options take the focus in turn (roving tabindex). Up and Down move to the next and the
@@ -19,6 +20,10 @@
  * It uses the window that the country list uses (`setUpWindow` of ./form-controls-script.ts) and the text box follows the pattern of
  * the date box: the state follows the text, and a time typed in another way is written the way the box writes it on leaving it.
  */
+
+/** The step of the minute column of the list, in minutes. The staff app offers every minute; a guest is offered a quarter of an hour,
+ * and can still type any time. A whole number of minutes that divides 60. */
+export const GUEST_MINUTE_STEP = 15;
 
 /** The time box, inside the function that DATE_BOX_SCRIPT opened. */
 export const TIME_BOX_SCRIPT = String.raw`
@@ -110,7 +115,7 @@ export const TIME_BOX_SCRIPT = String.raw`
         var hours = [];
         for (var hour = twelveHour ? 1 : 0; hour <= (twelveHour ? 12 : 23); hour += 1) hours.push(hour);
         var minutes = [];
-        for (var minute = 0; minute < 60; minute += 1) minutes.push(minute);
+        for (var minute = 0; minute < 60; minute += ${GUEST_MINUTE_STEP}) minutes.push(minute);
         var parts = [
           { column: columns[0], values: hours, text: function (value) { return pad(value, 2); } },
           { column: columns[1], values: minutes, text: function (value) { return pad(value, 2); } }
@@ -134,12 +139,24 @@ export const TIME_BOX_SCRIPT = String.raw`
       }
 
       // The option that is chosen has aria-selected and is the one in the order of the Tab key of its column; with no time yet, the
-      // option a first press would start from is.
+      // option a first press would start from is. A minute typed that the column does not list (18:07) chooses none, and the option
+      // nearest to it is the one in the order of the Tab key.
       function mark(column, chosen, start) {
+        var stop = start;
+        var gap = 60;
+        if (chosen >= 0) {
+          column.items.forEach(function (item) {
+            var value = Number(item.getAttribute("data-value"));
+            if (Math.abs(value - chosen) < gap) {
+              gap = Math.abs(value - chosen);
+              stop = value;
+            }
+          });
+        }
         column.items.forEach(function (item) {
           var value = Number(item.getAttribute("data-value"));
           item.setAttribute("aria-selected", value === chosen ? "true" : "false");
-          item.setAttribute("tabindex", (chosen >= 0 ? value === chosen : value === start) ? "0" : "-1");
+          item.setAttribute("tabindex", value === stop ? "0" : "-1");
         });
       }
 

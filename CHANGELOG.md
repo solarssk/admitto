@@ -122,6 +122,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Changed
 
+- Remove the "Styled form boxes" switch: every guest form now has its own phone, date and time boxes, and the time list offers quarter hours while any typed time still works
 - Show times with no recorded time zone in UTC, the same for every viewer: Wallet card, Activity, delivery history, notes, import history, Recent activity ([#1743](https://github.com/solarssk/admitto/pull/1743))
 - Show a wallet pass as "Pending" on the attendee's page while it is being made ([#1690](https://github.com/solarssk/admitto/pull/1690))
 - Document `migrate` and P3009 recovery, `app` memory sizing, container hardening, the sign-in limit, SSO two-factor and what Redis holds ([#1695](https://github.com/solarssk/admitto/pull/1695))

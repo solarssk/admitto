@@ -32,7 +32,7 @@ function injected(html: string): string[] {
     }
   }
   const scripts = doc.querySelectorAll("script").length;
-  if (scripts !== 2) found.push(`${scripts} script elements`);
+  if (scripts !== 3) found.push(`${scripts} script elements`);
   for (const tag of ["iframe", "object", "embed", "frame", "meta[http-equiv]", "base"]) {
     if (doc.querySelector(tag)) found.push(tag);
   }
@@ -79,7 +79,7 @@ describe.each(PAYLOADS)("organiser text %j on the form", (payload) => {
   it("keeps the style block closed by its own tag only", () => {
     expect(html.split("</style").length - 1).toBe(1);
     expect(html.split("<style").length - 1).toBe(1);
-    expect(html.split("</script").length - 1).toBe(2);
+    expect(html.split("</script").length - 1).toBe(3);
   });
 
   it("prints the title, the date and the venue as text", () => {

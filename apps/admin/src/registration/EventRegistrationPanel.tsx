@@ -35,7 +35,7 @@ export const SUPERADMIN_ONLY_NOTE = "Only a superadmin can change this.";
 export const REGISTRATION_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "method", title: "Access method", intro: 1, rows: 1, rowHeight: 40 },
   { id: "sso", title: "Company SSO", intro: 2, fields: 3, controlHeight: 38 },
-  { id: "form", title: "Form", intro: 1, rows: 6, rowHeight: 64 },
+  { id: "form", title: "Form", intro: 1, rows: 5, rowHeight: 64 },
   { id: "after", title: "Handling requests", intro: 1, rows: 3, rowHeight: 64 },
 ];
 
