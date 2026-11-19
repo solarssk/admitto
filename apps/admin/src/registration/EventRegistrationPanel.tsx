@@ -218,6 +218,7 @@ function EventRegistrationCards({
   const [retryingAddresses, setRetryingAddresses] = useState(false);
   // The address for guests changed and the settings could not be read again: the setup for IT would show the old one.
   const [addressStale, setAddressStale] = useState(false);
+  const newestAddressRead = useRef(0);
   const missing = missingChecks(server.readiness);
   const readOnly = !superadmin;
   const off = archived || saving;
@@ -239,29 +240,30 @@ function EventRegistrationCards({
     onAddressChange.current();
   }, [addressVersion]);
 
-  /** Reads the return addresses; a failure is told (the setup for IT shows a Retry, not the old addresses). */
-  async function readReturnAddresses(): Promise<boolean> {
+  /** The return addresses, or null when they could not be read (a lost session goes to the sign-in). */
+  async function readReturnAddresses(): Promise<RegistrationRedirectUriDto[] | null> {
     try {
-      setReturnAddresses((await fetchRegistrationReturnAddresses()).redirect_uris);
-      setReturnAddressesFailed(false);
-      return true;
+      return (await fetchRegistrationReturnAddresses()).redirect_uris;
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) redirectToLogin();
-      else setReturnAddressesFailed(true);
-      return false;
+      return null;
     }
   }
 
-  /** The settings and the return addresses, read again, busy while it works. The Retry of the setup for IT does the same. Only a superadmin changes the address or sees the setup, so only a superadmin gets here. */
+  /**
+   * The settings and the return addresses, read again, busy while it works. The Retry of the setup for IT does the same. Only a
+   * superadmin changes the address or sees the setup, so only a superadmin gets here. Reads can overlap (the address changed again):
+   * only the latest may write what it found and end the busy state.
+   */
   async function readAddressesAgain() {
+    const mine = ++newestAddressRead.current;
     setRetryingAddresses(true);
-    try {
-      // A failure of the return addresses has its own flag (`returnAddressesFailed`); this one is for the settings.
-      const [settingsRead] = await Promise.all([form.refresh(), readReturnAddresses()]);
-      setAddressStale(!settingsRead);
-    } finally {
-      setRetryingAddresses(false);
-    }
+    const [settingsRead, addresses] = await Promise.all([form.refresh(), readReturnAddresses()]);
+    if (mine !== newestAddressRead.current) return;
+    if (addresses !== null) setReturnAddresses(addresses);
+    setReturnAddressesFailed(addresses === null);
+    setAddressStale(!settingsRead);
+    setRetryingAddresses(false);
   }
 
   return (

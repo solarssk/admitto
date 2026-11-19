@@ -159,6 +159,35 @@ describe("the setup for IT in the Company SSO card", () => {
       await waitFor(() => expect(field("Return address for other.acme.example").value).toBe(OTHER_EVENT.uri));
     });
 
+    it("drops the answer of an older read when the address changed again, and stays busy until the newest read answers", async () => {
+      const { addressChanged } = await renderPanel(ssoSettings({ own_address: OWN }), [INSTANCE, EVENT]);
+      fireEvent.click(toggle());
+      const firstSettings = deferred<RegistrationSettingsDto>();
+      const firstAddresses = deferred<ReturnType<typeof answer>>();
+      const secondSettings = deferred<RegistrationSettingsDto>();
+      const secondAddresses = deferred<ReturnType<typeof answer>>();
+      api.fetchRegistrationSettings.mockReturnValueOnce(firstSettings.promise).mockReturnValueOnce(secondSettings.promise);
+      api.fetchRegistrationReturnAddresses.mockReturnValueOnce(firstAddresses.promise).mockReturnValueOnce(secondAddresses.promise);
+      addressChanged(1);
+      await waitFor(() => expect(api.fetchRegistrationReturnAddresses).toHaveBeenCalledTimes(2));
+      addressChanged(2);
+      await waitFor(() => expect(api.fetchRegistrationReturnAddresses).toHaveBeenCalledTimes(3));
+
+      // The first read answers last-but-one: its answer is not shown, and the setup is still being read.
+      await act(async () => {
+        firstSettings.resolve(ssoSettings({ own_address: { ...OWN, domain: "first.acme.example" } }));
+        firstAddresses.resolve(answer([INSTANCE, { ...EVENT, uri: "https://first.acme.example/sso/callback" }]));
+      });
+      expect(panel().textContent).not.toContain("first.acme.example");
+      expect(within(panel()).queryByLabelText("Return address")).toBeNull();
+
+      await act(async () => {
+        secondSettings.resolve(ssoSettings({ own_address: { ...OWN, domain: "other.acme.example" } }));
+        secondAddresses.resolve(answer([INSTANCE, OTHER_EVENT]));
+      });
+      await waitFor(() => expect(field("Return address for other.acme.example").value).toBe(OTHER_EVENT.uri));
+    });
+
     it.each([
       ["both reads fail", true, true],
       ["only the return addresses fail", false, true],
