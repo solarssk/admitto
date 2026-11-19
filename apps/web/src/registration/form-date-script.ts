@@ -5,12 +5,12 @@
  *
  * What the date box is. The browser's own date box of a question stays in the form with its id, its label, its note and its message
  * (the page's, not this script's), and the script turns it into a text box: the date in a readable form (`04/11/2026`, in the order
- * the guest's browser writes it), a button with a calendar beside it, and under it, in the flow of the form, a month to pick from.
+ * the guest's browser writes it), a button with a calendar beside it, and under it, as a floating layer over the form, a month to pick from.
  * The month is ARIA's date picker dialog: a grid of days whose cells carry the full date as their name, `aria-selected`, roving
  * focus and the keys of that pattern (arrows move by a day and a week, Home and End go to the start and the end of the week, Page
  * Up and Page Down by a month, with Shift by a year, Enter and Space pick, Escape closes and gives the focus back to the button).
- * The title of the month is a live region, so a screen reader hears the month change. The panel is in the flow and not laid over the
- * form because the card of the page clips what sticks out of it.
+ * The title of the month is a live region, so a screen reader hears the month change. The panel is fixed and placed by `setUpWindow`, so the
+ * card of the page, which clips what sticks out of it, does not clip it, and nothing below the box moves.
  *
  * What it takes from the guest. Typing is for the formats the staff app's date box takes (`yyyy-mm-dd`, and day, month and year in
  * the order of the guest's browser, with a dot, a slash, a dash or a space between): the one rule of `parseFlexibleCalendarDate`,

@@ -147,9 +147,10 @@ export const REGISTRATION_STYLED_CONTROLS_CSS = `
 .reg-phone__flag { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
 .reg-phone__dial { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reg-phone__dial--empty { color: var(--text-muted); }
-/* The list opens under the button over what follows, wider than the button (a country's name needs the room) and never wider than the screen,
-   also for a question two panels deep (a companion's conditional question starts 44px in): 4.5rem is that offset and a margin. */
-.reg-phone__panel { position: absolute; left: 0; top: calc(100% + 4px); width: 17.5rem; max-width: calc(100vw - 4.5rem); margin: 0; }
+/* The list is a floating layer over what follows, as in the staff app: fixed (so the card of the page, which clips what sticks out of it,
+   does not clip it), at the stacking token of the staff app's lists, and placed by the script (under the button, or above it when there is
+   no room, and inside the screen). It is wider than the button (a country's name needs the room) and never wider than the screen. */
+.reg-phone__panel { position: fixed; left: 0; top: 0; z-index: var(--z-dropdown); width: 17.5rem; max-width: calc(100vw - 16px); margin: 0; }
 .reg-phone__option[aria-selected="true"] { background: var(--surface-hover, var(--surface-sunken)); }
 .reg-phone__option[aria-current="true"] .searchable-select__name { font-weight: var(--fw-semibold); }
 .reg-phone__option-code { flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
@@ -161,10 +162,11 @@ export const REGISTRATION_STYLED_CONTROLS_CSS = `
 /**
  * What the date box and the time box add (D-E9), only to the page of a form that asks a date or a date and time: the page of any
  * other form does not carry a byte of it. A date is a text box with a square calendar button beside it, a date and time is two such
- * boxes side by side (one under the other on a phone), and the month or the lists of times open under them in the flow of the form,
- * the width of the row and no wider than a calendar needs. They are not laid over the form because the card of the page clips what
- * sticks out of it, and an open panel in the flow reflows with the page at any width and zoom. The wrappers of the kits do not take
- * part in the layout (`display: contents`), so the boxes and the panels are the cells of one grid. Every colour is a token.
+ * boxes side by side (one under the other on a phone), and the month or the lists of times open as a floating layer over the form, as the
+ * staff app's pickers do: fixed (the card of the page clips what sticks out of it, a fixed layer is not clipped), at the stacking token of
+ * the staff app's lists, placed by the script under the box, or above it when there is no room, and inside the screen. Nothing below the
+ * box moves. The wrappers of the kits do not take part in the layout (`display: contents`), so the boxes are the cells of one grid.
+ * Every colour is a token.
  *
  * The cells of the month and the options of a list are 44 px high; the month is as wide as the row on a phone, which makes its cells
  * 44 px wide on a screen of 390 px, and a compact month and list on a wide screen with a pointer.
@@ -177,7 +179,7 @@ export const REGISTRATION_DATE_CONTROLS_CSS = `
 .reg-dt__button:hover:not(:disabled) { border-color: var(--at-gray-400); color: var(--text-primary); }
 .reg-dt__button:focus-visible:not(:disabled), .reg-dt__button[aria-expanded="true"]:not(:disabled) { outline: none; border-color: var(--border-focus); box-shadow: var(--ring); }
 .reg-dt__button:disabled { cursor: not-allowed; opacity: 0.6; }
-.reg-dt__panel { grid-column: 1 / -1; box-sizing: border-box; width: 100%; max-width: 21rem; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card); box-shadow: var(--shadow-md); }
+.reg-dt__panel { position: fixed; left: 0; top: 0; z-index: var(--z-dropdown); margin: 0; box-sizing: border-box; width: 21rem; max-width: calc(100vw - 16px); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card); box-shadow: var(--shadow-md); }
 .reg-date { padding: var(--space-2) var(--space-1); }
 .reg-date__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-1) var(--space-2); }
 .reg-date__month { flex: 1; min-width: 0; text-align: center; font-weight: var(--fw-semibold); color: var(--text-primary); }
@@ -197,8 +199,8 @@ export const REGISTRATION_DATE_CONTROLS_CSS = `
 .reg-date__action:last-child { margin-left: auto; }
 .reg-date__action:hover { text-decoration: underline; }
 .reg-date__action:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
-.reg-time { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); max-width: 15rem; padding: var(--space-2); }
-.reg-time--twelve { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 19rem; }
+.reg-time { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); width: 15rem; padding: var(--space-2); }
+.reg-time--twelve { grid-template-columns: repeat(3, minmax(0, 1fr)); width: 19rem; }
 .reg-time__col { min-width: 0; }
 .reg-time__label { display: block; margin: 0 0 var(--space-1); padding: 0 var(--space-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-muted); }
 .reg-time__list { margin: 0; padding: 0; list-style: none; max-height: 13.75rem; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -209,7 +211,6 @@ export const REGISTRATION_DATE_CONTROLS_CSS = `
 @media (min-width: 481px) {
   .reg-dt--pair { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }
   .reg-dt--pair > .at-control, .reg-dt--pair > .at-inputgroup, .reg-dt--pair .reg-dt__time > .at-control, .reg-dt--pair .reg-dt__button { grid-row: 1; }
-  .reg-dt--pair .reg-dt__panel { grid-row: 2; }
   .reg-dt--pair .reg-dt__time > .at-control { margin-left: var(--space-3); }
 }
 @media (min-width: 481px) and (pointer: fine) {

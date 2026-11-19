@@ -124,13 +124,13 @@ const STYLED_PHONE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFor
  * changes on purpose, the PR that does it records the new value, and the reviewer sees the page it changed.
  */
 const STYLED_HASH = {
-  script: "b43513313f458dd7-15862",
-  css: "ab92d1d67262b09d-1322",
-  styleSheet: "127afbc2e3a113a3-58063",
+  script: "2a1e39e637a389b1-18174",
+  css: "9036c763940f6130-1469",
+  styleSheet: "0cefdacafe8d0c6a-58210",
   phoneKit: "d72fe234ef011226-13580",
-  phone: "d69dd81b60e1bdfc-70885",
-  phoneRequired: "00bb700b1db55ab5-70957",
-  companionPhone: "9f19e5b7a3ee8168-72675",
+  phone: "9d71b4415c22bcc2-73197",
+  phoneRequired: "4fcd4c64e2eb149b-73269",
+  companionPhone: "c56cd24f37aa94d6-74987",
 } as const;
 
 describe("the page of a form with a phone and no date or time", () => {
@@ -472,6 +472,8 @@ describe("the second script is a fixed text", () => {
     expect(withTime.startsWith(phoneOnly.slice(0, phoneOnly.length - "})();\n".length))).toBe(true);
     expect(withDate.endsWith("})();\n")).toBe(true);
     expect(withTime.endsWith("})();\n")).toBe(true);
+    // The one place a script sets a style is the place of its panel (a position, which a stylesheet cannot know).
+    for (const script of ALL_SCRIPTS) expect(script.replaceAll("panel.style.", "")).not.toContain(".style.");
     expect(phoneOnly).not.toContain("reg-date-kit");
     expect(phoneOnly).not.toContain("reg-time-kit");
     expect(withDate).toContain("reg-date-kit");
@@ -483,7 +485,7 @@ describe("the second script is a fixed text", () => {
     // The weight of the addition: a form without a date or a time does not carry any of it.
     expect(withDate.length).toBeGreaterThan(phoneOnly.length);
     expect(withTime.length).toBeGreaterThan(withDate.length);
-    expect([phoneOnly.length, withDate.length, withTime.length]).toEqual([15862, expect.any(Number), expect.any(Number)]);
+    expect([phoneOnly.length, withDate.length, withTime.length]).toEqual([18174, expect.any(Number), expect.any(Number)]);
   });
 
   it("is the same text every time it is made", () => {
@@ -500,7 +502,6 @@ describe("the second script is a fixed text", () => {
       "eval(",
       "new Function",
       "setAttribute(\"style\"",
-      ".style.",
       "cssText",
       "fetch(",
       "XMLHttpRequest",
@@ -624,8 +625,10 @@ describe("the styles of the own boxes", () => {
     expect(css).toContain(".reg-phone > .at-control, .reg-phone > .at-inputgroup { flex: 1; min-width: 0; }");
   });
 
-  it("open the list under the button, over what follows, wider than the button and never wider than the screen", () => {
-    expect(css).toContain(".reg-phone__panel { position: absolute; left: 0; top: calc(100% + 4px); width: 17.5rem; max-width: calc(100vw - 4.5rem); margin: 0; }");
+  it("float the list over the form at the stacking token of the staff app, wider than the button and never wider than the screen", () => {
+    expect(css).toContain(
+      ".reg-phone__panel { position: fixed; left: 0; top: 0; z-index: var(--z-dropdown); width: 17.5rem; max-width: calc(100vw - 16px); margin: 0; }",
+    );
   });
 
   it("keep the 16 px of the search box on a phone, which stops the zoom on focus", () => {
@@ -661,11 +664,20 @@ describe("the styles of the date and the time boxes", () => {
     for (const name of used) expect(everything, name).toMatch(new RegExp(String.raw`${name}\s*:`));
   });
 
-  it("lay the panel in the flow of the form, the width of the row and no wider than a calendar: the card clips what sticks out of it", () => {
-    expect(css).toContain(".reg-dt__panel { grid-column: 1 / -1; box-sizing: border-box; width: 100%; max-width: 21rem;");
-    expect(css).not.toMatch(/\.reg-dt__panel[^{]*\{[^}]*position:/);
+  it("float the panel over the form as a fixed layer at the stacking token of the staff app, never wider than the screen, with its look of a list of the staff app", () => {
+    expect(css).toContain(
+      ".reg-dt__panel { position: fixed; left: 0; top: 0; z-index: var(--z-dropdown); margin: 0; box-sizing: border-box; width: 21rem; max-width: calc(100vw - 16px); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card); box-shadow: var(--shadow-md); }",
+    );
+    // The panel is the only thing the date and the time put out of the flow, and nothing is placed by a grid row any more.
     expect(css).not.toMatch(/\.reg-(?:date|time)[\w_-]*[^{]*\{[^}]*position: (?:absolute|fixed)/);
+    expect(css).not.toContain("grid-column: 1 / -1");
+    expect(css).not.toContain(".reg-dt__panel { grid-row");
     expect(css).toContain(".reg-dt__pop, .reg-dt__time { display: contents; }");
+  });
+
+  it("give the lists of times a width of their own, which the screen caps", () => {
+    expect(css).toContain(".reg-time { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); width: 15rem;");
+    expect(css).toContain(".reg-time--twelve { grid-template-columns: repeat(3, minmax(0, 1fr)); width: 19rem; }");
   });
 
   it("put a date and time side by side on a wide screen and one under the other on a phone, where the form's own rows break", () => {

@@ -4,7 +4,7 @@
  * Like the first script (./form-script.ts) it is a fixed text, the same for every event and every request: nothing from the
  * database is put into it, what it reads is `data-*` attributes and text the server wrote, and everything it draws is set as text
  * or as an attribute, never as HTML. It runs under the same nonce, and the page's policy is the one it was: no new source, no
- * inline style, no `eval`. Only a page with a question it takes over carries it. The first script runs first and is not changed
+ * style attribute in the markup, no `eval` (the one style it sets is the position of a panel, see `place`). Only a page with a question it takes over carries it. The first script runs first and is not changed
  * by this one: the two meet only in the page.
  *
  * What it does, for a field marked `data-styled="phone"` (./form-controls.ts says which questions are):
@@ -62,9 +62,44 @@ const PHONE_AND_WINDOW_SCRIPT = String.raw`
   // a phone, which puts its keyboard over the lower half of the page, brings the button to the top once the keyboard is up.
   function setUpWindow(scope, trigger, panel, hooks) {
     var pressedOpen = false;
+    var resizer = null;
+
+    // The panel is a fixed layer (the rules in the stylesheet), placed here as the staff app places its lists: under the box it
+    // belongs to, or above it when the room below is smaller and the room above is larger, inside the visible screen, and no taller
+    // than the room it has. The box is the scope itself, or, for the date and the time, whose scope takes no part in the layout
+    // (display: contents), the text box before it. Nothing below the box moves, as the panel is out of the flow.
+    function place() {
+      var box = (window.getComputedStyle(scope).display === "contents" ? scope.previousElementSibling : null) || scope;
+      var rect = box.getBoundingClientRect();
+      var view = window.visualViewport;
+      var left = view ? view.offsetLeft : 0;
+      var top = view ? view.offsetTop : 0;
+      var width = view ? view.width : document.documentElement.clientWidth;
+      var height = view ? view.height : window.innerHeight;
+      var gap = 4;
+      var edge = 8;
+      panel.style.maxHeight = "";
+      panel.style.overflowY = "";
+      var below = top + height - rect.bottom - gap - edge;
+      var above = rect.top - top - gap - edge;
+      var up = panel.offsetHeight > below && above > below;
+      var room = up ? above : below;
+      if (panel.offsetHeight > room) {
+        panel.style.maxHeight = Math.max(room, 120) + "px";
+        panel.style.overflowY = "auto";
+      }
+      var y = up ? rect.top - gap - panel.offsetHeight : rect.bottom + gap;
+      var x = Math.max(left + edge, Math.min(rect.left, left + width - panel.offsetWidth - edge));
+      panel.style.transform = "translate(" + Math.round(x) + "px, " + Math.round(y) + "px)";
+    }
 
     function isOpen() {
       return !panel.hidden;
+    }
+
+    // A scroll of the page moves the box from under the panel, so the panel follows it; a scroll inside the panel (its lists) does not.
+    function onScroll(event) {
+      if (!panel.contains(event.target)) place();
     }
 
     function open() {
@@ -72,8 +107,15 @@ const PHONE_AND_WINDOW_SCRIPT = String.raw`
       panel.hidden = false;
       trigger.setAttribute("aria-expanded", "true");
       trigger.classList.add("searchable-select__trigger--open");
+      place();
       if (hooks.opened) hooks.opened();
-      if (panel.scrollIntoView) panel.scrollIntoView({ block: "nearest" });
+      place();
+      window.addEventListener("resize", place);
+      document.addEventListener("scroll", onScroll, true);
+      if (typeof ResizeObserver !== "undefined") {
+        resizer = new ResizeObserver(place);
+        resizer.observe(panel);
+      }
       if (hooks.keyboard && window.matchMedia && window.matchMedia("(pointer: coarse)").matches && trigger.scrollIntoView) {
         setTimeout(function () { if (isOpen()) trigger.scrollIntoView({ block: "start", behavior: "smooth" }); }, 350);
       }
@@ -82,6 +124,10 @@ const PHONE_AND_WINDOW_SCRIPT = String.raw`
     function close(back) {
       if (!isOpen()) return;
       panel.hidden = true;
+      window.removeEventListener("resize", place);
+      document.removeEventListener("scroll", onScroll, true);
+      if (resizer) resizer.disconnect();
+      resizer = null;
       trigger.setAttribute("aria-expanded", "false");
       trigger.classList.remove("searchable-select__trigger--open");
       if (hooks.closed) hooks.closed();

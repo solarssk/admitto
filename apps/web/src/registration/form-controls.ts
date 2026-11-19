@@ -84,8 +84,8 @@ export function styledNeedsOf(model: RegistrationFormModel): StyledNeeds | null 
 }
 
 /**
- * The calendar button and its month, for a script to clone. The button is a square beside the date box, the month is a panel
- * under it in the flow of the form (the card of the page clips what sticks out of it, so a panel is never laid over the form).
+ * The calendar button and its month, for a script to clone. The button is a square beside the date box, the month is a floating
+ * panel (fixed, placed by the script under the box or above it; the card of the page clips what sticks out of it, a fixed layer is not clipped).
  * The panel is a dialog that holds a month and a grid of days (ARIA's date picker dialog): the names of the days, the title of
  * the month and the days are the script's, from `Intl`, as text; the words here are the form's own. The arrows are inline
  * paths, as the sprite of the page is shared by every page and is not changed for a box that few pages have.
