@@ -216,19 +216,19 @@ function EventRegistrationCards({
   const [returnAddresses, setReturnAddresses] = useState(loaded.redirectUris);
   const [returnAddressesFailed, setReturnAddressesFailed] = useState(loaded.redirectUrisFailed);
   const [retryingAddresses, setRetryingAddresses] = useState(false);
+  // The address for guests changed and the settings could not be read again: the setup for IT would show the old one.
+  const [addressStale, setAddressStale] = useState(false);
   const missing = missingChecks(server.readiness);
   const readOnly = !superadmin;
   const off = archived || saving;
+  const setupUnsure = returnAddressesFailed || addressStale;
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   useEffect(() => onSavingChange?.(saving), [saving, onSavingChange]);
 
   // The address for guests was changed on General while this tab stayed mounted: what the setup for IT shows is read again, and what is typed stays.
   // The effect runs on the change of the version only, and calls the latest of the functions below through a ref.
-  const readAgain = () => {
-    void form.refresh();
-    if (superadmin) void retryReturnAddresses();
-  };
+  const readAgain = () => void readAddressesAgain();
   const onAddressChange = useRef(readAgain);
   onAddressChange.current = readAgain;
   const seenAddressVersion = useRef(addressVersion);
@@ -238,14 +238,26 @@ function EventRegistrationCards({
     onAddressChange.current();
   }, [addressVersion]);
 
-  /** The Retry of the return addresses: reads them again, busy while it works, and the answer replaces the failure. */
-  async function retryReturnAddresses() {
-    setRetryingAddresses(true);
+  /** Reads the return addresses; a failure is told (the setup for IT shows a Retry, not the old addresses). */
+  async function readReturnAddresses(): Promise<boolean> {
     try {
       setReturnAddresses((await fetchRegistrationReturnAddresses()).redirect_uris);
       setReturnAddressesFailed(false);
+      return true;
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) redirectToLogin();
+      else setReturnAddressesFailed(true);
+      return false;
+    }
+  }
+
+  /** The settings and the return addresses, read again, busy while it works. The Retry of the setup for IT does the same. Only a superadmin changes the address or sees the setup, so only a superadmin gets here. */
+  async function readAddressesAgain() {
+    setRetryingAddresses(true);
+    try {
+      // A failure of the return addresses has its own flag (`returnAddressesFailed`); this one is for the settings.
+      const [settingsRead] = await Promise.all([form.refresh(), readReturnAddresses()]);
+      setAddressStale(!settingsRead);
     } finally {
       setRetryingAddresses(false);
     }
@@ -300,12 +312,13 @@ function EventRegistrationCards({
         setup={
           readOnly ? null : (
             <SsoItSetup
-              instanceUri={returnAddresses.find((entry) => entry.host === "instance")?.uri ?? null}
-              eventUri={eventReturnAddress(returnAddresses, server.own_address?.domain ?? null)}
+              // While the addresses could not be read again, none is shown or copied: an old one would send IT to the wrong place.
+              instanceUri={setupUnsure ? null : (returnAddresses.find((entry) => entry.host === "instance")?.uri ?? null)}
+              eventUri={setupUnsure ? null : eventReturnAddress(returnAddresses, server.own_address?.domain ?? null)}
               claim={{ name: base.sso_claim_name === "" ? null : base.sso_claim_name, values: parseClaim(base).values }}
-              readFailed={returnAddressesFailed}
+              readFailed={setupUnsure}
               retrying={retryingAddresses}
-              onRetry={() => void retryReturnAddresses()}
+              onRetry={() => void readAddressesAgain()}
             />
           )
         }

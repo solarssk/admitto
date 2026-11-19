@@ -77,7 +77,8 @@ export function useRegistrationSwitch({
   /** What the screen shows is out of date (the event lost something, or was archived): read it again, quietly. */
   async function reread(id: string) {
     try {
-      onSettings(await fetchRegistrationSettings(id));
+      const answer = await readSettings(id);
+      if (accept(answer)) onSettings(answer);
     } catch {
       // What the page shows stays as it is, and so does the message that sent us here.
     }

@@ -53,18 +53,20 @@ export function useAccessForm({ eventId, settings, legalItems: firstLegalItems, 
     setProblem(null);
   }
 
-  /** Reads the settings and the texts again, quietly: the checklist and the list of consents learn what changed, and the form does not move. */
-  async function refresh() {
+  /** Reads the settings and the texts again, quietly: the checklist and the list of consents learn what changed, and the form does not move. Says whether the settings could be read (true too when a newer read took over). */
+  async function refresh(): Promise<boolean> {
     // A password set and then removed, or a save, can start a read while an older one is still on its way: the older answer, if it
     // comes last, must not put back what the newer change took away, and neither may a slow read of the texts hold an old answer back.
     const mine = ++newestRead.current;
     try {
       const [latest, texts] = await Promise.allSettled([fetchRegistrationSettings(eventId), fetchLegalDocuments(eventId)]);
-      if (mine !== newestRead.current) return;
+      if (mine !== newestRead.current) return true;
       if (latest.status === "fulfilled") setServer(latest.value);
       if (texts.status === "fulfilled") setLegalItems(texts.value.items);
+      return latest.status === "fulfilled";
     } catch {
       // What the screen shows stays as it is, and so does the error that sent us here.
+      return false;
     }
   }
 

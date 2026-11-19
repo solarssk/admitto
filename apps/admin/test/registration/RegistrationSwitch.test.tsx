@@ -383,6 +383,23 @@ describe("the header of the Registration page: a read that was on its way when r
     await waitFor(() => expect(banner().textContent).toContain("Registration is open."));
   });
 
+  it("does not put the old mode back when the read that follows a refusal answers after a retry that worked", async () => {
+    await renderHeader();
+    const older = deferred<RegistrationSettingsDto>();
+    api.saveRegistrationSettings.mockRejectedValueOnce(refusal(409, "registration_not_ready", ["legal_documents"]));
+    api.fetchRegistrationSettings.mockReturnValueOnce(older.promise);
+    fireEvent.click(mainButton("Turn registration on"));
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    await screen.findByRole("alert");
+    api.saveRegistrationSettings.mockResolvedValue(settings({ mode: "approval", readiness: checks() }));
+
+    fireEvent.click(mainButton("Turn registration on"));
+    await waitFor(() => expect(status()).toBe("Open"));
+    await act(async () => older.resolve(settings({ readiness: checks("legal_documents") })));
+
+    expect(status()).toBe("Open");
+  });
+
   it("shows the answer of a read that began after the save", async () => {
     await renderHeader();
     api.saveRegistrationSettings.mockResolvedValue(settings({ mode: "approval", readiness: checks() }));
