@@ -13,6 +13,7 @@
 .item-table .table th:first-child,
 .item-table .table td:first-child {
   width: 28%;
+  padding-left: var(--space-4);
 }
 
 /* The table sits in a box inside the card's own padding (the inset of the intro text above it): a border, rounded corners, a grey header
@@ -29,11 +30,6 @@
 
 .item-table .table tbody tr:last-child td {
   border-bottom: 0;
-}
-
-.item-table .table th:first-child,
-.item-table .table td:first-child {
-  padding-left: var(--space-4);
 }
 
 .item-table .table th:last-child,
