@@ -595,6 +595,16 @@ describe("RegistrationLegalTab: what a row does", () => {
     expect(screen.queryByText(/Public page/)).toBeNull();
   });
 
+  it("says what Delete does to each kind: the privacy notice goes back to Not written, a consent is removed", async () => {
+    await loaded([privacy, terms, news]);
+
+    openMenu("Privacy notice");
+    expect(item("Delete").textContent).toContain("Back to Not written");
+    fireEvent.keyDown(document, { key: "Escape" });
+    openMenu("News");
+    expect(item("Delete").textContent).toContain("Removes the text and its page");
+  });
+
   it("publishes from the menu, with the item busy, and reads the list again", async () => {
     const answerNow = deferred<LegalDocumentDto>();
     publishLegalDocument.mockReturnValue(answerNow.promise);
