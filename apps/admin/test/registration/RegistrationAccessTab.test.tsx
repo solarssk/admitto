@@ -237,32 +237,34 @@ describe("RegistrationAccessTab: the consents", () => {
     expect(box.checked).toBe(true);
   });
 
-  it("is off with nothing to choose yet when no extra consent is published, says how to get one, and has the way to the Legal tab in the same row", async () => {
+  it("is the button Open Legal at the right of its row, with a line that says why, when no extra consent is published", async () => {
     api.fetchLegalDocuments.mockResolvedValue(legalAnswer(texts()));
     await renderLoaded();
 
-    const select = screen.getByRole("button", { name: "Extra consents, none selected" });
-    expect(isOff(select)).toBe(true);
-    expect(select.textContent).toContain("Nothing to choose yet");
-    const hint = screen.getByText("Write a consent on the Legal tab, then choose it here.");
-    expect(select.getAttribute("aria-describedby")).toContain(hint.id);
-    expect(screen.queryByText("No extra consent is published for this event.")).toBeNull();
-    const link = screen.getByRole("link", { name: "Open Legal" });
+    const row = within(card("Form")).getByText("Extra consents").closest(".settings-row") as HTMLElement;
+    expect(within(row).getByText("You have no consent to choose from yet. Write one on the Legal tab.")).toBeTruthy();
+    const link = within(row).getByRole("link", { name: "Open Legal: Extra consents" });
     expect(link.getAttribute("href")).toBe("/admin/events/evt-1/registration?tab=legal");
-    // The button is beside the select, in the same half-width row.
-    expect(link.closest(".mail-test-send__controls")).toBe(select.closest(".mail-test-send__controls"));
+    // The same markup as the row "Your own questions": the button is the last thing in the row, in its controls.
+    expect(link.closest(".settings-row__controls")).toBe(row.lastElementChild);
+    expect(link.className).toBe("at-btn at-btn--secondary at-btn--sm");
+    expect(link.textContent).toBe("Open Legal");
+    // No field, no placeholder and no hint under a field.
+    expect(screen.queryByRole("button", { name: /^Extra consents/ })).toBeNull();
+    expect(screen.queryByText("Nothing to choose yet")).toBeNull();
+    expect(row.querySelector(".at-hint")).toBeNull();
   });
 
-  it("explains what a consent does, and that the notice and the terms are always on the form", async () => {
+  it("is the choice of consents at the right of its row, described by the line of the row, when there is something to choose", async () => {
     await renderLoaded();
 
-    const select = screen.getByRole("button", { name: /^Extra consents/ });
-    const hint = screen.getByText("Optional checkboxes on the form, for example a marketing consent. The privacy notice and the terms are always shown.");
-    expect(select.getAttribute("aria-describedby")).toContain(hint.id);
-    expect(screen.queryByText(/Write a consent on the Legal tab/)).toBeNull();
-    // Something to choose: no button beside the select, and it takes half a row.
-    expect(screen.queryByRole("link", { name: "Open Legal" })).toBeNull();
-    expect(select.closest(".mail-test-send__controls")).not.toBeNull();
+    const row = within(card("Form")).getByText("Extra consents", { selector: "strong" }).closest(".settings-row") as HTMLElement;
+    const description = within(row).getByText("Optional checkboxes on the form, for example a marketing consent. The privacy notice and the terms are always shown.");
+    const select = within(row).getByRole("button", { name: /^Extra consents/ });
+    expect(select.getAttribute("aria-describedby")).toBe(description.id);
+    expect(select.closest(".settings-row__controls")).toBe(row.lastElementChild);
+    expect(within(row).queryByRole("link", { name: /Open Legal/ })).toBeNull();
+    expect(within(row).queryByText("Extra consents", { selector: "label" })).toBeNull();
   });
 });
 

@@ -96,46 +96,48 @@ function GoToRow({ title, text, label, to }: Readonly<{ title: string; text: str
   );
 }
 
-const CONSENTS_HINT = "Optional checkboxes on the form, for example a marketing consent. The privacy notice and the terms are always shown.";
-const CONSENTS_NONE_HINT = "Write a consent on the Legal tab, then choose it here.";
+const CONSENTS_TITLE = "Extra consents";
+const CONSENTS_TEXT = "Optional checkboxes on the form, for example a marketing consent. The privacy notice and the terms are always shown.";
+const CONSENTS_NONE_TEXT = "You have no consent to choose from yet. Write one on the Legal tab.";
 
 /**
- * The extra consents a guest must accept, chosen from the texts the event has published (the Legal tab writes them). One that is chosen and
- * not published stays in the list, marked, so that it can be taken off. The field is half a row, as a short control is. While there is
- * nothing to choose it is off, says how to get something to choose, and has the way to the Legal tab beside it (the row of Send test email).
+ * The extra consents a guest must accept, as a settings row like the ones above it: the title and one line at the left, the control at
+ * the right. The control is the choice from the texts the event has published (the Legal tab writes them; one that is chosen and not
+ * published stays in the list, marked, so that it can be taken off). With nothing to choose from it is the button to the Legal tab.
  */
-function ConsentsField({ eventId, draft, legalItems, disabled, onChange }: Readonly<{ eventId: string; draft: AccessDraft; legalItems: readonly LegalDocumentDto[]; disabled: boolean; onChange: (change: FormChange) => void }>) {
+function ConsentsRow({ eventId, draft, legalItems, disabled, onChange }: Readonly<{ eventId: string; draft: AccessDraft; legalItems: readonly LegalDocumentDto[]; disabled: boolean; onChange: (change: FormChange) => void }>) {
   const options = consentOptions(legalItems, draft.consent_keys);
+  const textId = useId();
   const none = options.length === 0;
-  const hintId = useId();
   return (
-    <div className="access-consents-row">
-      <div className="mail-test-send__row">
-        <div className="mail-test-send__controls">
-          <MultiSelect
-            id="access-consents"
-            label="Extra consents"
-            placeholder={none ? "Nothing to choose yet" : "None"}
-            searchPlaceholder="Search consents"
-            emptyLabel="No consents found"
-            value={draft.consent_keys}
-            options={options}
-            disabled={disabled || none}
-            describedBy={hintId}
-            onChange={(ids) => onChange({ consent_keys: ids })}
-          />
-          {none && (
-            <div className="mail-test-send__send-control">
-              <Link className="at-btn at-btn--secondary at-btn--sm" to={registrationTabPath(eventId, "legal")}>
-                Open Legal
-              </Link>
-            </div>
-          )}
-        </div>
+    <div className="settings-row settings-row--switch">
+      <div className="settings-row__text">
+        <strong>{CONSENTS_TITLE}</strong>
+        <p id={textId}>{none ? CONSENTS_NONE_TEXT : CONSENTS_TEXT}</p>
       </div>
-      <span id={hintId} className="at-hint">
-        {none ? CONSENTS_NONE_HINT : CONSENTS_HINT}
-      </span>
+      <div className="settings-row__controls">
+        {none ? (
+          <Link className="at-btn at-btn--secondary at-btn--sm" to={registrationTabPath(eventId, "legal")} aria-label={`Open Legal: ${CONSENTS_TITLE}`}>
+            Open Legal
+          </Link>
+        ) : (
+          <div className="access-consents-select">
+            <MultiSelect
+              id="access-consents"
+              label={CONSENTS_TITLE}
+              showLabel={false}
+              placeholder="None"
+              searchPlaceholder="Search consents"
+              emptyLabel="No consents found"
+              value={draft.consent_keys}
+              options={options}
+              disabled={disabled}
+              describedBy={textId}
+              onChange={(ids) => onChange({ consent_keys: ids })}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -158,7 +160,7 @@ export function AccessFormCard({ eventId, draft, legalItems, disabled, onChange 
           </Group>
           <Group label="Look">{row("styled_form_controls")}</Group>
           <Group label="Consents">
-            <ConsentsField eventId={eventId} draft={draft} legalItems={legalItems} disabled={disabled} onChange={onChange} />
+            <ConsentsRow eventId={eventId} draft={draft} legalItems={legalItems} disabled={disabled} onChange={onChange} />
           </Group>
         </div>
       </div>
