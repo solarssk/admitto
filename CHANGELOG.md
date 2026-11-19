@@ -69,6 +69,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a Registration tab to Event settings for superadmins, with the Company SSO restriction and the Address for guests, moved from the Registration page ([#1928](https://github.com/solarssk/admitto/pull/1928))
 
 ### Changed
+- Redesign the Legal tab: two cards with plain tables, an Asked switch for each extra consent, Publish and Delete in a row menu, and Back in the editor footer ([#1957](https://github.com/solarssk/admitto/pull/1957))
 - Remove the "Styled form boxes" switch: every guest form now has its own phone, date and time boxes, and the time list offers quarter hours while any typed time still works ([#1954](https://github.com/solarssk/admitto/pull/1954))
 - Keep the date and time of a guest form question on one row on a phone, make the date and time pickers smaller and fade them in ([#1956](https://github.com/solarssk/admitto/pull/1956))
 - Use one name, "access method" (Link, Password, Company SSO), instead of "how guests open the form" and "way in" in the screens, the Wiki and the security documents ([#1942](https://github.com/solarssk/admitto/pull/1942))

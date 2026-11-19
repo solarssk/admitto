@@ -1,14 +1,14 @@
-/* Registration > Legal: the list of an event's texts, the card around the editor, and the copy dialog. */
+/* Registration > Legal: the two cards of an event's texts, the card around the editor, and the copy dialog. The table is the shared one (item-table.css). */
 
-.legal-card-actions {
+/* The two cards are one under the other, with the gap cards have on the other tabs. */
+.legal-cards {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
-/* The title and two buttons do not fit one line on a phone, and the header has a fixed height: it grows, with the title first
-   and the buttons under it, instead of the buttons hanging out of the card. */
+/* The title and a button do not fit one line on a phone, and the header has a fixed height: it grows, with the title first and the
+   button under it, instead of the button hanging out of the card. */
 @media (max-width: 640px) {
   .legal-texts-card .at-card__header {
     flex-wrap: wrap;
@@ -19,21 +19,6 @@
   .legal-texts-card .at-card__actions {
     flex: 1 1 100%;
   }
-
-  .legal-card-actions {
-    justify-content: flex-start;
-  }
-}
-
-/* The two buttons are each a line of their own at this width, so they are as wide as the card instead of two different widths. */
-@media (max-width: 480px) {
-  .legal-card-actions > * {
-    flex: 1 1 100%;
-  }
-
-  .legal-card-actions .at-btn {
-    width: 100%;
-  }
 }
 
 .legal-card-body {
@@ -42,91 +27,79 @@
   gap: var(--space-3);
 }
 
-.legal-list {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+/* A table in a card with an intro above it: no space of its own under it. */
+.legal-table.requirements-section {
+  margin-bottom: 0;
 }
 
-.legal-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-1);
-  border-bottom: 1px solid var(--border);
+/* The table of Event items and Fields, with the widths of this one: the text takes what the columns after it leave. */
+.item-table.legal-table .table th:first-child,
+.item-table.legal-table .table td:first-child {
+  width: auto;
 }
 
-.legal-row:last-child {
-  border-bottom: 0;
+.legal-table .legal-status-col {
+  width: 8rem;
+  white-space: nowrap;
 }
 
-.legal-row__icon {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-h);
-  height: var(--control-h);
-  border-radius: var(--radius);
-  background: var(--surface-sunken);
-  color: var(--text-secondary);
-  font-size: 1.125rem;
+.legal-table .legal-asked-col {
+  width: 6.5rem;
+  white-space: nowrap;
 }
 
-/* The text takes what the badge and the button leave; its words wrap, never cut. */
-.legal-row__text {
-  display: flex;
-  flex: 1 1 14rem;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+.legal-table .legal-actions-col {
+  width: 7.5rem;
 }
 
-.legal-row__title {
-  font-weight: var(--fw-semibold);
-  color: var(--text-primary);
+.legal-table .legal-item-name {
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 
-.legal-row__meta {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+.legal-table .legal-item-desc {
+  display: block;
+  overflow: visible;
   overflow-wrap: anywhere;
 }
 
-.legal-row__link,
-.legal-editor__public-link {
-  align-self: flex-start;
-  font-size: var(--fs-xs);
-  color: var(--text-link);
+.legal-table .requirements-item-actions__wrap {
+  flex-wrap: nowrap;
 }
 
-.legal-editor__public-link {
-  font-size: var(--fs-sm);
+.legal-empty {
+  padding-block: var(--space-4);
 }
 
-.legal-row__side {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-3);
+/* Open is in the menu too, but only where the button has gone. */
+.more-actions-menu__item-wrapper.legal-menu-narrow-only {
+  display: none;
 }
 
-/* Under 560px the row is a block: the icon and the words on one line, the badge and the button under them. */
-@media (max-width: 560px) {
-  .legal-row {
-    flex-wrap: wrap;
+/* The admin shell has a fixed sidebar from 768px, so a screen under 1024px has a narrow content: the switch is a column of its own, the
+   button moves into the menu (which has an item for it), and the switch and the menu stay. The same screen-width ladder as the shared table. */
+@media (max-width: 1023px) {
+  .legal-table .legal-asked-col {
+    width: 5rem;
   }
 
-  .legal-row__text {
-    flex: 1 1 0;
+  .legal-table .legal-actions-col {
+    width: 3rem;
   }
 
-  .legal-row__side {
-    flex: 1 1 100%;
-    justify-content: space-between;
+  .legal-table .legal-open-button {
+    display: none;
+  }
+
+  .more-actions-menu__item-wrapper.legal-menu-narrow-only {
+    display: block;
+  }
+}
+
+/* A phone: the line under the name goes too. */
+@media (max-width: 480px) {
+  .legal-table .legal-item-desc {
+    display: none;
   }
 }
 
@@ -143,8 +116,29 @@
   gap: var(--space-4);
 }
 
+/* The way back, the state, then the buttons; on a phone the state goes under the others. */
+.legal-editor__footer {
+  flex-wrap: wrap;
+}
+
 .legal-editor__footer .settings-footer__status {
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .legal-editor__footer .settings-footer__status {
+    order: 2;
+    flex: 1 1 100%;
+  }
+}
+
+.legal-editor__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 .legal-editor__buttons {

@@ -183,15 +183,18 @@ describe("LegalTextEditor: a text that is loaded", () => {
     expect(screen.queryByText("Unsaved changes")).toBeNull();
     expect(isOff(button("Save"))).toBe(true);
     expect(isOff(button("Publish"))).toBe(false);
-    expect(screen.queryByRole("link", { name: /public page/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /View as a guest/ })).toBeNull();
   });
 
-  it("links to the public page of a published text, in a new tab, and says what saving does to it", async () => {
+  it("has a View as a guest button in the card header, beside the state, for a published text: a new tab, and says what saving does to it", async () => {
     fetchLegalDocument.mockResolvedValue(stored({ published: true, published_at: "2026-10-20T10:00:00.000Z" }));
     renderEditor();
     await textbox();
 
-    const link = screen.getByRole("link", { name: /View the public page/ });
+    const link = screen.getByRole("link", { name: /View as a guest/ });
+    expect(link.closest(".at-card__header")).toBeTruthy();
+    expect(link.className).toContain("at-btn--secondary");
+    expect(link.className).toContain("at-btn--sm");
     expect(link.getAttribute("href")).toBe("/legal/demo/privacy-notice");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
@@ -212,11 +215,23 @@ describe("LegalTextEditor: a text that is loaded", () => {
     expect(screen.getByText("Extra consent")).toBeTruthy();
   });
 
+  it("puts Back in the footer, first at the left and before the buttons it sits with, and has none above the card (#1886)", async () => {
+    renderEditor();
+    await textbox();
+
+    const footer = button("Back").closest(".settings-footer") as HTMLElement;
+    expect(footer.firstElementChild).toBe(button("Back"));
+    expect(within(footer).getByRole("button", { name: "Delete" })).toBeTruthy();
+    expect(within(footer).getByRole("button", { name: "Save" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /^Back/ })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Back to legal texts" })).toBeNull();
+  });
+
   it("is not changed by being loaded, and Back leaves at once", async () => {
     renderEditor();
     await textbox();
 
-    fireEvent.click(button("Back to legal texts"));
+    fireEvent.click(button("Back"));
 
     expect(onBack).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -417,11 +432,26 @@ describe("LegalTextEditor: a text that has not been written", () => {
     expect(fetchLegalDocument).not.toHaveBeenCalled();
     expect((screen.getByRole("textbox", { name: "Title" }) as HTMLInputElement).value).toBe("Event terms");
     expect(screen.getByText("Not saved")).toBeTruthy();
+    // It says once that nothing is saved yet: under the editor, with what to do next. The footer and the editor have no second sentence.
     expect(screen.getByText("Not saved yet. Save it first, then publish it for guests to read.")).toBeTruthy();
-    expect(screen.getByText("Write some text before saving.")).toBeTruthy();
+    expect(screen.queryByText("Write some text before saving.")).toBeNull();
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
     expect(isOff(button("Save"))).toBe(true);
     expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("keeps the short hint when a saved text has its words cleared and Save is off, and has none for a text that is new", async () => {
+    renderEditor();
+    const editor = await tiptap();
+    expect(screen.queryByText("Write some text before saving.")).toBeNull();
+
+    act(() => {
+      editor.commands.clearContent(true);
+    });
+
+    expect(await screen.findByText("Write some text before saving.")).toBeTruthy();
+    expect(isOff(button("Save"))).toBe(true);
   });
 
   it("is saved with its ref, and then has a state, a public page to publish and a way to delete it", async () => {
@@ -431,7 +461,8 @@ describe("LegalTextEditor: a text that has not been written", () => {
     renderEditor({ target: EVENT_TERMS_TARGET, exists: false });
     await textbox();
     await write("Bring your ticket.");
-    expect(screen.queryByText("Write some text before saving.")).toBeNull();
+    // Typed, and still not saved: the footer does not say it again.
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
 
     fireEvent.click(button("Save"));
 
@@ -504,7 +535,7 @@ describe("LegalTextEditor: publishing", () => {
     expect(addToast).toHaveBeenCalledWith("Text published.", "success");
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(button("Unpublish")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /View the public page/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /View as a guest/ })).toBeTruthy();
     // What was written is still there after the answer that carries no HTML.
     expect(within(await textbox()).getByText("We keep your data.")).toBeTruthy();
   });
@@ -623,7 +654,7 @@ describe("LegalTextEditor: leaving with unsaved changes", () => {
     await textbox();
     await write("Words.");
 
-    fireEvent.click(button("Back to legal texts"));
+    fireEvent.click(button("Back"));
 
     expect(screen.getByRole("dialog", { name: "Discard unsaved changes?" })).toBeTruthy();
     expect(onBack).not.toHaveBeenCalled();
@@ -636,7 +667,7 @@ describe("LegalTextEditor: leaving with unsaved changes", () => {
     renderEditor();
     await textbox();
     await write("Words.");
-    fireEvent.click(button("Back to legal texts"));
+    fireEvent.click(button("Back"));
 
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
 
@@ -663,8 +694,8 @@ describe("LegalTextEditor: leaving with unsaved changes", () => {
     fireEvent.click(button("Save"));
     await waitFor(() => expect(saveLegalDocument).toHaveBeenCalledTimes(1));
 
-    expect(isOff(button("Back to legal texts"))).toBe(true);
-    fireEvent.click(button("Back to legal texts"));
+    expect(isOff(button("Back"))).toBe(true);
+    fireEvent.click(button("Back"));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(onBack).not.toHaveBeenCalled();
 
@@ -672,8 +703,8 @@ describe("LegalTextEditor: leaving with unsaved changes", () => {
     await act(async () => {
       save.finish();
     });
-    await waitFor(() => expect(isOff(button("Back to legal texts"))).toBe(false));
-    fireEvent.click(button("Back to legal texts"));
+    await waitFor(() => expect(isOff(button("Back"))).toBe(false));
+    fireEvent.click(button("Back"));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(onBack).toHaveBeenCalledTimes(1);
   });
@@ -772,8 +803,8 @@ describe("LegalTextEditor: an archived event", () => {
     expect(screen.queryByRole("group", { name: "Text formatting" })).toBeNull();
     expect((screen.getByRole("textbox", { name: "Title" }) as HTMLInputElement).disabled).toBe(true);
     for (const name of ["Save", "Publish", "Unpublish", "Delete"]) expect(screen.queryByRole("button", { name })).toBeNull();
-    // Reading goes on: the way back, and the public page.
-    expect(button("Back to legal texts")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /View the public page/ })).toBeTruthy();
+    // Reading goes on: the way back (the only thing in the footer), and the page guests read.
+    expect(button("Back").closest(".settings-footer")?.querySelectorAll("button")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: /View as a guest/ })).toBeTruthy();
   });
 });

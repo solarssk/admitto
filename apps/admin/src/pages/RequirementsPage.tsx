@@ -27,6 +27,7 @@ import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
 import { RequirementsSkeleton } from "../requirements/RequirementsSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
 import { guestQuestions } from "../utils/questionRecipient.js";
+import "../components/item-table.css";
 import "../requirements/requirements.css";
 
 const EVENT_ITEMS_HINT =
@@ -373,9 +374,8 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
       // What replaces the placeholder fades in.
       <div className="at-fade-in">
         <RefetchRegion refreshing={list.refreshing} label="Refreshing event items">
-          <section className="requirements-section">
+          <section className="requirements-section item-table">
             <Card
-              padded={false}
               title={<HintLabel hint={EVENT_ITEMS_HINT}>Event items</HintLabel>}
               actions={
                 <ArchivedGuard event={event} reasonId="add-item-reason">

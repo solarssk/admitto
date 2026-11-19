@@ -15,6 +15,7 @@ import { conditionLine, deleteBlockedMessage } from "./fieldDependencies.js";
 import { guestFormIconGlyph, guestFormIconLabel } from "./guestFormIcons.js";
 import { moveKey, useFieldFormControls, type FieldsChange, type MoveDirection } from "./useFieldFormControls.js";
 import "../attendees/attendees.css";
+import "../components/item-table.css";
 import "./requirements.css";
 
 const CARD_TEXT = {
@@ -248,7 +249,6 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpd
   }, [suggestFocusBack]);
 
   const deleteBlocked = deleteTarget ? deleteBlockedMessage(deleteTarget, fields) : "";
-  const showTable = fields.length > 0;
 
   function closeModal() {
     setAddOpen(false);
@@ -338,10 +338,8 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpd
   }
 
   return (
-    <section ref={sectionRef} className="requirements-section requirements-section--registration">
+    <section ref={sectionRef} className="requirements-section item-table requirements-section--registration">
       <Card
-        /* Table bleeds edge-to-edge; the empty state keeps the normal card padding (Import history). */
-        padded={!showTable}
         title={<HintLabel hint={CARD_TEXT.hint}>{CARD_TEXT.title}</HintLabel>}
         actions={
           <>

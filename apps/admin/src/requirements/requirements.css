@@ -2,34 +2,6 @@
   margin-bottom: var(--space-5);
 }
 
-/* These two tables are short on columns and short on content per cell —
-   opt out of the wide-table min-width meant for the (much denser) attendees
-   table, so they can shrink to fit tablet/mobile widths instead of forcing
-   horizontal scroll. */
-.requirements-section .attendees-table-wrap .table {
-  min-width: 0;
-  table-layout: fixed;
-}
-
-/* Shared first-column width so Item / Field line up with Description the same way
-   in both Requirements tables (auto layout made Event items look more spaced). */
-.requirements-section .table th:first-child,
-.requirements-section .table td:first-child {
-  width: 28%;
-}
-
-/* Match Event items / Custom fields row height. Items include a Switch (+ label) in
-   the actions cell; fields only have text + icon buttons - without a shared floor the
-   item rows look taller even with the same cell padding. */
-.requirements-section .table tbody td {
-  padding-block: var(--space-3);
-  vertical-align: middle;
-}
-
-.requirements-section .table tbody tr {
-  height: 3.75rem;
-}
-
 @media (max-width: 640px) {
   /* Narrow screens: keep Description, drop Active / Required (edit via row actions). */
   .requirements-item-status-col {
@@ -183,7 +155,7 @@
   text-align: right;
 }
 
-.requirements-section .table th.requirements-item-actions {
+.item-table .table th.requirements-item-actions {
   text-align: right;
 }
 

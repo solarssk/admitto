@@ -1,0 +1,93 @@
+/* The table of a card that lists items: Event items, the Fields tab and the Legal tab. Add `item-table` to the section that holds the card,
+   and put the rows in `<div class="attendees-table-wrap"><table class="table">`. The cells use the `requirements-item-*` classes
+   (requirements.css). A page that needs other widths sets them on its own columns, never on `.table`. */
+
+/* These tables are short on columns and short on content per cell: opt out of the wide-table min-width meant for the (much denser)
+   attendees table, so they can shrink to fit tablet/mobile widths instead of forcing horizontal scroll. */
+.item-table .attendees-table-wrap .table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+/* Shared first-column width so the name lines up with the next column the same way in every one of them. */
+.item-table .table th:first-child,
+.item-table .table td:first-child {
+  width: 28%;
+  padding-left: var(--space-4);
+}
+
+/* The table sits in a box inside the card's own padding (the inset of the intro text above it): a border, rounded corners, a grey header
+   row, hairlines between the rows and none under the last. A card that lists items is a padded Card, never `padded={false}`. */
+.item-table .attendees-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.item-table .table thead th {
+  background: var(--surface-sunken);
+}
+
+.item-table .table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.item-table .table th:last-child,
+.item-table .table td:last-child {
+  padding-right: var(--space-3);
+}
+
+/* One row height for all of them. Rows with a Switch in them would otherwise look taller than rows of text and icon buttons. */
+.item-table .table tbody td {
+  padding-block: var(--space-3);
+  vertical-align: middle;
+}
+
+.item-table .table tbody tr {
+  height: 3.75rem;
+}
+
+/* A column that only a wide screen has (the Status). Under 1024px (the shell has a fixed sidebar from 768px, so the content is narrow long before the screen is) it takes no width and shows nothing (not `display: none`, which
+   a fixed layout and the kebab menu's fixed panel do not forgive), and the row says the same in `.item-table__narrow-only`,
+   under the name. Media queries, not container queries: a container holds the fixed panel of a menu inside its own box. */
+.item-table__narrow-only {
+  display: none;
+  margin-top: var(--space-1);
+}
+
+@media (max-width: 1023px) {
+  .item-table .table th.item-table__wide-only,
+  .item-table .table td.item-table__wide-only {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+  }
+
+  .item-table .table th.item-table__wide-only {
+    font-size: 0;
+  }
+
+  .item-table .table th.item-table__wide-only > *,
+  .item-table .table td.item-table__wide-only > * {
+    display: none;
+  }
+
+  .item-table__narrow-only {
+    display: block;
+  }
+}
+
+/* A table of Event items or Fields has a description column too: it goes before the name is squeezed (the name keeps what is left, never
+   less than about 8rem at a 460px content). The Active and Required columns keep their own ladder (requirements.css). */
+@media (max-width: 820px) {
+  .item-table .table th.requirements-item-desc-col,
+  .item-table .table td.requirements-item-desc-col {
+    display: none;
+  }
+
+  .item-table .table th:first-child,
+  .item-table .table td:first-child {
+    width: auto;
+  }
+}

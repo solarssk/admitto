@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Turn guest registration on or off for an event, copy the link you give to guests, and set what the form asks. You turn registration on and off, and copy the link, with the buttons in the header of the event's **Registration** page, which is in the event menu after **Overview**. The same header is on every tab, with a badge next to the title that says **Open**, **Closed** or **Not ready**. What the form asks is on the **Registration** tab of the event's **Event settings**, in four cards, in the order of a guest's way: **Access method**, **Company SSO**, **Form** (the questions, the look of the boxes and the extra consents) and **Handling requests** (**Confirm email addresses**, **Approve requests by hand** and **Waiting list**). **Guests can bring one person** is in the **Form** card, because it adds a part to the form. What registration still needs is on the **Checklist** tab of the **Registration** page.
+Turn guest registration on or off for an event, copy the link you give to guests, and set what the form asks. You turn registration on and off, and copy the link, with the buttons in the header of the event's **Registration** page, which is in the event menu after **Overview**. The same header is on every tab, with a badge next to the title that says **Open**, **Closed** or **Not ready**. What the form asks is on the **Registration** tab of the event's **Event settings**, in four cards, in the order of a guest's way: **Access method**, **Company SSO**, **Form** (the questions and the look of the boxes; the extra consents are chosen on the **Legal** tab) and **Handling requests** (**Confirm email addresses**, **Approve requests by hand** and **Waiting list**). **Guests can bring one person** is in the **Form** card, because it adds a part to the form. What registration still needs is on the **Checklist** tab of the **Registration** page.
 
 Registration is off for every event until you turn it on. Until then, the address of the form answers "not found".
 
@@ -104,7 +104,7 @@ Every form draws its own boxes, in the style of Admitto, for a phone, a date and
 | **Bot protection** | Ask a Superadmin to set up bot protection. A Superadmin is sent to **Organisation settings → External services**. A form with the company SSO does not have this row. If bot protection is **Off** for your organisation, the row is grey, says "Off for this organisation" and does not block anything |
 | **Identity provider** | A Superadmin chooses it in **Event settings → Registration**. If the list is empty, one is set up under **Identity** first. Only a form with the company SSO has this row |
 | **Event password** | A Superadmin sets it in **Event settings → Registration** |
-| **Legal texts** | Publish the privacy notice, the terms and the consents you chose on the **Legal** tab |
+| **Legal texts** | Publish the privacy notice, the terms and the extra consents that you switched on under **Asked** on the **Legal** tab |
 | **Form questions** | A required question cannot be shown on the form. Open the **Fields** tab. When it is done, the row says how many of your questions are on the form |
 | **Required questions** | A required question is not on the form. Switch **On the form** on for it, or make it optional, on the **Fields** tab |
 | **Email sending** | Ask a Superadmin to set up email sending. A Superadmin is sent to **Organisation settings → Mail** |
@@ -155,7 +155,7 @@ When a check fails, the card names the reason:
 |---|---|
 | **Save** | Only the settings you changed are saved. Each save is recorded in the audit log as "Guest registration settings changed", with the names and the new values of what changed, and never a password |
 | Turn registration on (the button in the header or the one on the **Checklist** tab) | The form opens at once. It is refused while a row of the checklist is not done |
-| Change the access method or the consents of an event that is on | Refused while a row is not done, like turning on |
+| Change the access method of an event that is on, or switch **Asked** for a consent on the **Legal** tab | Only while registration is on: refused when a step the server checks is not done. Complete the blocking steps first |
 | Switch **Approve requests by hand** | The new mode applies to new requests. **Save** it in **Event settings → Registration** |
 | Turn registration off | The form answers "not found" at once |
 | Save, change or remove the address for guests | Saved at once, apart from the **Save** button of the page. Found on **Event settings → General**. The check starts again from "not checked yet", and the audit log records "Guest registration own address updated" |
@@ -171,8 +171,8 @@ When you turn registration off, guests can no longer open the form, and confirma
 |---|---|
 | The badge in the header says **Not ready**, and **Turn registration on** in **More actions** is grey | The **Checklist** tab has a row that is not done. The badge says how many. Select **See the Checklist**, put it right, and try again |
 | The page says "This change needs something that is not set up yet" | Nothing was saved. The rows it lists are what is missing. Put them right and select **Save** again |
-| An extra consent is marked "(not published)" | Publish its text on the **Legal** tab, or take the consent off the list |
-| "One of the extra consents you chose is not published" | Someone took a text back while you were editing. Publish it again or take it off the list |
+| An extra consent is not asked on the form | Switch on **Asked** in its row on the **Legal** tab. If the switch is grey and off, the consent is a draft: publish it first, then switch **Asked** on |
+| "One of the extra consents you chose is not published" | Someone took a text back meanwhile. Publish it again on the **Legal** tab, then switch **Asked** on or off as you want |
 | A phone question shows the browser's box | The question asks for digits only, or sets a shortest or longest length. A country code would break that rule. Remove the rule if the question should take a country |
 | A guest sees "This event is not open to your company account." | The sign-in does not hold one of your allowed values. Ask a Superadmin to check the claim and the values in **Event settings**, **Registration** |
 | A guest sees "Your company account did not give us a verified email address" | The identity provider sent no email address, or says the address is not verified. A Superadmin maps the email claim of the provider |

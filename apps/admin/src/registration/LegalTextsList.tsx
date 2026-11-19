@@ -1,74 +1,41 @@
-import { Badge, Button, Card, Notice } from "@admitto/ui";
+import { Button, Card, EmptyState, Notice } from "@admitto/ui";
 import type { LegalDocumentLimitsDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
-import { KIND_LABEL, type LegalTextRow } from "./legalTexts.js";
+import { LegalTextTable, type LegalRowControls } from "./LegalTextTable.js";
+import type { LegalTextRow } from "./legalTexts.js";
 import "./legal-texts.css";
 
-const ROW_ICON = { privacy_notice: "shield-lock", event_terms: "file-text", consent: "checkbox" } as const;
-
-/** The line under a title: what kind of text it is, and what the event does with it. */
-function rowMeta(row: LegalTextRow): string {
-  const { target, document } = row;
-  if (target.kind === "consent") {
-    return [KIND_LABEL.consent, `key ${target.key ?? ""}`, document?.required ? "asked on the form" : null].filter(Boolean).join(", ");
-  }
-  return `${KIND_LABEL[target.kind]}, needed before registration can be turned on`;
-}
-
-function TextStatus({ row }: Readonly<{ row: LegalTextRow }>) {
-  if (row.document === null) return <Badge variant="neutral">Not written</Badge>;
-  return <Badge variant={row.document.published ? "ok" : "warn"}>{row.document.published ? "Published" : "Draft"}</Badge>;
-}
-
-function TextRow({ row, onOpen }: Readonly<{ row: LegalTextRow; onOpen: (row: LegalTextRow) => void }>) {
-  const { target, document } = row;
-  const title = document?.title ?? KIND_LABEL[target.kind];
-  return (
-    <li className="legal-row">
-      <span className="legal-row__icon" aria-hidden="true">
-        <i className={`ti ti-${ROW_ICON[target.kind]}`} />
-      </span>
-      <div className="legal-row__text">
-        <div className="legal-row__title">{title}</div>
-        <div className="legal-row__meta">{rowMeta(row)}</div>
-        {document?.published && (
-          <a className="legal-row__link" href={document.public_path} target="_blank" rel="noopener noreferrer">
-            Public page <i className="ti ti-external-link" aria-hidden="true" />
-            <span className="sr-only"> of {title} (opens in a new tab)</span>
-          </a>
-        )}
-      </div>
-      <div className="legal-row__side">
-        <TextStatus row={row} />
-        <Button size="sm" variant="secondary" aria-label={`${document ? "Edit" : "Write"} ${title}`} onClick={() => onOpen(row)}>
-          {document ? "Edit" : "Write"}
-        </Button>
-      </div>
-    </li>
-  );
-}
-
 export interface LegalTextsListProps {
-  event: { archived_at?: string | Date | null };
+  controls: LegalRowControls;
   rows: readonly LegalTextRow[];
   /** What registration still needs published, by the names the list shows. */
   missingNames: readonly string[];
   limits: LegalDocumentLimitsDto;
-  onOpen: (row: LegalTextRow) => void;
   onAddConsent: () => void;
   onCopy: () => void;
 }
 
-/** The texts of the event: the privacy notice and the terms first (written or not), then the extra consents. */
-export function LegalTextsList({ event, rows, missingNames, limits, onOpen, onAddConsent, onCopy }: Readonly<LegalTextsListProps>) {
-  const consents = rows.filter((row) => row.target.kind === "consent").length;
-  const consentLimitReached = consents >= limits.consents;
+/** The texts of the event, in two cards: the privacy notice and the terms (always on the form), and the extra consents (each one switched on or off). */
+export function LegalTextsList({ controls, rows, missingNames, limits, onAddConsent, onCopy }: Readonly<LegalTextsListProps>) {
+  const { event } = controls;
+  const required = rows.filter((row) => row.target.kind !== "consent");
+  const consents = rows.filter((row) => row.target.kind === "consent");
+  const consentLimitReached = consents.length >= limits.consents;
+  const addButton = (reasonId: string) => (
+    <ArchivedGuard event={event} reasonId={reasonId} disabled={consentLimitReached} tooltip={`This event has reached its limit of ${limits.consents} extra consents.`}>
+      {(guard) => (
+        <Button variant="secondary" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={onAddConsent} {...guard}>
+          Add consent
+        </Button>
+      )}
+    </ArchivedGuard>
+  );
   return (
-    <Card
-      title="Legal texts"
-      className="legal-texts-card"
-      actions={
-        <div className="legal-card-actions">
+    <div className="legal-cards">
+      <Card
+        title="Required texts"
+        className="legal-texts-card"
+        actions={
           <ArchivedGuard event={event} reasonId="legal-copy-reason">
             {(guard) => (
               <Button variant="secondary" size="sm" icon={<i className="ti ti-copy" aria-hidden="true" />} onClick={onCopy} {...guard}>
@@ -76,35 +43,32 @@ export function LegalTextsList({ event, rows, missingNames, limits, onOpen, onAd
               </Button>
             )}
           </ArchivedGuard>
-          <ArchivedGuard
-            event={event}
-            reasonId="legal-add-consent-reason"
-            disabled={consentLimitReached}
-            tooltip={`This event has reached its limit of ${limits.consents} extra consents.`}
-          >
-            {(guard) => (
-              <Button variant="secondary" size="sm" icon={<i className="ti ti-plus" aria-hidden="true" />} onClick={onAddConsent} {...guard}>
-                Add consent
-              </Button>
-            )}
-          </ArchivedGuard>
+        }
+      >
+        <div className="legal-card-body">
+          <p className="settings-card-intro">Always on the form. Both must be published before registration can be turned on.</p>
+          {missingNames.length > 0 && (
+            <Notice variant="info">Registration cannot be turned on until these are published: {missingNames.join(", ")}.</Notice>
+          )}
+          <LegalTextTable rows={required} showAsked={false} controls={controls} />
         </div>
-      }
-    >
-      <div className="legal-card-body">
-        <p className="settings-card-intro">
-          What guests read before they register: the privacy notice, the event terms and any extra consents they tick. Guests can read a
-          text only once it is published.
-        </p>
-        {missingNames.length > 0 && (
-          <Notice variant="info">Registration cannot be turned on until these are published: {missingNames.join(", ")}.</Notice>
-        )}
-        <ul className="legal-list">
-          {rows.map((row) => (
-            <TextRow key={row.target.ref} row={row} onOpen={onOpen} />
-          ))}
-        </ul>
-      </div>
-    </Card>
+      </Card>
+      <Card title="Extra consents" className="legal-texts-card" actions={addButton("legal-add-consent-reason")}>
+        <div className="legal-card-body">
+          <p className="settings-card-intro">Optional checkboxes the form asks guests to tick.</p>
+          {consents.length === 0 ? (
+            <EmptyState
+              className="legal-empty"
+              icon={<i className="ti ti-checkbox" aria-hidden="true" />}
+              title="No extra consents yet"
+              description="Add one when guests must agree to something beyond the privacy notice and terms, such as photos or a newsletter."
+              action={addButton("legal-add-consent-empty-reason")}
+            />
+          ) : (
+            <LegalTextTable rows={consents} showAsked controls={controls} />
+          )}
+        </div>
+      </Card>
+    </div>
   );
 }

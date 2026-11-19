@@ -515,3 +515,63 @@ describe("useDropdownMenu keeps focus in an open panel", () => {
     expect(document.activeElement).toBe(document.body);
   });
 });
+
+describe("useDropdownMenu: items that CSS hides on this screen", () => {
+  function MenuWithHiddenFirst() {
+    const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({ align: "end" });
+    return (
+      <div ref={rootRef}>
+        <button ref={triggerRef} onClick={() => setOpen((o) => !o)}>
+          Trigger
+        </button>
+        {open && (
+          <div ref={panelRef} role="menu" style={panelStyle}>
+            <div style={{ display: "none" }}>
+              <button role="menuitem">Hidden</button>
+            </div>
+            <button role="menuitem">First shown</button>
+            <button role="menuitem">Second shown</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  it("gives the first focus, and the arrow keys, to the items that are shown, never to a hidden one", () => {
+    render(<MenuWithHiddenFirst />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const first = screen.getByRole("menuitem", { name: "First shown" });
+    const second = screen.getByRole("menuitem", { name: "Second shown" });
+
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(second);
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(second);
+  });
+});
+
+describe("useDropdownMenu: a panel that was never attached", () => {
+  function MenuWithoutPanelRef() {
+    const { open, setOpen, rootRef, triggerRef } = useDropdownMenu<HTMLButtonElement>();
+    return (
+      <div ref={rootRef}>
+        <button ref={triggerRef} onClick={() => setOpen((o) => !o)}>
+          Trigger
+        </button>
+        {open && <div role="menu">No ref</div>}
+      </div>
+    );
+  }
+
+  it("has no item to focus, and the arrow keys do nothing, instead of failing", () => {
+    render(<MenuWithoutPanelRef />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+
+    expect(() => fireEvent.keyDown(document, { key: "ArrowDown" })).not.toThrow();
+    expect(document.activeElement).toBe(document.body);
+  });
+});

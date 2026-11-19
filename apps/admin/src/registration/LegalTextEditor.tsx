@@ -20,7 +20,7 @@ import { useCardLoad } from "../hooks/useCardLoad.js";
 import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useListLoad } from "../hooks/useListLoad.js";
 import { DiscardUnsavedChangesDialogs } from "../identity/DiscardUnsavedChangesDialogs.js";
-import { orLoginRedirect, redirectToLogin } from "../identity/loginRedirect.js";
+import { orLoginRedirect } from "../identity/loginRedirect.js";
 import { SettingsPanelSkeleton } from "../settings/SettingsPanelSkeleton.js";
 import { assertPresent } from "../utils/assert-present.js";
 import { SLOW_NOTICE_MS } from "../utils/loading-timing.js";
@@ -35,23 +35,13 @@ import {
   type LegalTextTarget,
 } from "./legalTexts.js";
 import type { LegalEditorMode } from "./LegalHtmlEditor.js";
+import { handedToSignIn } from "./useLegalTextActions.js";
 import "./legal-texts.css";
 
 // The editor library is the heaviest part of this page, so it is read only when a text is opened, never with the list.
 const LegalHtmlEditor = lazy(() => import("./LegalHtmlEditor.js").then((module) => ({ default: module.LegalHtmlEditor })));
 
 /** The editor's own placeholder while its code is on its way: a box of its size, held invisibly for the first 200ms. */
-/**
- * A session that ended hands the browser to sign-in, as the write calls of the identity editors do, instead of an
- * error whose retry meets the same 401. True when it did, and the action has nothing more to say. Unsaved words are
- * guarded by the browser's own prompt when the page is left.
- */
-function handedToSignIn(err: unknown): boolean {
-  if (!(err instanceof ApiError) || err.status !== 401) return false;
-  redirectToLogin();
-  return true;
-}
-
 function EditorFallback() {
   const gate = useLoadingGate(true);
   const slow = useDelayedLoading(true, SLOW_NOTICE_MS);
@@ -73,6 +63,22 @@ function editorHint(saved: LegalDocumentWithContentDto | null): string {
 function stateBadge(saved: LegalDocumentWithContentDto | null) {
   if (saved === null) return <Badge variant="neutral">Not saved</Badge>;
   return <Badge variant={saved.published ? "ok" : "warn"}>{saved.published ? "Published" : "Draft"}</Badge>;
+}
+
+/** The header of the card: the page guests read (for a published text) and the state of the text. */
+function HeaderActions({ saved }: Readonly<{ saved: LegalDocumentWithContentDto | null }>) {
+  return (
+    <div className="legal-editor__header-actions">
+      {stateBadge(saved)}
+      {saved?.published && (
+        <a className="at-btn at-btn--secondary at-btn--sm" href={saved.public_path} target="_blank" rel="noopener noreferrer">
+          <i className="ti ti-external-link" aria-hidden="true" />{" "}
+          <span>View as a guest</span>
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+      )}
+    </div>
+  );
 }
 
 /** What the server did to the text, and what the editor could not show of it. */
@@ -148,8 +154,19 @@ function FormFields({ kind, savedKey, isNewConsent, keyText, keyProblem, title, 
   );
 }
 
+/** The way back to the list, in the footer. Inert while a request is out: discarding does not stop a save, which would still land after the person was told the changes went. */
+function BackButton({ busy, onBack }: Readonly<{ busy: boolean; onBack: () => void }>) {
+  return (
+    <Button variant="ghost" icon={<i className="ti ti-arrow-left" aria-hidden="true" />} aria-disabled={busy} onClick={onBack}>
+      Back
+    </Button>
+  );
+}
+
 interface FormFooterProps {
   saved: LegalDocumentWithContentDto | null;
+  /** Leaves the editor: the way back to the list. */
+  onBack: () => void;
   dirty: boolean;
   canSave: boolean;
   saving: boolean;
@@ -160,13 +177,15 @@ interface FormFooterProps {
   onDelete: () => void;
 }
 
-/** What can be done with the text: save it, publish or unpublish it once it is saved, delete it. An archived event has none of it. */
-function FormFooter({ saved, dirty, canSave, saving, publishing, deleting, onSave, onTogglePublished, onDelete }: Readonly<FormFooterProps>) {
+/** What can be done with the text: go back, save it, publish or unpublish it once it is saved, delete it. */
+function FormFooter({ saved, onBack, dirty, canSave, saving, publishing, deleting, onSave, onTogglePublished, onDelete }: Readonly<FormFooterProps>) {
   const busy = saving || publishing || deleting;
   return (
     <div className="settings-footer legal-editor__footer">
+      <BackButton busy={busy} onBack={onBack} />
       <div className="settings-footer__status">
-        {dirty && (
+        {/* A text that is not saved says so under the editor, once: only a saved text that was changed says it here. */}
+        {dirty && saved !== null && (
           <span className="settings-footer__save-state">
             <i className="ti ti-alert-triangle" aria-hidden="true" /> Unsaved changes
           </span>
@@ -339,13 +358,7 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
 
   return (
     <div className="legal-editor">
-      <div>
-        {/* Inert while a request is out: discarding does not stop a save, which would still land after the person was told the changes went. */}
-        <Button variant="ghost" icon={<i className="ti ti-arrow-left" aria-hidden="true" />} aria-disabled={busy} onClick={() => (dirty ? setDiscardOpen(true) : onBack())}>
-          Back to legal texts
-        </Button>
-      </div>
-      <Card title={KIND_LABEL[target.kind]} actions={stateBadge(saved)}>
+      <Card title={KIND_LABEL[target.kind]} actions={<HeaderActions saved={saved} />}>
         <div className="legal-editor__body">
           <FormNotices changed={changed} lossy={lossy} />
           <FormFields
@@ -378,24 +391,24 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
             <p id={hintId} className="at-hint">
               {editorHint(saved)}
             </p>
-            {empty && !archived && html !== null && <p className="at-hint">Write some text before saving.</p>}
+            {empty && saved !== null && !archived && html !== null && <p className="at-hint">Write some text before saving.</p>}
             {tooLong && (
               <p className="at-hint at-hint--error" role="alert">
                 This text is too long to save: the limit is {limits.content_chars} characters, formatting included.
               </p>
             )}
-            {saved?.published && (
-              <a className="legal-editor__public-link" href={saved.public_path} target="_blank" rel="noopener noreferrer">
-                View the public page <i className="ti ti-external-link" aria-hidden="true" />
-                <span className="sr-only"> (opens in a new tab)</span>
-              </a>
-            )}
           </div>
         </div>
       </Card>
-      {archived ? null : (
+      {archived ? (
+        // Nothing can be changed, so the way back is all there is.
+        <div className="settings-footer legal-editor__footer">
+          <BackButton busy={false} onBack={onBack} />
+        </div>
+      ) : (
         <FormFooter
           saved={saved}
+          onBack={() => (dirty ? setDiscardOpen(true) : onBack())}
           dirty={dirty}
           canSave={canSave}
           saving={saving}

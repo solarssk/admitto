@@ -39,6 +39,14 @@ export function usePopoverEscape(open: boolean, onEscape: () => void): void {
   }, [open]);
 }
 
+/** An item that CSS hides on this screen (an item of a narrow layout, on a wide one) cannot take the focus: the walk up to the panel finds a `display: none`. */
+function isRendered(item: HTMLElement, panel: HTMLElement | null | undefined): boolean {
+  for (let node: HTMLElement | null = item; node && node !== panel; node = node.parentElement) {
+    if (getComputedStyle(node).display === "none") return false;
+  }
+  return true;
+}
+
 export interface UseDropdownMenuOptions {
   /** Gap between trigger and panel, in px. Default 4. */
   gap?: number;
@@ -134,7 +142,7 @@ export function useDropdownMenu<
     // the trigger button and nothing told keyboard/screen-reader users the panel had opened
     // (CodeRabbit review).
     const panel = panelRef.current;
-    const firstMenuItem = panel?.querySelector<HTMLElement>('[role="menuitem"]');
+    const firstMenuItem = Array.from(panel?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []).find((item) => isRendered(item, panel));
     // preventScroll: the panel is already positioned right next to its trigger, which the user
     // just clicked - it's already on-screen, so the browser's default "scroll into view" on
     // focus has nothing useful to do here and only risks jumping a long, scrolled page.
@@ -149,9 +157,8 @@ export function useDropdownMenu<
       }
       if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
 
-      const items = Array.from(
-        panelRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [],
-      );
+      const panelNow = panelRef.current;
+      const items = Array.from(panelNow?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []).filter((item) => isRendered(item, panelNow));
       if (items.length === 0) return;
       const activeIndex = items.indexOf(document.activeElement as HTMLButtonElement);
 

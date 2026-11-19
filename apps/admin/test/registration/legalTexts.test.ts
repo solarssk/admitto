@@ -10,6 +10,7 @@ import {
   defaultTitle,
   legalFormState,
   legalTextRows,
+  lockReason,
   missingTextName,
   planCopy,
   type LegalFormInput,
@@ -184,5 +185,20 @@ describe("legalFormState", () => {
     expect(state({ html: "" })).toMatchObject({ empty: true, tooLong: false });
     expect(state({ html: "x".repeat(101) })).toMatchObject({ empty: false, tooLong: true });
     expect(state({ html: "x".repeat(100) }).tooLong).toBe(false);
+  });
+});
+
+describe("lockReason", () => {
+  const fixed = { target: { ref: "privacy-notice", kind: "privacy_notice" as const, key: null }, document: legalDoc("privacy-notice") };
+  const consent = (required: boolean) => ({ target: { ref: "consent-a", kind: "consent" as const, key: "a" }, document: legalDoc("consent-a", { required }) });
+
+  it("blocks a required text while registration is on, and waits for an answer while it is not known", () => {
+    expect(lockReason(fixed, true)).toBe("Registration is on. Turn it off first.");
+    expect(lockReason(fixed, null)).toBe("Checking whether registration is on.");
+    expect(lockReason(fixed, false)).toBeNull();
+    expect(lockReason(consent(true), true)).toBe("The form asks for it. Switch off Asked first.");
+    expect(lockReason(consent(true), null)).toBe("Checking whether registration is on.");
+    expect(lockReason(consent(false), null)).toBeNull();
+    expect(lockReason({ ...fixed, document: null }, true)).toBeNull();
   });
 });
