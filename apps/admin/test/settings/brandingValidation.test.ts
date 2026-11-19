@@ -25,6 +25,16 @@ describe("validateBrandingDraft", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("checks registration_primary and registration_font_family_name on their own", () => {
+    expect(validateBrandingDraft({ registration_primary: "#aa2200", registration_font_family_name: "Form Sans" }).valid).toBe(true);
+    const bad = validateBrandingDraft({ registration_primary: "nope", registration_font_family_name: "a</style>" });
+    expect(bad.valid).toBe(false);
+    expect(bad.errors.registration_primary).toBeTruthy();
+    expect(bad.errors.registration_font_family_name).toMatch(/letters, numbers/i);
+    expect(bad.errors.primary).toBeUndefined();
+    expect(bad.errors.ticket_primary).toBeUndefined();
+  });
+
   it("accepts valid hex ticket_primary independently of primary", () => {
     const result = validateBrandingDraft({ primary: "#aabbcc", ticket_primary: "#ea580c" });
     expect(result.valid).toBe(true);
@@ -148,6 +158,13 @@ describe("validateBrandingDraft", () => {
 describe("brandingDraftForSave", () => {
   it("omits an invalid primary but keeps a valid font name on its own", () => {
     expect(brandingDraftForSave({ primary: "bad", font_family_name: "Evil" })).toEqual({ font_family_name: "Evil" });
+  });
+
+  it("keeps the registration colour and font, trimmed, and drops invalid ones", () => {
+    expect(
+      brandingDraftForSave({ registration_primary: " #aa2200 ", registration_font_family_name: "  Form Sans  " }),
+    ).toEqual({ registration_primary: "#aa2200", registration_font_family_name: "Form Sans" });
+    expect(brandingDraftForSave({ registration_primary: "bad", registration_font_family_name: "</>" })).toEqual({});
   });
 
   it("keeps a valid ticket_primary alongside a valid primary", () => {

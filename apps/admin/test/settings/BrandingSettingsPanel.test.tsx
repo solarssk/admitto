@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrandingSettingsPanel } from "../../src/settings/BrandingSettingsPanel.js";
-import { getTooltipText, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
+import { advanceTimers, hangUntilAborted, isOff, renderWithToast } from "../test-utils.js";
 import { describePanelLoading } from "./panel-loading.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -189,6 +189,17 @@ function ticketFontValue(): string {
   return ticketFontTrigger().getAttribute("aria-label")!.replace(/^Ticket page font, /, "");
 }
 
+function registrationFontTrigger(): HTMLElement {
+  return screen.getByRole("button", { name: /^Registration form font,/ });
+}
+function registrationFontValue(): string {
+  return registrationFontTrigger().getAttribute("aria-label")!.replace(/^Registration form font, /, "");
+}
+function pickRegistrationFont(label: string): void {
+  fireEvent.click(registrationFontTrigger());
+  fireEvent.click(screen.getByRole("button", { name: label }));
+}
+
 function pickAdminFont(label: string): void {
   fireEvent.click(adminFontTrigger());
   fireEvent.click(screen.getByRole("button", { name: label }));
@@ -208,6 +219,20 @@ function adminColorTrigger(): HTMLElement {
 }
 function ticketColorTrigger(): HTMLElement {
   return screen.getByRole("button", { name: /^Ticket page colour,/ });
+}
+function registrationColorTrigger(): HTMLElement {
+  return screen.getByRole("button", { name: /^Registration form colour,/ });
+}
+function registrationColorValue(): string {
+  return registrationColorTrigger().getAttribute("aria-label")!.replace(/^Registration form colour, /, "");
+}
+function pickRegistrationColor(label: string): void {
+  fireEvent.click(registrationColorTrigger());
+  fireEvent.click(screen.getByRole("button", { name: label }));
+}
+/** The colour of the dot on a colour control's trigger (what the surface resolves to). */
+function triggerDotColor(trigger: HTMLElement): string {
+  return (trigger.querySelector(".color-surface-control__dot") as HTMLElement).style.background;
 }
 function adminColorValue(): string {
   return adminColorTrigger().getAttribute("aria-label")!.replace(/^Admin panel colour, /, "");
@@ -599,7 +624,7 @@ describe("BrandingSettingsPanel - colour palette", () => {
     expect(adminColorValue()).toBe("Admitto blue");
   });
 
-  it("Restore defaults reverts colour and font (both surfaces) to Admitto's own defaults without touching organisation name/logo", async () => {
+  it("Restore defaults reverts colour and font (all three surfaces) to Admitto's own defaults without touching organisation name/logo", async () => {
     mockFetchOrg.mockResolvedValueOnce({
       org_name: "Acme Corp",
       logo_url: "https://cdn.example.com/logo.png",
@@ -610,8 +635,10 @@ describe("BrandingSettingsPanel - colour palette", () => {
       theme: {
         primary: "#123456",
         ticket_primary: "#ea580c",
+        registration_primary: "#16a34a",
         font_family_name: "Old Font",
         ticket_font_family_name: "Manrope",
+        registration_font_family_name: "Space Grotesk",
         custom_font_families: [
           { name: "Old Font", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/old.woff2" }] },
         ],
@@ -621,6 +648,8 @@ describe("BrandingSettingsPanel - colour palette", () => {
     await screen.findByLabelText("Organisation name");
     expect(adminColorValue()).toBe("#123456");
     expect(ticketColorValue()).toBe("Orange");
+    expect(registrationColorValue()).toBe("Green");
+    expect(registrationFontValue()).toBe("Space Grotesk");
 
     fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
 
@@ -630,13 +659,10 @@ describe("BrandingSettingsPanel - colour palette", () => {
     expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("true");
     expect(adminFontValue()).toBe("Admitto Sans");
     expect(ticketFontValue()).toBe("Same as Admin panel");
+    expect(registrationColorValue()).toBe("Same as Ticket page");
+    expect(registrationFontValue()).toBe("Same as Ticket page");
     expect(screen.getByLabelText("Organisation name")).toHaveProperty("value", "Acme Corp");
     expect(screen.getByAltText(/organisation logo preview/i)).toBeTruthy();
-  });
-
-  it("shows a disabled Registration form colour placeholder, not a functional picker", async () => {
-    await renderWithTheme();
-    expect(isDisabled(screen.getByRole("button", { name: /Registration form colour/ }))).toBe(true);
   });
 
   it("picking a swatch on Ticket page sets its own ticket_primary, independent of Admin panel", async () => {
@@ -665,6 +691,144 @@ describe("BrandingSettingsPanel - colour palette", () => {
     fireEvent.click(ticketColorTrigger());
     fireEvent.click(screen.getByRole("button", { name: "Same as Admin panel" }));
     expect(ticketColorValue()).toBe("Same as Admin panel");
+  });
+});
+
+describe("BrandingSettingsPanel - Registration form row", () => {
+  it("is a working row, third of the surfaces, with both controls on and \"Same as Ticket page\" as the default", async () => {
+    await renderWithTheme();
+
+    const rows = [...document.querySelectorAll(".theme-surface-rows .settings-row strong")].map((el) => el.textContent);
+    expect(rows).toEqual(["Admin panel", "Ticket page", "Registration form"]);
+    expect(registrationColorValue()).toBe("Same as Ticket page");
+    expect(registrationFontValue()).toBe("Same as Ticket page");
+    expect(isDisabled(registrationColorTrigger())).toBe(false);
+    expect(isDisabled(registrationFontTrigger())).toBe(false);
+    expect(screen.queryByText("Not available yet")).toBeNull();
+  });
+
+  it("shows on its colour dot what it resolves to: its own pick, else the ticket page's, else the admin's", async () => {
+    await renderWithTheme({ primary: "#111111", ticket_primary: "#222222", registration_primary: "#333333" });
+    expect(triggerDotColor(registrationColorTrigger())).toBe("rgb(51, 51, 51)");
+    cleanup();
+    await renderWithTheme({ primary: "#111111", ticket_primary: "#222222" });
+    expect(triggerDotColor(registrationColorTrigger())).toBe("rgb(34, 34, 34)");
+    cleanup();
+    await renderWithTheme({ primary: "#111111" });
+    expect(triggerDotColor(registrationColorTrigger())).toBe("rgb(17, 17, 17)");
+  });
+
+  it("previews the ticket page's colour on its \"Same as Ticket page\" row, not the pick it would replace", async () => {
+    await renderWithTheme({ primary: "#111111", ticket_primary: "#222222", registration_primary: "#333333" });
+
+    fireEvent.click(registrationColorTrigger());
+    const option = screen.getByRole("button", { name: "Same as Ticket page" });
+    expect((option.querySelector(".color-surface-control__dot") as HTMLElement).style.background).toBe("rgb(34, 34, 34)");
+    expect(screen.queryByRole("button", { name: "Same as Admin panel" })).toBeNull();
+  });
+
+  it("picking a swatch sets its own registration_primary and leaves the other two alone", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    mockPatchOrg.mockResolvedValueOnce(defaultOrg);
+    mockSaveTheme.mockResolvedValueOnce({ theme: { registration_primary: "#16a34a" } });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    pickRegistrationColor("Green");
+    expect(registrationColorValue()).toBe("Green");
+    expect(adminColorValue()).toBe("Admitto blue");
+    expect(ticketColorValue()).toBe("Same as Admin panel");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockSaveTheme).toHaveBeenCalledWith({ registration_primary: "#16a34a" });
+    });
+  });
+
+  it("switches to its own custom colour via the native colour picker, independent of the ticket page", async () => {
+    await renderWithTheme({ ticket_primary: "#ea580c" });
+
+    fireEvent.click(registrationColorTrigger());
+    fireEvent.change(screen.getByLabelText("Custom colour picker"), { target: { value: "#abcdef" } });
+    expect(registrationColorValue()).toBe("#abcdef");
+    expect(ticketColorValue()).toBe("Orange");
+  });
+
+  it("picking \"Same as Ticket page\" clears its colour override, so it follows the ticket page again", async () => {
+    await renderWithTheme({ ticket_primary: "#ea580c", registration_primary: "#16a34a" });
+    expect(registrationColorValue()).toBe("Green");
+
+    fireEvent.click(registrationColorTrigger());
+    fireEvent.click(screen.getByRole("button", { name: "Same as Ticket page" }));
+    expect(registrationColorValue()).toBe("Same as Ticket page");
+    expect(triggerDotColor(registrationColorTrigger())).toBe("rgb(234, 88, 12)");
+  });
+
+  it("offers the same fonts as the ticket page, led by \"Same as Ticket page\" and without a \"Same as Admin panel\"", async () => {
+    await renderWithTheme(ACME_SANS_THEME);
+
+    fireEvent.click(registrationFontTrigger());
+    const names = within(document.querySelector(".searchable-select__list") as HTMLElement)
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+    expect(names).toEqual(["Same as Ticket page", "Admitto Sans", "Manrope", "Space Grotesk", "IBM Plex Sans", "Acme Sans"]);
+  });
+
+  it("saves the font picked for it as registration_font_family_name, and a built-in or custom family alike", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({ theme: ACME_SANS_THEME });
+    mockPatchOrg.mockResolvedValueOnce(defaultOrg);
+    mockSaveTheme.mockResolvedValueOnce({ theme: ACME_SANS_THEME });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    pickRegistrationFont("Acme Sans");
+    expect(registrationFontValue()).toBe("Acme Sans");
+    expect(ticketFontValue()).toBe("Same as Admin panel");
+    pickRegistrationFont("Manrope");
+    expect(registrationFontValue()).toBe("Manrope");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockSaveTheme).toHaveBeenCalledWith(expect.objectContaining({ registration_font_family_name: "Manrope" }));
+    });
+    expect(mockSaveTheme.mock.calls[0]![0]).not.toHaveProperty("ticket_font_family_name");
+  });
+
+  it("picking \"Same as Ticket page\" clears its font, and \"Admitto Sans\" pins it to the default", async () => {
+    await renderWithTheme({ ticket_font_family_name: "Manrope", registration_font_family_name: "Space Grotesk" });
+    expect(registrationFontValue()).toBe("Space Grotesk");
+
+    pickRegistrationFont("Admitto Sans");
+    expect(registrationFontValue()).toBe("Admitto Sans");
+    pickRegistrationFont("Same as Ticket page");
+    expect(registrationFontValue()).toBe("Same as Ticket page");
+    expect(ticketFontValue()).toBe("Manrope");
+  });
+
+  it("falls back to following the ticket page when the family it used is removed, and keeps its own pick when another is", async () => {
+    await renderWithTheme({
+      font_family_name: "Acme Sans",
+      registration_font_family_name: "Acme Sans",
+      custom_font_families: [
+        { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        { name: "Other Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/b.woff2" }] },
+      ],
+    });
+
+    removeFamily("Other Sans");
+    expect(registrationFontValue()).toBe("Acme Sans");
+    removeFamily("Acme Sans");
+    expect(registrationFontValue()).toBe("Same as Ticket page");
+  });
+
+  it("follows a family that is renamed in the editor", async () => {
+    await renderWithTheme({ ...ACME_SANS_THEME, registration_font_family_name: "Acme Sans" });
+
+    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
+    fireEvent.click(screen.getByText("mock-save-family-renamed"));
+    expect(registrationFontValue()).toBe("Acme Sans Renamed");
   });
 });
 
@@ -773,12 +937,6 @@ describe("BrandingSettingsPanel - font picker", () => {
 
     expect(adminFontValue()).toBe("Acme Sans");
     expect(ticketFontValue()).toBe("Manrope");
-  });
-
-  it("assumes a real bold/italic file when the active pick matches neither a built-in nor a saved custom family", async () => {
-    await renderWithTheme({ font_family_name: "Deleted Family", custom_font_families: [] });
-
-    expect(document.querySelector(".theme-preview__faux")).toBeNull();
   });
 
   it("opens the font family modal when the Custom font tile is clicked", async () => {
@@ -1108,27 +1266,59 @@ describe("BrandingSettingsPanel - font picker", () => {
     expect(adminFontValue()).toBe("Acme Sans");
   });
 
-  it("shows a faked-style hint in the live preview when the active custom family has no bold/italic variant", async () => {
+});
+
+describe("BrandingSettingsPanel - the Theme card", () => {
+  it("has no live preview: no block, no sample text, no faked-style hint", async () => {
     await renderWithTheme(ACME_SANS_THEME);
 
-    const fauxIcons = document.querySelectorAll(".theme-preview__faux");
-    expect(fauxIcons).toHaveLength(2);
-    expect(getTooltipText(fauxIcons[0] as HTMLElement)).toBe("No bold file uploaded. The browser is faking it.");
-    expect(getTooltipText(fauxIcons[1] as HTMLElement)).toBe("No italic file uploaded. The browser is faking it.");
-  });
-
-  it("shows no faked-style hint for a web-safe font (a real OS family always has all 4 styles)", async () => {
-    await renderWithTheme();
-
+    expect(screen.queryByText("Live preview")).toBeNull();
+    expect(screen.queryByText("Primary action")).toBeNull();
+    expect(document.querySelector(".theme-preview")).toBeNull();
     expect(document.querySelector(".theme-preview__faux")).toBeNull();
   });
 
-  it("shows a disabled Registration form dropdown placeholder, not a functional picker", async () => {
+  it("names Font and Theme by surface with the blue section label and its line, hints kept under them", async () => {
     await renderWithTheme();
 
-    const registrationSelect = screen.getByLabelText("Registration form font") as HTMLSelectElement;
-    expect(registrationSelect.disabled).toBe(true);
-    expect(within(registrationSelect).getByText("Not available yet")).toBeTruthy();
+    for (const [id, text] of [
+      ["branding-font-label", "Font"],
+      ["branding-theme-surface-label", "Theme by surface"],
+    ]) {
+      const label = document.getElementById(id)!;
+      expect(label.className).toContain("attendees-section-label");
+      expect(label.textContent).toBe(text);
+      expect(label.nextElementSibling?.className).toContain("branding-scope-hint");
+    }
+    expect(document.querySelector(".theme-section .overline")).toBeNull();
+    expect(screen.getByText("Give each surface its own colour and font, or keep it the same as the one before.")).toBeTruthy();
+  });
+
+  it("still applies the Admin panel pick to the whole app while the panel is open, and not the other two", async () => {
+    await renderWithTheme({ primary: "#123456" });
+    const appCss = () => document.getElementById("admitto-theme")?.textContent ?? "";
+    expect(appCss()).toContain("--primary: #123456");
+
+    pickAdminColor("Violet");
+    expect(appCss()).toContain("--primary: #7c3aed");
+    pickRegistrationColor("Green");
+    pickTicketColor("Orange");
+    expect(appCss()).toContain("--primary: #7c3aed");
+    expect(appCss()).not.toContain("#16a34a");
+    expect(appCss()).not.toContain("#ea580c");
+  });
+
+  it("holds a placeholder of the new shape (the card's intro, the fonts and the surfaces) with no block for a preview", async () => {
+    mockFetchOrg.mockImplementationOnce(hangUntilAborted);
+    mockFetchTheme.mockImplementationOnce(hangUntilAborted);
+    vi.useFakeTimers();
+    renderWithToast(<BrandingSettingsPanel />);
+    await advanceTimers(200);
+
+    const cards = [...screen.getByLabelText("Loading branding settings").querySelectorAll(".at-card")];
+    const themeCard = cards.find((c) => c.textContent?.includes("Theme"))!;
+    const blocks = [...themeCard.querySelectorAll(".at-skeleton--rect")].filter((el) => (el as HTMLElement).style.height === "238px");
+    expect(blocks).toHaveLength(2);
   });
 });
 
@@ -1290,6 +1480,23 @@ describe("BrandingSettingsPanel - save and reset", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByText(/valid 6-digit hex colour/i)).toBeTruthy();
+    });
+    expect(mockPatchOrg).not.toHaveBeenCalled();
+    expect(mockSaveTheme).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["registration_primary", { registration_primary: "not-a-hex" }, /valid 6-digit hex colour/i],
+    ["registration_font_family_name", { registration_font_family_name: "bad</name>" }, /letters, numbers, spaces, hyphens/i],
+  ])("blocks save and shows an inline error when the loaded theme's %s itself is invalid", async (_key, theme, message) => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({ theme });
+    renderWithToast(<BrandingSettingsPanel />);
+    fireEvent.change(await screen.findByLabelText("Organisation name"), { target: { value: "Acme Renamed" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText(message)).toBeTruthy();
     });
     expect(mockPatchOrg).not.toHaveBeenCalled();
     expect(mockSaveTheme).not.toHaveBeenCalled();

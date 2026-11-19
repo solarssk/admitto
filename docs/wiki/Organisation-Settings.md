@@ -31,9 +31,9 @@ Open **Organisation settings**. Save one area at a time and verify the visible r
 
 ### Branding
 
-One consolidated tab for organisation name, logo, colour palette, built-in fonts and custom font uploads, with one shared Save and Reset.
+One consolidated tab for organisation name, logo, colour palette, built-in fonts and custom font uploads, with one shared Save and Reset. The Theme card has no preview block: the Admin panel colour and font change this app while you edit, and the font tiles say which styles each font has.
 
-- **Theme by surface:** the Admin panel's colour and font pick are the instance's base. The Ticket page can keep matching the Admin panel automatically (**Same as Admin panel**), or use its own colour and font, independently of each other. The Registration form's controls are not available yet and stay disabled.
+- **Theme by surface:** the Admin panel's colour and font pick are the instance's base. The Ticket page can keep matching the Admin panel automatically (**Same as Admin panel**), or use its own colour and font, independently of each other. The Registration form (the guest sign-up page and its confirmation page) has its own colour and font too, and by default follows the Ticket page (**Same as Ticket page**). A pale colour is fine: Admitto switches the text on the form's buttons to dark so it stays readable. **Restore defaults** clears all three picks. Only the Admin panel pick is applied to this app while you edit; the other two show on the public pages after you save.
 - **Logo upload:** uploading a logo opens an adjust popup, so you can trim margins before saving. Transparent PNG and WebP keep their transparency.
 - **Re-crop behaviour:** **Edit image** restores the last crop and zoom after Save and reload, because Admitto keeps the full upload for re-edit. Organisation logos uploaded before crop persistence need one full-file upload the first time you re-crop. Later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto.
 

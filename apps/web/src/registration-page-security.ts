@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import type { BrandingTheme } from "@admitto/auth";
 import { isSecureRequest } from "./is-secure-request.js";
+import { registrationBrandingTheme } from "./registration/registration-theme.js";
 import { buildTicketFontSrc, buildTicketImgSrc, getTicketPageSecurityHeaders, renderNotFound } from "./ticket-page.js";
 
 /** The only origin the Cloudflare Turnstile widget needs (script and iframe). */
@@ -35,7 +36,7 @@ export function getRegistrationPageSecurityHeaders(
       "default-src 'none'",
       "style-src 'unsafe-inline'",
       `img-src ${buildTicketImgSrc(logoUrl)}`,
-      `font-src ${buildTicketFontSrc(theme)}`,
+      `font-src ${buildTicketFontSrc(registrationBrandingTheme(theme))}`,
       `script-src ${["'nonce-" + scriptNonce + "'", ...(turnstile ? [TURNSTILE_ORIGIN] : [])].join(" ")}`,
       "connect-src 'self'",
       ...(turnstile ? [`frame-src ${TURNSTILE_ORIGIN}`] : []),

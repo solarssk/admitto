@@ -20,6 +20,8 @@ export interface BrandingFieldErrors {
   ticket_primary?: string;
   font_family_name?: string;
   ticket_font_family_name?: string;
+  registration_primary?: string;
+  registration_font_family_name?: string;
   custom_font_families?: string;
 }
 
@@ -73,6 +75,14 @@ export function validateBrandingDraft(draft: BrandingThemeDto): BrandingValidati
     errors.ticket_primary = "Enter a valid 6-digit hex colour (e.g. #066fd1).";
   }
 
+  const registrationPrimary = draft.registration_primary?.trim();
+  if (registrationPrimary && !isValidHex(registrationPrimary)) {
+    errors.registration_primary = "Enter a valid 6-digit hex colour (e.g. #066fd1).";
+  }
+
+  const registrationFontNameError = fontNameFieldError(draft.registration_font_family_name);
+  if (registrationFontNameError) errors.registration_font_family_name = registrationFontNameError;
+
   const fontNameError = fontNameFieldError(draft.font_family_name);
   if (fontNameError) errors.font_family_name = fontNameError;
 
@@ -107,6 +117,16 @@ export function brandingDraftForSave(draft: BrandingThemeDto): BrandingThemeDto 
   const ticketPrimary = draft.ticket_primary?.trim();
   if (ticketPrimary && isValidHex(ticketPrimary)) {
     result.ticket_primary = ticketPrimary;
+  }
+
+  const registrationPrimary = draft.registration_primary?.trim();
+  if (registrationPrimary && isValidHex(registrationPrimary)) {
+    result.registration_primary = registrationPrimary;
+  }
+
+  const safeRegistrationFontName = sanitizedFontNameField(draft.registration_font_family_name);
+  if (safeRegistrationFontName) {
+    result.registration_font_family_name = safeRegistrationFontName;
   }
 
   const safeFontName = sanitizedFontNameField(draft.font_family_name);

@@ -7,13 +7,12 @@ import {
   HintLabel,
   IconButton,
   Input,
-  Select,
-  Tooltip,
   useToast,
 } from "@admitto/ui";
 import { fetchOrgBranding, fetchStaffTheme, patchOrgBranding, saveStaffTheme, deleteUploadedFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingThemeDto, SetupOrgBrandingDto } from "../api/types.js";
+import { SectionLabel } from "../attendees/SectionLabel.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { LogoUploadZone } from "../components/LogoUploadZone.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
@@ -39,10 +38,10 @@ const EMPTY_ORG_DRAFT: SetupOrgBrandingDto = {
 };
 const EMPTY_THEME_DRAFT: BrandingThemeDto = {};
 
-/** The cards of the panel, for its placeholder: the organisation's name and logo, and the theme with its fonts, surfaces and preview. */
+/** The cards of the panel, for its placeholder: the organisation's name and logo, and the theme with its fonts and surfaces. */
 const BRANDING_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "organisation", title: "Organisation branding", intro: true, fields: 1, controlHeight: 62, rows: 2, rowHeight: 102 },
-  { id: "theme", title: "Theme", intro: true, rows: 3, rowHeight: 238 },
+  { id: "theme", title: "Theme", intro: true, rows: 2, rowHeight: 238 },
 ];
 
 /** Collect `/uploads/…` font file URLs from a theme draft. */
@@ -63,7 +62,7 @@ const ORG_BRANDING_INTRO =
 const THEME_HINT =
   "Ticket logos are set in Organisation branding above, not here.";
 const THEME_INTRO =
-  "Accent colour and fonts for the staff app and public ticket page.";
+  "Accent colour and fonts for the staff app, the ticket page and the registration form.";
 
 const THEME_COLORS = [
   { key: "blue", hex: "#066fd1", label: "Admitto blue" },
@@ -99,21 +98,6 @@ const FONT_OPTIONS = [
 // rather than persisting it, so the picker has to stop offering "Custom font" at the same limit
 // instead of letting someone upload a family that then silently never gets saved.
 const MAX_CUSTOM_FONT_FAMILIES = 8;
-
-// `.at-select` defaults to width: 100%, which inside a `.settings-row` flex row would fight the
-// label/hint block on the left for space instead of sitting as a compact, right-aligned control -
-// `width: auto` overrides that (inline styles win over the class), `flexShrink: 0` stops the row's
-// own flex algorithm from squeezing it, and `minWidth` keeps all three rows' controls a consistent
-// size regardless of which option happens to be selected.
-const FONT_SURFACE_SELECT_STYLE = { width: "auto", minWidth: 160, flexShrink: 0 } as const;
-
-function darken(hex: string, amount: number): string {
-  const n = Number.parseInt(hex.slice(1), 16);
-  const r = Math.max(0, (n >> 16) - amount);
-  const g = Math.max(0, ((n >> 8) & 0xff) - amount);
-  const b = Math.max(0, (n & 0xff) - amount);
-  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
-}
 
 type ColorMode = "palette" | "custom";
 
@@ -186,6 +170,11 @@ interface ColorUiState {
 }
 
 const DEFAULT_COLOR_UI_STATE: ColorUiState = { mode: "palette", colorKey: "blue", customHex: "#066fd1" };
+const DEFAULT_COLOR_UI_STATES: Record<Surface, ColorUiState> = {
+  admin: DEFAULT_COLOR_UI_STATE,
+  ticket: DEFAULT_COLOR_UI_STATE,
+  registration: DEFAULT_COLOR_UI_STATE,
+};
 
 /** UI-presentation state for a colour field (which swatch to highlight / what the custom picker
  * shows), derived one-way from a saved hex value - the value itself stays the single source of
@@ -215,16 +204,17 @@ interface ColorSurfaceControlProps {
   readonly colorKey: string;
   readonly customHex: string;
   readonly disabled: boolean;
-  /** Ticket page only: whether the popover's "Same as Admin panel" row is the active pick, and
-   * the Admin panel's own resolved colour to preview on that row's dot - distinct from `hex`
-   * (this control's own effective colour, shown on the trigger), since when Ticket page has its
-   * own override the two differ and "Same as Admin panel" must preview what picking it would
-   * actually resolve to, not the override it would replace. */
-  readonly sameAsAdmin?: boolean;
-  readonly sameAsAdminHex?: string;
+  /** Ticket page and Registration form only: the popover's first row ("Same as Admin panel",
+   * "Same as Ticket page"), whether it is the active pick, and the colour it would resolve to, to
+   * preview on that row's dot - distinct from `hex` (this control's own effective colour, shown on
+   * the trigger), since when the surface has its own override the two differ and the row must
+   * preview what picking it would actually resolve to, not the override it would replace. */
+  readonly inheritLabel?: string;
+  readonly inherits?: boolean;
+  readonly inheritHex?: string;
   readonly onPick: (key: string, hex: string) => void;
   readonly onCustomChange: (hex: string) => void;
-  readonly onSelectSameAsAdmin?: () => void;
+  readonly onSelectInherit?: () => void;
 }
 
 /** Pill trigger + popover reusing ColorPaletteField, so a surface's colour picker never needs its
@@ -239,14 +229,15 @@ function ColorSurfaceControl({
   colorKey,
   customHex,
   disabled,
-  sameAsAdmin,
-  sameAsAdminHex,
+  inheritLabel,
+  inherits,
+  inheritHex,
   onPick,
   onCustomChange,
-  onSelectSameAsAdmin,
+  onSelectInherit,
 }: Readonly<ColorSurfaceControlProps>) {
   // No explicit close() on pick - unlike SearchableSelect, this popover stays open after
-  // choosing a colour (swatch, custom hex, or "Same as Admin panel") so trying several in a row
+  // choosing a colour (swatch, custom hex, or the "Same as ..." row) so trying several in a row
   // means one open/close cycle, not one per attempt; only useDropdownMenu's own outside-click/
   // Escape handling closes it.
   const { open, setOpen, openUpward, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<
@@ -254,14 +245,14 @@ function ColorSurfaceControl({
     HTMLDivElement
   >({ align: "start" });
 
-  // While inheriting ("Same as Admin panel" active), the palette below must show no swatch (and
+  // While inheriting ("Same as ..." active), the palette below must show no swatch (and
   // not the custom tile either) as active - colorKey/mode otherwise still hold whatever was last
   // explicitly picked before the override was cleared, which would show two conflicting
   // selections at once (the "Same as Admin panel" row AND a stale swatch, both marked active).
   // "" never matches a real THEME_COLORS key, so this is enough to blank the palette without
   // needing a third ColorMode value.
-  const paletteMode = sameAsAdmin ? "palette" : mode;
-  const paletteColorKey = sameAsAdmin ? "" : colorKey;
+  const paletteMode = inherits ? "palette" : mode;
+  const paletteColorKey = inherits ? "" : colorKey;
 
   return (
     <div className="color-surface-control" ref={rootRef}>
@@ -285,15 +276,15 @@ function ColorSurfaceControl({
           ref={panelRef}
           style={panelStyle}
         >
-          {onSelectSameAsAdmin && (
+          {onSelectInherit && (
             <>
               <button
                 type="button"
-                className={`color-surface-control__option${sameAsAdmin ? " color-surface-control__option--active" : ""}`}
-                onClick={onSelectSameAsAdmin}
+                className={`color-surface-control__option${inherits ? " color-surface-control__option--active" : ""}`}
+                onClick={onSelectInherit}
               >
-                <span className="color-surface-control__dot" style={{ background: sameAsAdminHex }} aria-hidden="true" />
-                <span>Same as Admin panel</span>
+                <span className="color-surface-control__dot" style={{ background: inheritHex }} aria-hidden="true" />
+                <span>{inheritLabel}</span>
               </button>
               <div className="color-surface-control__divider" />
             </>
@@ -433,34 +424,39 @@ function FontPickerField({
   );
 }
 
-type FontSurface = "admin" | "ticket";
-type ColorSurface = "admin" | "ticket";
+type Surface = "admin" | "ticket" | "registration";
 
-interface ResolvedFontInfo {
-  readonly fontStack: string;
-  readonly hasBoldVariant: boolean;
-  readonly hasItalicVariant: boolean;
-}
+/** The theme key that holds each surface's colour and font pick. */
+const PRIMARY_KEY = { admin: "primary", ticket: "ticket_primary", registration: "registration_primary" } as const;
+const FONT_KEY = {
+  admin: "font_family_name",
+  ticket: "ticket_font_family_name",
+  registration: "registration_font_family_name",
+} as const;
 
-/** Derives everything the live preview needs for the active (Admin panel) font pick. */
-function resolveFontInfo(
-  fontFamilyName: string | undefined,
+// The leading ":" keeps these ids outside custom_font_families' own namespace -
+// isValidBrandingFontFamilyName only allows [A-Za-z0-9 \-_.], so no real font name (custom names are
+// validated against that same charset both client- and server-side) can ever equal one of them,
+// unlike a plain word such as "same-as-admin" itself, which was a legal custom font name and could
+// collide (bot review finding, #761). "" would collide with SearchableSelect's own falsy-value-means-
+// unselected check.
+const SAME_AS_ADMIN_FONT_ID = ":same-as-admin";
+const SAME_AS_TICKET_FONT_ID = ":same-as-ticket";
+
+/** The font options of a surface that can follow another one: that "Same as ..." entry first, then
+ * Admitto Sans as a distinct, reserved value (so the surface can be pinned to the default explicitly,
+ * e.g. Admin panel = Manrope, Ticket page = Admitto Sans), the other built-ins and every saved custom family. */
+function inheritingFontOptions(
+  sameAsId: string,
+  sameAsLabel: string,
   customFamilies: readonly BrandingCustomFontFamilyDto[],
-): ResolvedFontInfo {
-  const activeCustomFamily = customFamilies.find((f) => f.name === fontFamilyName);
-  const activeBuiltIn = FONT_OPTIONS.find((f) => f.name === fontFamilyName);
-  const fontStack = fontFamilyName ? `"${fontFamilyName}", Inter, system-ui, sans-serif` : "var(--font-sans)";
-  // A built-in pick without a custom family active still needs its own real styles checked -
-  // Manrope/Space Grotesk have no italic file at all, so defaulting to true here (as if every
-  // built-in had all four styles) would hide the "browser is faking it" hint exactly where it's
-  // most needed, the same dishonesty FONT_OPTIONS.styles exists to avoid in the picker itself.
-  const hasBoldVariant = activeCustomFamily
-    ? activeCustomFamily.variants.some((v) => v.weight >= 700)
-    : (activeBuiltIn?.styles.includes("Bold") ?? true);
-  const hasItalicVariant = activeCustomFamily
-    ? activeCustomFamily.variants.some((v) => v.style === "italic")
-    : (activeBuiltIn?.styles.some((s) => s.toLowerCase().includes("italic")) ?? true);
-  return { fontStack, hasBoldVariant, hasItalicVariant };
+) {
+  return [
+    { id: sameAsId, label: sameAsLabel },
+    { id: DEFAULT_BRANDING_FONT_FAMILY_NAME, label: DEFAULT_BRANDING_FONT_FAMILY_NAME },
+    ...FONT_OPTIONS.filter((f) => f.name !== undefined).map((f) => ({ id: f.name, label: f.label })),
+    ...customFamilies.map((f) => ({ id: f.name, label: f.name })),
+  ];
 }
 
 /** Combined Organisation branding (name/logo) + Theme (colour/font) settings, one shared
@@ -500,11 +496,10 @@ export function BrandingSettingsPanel() {
   const [logoUploading, setLogoUploading] = useState(false);
 
   // UI-only colour presentation state, derived from themeDraft on load/reset - see
-  // deriveColorUiState. One instance per surface with its own colour control (admin/ticket) -
-  // Font state needs no equivalent - which tile is "active" is always just derived directly from
-  // themeDraft.font_family_name/custom_font_families below.
-  const [adminColorUi, setAdminColorUi] = useState<ColorUiState>(DEFAULT_COLOR_UI_STATE);
-  const [ticketColorUi, setTicketColorUi] = useState<ColorUiState>(DEFAULT_COLOR_UI_STATE);
+  // deriveColorUiState. One entry per surface with its own colour control (admin, ticket,
+  // registration) - Font state needs no equivalent - which tile is "active" is always just derived
+  // directly from themeDraft's font keys/custom_font_families below.
+  const [colorUi, setColorUi] = useState<Record<Surface, ColorUiState>>(DEFAULT_COLOR_UI_STATES);
   const [familyModalOpen, setFamilyModalOpen] = useState(false);
   // Name of the saved family currently being edited, or null when the modal is creating a new
   // one. Kept separate from familyModalOpen since the modal's own prefill data (initialFamily)
@@ -517,8 +512,11 @@ export function BrandingSettingsPanel() {
   const [pendingDeleteFamilyName, setPendingDeleteFamilyName] = useState<string | null>(null);
 
   const syncColorUiState = useCallback((theme: BrandingThemeDto) => {
-    setAdminColorUi(deriveColorUiState(theme.primary));
-    setTicketColorUi(deriveColorUiState(theme.ticket_primary));
+    setColorUi({
+      admin: deriveColorUiState(theme.primary),
+      ticket: deriveColorUiState(theme.ticket_primary),
+      registration: deriveColorUiState(theme.registration_primary),
+    });
   }, []);
 
   const panel = usePanelLoad({
@@ -590,28 +588,27 @@ export function BrandingSettingsPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
   }, [customFamiliesKey]);
 
-  const handlePickSurfaceColor = (surface: ColorSurface, key: string, hex: string) => {
-    (surface === "admin" ? setAdminColorUi : setTicketColorUi)((prev) => ({ ...prev, mode: "palette", colorKey: key }));
-    setThemeDraft((prev) => (surface === "admin" ? { ...prev, primary: hex } : { ...prev, ticket_primary: hex }));
+  const handlePickSurfaceColor = (surface: Surface, key: string, hex: string) => {
+    setColorUi((prev) => ({ ...prev, [surface]: { ...prev[surface], mode: "palette", colorKey: key } }));
+    setThemeDraft((prev) => ({ ...prev, [PRIMARY_KEY[surface]]: hex }));
   };
 
-  const handleCustomSurfaceColorChange = (surface: ColorSurface, hex: string) => {
-    (surface === "admin" ? setAdminColorUi : setTicketColorUi)((prev) => ({ ...prev, mode: "custom", customHex: hex }));
-    setThemeDraft((prev) => (surface === "admin" ? { ...prev, primary: hex } : { ...prev, ticket_primary: hex }));
+  const handleCustomSurfaceColorChange = (surface: Surface, hex: string) => {
+    setColorUi((prev) => ({ ...prev, [surface]: { ...prev[surface], mode: "custom", customHex: hex } }));
+    setThemeDraft((prev) => ({ ...prev, [PRIMARY_KEY[surface]]: hex }));
   };
 
-  const handleSelectSameAsAdminColor = () => {
-    setThemeDraft((prev) => ({ ...prev, ticket_primary: undefined }));
+  /** "Same as Admin panel" (Ticket page) and "Same as Ticket page" (Registration form): clear the surface's own pick. */
+  const handleSelectInheritedColor = (surface: Surface) => {
+    setThemeDraft((prev) => ({ ...prev, [PRIMARY_KEY[surface]]: undefined }));
   };
 
   /** Picking a font (built-in or a saved custom family, from a Font-by-surface select) only ever
    * changes the *active* pick for that one surface - the saved custom-font library
    * (custom_font_families) is untouched and shared, so switching to it later, on either surface,
    * needs no re-upload. */
-  const handleSetSurfaceFont = (surface: FontSurface, name: string | undefined) => {
-    setThemeDraft((prev) =>
-      surface === "admin" ? { ...prev, font_family_name: name } : { ...prev, ticket_font_family_name: name },
-    );
+  const handleSetSurfaceFont = (surface: Surface, name: string | undefined) => {
+    setThemeDraft((prev) => ({ ...prev, [FONT_KEY[surface]]: name }));
   };
 
   const handleOpenFamilyModal = () => {
@@ -633,8 +630,7 @@ export function BrandingSettingsPanel() {
    * its old name entirely rather than leaving both around. A brand new family always becomes the
    * Admin panel's active pick (the only upload entry point); editing an existing one keeps each
    * surface's own active status independently - if the same family was also active for Ticket
-   * page (the common case, since ticket falls back to admin by default), renaming it keeps that
-   * in sync too, not just Admin panel's. */
+   * page or Registration form, renaming it keeps those in sync too, not just Admin panel's. */
   const handleFamilySaved = ({ familyName, variants }: { familyName: string; variants: BrandingCustomFontFamilyDto["variants"] }) => {
     for (const v of variants) {
       if (v.url.startsWith("/uploads/")) {
@@ -645,6 +641,7 @@ export function BrandingSettingsPanel() {
       const isNewFamily = editingFamilyName === null;
       const wasAdminActive = !isNewFamily && prev.font_family_name === editingFamilyName;
       const wasTicketActive = !isNewFamily && prev.ticket_font_family_name === editingFamilyName;
+      const wasRegistrationActive = !isNewFamily && prev.registration_font_family_name === editingFamilyName;
       const families = prev.custom_font_families ?? [];
       const withoutOldEntry = families.filter(
         (f) => f.name !== familyName && f.name !== editingFamilyName,
@@ -669,6 +666,7 @@ export function BrandingSettingsPanel() {
         ...prev,
         font_family_name: isNewFamily || wasAdminActive ? familyName : prev.font_family_name,
         ticket_font_family_name: wasTicketActive ? familyName : prev.ticket_font_family_name,
+        registration_font_family_name: wasRegistrationActive ? familyName : prev.registration_font_family_name,
         custom_font_families: [...withoutOldEntry, { name: familyName, variants }],
       };
     });
@@ -677,7 +675,8 @@ export function BrandingSettingsPanel() {
   };
 
   /** Removing a family that's currently active for a surface falls back that surface to its own
-   * default (admin: the built-in Admitto Sans; ticket: back to following admin's own pick), each
+   * default (admin: the built-in Admitto Sans; ticket: back to following admin's own pick;
+   * registration: back to following the ticket page's), each
    * checked independently since the same family can be active for both, one, or neither. A family
    * that's merely saved (not active anywhere) can be removed with no other effect. */
   const handleDeleteCustomFamily = (name: string) => {
@@ -696,10 +695,12 @@ export function BrandingSettingsPanel() {
       const remaining = families.filter((f) => f.name !== name);
       const wasAdminActive = prev.font_family_name === name;
       const wasTicketActive = prev.ticket_font_family_name === name;
+      const wasRegistrationActive = prev.registration_font_family_name === name;
       return {
         ...prev,
         font_family_name: wasAdminActive ? undefined : prev.font_family_name,
         ticket_font_family_name: wasTicketActive ? undefined : prev.ticket_font_family_name,
+        registration_font_family_name: wasRegistrationActive ? undefined : prev.registration_font_family_name,
         custom_font_families: remaining.length > 0 ? remaining : undefined,
       };
     });
@@ -713,14 +714,15 @@ export function BrandingSettingsPanel() {
    * default) or the saved custom-font library (not a "look" setting - deleting fonts is its own
    * explicit action, not a side effect of resetting colour/font choice). */
   const handleRestoreThemeDefaults = () => {
-    setAdminColorUi(DEFAULT_COLOR_UI_STATE);
-    setTicketColorUi(DEFAULT_COLOR_UI_STATE);
+    setColorUi(DEFAULT_COLOR_UI_STATES);
     setThemeDraft((prev) => ({
       ...prev,
       primary: undefined,
       ticket_primary: undefined,
+      registration_primary: undefined,
       font_family_name: undefined,
       ticket_font_family_name: undefined,
+      registration_font_family_name: undefined,
     }));
   };
 
@@ -802,49 +804,35 @@ export function BrandingSettingsPanel() {
     JSON.stringify(orgDraft) !== JSON.stringify(orgSavedRef.current) ||
     JSON.stringify(themeDraft) !== JSON.stringify(themeSavedRef.current);
 
-  // Live preview always reflects the Admin panel colour - same semantics "Primary colour" used to
-  // have before it moved into the Theme-by-surface row.
-  const paletteHex = primaryForColorInput(THEME_COLORS.find((c) => c.key === adminColorUi.colorKey)?.hex);
-  const customHexOrFallback = isValidHex(adminColorUi.customHex) ? adminColorUi.customHex : "#066fd1";
-  const activeHex = adminColorUi.mode === "custom" ? customHexOrFallback : paletteHex;
-  const adminColorHex = primaryForColorInput(themeDraft.primary);
   // Always the real colour name (e.g. "Admitto blue"), never a generic "Default" placeholder -
   // matches the Admin panel font trigger right next to it, which likewise always shows "Admitto
   // Sans" rather than "Default" when unset. Picking the blue swatch that happens to match the
   // built-in default must not flip the label to something else with no visible colour change.
-  const adminColorDisplayLabel = colorPaletteLabel(adminColorUi);
+  const adminColorHex = primaryForColorInput(themeDraft.primary);
+  const adminColorDisplayLabel = colorPaletteLabel(colorUi.admin);
   const ticketColorSameAsAdmin = themeDraft.ticket_primary === undefined;
   const ticketColorHex = primaryForColorInput(themeDraft.ticket_primary ?? themeDraft.primary);
-  const ticketColorDisplayLabel = ticketColorSameAsAdmin ? "Same as Admin panel" : colorPaletteLabel(ticketColorUi);
+  const ticketColorDisplayLabel = ticketColorSameAsAdmin ? "Same as Admin panel" : colorPaletteLabel(colorUi.ticket);
+  const registrationColorSameAsTicket = themeDraft.registration_primary === undefined;
+  const registrationColorHex = primaryForColorInput(
+    themeDraft.registration_primary ?? themeDraft.ticket_primary ?? themeDraft.primary,
+  );
+  const registrationColorDisplayLabel = registrationColorSameAsTicket
+    ? "Same as Ticket page"
+    : colorPaletteLabel(colorUi.registration);
   const customFamilies = themeDraft.custom_font_families ?? [];
-  const adminFont = resolveFontInfo(themeDraft.font_family_name, customFamilies);
   // The built-in default (name: undefined) needs a real, non-empty option id - SearchableSelect
   // treats a falsy `value` as "nothing selected" rather than resolving it to a matching option,
   // so "" (the native <option>'s own value for this entry) can't stand in for it here.
   // DEFAULT_BRANDING_FONT_FAMILY_NAME is already the reserved sentinel this codebase uses for
-  // "explicitly Admitto Sans" (see Ticket page's own reserved entry below), so it's reused rather
-  // than inventing a second one.
+  // "explicitly Admitto Sans" (see the reserved entry of the other two surfaces), so it's reused
+  // rather than inventing a second one.
   const adminFontOptions = [
     ...FONT_OPTIONS.map((f) => ({ id: f.name ?? DEFAULT_BRANDING_FONT_FAMILY_NAME, label: f.label })),
     ...customFamilies.map((f) => ({ id: f.name, label: f.name })),
   ];
-  // "" would collide with SearchableSelect's own falsy-value-means-unselected check (the same
-  // reason the admin-panel default above needed a real sentinel id instead of ""). The leading
-  // ":" keeps this outside custom_font_families' own namespace - isValidBrandingFontFamilyName
-  // only allows [A-Za-z0-9 \-_.], so no real font name (custom names are validated against that
-  // same charset both client- and server-side) can ever equal this id, unlike a plain word such
-  // as "same-as-admin" itself, which was a legal custom font name and could collide (bot review
-  // finding, #761).
-  const SAME_AS_ADMIN_FONT_ID = ":same-as-admin";
-  const ticketFontOptions = [
-    { id: SAME_AS_ADMIN_FONT_ID, label: "Same as Admin panel" },
-    // A distinct, reserved value from the fallback above - lets Ticket page be pinned to the
-    // default explicitly (e.g. Admin panel = Manrope, Ticket page = Admitto Sans) instead of only
-    // ever following whatever Admin panel currently is.
-    { id: DEFAULT_BRANDING_FONT_FAMILY_NAME, label: DEFAULT_BRANDING_FONT_FAMILY_NAME },
-    ...FONT_OPTIONS.filter((f) => f.name !== undefined).map((f) => ({ id: f.name, label: f.label })),
-    ...customFamilies.map((f) => ({ id: f.name, label: f.name })),
-  ];
+  const ticketFontOptions = inheritingFontOptions(SAME_AS_ADMIN_FONT_ID, "Same as Admin panel", customFamilies);
+  const registrationFontOptions = inheritingFontOptions(SAME_AS_TICKET_FONT_ID, "Same as Ticket page", customFamilies);
 
   if (!panel.gate.showContent) {
     return (
@@ -923,9 +911,7 @@ export function BrandingSettingsPanel() {
         <div>
           <p className="settings-card-intro">{THEME_INTRO}</p>
           <div className="theme-section" aria-labelledby="branding-font-label">
-            <span className="overline" id="branding-font-label">
-              Font
-            </span>
+            <SectionLabel id="branding-font-label">Font</SectionLabel>
             <p className="at-hint branding-scope-hint">
               Built-in fonts, plus any you upload. Assign one to each surface below.
             </p>
@@ -949,11 +935,9 @@ export function BrandingSettingsPanel() {
           </div>
 
           <div className="theme-section" aria-labelledby="branding-theme-surface-label">
-            <span className="overline" id="branding-theme-surface-label">
-              Theme by surface
-            </span>
+            <SectionLabel id="branding-theme-surface-label">Theme by surface</SectionLabel>
             <p className="at-hint branding-scope-hint">
-              Give each surface its own colour and font, or keep Ticket page matching Admin panel.
+              Give each surface its own colour and font, or keep it the same as the one before.
             </p>
             <div className="theme-surface-rows">
               <div className="settings-row">
@@ -967,9 +951,9 @@ export function BrandingSettingsPanel() {
                     label="Admin panel colour"
                     hex={adminColorHex}
                     displayLabel={adminColorDisplayLabel}
-                    mode={adminColorUi.mode}
-                    colorKey={adminColorUi.colorKey}
-                    customHex={adminColorUi.customHex}
+                    mode={colorUi.admin.mode}
+                    colorKey={colorUi.admin.colorKey}
+                    customHex={colorUi.admin.customHex}
                     disabled={formDisabled}
                     onPick={(key, hex) => handlePickSurfaceColor("admin", key, hex)}
                     onCustomChange={(hex) => handleCustomSurfaceColorChange("admin", hex)}
@@ -993,35 +977,6 @@ export function BrandingSettingsPanel() {
 
               <div className="settings-row">
                 <div className="settings-row__text">
-                  <strong>Registration form</strong>
-                  <p>The public sign-up page attendees would fill in.</p>
-                </div>
-                <div className="settings-row__controls">
-                  <button
-                    type="button"
-                    className="color-surface-control__trigger"
-                    disabled
-                    aria-label="Registration form colour, not available yet"
-                  >
-                    <span className="color-surface-control__label color-surface-control__label--placeholder">
-                      Not available yet
-                    </span>
-                  </button>
-                  <Select
-                    id="branding-font-registration-select"
-                    name="branding-font-registration"
-                    aria-label="Registration form font"
-                    defaultValue=""
-                    disabled
-                    style={FONT_SURFACE_SELECT_STYLE}
-                  >
-                    <option value="">Not available yet</option>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="settings-row" style={{ borderBottom: 0, paddingBottom: 0 }}>
-                <div className="settings-row__text">
                   <strong>Ticket page</strong>
                   <p>The public ticket page attendees open after check-in.</p>
                 </div>
@@ -1031,15 +986,16 @@ export function BrandingSettingsPanel() {
                     label="Ticket page colour"
                     hex={ticketColorHex}
                     displayLabel={ticketColorDisplayLabel}
-                    mode={ticketColorUi.mode}
-                    colorKey={ticketColorUi.colorKey}
-                    customHex={ticketColorUi.customHex}
+                    mode={colorUi.ticket.mode}
+                    colorKey={colorUi.ticket.colorKey}
+                    customHex={colorUi.ticket.customHex}
                     disabled={formDisabled}
-                    sameAsAdmin={ticketColorSameAsAdmin}
-                    sameAsAdminHex={adminColorHex}
+                    inheritLabel="Same as Admin panel"
+                    inherits={ticketColorSameAsAdmin}
+                    inheritHex={adminColorHex}
                     onPick={(key, hex) => handlePickSurfaceColor("ticket", key, hex)}
                     onCustomChange={(hex) => handleCustomSurfaceColorChange("ticket", hex)}
-                    onSelectSameAsAdmin={handleSelectSameAsAdminColor}
+                    onSelectInherit={() => handleSelectInheritedColor("ticket")}
                   />
                   <SearchableSelect
                     id="branding-font-ticket-select"
@@ -1053,6 +1009,45 @@ export function BrandingSettingsPanel() {
                     disabled={formDisabled}
                     onChange={(id) =>
                       handleSetSurfaceFont("ticket", id === SAME_AS_ADMIN_FONT_ID ? undefined : id)
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="settings-row" style={{ borderBottom: 0, paddingBottom: 0 }}>
+                <div className="settings-row__text">
+                  <strong>Registration form</strong>
+                  <p>The public sign-up page attendees fill in, and its confirmation page.</p>
+                </div>
+                <div className="settings-row__controls">
+                  <ColorSurfaceControl
+                    id="branding-color-registration-trigger"
+                    label="Registration form colour"
+                    hex={registrationColorHex}
+                    displayLabel={registrationColorDisplayLabel}
+                    mode={colorUi.registration.mode}
+                    colorKey={colorUi.registration.colorKey}
+                    customHex={colorUi.registration.customHex}
+                    disabled={formDisabled}
+                    inheritLabel="Same as Ticket page"
+                    inherits={registrationColorSameAsTicket}
+                    inheritHex={ticketColorHex}
+                    onPick={(key, hex) => handlePickSurfaceColor("registration", key, hex)}
+                    onCustomChange={(hex) => handleCustomSurfaceColorChange("registration", hex)}
+                    onSelectInherit={() => handleSelectInheritedColor("registration")}
+                  />
+                  <SearchableSelect
+                    id="branding-font-registration-select"
+                    label="Registration form font"
+                    placeholder="Same as Ticket page"
+                    searchPlaceholder="Search fonts…"
+                    emptyLabel="No fonts found"
+                    showLabel={false}
+                    value={themeDraft.registration_font_family_name ?? SAME_AS_TICKET_FONT_ID}
+                    options={registrationFontOptions}
+                    disabled={formDisabled}
+                    onChange={(id) =>
+                      handleSetSurfaceFont("registration", id === SAME_AS_TICKET_FONT_ID ? undefined : id)
                     }
                   />
                 </div>
@@ -1071,6 +1066,16 @@ export function BrandingSettingsPanel() {
             {themeFieldErrors.ticket_font_family_name && (
               <p className="text-error" role="alert">
                 {themeFieldErrors.ticket_font_family_name}
+              </p>
+            )}
+            {themeFieldErrors.registration_primary && (
+              <p className="text-error" role="alert">
+                {themeFieldErrors.registration_primary}
+              </p>
+            )}
+            {themeFieldErrors.registration_font_family_name && (
+              <p className="text-error" role="alert">
+                {themeFieldErrors.registration_font_family_name}
               </p>
             )}
           </div>
@@ -1092,65 +1097,6 @@ export function BrandingSettingsPanel() {
           onCancel={() => setPendingDeleteFamilyName(null)}
         />
 
-        <div className="theme-preview">
-          <span className="overline">Live preview</span>
-          <span className="at-hint branding-scope-hint">How your colour and font choices look together.</span>
-          <div className="theme-preview__bar" style={{ background: activeHex, fontFamily: adminFont.fontStack }}>
-            <span>Primary</span>
-            <span>{adminColorUi.mode === "custom" ? adminColorUi.customHex : "default"}</span>
-          </div>
-          <div className="theme-preview__row">
-            <div
-              className="theme-preview__bar theme-preview__bar--sm"
-              style={{ background: darken(activeHex, 24), fontFamily: adminFont.fontStack }}
-            >
-              hover
-            </div>
-            <div
-              className="theme-preview__tint"
-              style={{ background: `${activeHex}1a`, color: activeHex, fontFamily: adminFont.fontStack }}
-            >
-              Tint
-            </div>
-          </div>
-          <div className="theme-preview__controls">
-            <button type="button" className="theme-preview__btn" style={{ background: activeHex, fontFamily: adminFont.fontStack }}>
-              Primary action
-            </button>
-            <button
-              type="button"
-              className="theme-preview__btn theme-preview__btn--outline"
-              style={{ fontFamily: adminFont.fontStack }}
-            >
-              Secondary
-            </button>
-            <span className="theme-preview__badge" style={{ fontFamily: adminFont.fontStack }}>
-              Neutral badge
-            </span>
-          </div>
-          <p className="theme-preview__sample" style={{ fontFamily: adminFont.fontStack }}>
-            The quick brown fox jumps over the lazy dog.
-          </p>
-          <div className="theme-preview__variants">
-            <span style={{ fontFamily: adminFont.fontStack, fontWeight: 400 }}>Regular Aa</span>
-            <span style={{ fontFamily: adminFont.fontStack, fontWeight: 700 }}>
-              Bold Aa
-              {!adminFont.hasBoldVariant && (
-                <Tooltip content="No bold file uploaded. The browser is faking it.">
-                  <i className="ti ti-info-circle theme-preview__faux" aria-hidden="true" />
-                </Tooltip>
-              )}
-            </span>
-            <span style={{ fontFamily: adminFont.fontStack, fontStyle: "italic" }}>
-              Italic Aa
-              {!adminFont.hasItalicVariant && (
-                <Tooltip content="No italic file uploaded. The browser is faking it.">
-                  <i className="ti ti-info-circle theme-preview__faux" aria-hidden="true" />
-                </Tooltip>
-              )}
-            </span>
-          </div>
-        </div>
         </div>
       </Card>
 
