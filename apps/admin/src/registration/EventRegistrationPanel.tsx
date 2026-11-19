@@ -221,7 +221,8 @@ function EventRegistrationCards({
   const missing = missingChecks(server.readiness);
   const readOnly = !superadmin;
   const off = archived || saving;
-  const setupUnsure = returnAddressesFailed || addressStale;
+  // Also while they are being read again: the old address is not shown or copied from the moment the address changed.
+  const setupUnsure = returnAddressesFailed || addressStale || retryingAddresses;
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   useEffect(() => onSavingChange?.(saving), [saving, onSavingChange]);

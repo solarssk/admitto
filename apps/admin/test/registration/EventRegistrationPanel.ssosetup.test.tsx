@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import axe from "axe-core";
 import { MemoryRouter } from "react-router";
 import { readFileSync } from "node:fs";
@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RegistrationRedirectUriDto, RegistrationSettingsDto } from "../../src/api/types.js";
 import { EventRegistrationPanel } from "../../src/registration/EventRegistrationPanel.js";
-import { plain } from "../test-utils.js";
+import { deferred, plain } from "../test-utils.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
 import { settings, ssoChecks } from "./accessData.js";
 import { card, resetApi } from "./accessFixtures.js";
@@ -131,6 +131,32 @@ describe("the setup for IT in the Company SSO card", () => {
 
       await waitFor(() => expect(field("Return address for other.acme.example").value).toBe(OTHER_EVENT.uri));
       expect(panel().textContent).not.toContain("summit.acme.example");
+    });
+
+    it("shows and copies no old address while the new ones are being read, then the new one", async () => {
+      const { addressChanged } = await renderPanel(ssoSettings({ own_address: OWN }), [INSTANCE, EVENT]);
+      fireEvent.click(toggle());
+      const settingsRead = deferred<RegistrationSettingsDto>();
+      const addressesRead = deferred<ReturnType<typeof answer>>();
+      api.fetchRegistrationSettings.mockReturnValue(settingsRead.promise);
+      api.fetchRegistrationReturnAddresses.mockReturnValue(addressesRead.promise);
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+
+      addressChanged(1);
+
+      await waitFor(() => expect(within(panel()).queryByLabelText("Return address for summit.acme.example")).toBeNull());
+      expect(within(panel()).queryByLabelText("Return address")).toBeNull();
+      fireEvent.click(copyButton());
+      await waitFor(() => expect(writeText).toHaveBeenCalled());
+      expect(String(writeText.mock.calls[0]?.[0])).not.toContain("summit.acme.example");
+      expect(String(writeText.mock.calls[0]?.[0])).not.toContain("admitto.example.com/sso/callback");
+      await act(async () => {
+        settingsRead.resolve(ssoSettings({ own_address: { ...OWN, domain: "other.acme.example" } }));
+        addressesRead.resolve(answer([INSTANCE, OTHER_EVENT]));
+      });
+
+      await waitFor(() => expect(field("Return address for other.acme.example").value).toBe(OTHER_EVENT.uri));
     });
 
     it.each([
