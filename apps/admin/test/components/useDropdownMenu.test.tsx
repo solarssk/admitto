@@ -552,3 +552,26 @@ describe("useDropdownMenu: items that CSS hides on this screen", () => {
     expect(document.activeElement).toBe(second);
   });
 });
+
+describe("useDropdownMenu: a panel that was never attached", () => {
+  function MenuWithoutPanelRef() {
+    const { open, setOpen, rootRef, triggerRef } = useDropdownMenu<HTMLButtonElement>();
+    return (
+      <div ref={rootRef}>
+        <button ref={triggerRef} onClick={() => setOpen((o) => !o)}>
+          Trigger
+        </button>
+        {open && <div role="menu">No ref</div>}
+      </div>
+    );
+  }
+
+  it("has no item to focus, and the arrow keys do nothing, instead of failing", () => {
+    render(<MenuWithoutPanelRef />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+
+    expect(() => fireEvent.keyDown(document, { key: "ArrowDown" })).not.toThrow();
+    expect(document.activeElement).toBe(document.body);
+  });
+});
