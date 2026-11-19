@@ -72,7 +72,8 @@ function HeaderActions({ saved }: Readonly<{ saved: LegalDocumentWithContentDto 
       {stateBadge(saved)}
       {saved?.published && (
         <a className="at-btn at-btn--secondary at-btn--sm" href={saved.public_path} target="_blank" rel="noopener noreferrer">
-          <i className="ti ti-external-link" aria-hidden="true" /> View as a guest
+          <i className="ti ti-external-link" aria-hidden="true" />{" "}
+          <span>View as a guest</span>
           <span className="sr-only"> (opens in a new tab)</span>
         </a>
       )}
