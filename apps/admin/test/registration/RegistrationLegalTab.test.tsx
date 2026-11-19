@@ -492,6 +492,12 @@ describe("RegistrationLegalTab: what a row does", () => {
     expect(document.getElementById(draft.getAttribute("aria-describedby") ?? "")?.textContent).toBe("Publish it first.");
   });
 
+  it("shows a draft that the settings still list as asked as off, since only a published consent is asked", async () => {
+    await loaded([privacy, terms, doc("consent-old", { title: "Old", required: true })]);
+
+    expect(askedSwitch("Old").checked).toBe(false);
+  });
+
   it("has no Asked switch for the two required texts", async () => {
     await loaded([privacy, terms, news]);
 
