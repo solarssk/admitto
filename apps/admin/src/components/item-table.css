@@ -51,7 +51,7 @@
   height: 3.75rem;
 }
 
-/* A column that only a wide screen has (the Status). Under 700px it takes no width and shows nothing (not `display: none`, which
+/* A column that only a wide screen has (the Status). Under 1024px (the shell has a fixed sidebar from 768px, so the content is narrow long before the screen is) it takes no width and shows nothing (not `display: none`, which
    a fixed layout and the kebab menu's fixed panel do not forgive), and the row says the same in `.item-table__narrow-only`,
    under the name. Media queries, not container queries: a container holds the fixed panel of a menu inside its own box. */
 .item-table__narrow-only {
@@ -59,7 +59,7 @@
   margin-top: var(--space-1);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 1023px) {
   .item-table .table th.item-table__wide-only,
   .item-table .table td.item-table__wide-only {
     width: 0;
@@ -79,5 +79,19 @@
 
   .item-table__narrow-only {
     display: block;
+  }
+}
+
+/* A table of Event items or Fields has a description column too: it goes before the name is squeezed (the name keeps what is left, never
+   less than about 8rem at a 460px content). The Active and Required columns keep their own ladder (requirements.css). */
+@media (max-width: 820px) {
+  .item-table .table th.requirements-item-desc-col,
+  .item-table .table td.requirements-item-desc-col {
+    display: none;
+  }
+
+  .item-table .table th:first-child,
+  .item-table .table td:first-child {
+    width: auto;
   }
 }

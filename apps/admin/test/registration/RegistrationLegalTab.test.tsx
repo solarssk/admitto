@@ -575,6 +575,8 @@ describe("RegistrationLegalTab: what a row does", () => {
       expect(item(name).textContent).toContain("This event is archived. Editing is disabled.");
     }
     expect(isOff(item("View as a guest"))).toBe(false);
+    // The open item of the menu says View too, for the screen on which the button has gone.
+    expect(item("View")).toBeTruthy();
   });
 
   it("has Publish for a draft, View as a guest only for a published text, and Delete, in the kebab", async () => {

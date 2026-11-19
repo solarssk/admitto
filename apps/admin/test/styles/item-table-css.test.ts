@@ -26,6 +26,18 @@ describe("the shared item table", () => {
     expect(shared).not.toMatch(/margin(-inline)?:\s*-/);
   });
 
+  it("has one ladder, by screen width: 1023px takes the Status out, 820px the description of Event items and Fields, and no container query", () => {
+    expect(shared).toMatch(/@media \(max-width: 820px\)[\s\S]*requirements-item-desc-col[\s\S]*display: none/);
+    expect(shared).not.toContain("700px");
+  });
+
+  it("narrows the Legal table by the same widths: the switch and the menu column at 1023px with the Edit item in the menu, the description at 480px", () => {
+    const legal = read("src/registration/legal-texts.css");
+    expect(legal).toMatch(/@media \(max-width: 1023px\)[\s\S]*legal-asked-col \{\s*width: 5rem;[\s\S]*legal-actions-col \{\s*width: 3rem;[\s\S]*legal-open-button \{\s*display: none;[\s\S]*legal-menu-narrow-only \{\s*display: block;/);
+    expect(legal).toMatch(/@media \(max-width: 480px\)[\s\S]*legal-item-desc \{\s*display: none;/);
+    expect(legal).not.toContain("@container");
+  });
+
   it.each([["src/pages/RequirementsPage.tsx"], ["src/requirements/EventCustomFieldsCard.tsx"], ["src/requirements/RequirementsSkeleton.tsx"]])(
     "%s draws its card padded, so the box is inset by the card",
     (path) => {
@@ -34,7 +46,7 @@ describe("the shared item table", () => {
   );
 
   it("takes the narrow column out with no width and no content, not display none, and shows the status under the name instead (a media query)", () => {
-    expect(shared).toMatch(/@media \(max-width: 700px\)[\s\S]*width: 0;[\s\S]*padding: 0;/);
+    expect(shared).toMatch(/@media \(max-width: 1023px\)[\s\S]*width: 0;[\s\S]*padding: 0;/);
     expect(shared).not.toContain("@container");
     expect(shared).not.toMatch(/item-table__wide-only\s*\{[^}]*display:\s*none/);
   });

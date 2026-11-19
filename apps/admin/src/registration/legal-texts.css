@@ -76,10 +76,11 @@
   display: none;
 }
 
-/* A phone: the description goes, the button moves into the menu, and the switch and the menu stay. */
-@media (max-width: 480px) {
+/* The admin shell has a fixed sidebar from 768px, so a screen under 1024px has a narrow content: the switch is a column of its own, the
+   button moves into the menu (which has an item for it), and the switch and the menu stay. The same screen-width ladder as the shared table. */
+@media (max-width: 1023px) {
   .legal-table .legal-asked-col {
-    width: 4.5rem;
+    width: 5rem;
   }
 
   .legal-table .legal-actions-col {
@@ -90,12 +91,15 @@
     display: none;
   }
 
-  .legal-table .legal-item-desc {
-    display: none;
-  }
-
   .more-actions-menu__item-wrapper.legal-menu-narrow-only {
     display: block;
+  }
+}
+
+/* A phone: the line under the name goes too. */
+@media (max-width: 480px) {
+  .legal-table .legal-item-desc {
+    display: none;
   }
 }
 
