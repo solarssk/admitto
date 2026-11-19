@@ -63,6 +63,7 @@ import {
   customDataErrorKey,
 } from "./form-contract.js";
 import { styledKindOf, type StyledKind } from "./form-controls.js";
+import { eventTimeNote } from "./event-place-name.js";
 import { checkTick, icon, type GuestIcon } from "./form-icons.js";
 import type { FormConsent, FormQuestion, RegistrationFormModel } from "./form-model.js";
 import { botChallengeCData } from "./bot-challenge.js";
@@ -164,8 +165,8 @@ interface TextFieldSpec {
   waiting?: boolean;
   /** What to offer while the guest types: a list of rows under the box (see {@link renderCombo}). Absent: a plain box. */
   suggestions?: readonly string[];
-  /** The kind of styled box the second script (./form-controls-script.ts) is to make of this field, for an event that
-   * switched the styled boxes on. Absent: the browser's box stays, as it is on every other page. */
+  /** The kind of own box the second script (./form-controls-script.ts) is to make of this field. Absent: the browser's box
+   * stays (a phone question whose rules shape the number, and every other kind of question). */
   styled?: StyledKind;
   /** The value the box holds when the page is drawn, for a field the guest does not type (the address a sign-in gave). */
   value?: string;
@@ -308,9 +309,6 @@ export interface QuestionContext {
    * so they start hidden and disabled, as a question that waits for another answer does, and their errors have a name of
    * their own (see `companionAnswerErrorKey`). */
   recipient?: "guest" | "companion";
-  /** The event switched the styled boxes on (D-E9): a field that a styled box can take is marked for the second script.
-   * Absent or false: the page is the one it always was. */
-  styledControls?: boolean;
 }
 
 /** True when the question waits to be asked: it has a condition, or it is a companion's. */
@@ -361,6 +359,13 @@ function rulesHint(rules: EventCustomFieldRules | null): string | null {
 function questionNote(question: FormQuestion, ...more: readonly string[]): string | null {
   const lines = [question.description, rulesHint(question.rules), ...more].filter((line): line is string => Boolean(line));
   return lines.length > 0 ? lines.join("\n") : null;
+}
+
+/** The note of a date and time: the organiser's words and rules, and then, on the same line, whose clock to use. */
+function dateTimeNote(question: FormQuestion, timeZone: string): string {
+  const base = questionNote(question);
+  const zone = eventTimeNote(timeZone);
+  return base === null ? zone : `${base} ${zone}`;
 }
 
 /** A numeric keypad for an answer that is digits only. */
@@ -443,13 +448,7 @@ function renderLongTextQuestion(question: FormQuestion, id: string, context: Que
   return `<div class="at-field"${wrapper}>${labelOf(id, question.label, question.required)}${textarea}${slot(id, questionNote(question))}</div>`;
 }
 
-/** The kind of styled box a question is marked for, when the event switched the styled boxes on and the question's rules leave
- * room for the box (see {@link styledKindOf}). Absent for every other event: the page is the one it always was. */
-function styledOf(question: FormQuestion, context: QuestionContext): StyledKind | undefined {
-  return context.styledControls === true ? styledKindOf(question) : undefined;
-}
-
-/** A date is the browser's own date control, which gives `YYYY-MM-DD`. With the styled boxes on, the second script turns it into a
+/** A date is the browser's own date control, which gives `YYYY-MM-DD`. The second script turns it into a
  * text box with a calendar beside it; the control in the page is the same one, with the same id, label, note and message. */
 function renderDateQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
   return questionField(question, id, context, {
@@ -457,12 +456,12 @@ function renderDateQuestion(question: FormQuestion, id: string, context: Questio
     message: "Enter a date.",
     invalid: invalidMessage(question),
     inputType: "date",
-    styled: styledOf(question, context),
+    styled: styledKindOf(question),
   });
 }
 
 /** A date and time is the browser's own control, which gives `YYYY-MM-DDTHH:mm` with no zone. The answer is
- * read as the clock of the event, so the note names the event's time zone. With the styled boxes on, the second script makes
+ * read as the clock of the event, so the note names the event's time zone. The second script makes
  * a date box and a time box of it, side by side; the note stays under them. */
 function renderDateTimeQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
   return questionField(question, id, context, {
@@ -470,13 +469,13 @@ function renderDateTimeQuestion(question: FormQuestion, id: string, context: Que
     message: "Enter a date and time.",
     invalid: invalidMessage(question),
     inputType: "datetime-local",
-    note: questionNote(question, `Time in the event's time zone (${context.timeZone}).`),
-    styled: styledOf(question, context),
+    note: dateTimeNote(question, context.timeZone),
+    styled: styledKindOf(question),
   });
 }
 
 /** A phone number is typed freely; the server accepts spaces, dashes, dots, brackets and a leading + and keeps the digits.
- * With the styled boxes on, a question whose rules leave room for a country code is marked for the second script, which
+ * A question whose rules leave room for a country code is marked for the second script, which
  * puts a list of countries beside the box (see {@link styledKindOf}); the box itself is the same one. */
 function renderPhoneQuestion(question: FormQuestion, id: string, context: QuestionContext): string {
   return questionField(question, id, context, {
@@ -485,7 +484,7 @@ function renderPhoneQuestion(question: FormQuestion, id: string, context: Questi
     invalid: invalidMessage(question),
     maxLength: REGISTRANT_TEXT_MAX,
     inputType: "tel",
-    styled: styledOf(question, context),
+    styled: styledKindOf(question),
   });
 }
 
@@ -737,7 +736,7 @@ export function renderCompanion(model: RegistrationFormModel): string {
   const section = model.companion;
   if (!section) return "";
   const { main, panels } = placeQuestions(section.questions, "f-c");
-  const context: QuestionContext = { timeZone: model.event.timezone, recipient: "companion", styledControls: model.styledControls };
+  const context: QuestionContext = { timeZone: model.event.timezone, recipient: "companion" };
   const panel = `<div class="reg-reveal" id="f-companion-panel" data-companion-panel hidden>${renderCompanionName()}${renderGroup(main, panels, context)}</div>`;
   return `<div class="reg-section"><p class="reg-section__label">Your guest</p><div class="reg-opts">${renderCompanionToggle()}${panel}</div></div>`;
 }

@@ -110,6 +110,11 @@ describe("registration status lists", () => {
 });
 
 describe("EventRegistrationSettings", () => {
+  it("has no switch for the form's boxes: every form draws its own", async () => {
+    const rows = await prisma.$queryRaw<{ column_name: string }[]>`SELECT column_name FROM information_schema.columns WHERE table_name = 'EventRegistrationSettings' AND column_name = 'styled_form_controls'`;
+    expect(rows).toHaveLength(0);
+  });
+
   it("defaults to off with the documented defaults", async () => {
     const row = await prisma.eventRegistrationSettings.create({ data: { event_id: EVENT_ID } });
     expect(row).toMatchObject({
@@ -122,7 +127,6 @@ describe("EventRegistrationSettings", () => {
       ask_company: false,
       ask_department: false,
       consent_keys: [],
-      styled_form_controls: false,
       bot_protection_enabled: true,
       custom_domain: null,
       custom_domain_status: "unchecked",

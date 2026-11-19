@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isDateTimeAnswer } from "@admitto/shared";
+import { GUEST_MINUTE_STEP } from "../../src/registration/form-time-script.js";
 import { question, type Dom } from "../helpers/registration-form-fixtures.js";
 import { bootPage, boxOf, fillFixedFields, sendForm, sentBody, typeInto, until, type ScriptPage } from "../helpers/registration-script-page.js";
 import {
@@ -65,7 +66,51 @@ function reference(raw: string): string {
   return `${String(whole).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
-describe("the date and time question of an event with the styled boxes on", { timeout: 30_000 }, () => {
+describe("the date and time question of a form", { timeout: 30_000 }, () => {
+  it("draws each box as the product's bordered box with the icon button at its left inside, and no button after it", () => {
+    const page = bootDates([question({ key: "dt", label: "Expected arrival", type: "datetime", icon: "clock" })]);
+    const [dateBox, timeBox] = [...page.doc.querySelector(".reg-dt").children] as Dom[];
+    for (const [box, button, input] of [
+      [dateBox, calendarButton(page), field(page)],
+      [timeBox, clockButton(page), timeField(page)],
+    ] as const) {
+      expect(box.classList.contains("at-inputgroup")).toBe(true);
+      expect(box.classList.contains("at-control")).toBe(false);
+      // The button is the first thing in the box (in the wrapper of its panel, which takes no part in the layout), a real button with
+      // the shared classes, and the text box follows it.
+      expect(box.firstElementChild.contains(button)).toBe(true);
+      expect(box.firstElementChild.classList.contains("reg-dt__pop")).toBe(true);
+      expect(button.className).toBe("at-inputgroup__icon at-inputgroup__icon--action");
+      expect(button.getAttribute("type")).toBe("button");
+      expect(button.getAttribute("aria-label")).toContain("Expected arrival");
+      expect(box.contains(input)).toBe(true);
+      expect(button.compareDocumentPosition(input) & 4).toBe(4);
+      expect(box.lastElementChild).toBe(input);
+    }
+    // The icon of the question is replaced by the button: one icon in the box.
+    expect(dateBox.querySelectorAll(".at-inputgroup__icon")).toHaveLength(1);
+    expect(page.doc.querySelectorAll(".reg-dt__button")).toHaveLength(0);
+    expect(page.doc.querySelector(".reg-dt").children).toHaveLength(2);
+  });
+
+  it("makes the same box of a question that has no icon of its own", () => {
+    const page = boot();
+    const dateBox = page.doc.querySelector(".reg-dt").firstElementChild;
+    expect(dateBox.classList.contains("at-inputgroup")).toBe(true);
+    expect(dateBox.classList.contains("at-control")).toBe(false);
+    expect(dateBox.querySelectorAll(".at-inputgroup__icon")).toHaveLength(1);
+  });
+
+  it("opens the calendar from the icon, and the list from the clock, and the text boxes open them with Down", () => {
+    const page = boot();
+    click(page, calendarButton(page));
+    expect(calendar(page).hidden).toBe(false);
+    press(page, "Escape");
+    expect(calendar(page).hidden).toBe(true);
+    click(page, clockButton(page));
+    expect(clockPanel(page).hidden).toBe(false);
+  });
+
   it("keeps the browser's own box in the page as the date box and puts a time box beside it, each with its button", () => {
     const page = boot();
     const box = boxOf(page, "dt");
@@ -90,7 +135,7 @@ describe("the date and time question of an event with the styled boxes on", { ti
   it("keeps the note that names the time zone of the event, under the boxes", () => {
     const page = boot();
     const slot = page.doc.getElementById("m-f-q0");
-    expect(slot.textContent).toContain("Time in the event's time zone (Europe/Warsaw).");
+    expect(slot.textContent).toContain("Use the event's local time (Warsaw).");
     expect(boxOf(page, "dt").lastElementChild).toBe(slot);
   });
 
@@ -145,7 +190,7 @@ describe("the answer of a date and time", { timeout: 30_000 }, () => {
     ["28/02/2023", "9", ""],
     ["28/02/2023", "09", "2023-02-28T09:00"],
   ])("sends what the browser's own box sends for %s %s", async (date, time, expected) => {
-    const nativePage = bootPage([DATETIME]);
+    const nativePage = bootPage([DATETIME], { firstScriptOnly: true });
     if (expected) {
       nativePage.doc.getElementById("f-q0").value = expected;
       fillFixedFields(nativePage);
@@ -426,13 +471,14 @@ describe("the list of times", { timeout: 30_000 }, () => {
     expect(clockPanel(page).getAttribute("aria-label")).toBe("Expected arrival, choose time");
   });
 
-  it("has the hours 00 to 23 and the minutes 00 to 59, a minute apart, for a 24-hour clock, and no column of AM and PM", () => {
+  it("has the hours 00 to 23 and the minutes 00, 15, 30 and 45, a quarter of an hour apart, for a 24-hour clock, and no column of AM and PM", () => {
     const page = boot();
     openClock(page);
     expect(clockOpen(page)).toBe(true);
     expect(clockButton(page).getAttribute("aria-expanded")).toBe("true");
     expect(optionText(page, "hours")).toEqual(Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0")));
-    expect(optionText(page, "minutes")).toEqual(Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, "0")));
+    expect(optionText(page, "minutes")).toEqual(["00", "15", "30", "45"]);
+    expect(optionText(page, "minutes")).toEqual(Array.from({ length: 60 / GUEST_MINUTE_STEP }, (_, step) => String(step * GUEST_MINUTE_STEP).padStart(2, "0")));
     expect(options(page, "meridiem")).toHaveLength(0);
     expect(clockPanel(page).querySelector("[data-time-meridiem-col]").hidden).toBe(true);
     expect(list(page, "hours").getAttribute("role")).toBe("listbox");
@@ -446,7 +492,7 @@ describe("the list of times", { timeout: 30_000 }, () => {
     const page = boot({ languages: ["en-US"] });
     openClock(page);
     expect(optionText(page, "hours")).toEqual(Array.from({ length: 12 }, (_, hour) => String(hour + 1).padStart(2, "0")));
-    expect(options(page, "minutes")).toHaveLength(60);
+    expect(optionText(page, "minutes")).toEqual(["00", "15", "30", "45"]);
     expect(optionText(page, "meridiem")).toEqual(["AM", "PM"]);
     expect(clockPanel(page).querySelector("[data-time-meridiem-col]").hidden).toBe(false);
     expect(clockPanel(page).classList.contains("reg-time--twelve")).toBe(true);
@@ -514,6 +560,38 @@ describe("the list of times", { timeout: 30_000 }, () => {
     expect(chosen(page, "hours")).toEqual(["07"]);
     expect(chosen(page, "minutes")).toEqual(["45"]);
     expect(focused(page)).toBe(optionOf(page, "hours", "07"));
+  });
+
+  it("keeps a minute that the list does not have: 18:07 stays 18:07, none of the minutes is chosen, and the nearest is the one the Tab key reaches", () => {
+    const page = boot();
+    expect(type(page, "04/11/2026", "18:07")).toBe("2026-11-04T18:07");
+    openClock(page);
+    expect(timeField(page).value).toBe("18:07");
+    expect(chosen(page, "hours")).toEqual(["18"]);
+    expect(chosen(page, "minutes")).toEqual([]);
+    expect(options(page, "minutes").filter((item) => item.getAttribute("tabindex") === "0").map((item) => item.textContent)).toEqual(["00"]);
+    // Opening the list and leaving it changes nothing: the typed time is still the answer.
+    press(page, "Escape");
+    expect(timeField(page).value).toBe("18:07");
+    expect(carrier(page)).toBe("2026-11-04T18:07");
+  });
+
+  it("points the Tab key at the nearest quarter of an hour for a minute between two of them, the later one for 38 and the earlier for 37", () => {
+    const stop = (time: string) => {
+      const page = boot();
+      type(page, "04/11/2026", time);
+      openClock(page);
+      return options(page, "minutes").filter((item) => item.getAttribute("tabindex") === "0").map((item) => item.textContent);
+    };
+    expect(stop("18:37")).toEqual(["30"]);
+    expect(stop("18:38")).toEqual(["45"]);
+    expect(stop("18:59")).toEqual(["45"]);
+    expect(stop("18:45")).toEqual(["45"]);
+  });
+
+  it("offers the minutes in steps of GUEST_MINUTE_STEP, which divides the hour", () => {
+    expect(60 % GUEST_MINUTE_STEP).toBe(0);
+    expect(GUEST_MINUTE_STEP).toBe(15);
   });
 
   it("tells the form that the box changed, so that the error of the field is cleared", () => {
@@ -589,9 +667,9 @@ describe("the keys of the list of times", { timeout: 30_000 }, () => {
     expect(focused(page)).toBe(optionOf(page, "minutes", "00"));
     press(page, "ArrowDown");
     press(page, "ArrowDown");
-    expect(timeField(page).value).toBe("09:02");
+    expect(timeField(page).value).toBe("09:30");
     press(page, "ArrowRight");
-    expect(focused(page)).toBe(optionOf(page, "minutes", "02"));
+    expect(focused(page)).toBe(optionOf(page, "minutes", "30"));
     press(page, "ArrowLeft");
     expect(focused(page)).toBe(optionOf(page, "hours", "09"));
     press(page, "ArrowLeft");
@@ -616,7 +694,7 @@ describe("the keys of the list of times", { timeout: 30_000 }, () => {
     press(page, "ArrowRight");
     press(page, "ArrowDown");
     press(page, "Enter");
-    expect(timeField(page).value).toBe("09:01");
+    expect(timeField(page).value).toBe("09:15");
     expect(clockOpen(page)).toBe(false);
     expect(focused(page)).toBe(clockButton(page));
     expect(page.fetchMock).not.toHaveBeenCalled();

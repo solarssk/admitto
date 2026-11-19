@@ -145,11 +145,11 @@ describe("the form of a guest who signed in", () => {
     expect(document.querySelector("#reg-done")?.textContent).toContain("It tells you what happens next.");
   });
 
-  it("carries the script of the form and then the small one of this way in, both under the nonce of the response", () => {
+  it("carries the script of the form, the one of its own boxes and then the small one of this way in, all under the nonce of the response", () => {
     const scripts = [...open(signedIn()).document.querySelectorAll("script")];
 
-    expect(scripts.map((script) => script.getAttribute("nonce"))).toEqual([NONCE, NONCE]);
-    expect(scripts[1]?.textContent).toBe(REGISTRATION_SSO_SCRIPT);
+    expect(scripts.map((script) => script.getAttribute("nonce"))).toEqual([NONCE, NONCE, NONCE]);
+    expect(scripts[2]?.textContent).toBe(REGISTRATION_SSO_SCRIPT);
   });
 
   it("is a page of its own kind, whatever the fields: the page of an event of the link has none of it", () => {
@@ -158,7 +158,8 @@ describe("the form of a guest who signed in", () => {
 
     expect(document.querySelector("#f-email")?.hasAttribute("readonly")).toBe(false);
     expect(document.querySelector(".cf-turnstile")).not.toBeNull();
-    expect(document.querySelectorAll("script")).toHaveLength(2);
+    // The form's own script, the one of its own boxes, and Cloudflare's widget: not the small script of the company sign-in.
+    expect(document.querySelectorAll("script")).toHaveLength(3);
     expect(link).not.toContain("window.fetch = function");
     expect(link).not.toContain(".reg-center h2");
   });

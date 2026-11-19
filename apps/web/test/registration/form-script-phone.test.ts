@@ -5,9 +5,9 @@ import type { RegistrationFormModel } from "../../src/registration/form-model.js
 import { question, type Dom } from "../helpers/registration-form-fixtures.js";
 import { bootPage, boxOf, fillFixedFields, sendForm, sentBody, typeInto, until, type ScriptPage } from "../helpers/registration-script-page.js";
 
-/** The page of an event with the styled boxes on and one phone question, `mobile`, as f-q0. */
+/** The page of a form with one phone question, `mobile`, as f-q0. */
 function boot(model: Partial<RegistrationFormModel> = {}) {
-  return bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone" })], { model: { styledControls: true, ...model } });
+  return bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone" })], { model });
 }
 
 const number = (page: ScriptPage): Dom => page.doc.getElementById("f-q0");
@@ -41,7 +41,7 @@ function chooseCountry(page: ScriptPage, text: string, id = "f-q0"): void {
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-describe("the phone question of an event with the styled boxes on", { timeout: 30_000 }, () => {
+describe("the phone question of a form", { timeout: 30_000 }, () => {
   it("keeps the browser's own number box, with its id, its label and its note, and puts the country button before it", () => {
     const page = boot();
     const box = boxOf(page, "mobile");
@@ -163,7 +163,7 @@ describe("picking a country", { timeout: 30_000 }, () => {
   });
 
   it("clears the error of the field, as any edit of it does", () => {
-    const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })], { model: { styledControls: true } });
+    const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })]);
     fillFixedFields(page);
     sendForm(page);
     expect(boxOf(page, "mobile").classList.contains("has-error")).toBe(true);
@@ -287,7 +287,6 @@ describe("the answer", { timeout: 30_000 }, () => {
 
   it("takes the number the browser filled in before the script ran", () => {
     const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone" })], {
-      model: { styledControls: true },
       before: (doc) => {
         doc.getElementById("f-q0").value = "+48500100200";
       },
@@ -484,7 +483,6 @@ describe("opening and closing", { timeout: 30_000 }, () => {
         question({ key: "car", label: "I come by car", type: "boolean" }),
         question({ key: "mobile", label: "Mobile phone", type: "phone", showWhen: { field: "car", value: true } }),
       ],
-      { model: { styledControls: true } },
     );
     expect(boxOf(page, "mobile").hidden).toBe(true);
     expect(page.doc.getElementById("f-q1").disabled).toBe(true);
@@ -496,7 +494,7 @@ describe("opening and closing", { timeout: 30_000 }, () => {
 
 describe("with the first script", { timeout: 30_000 }, () => {
   it("makes a required number, left empty, an error under the field, and the focus goes to the number", () => {
-    const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })], { model: { styledControls: true } });
+    const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })]);
     fillFixedFields(page);
     sendForm(page);
     expect(boxOf(page, "mobile").classList.contains("has-error")).toBe(true);
@@ -506,7 +504,7 @@ describe("with the first script", { timeout: 30_000 }, () => {
   });
 
   it("makes a required number with only a country an error too: the answer is empty", () => {
-    const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })], { model: { styledControls: true } });
+    const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })]);
     fillFixedFields(page);
     chooseCountry(page, "poland");
     sendForm(page);
@@ -515,7 +513,7 @@ describe("with the first script", { timeout: 30_000 }, () => {
   });
 
   it("marks the number box invalid, in colour and to assistive technology, and clears it when the guest edits", async () => {
-    const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })], { model: { styledControls: true } });
+    const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone", required: true })]);
     fillFixedFields(page);
     sendForm(page);
     await tick();
@@ -553,7 +551,7 @@ describe("with the first script", { timeout: 30_000 }, () => {
   }
 
   it("sends nothing for a question that is not asked, and does not ask for it", () => {
-    const page = bootPage([CAR, WAITING], { model: { styledControls: true } });
+    const page = bootPage([CAR, WAITING]);
     expect(boxOf(page, "mobile").hidden).toBe(true);
     expect(carrier(page).disabled).toBe(true);
     fillFixedFields(page);
@@ -562,7 +560,7 @@ describe("with the first script", { timeout: 30_000 }, () => {
   });
 
   it("asks it once its condition is met: required, and sent with the code", async () => {
-    const page = bootPage([CAR, WAITING], { model: { styledControls: true } });
+    const page = bootPage([CAR, WAITING]);
     await tickCar(page, true);
     expect(boxOf(page, "mobile").hidden).toBe(false);
     expect(page.doc.getElementById("f-q1").disabled).toBe(false);
@@ -579,7 +577,7 @@ describe("with the first script", { timeout: 30_000 }, () => {
   });
 
   it("keeps what the guest typed in a question that goes away, and sends it again when the question comes back", async () => {
-    const page = bootPage([CAR, { ...WAITING, required: false }], { model: { styledControls: true } });
+    const page = bootPage([CAR, { ...WAITING, required: false }]);
     await tickCar(page, true);
     chooseCountry(page, "germany", "f-q1");
     typeInto(page, "f-q1", "151 2345678");
@@ -599,7 +597,6 @@ describe("two phone questions, and the guest's companion", { timeout: 30_000 }, 
   it("keeps the state of each box to itself, with ids of its own", () => {
     const page = bootPage(
       [question({ key: "mobile", label: "Mobile phone", type: "phone" }), question({ key: "office", label: "Office phone", type: "phone" })],
-      { model: { styledControls: true } },
     );
     click(page, page.doc.getElementById("f-q0-country"));
     typeInto(page, "f-q0-search", "poland");
@@ -616,7 +613,6 @@ describe("two phone questions, and the guest's companion", { timeout: 30_000 }, 
   it("takes a phone question about the companion, which is sent with the companion and only while one comes", async () => {
     const page = bootPage([], {
       model: {
-        styledControls: true,
         companion: { max: 1, questions: [question({ key: "guest_phone", label: "Guest phone", type: "phone" })] },
       },
     });
@@ -636,7 +632,6 @@ describe("two phone questions, and the guest's companion", { timeout: 30_000 }, 
 describe("a page that lacks something the script needs", { timeout: 30_000 }, () => {
   it("leaves the browser's own box alone when the list of countries is missing, and the form works as it does without the script", () => {
     const page = bootPage([question({ key: "mobile", label: "Mobile phone", type: "phone" })], {
-      model: { styledControls: true },
       edit: (html) => html.replace(/<ul id="reg-phone-countries"[\s\S]*?<\/ul>/, ""),
     });
     expect(page.doc.getElementById("f-q0-country")).toBeNull();
@@ -649,7 +644,6 @@ describe("a page that lacks something the script needs", { timeout: 30_000 }, ()
 
   it("does nothing for a phone question the page did not mark, such as a desk extension with digits only", () => {
     const page = bootPage([question({ key: "ext", label: "Desk extension", type: "phone", rules: { digits_only: true, max_length: 6 } })], {
-      model: { styledControls: true },
     });
     expect(page.doc.getElementById("f-q0-country")).toBeNull();
     expect(page.doc.getElementById("reg-phone-kit")).toBeNull();
@@ -660,7 +654,7 @@ describe("a page that lacks something the script needs", { timeout: 30_000 }, ()
 describe("what the script writes is text", { timeout: 30_000 }, () => {
   it("never turns the words of a label into markup", () => {
     const label = "Phone <img src=x onerror=alert(1)> & \"more\"";
-    const page = bootPage([question({ key: "mobile", label, type: "phone" })], { model: { styledControls: true } });
+    const page = bootPage([question({ key: "mobile", label, type: "phone" })]);
     open(page);
     expect(page.doc.querySelector("img[onerror]")).toBeNull();
     expect(trigger(page).getAttribute("aria-label")).toBe(`${label} country code, no code selected`);

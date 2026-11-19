@@ -139,9 +139,6 @@ export interface RegistrationFormModel {
   /** Whether the way in is the company sign-in (D-C4): the page then asks the guest to sign in first, and shows the form,
    * with the address the provider gave locked, only to a guest who has. Only that: who has is the route's to say. */
   needsSso: boolean;
-  /** Whether the event draws the phone box (and, in a later step, the date and time boxes) in the product's own style
-   * instead of the browser's (D-E9). One switch for the event. Off: the page is the native one, byte for byte. */
-  styledControls: boolean;
 }
 
 export interface ClosedFormModel {
@@ -204,7 +201,6 @@ const EVENT_SELECT = {
       ask_department: true,
       consent_keys: true,
       max_companions: true,
-      styled_form_controls: true,
       bot_protection_enabled: true,
       sso_claim_name: true,
       sso_claim_values: true,
@@ -401,7 +397,6 @@ async function loadOpenForm(
       needsChallenge,
       needsPassword: access.method === "password",
       needsSso: access.method === "sso",
-      styledControls: settings.styled_form_controls,
     },
   };
 }

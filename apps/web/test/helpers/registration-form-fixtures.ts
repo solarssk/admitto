@@ -37,7 +37,6 @@ export function formModel(overrides: Partial<RegistrationFormModel> = {}): Regis
     needsChallenge: true,
     needsPassword: false,
     needsSso: false,
-    styledControls: false,
     ...overrides,
   };
 }

@@ -79,22 +79,22 @@ When the event is full, a new request goes on the waiting list. You accept peopl
 - Moving the event to another way removes the restriction.
 - Company SSO is grey while no identity provider is turned on. An event that already has it keeps it, and the **Identity provider** row of the **Checklist** tab warns that guests cannot open the form.
 
-**Styled boxes**
+**The boxes of the form**
 
-By default the guest's browser draws the boxes of the form. With **Styled form boxes** on, the form draws its own, in the style of Admitto: a phone box with a list of countries, a calendar for a date, and a list of times for a time. The switch is for the whole event, not for one question.
+Every form draws its own boxes, in the style of Admitto, for a phone, a date and a time. There is no switch. If the guest's browser does not run the page's script, the browser's own boxes work instead.
 
-| Box | Switch off | Switch on |
-|---|---|---|
-| Phone | A one-line box | A button with a flag and a country code, a list of countries with a search box, and the number beside it |
-| Date | The browser's date box | A text box with a calendar button beside it. The calendar opens under the box |
-| Date and time | The browser's date and time box | A date box and a time box side by side, one under the other on a phone. Each has its own button, for a calendar and for a list of times |
+| Question | What the guest gets |
+|---|---|
+| Phone | A button with a flag and a country code, a list of countries with a search box, and the number beside it |
+| Date | A text box with a calendar icon at its left inside. The icon opens the calendar, which floats over the form |
+| Date and time | A date box and a time box side by side, one under the other on a phone. Each has its icon at its left inside, a calendar and a clock, which open a calendar and a list of times |
 
 - A guest picks a country from the list, or types the number with a `+` and the country code. The answer is saved as the code and the digits, for example `+48500100200`.
 - A phone question that asks for digits only, or sets a shortest or longest length, keeps the browser's box. A country code would break its rule. This suits a desk extension.
-- A guest picks a day in the calendar, or types it as `2026-11-04` or as day, month and year in the order of their browser, for example `04.11.2026`. A guest picks a time from the lists of hours and minutes, or types it, for example `18:00`, `1800` or `6:30 PM`. The lists go from 00:00 to 23:59 a minute apart, and show AM and PM where the guest's region uses a 12-hour clock.
-- A date, or a date and time, is saved as it is without the styled boxes: `2026-11-04`, or `2026-11-04T18:30`, the clock at the event. A date without a time, a time without a date, or a text that is no day of the calendar (31 April) is not an answer. The guest sees `Enter a valid date.` or `Enter a valid date and time.` under the box.
+- A guest picks a day in the calendar, or types it as `2026-11-04` or as day, month and year in the order of their browser, for example `04.11.2026`.
+- The list of times offers the hours and, for the minutes, a quarter of an hour apart: 00, 15, 30 and 45. It shows AM and PM where the guest's region uses a 12-hour clock. A guest can still type any time, for example `18:07`, `1800` or `6:30 PM`, and it is kept as typed.
+- A date, or a date and time, is saved as `2026-11-04`, or `2026-11-04T18:30`, the clock at the event. A date without a time, a time without a date, or a text that is no day of the calendar (31 April) is not an answer. The guest sees `Enter a valid date.` or `Enter a valid date and time.` under the box.
 - No rule of a date or a date and time question changes what the calendar can pick, so every such question gets the boxes.
-- The answers, the rules and the messages are the same with the switch on or off. Only the boxes differ.
 
 **What each row of the checklist needs, and who does it**
 
@@ -157,7 +157,6 @@ When a check fails, the card names the reason:
 | Turn registration on (the button in the header or the one on the **Checklist** tab) | The form opens at once. It is refused while a row of the checklist is not done |
 | Change the access method or the consents of an event that is on | Refused while a row is not done, like turning on |
 | Switch **Approve requests by hand** | The new mode applies to new requests. **Save** it in **Event settings → Registration** |
-| Switch **Styled form boxes** on or off | The next guest who opens the form gets the boxes you chose. A form that is already open keeps the boxes it has |
 | Turn registration off | The form answers "not found" at once |
 | Save, change or remove the address for guests | Saved at once, apart from the **Save** button of the page. Found on **Event settings → General**. The check starts again from "not checked yet", and the audit log records "Guest registration own address updated" |
 | Check now | Asks the address and shows what it found. The first success switches the links to the address. At most five checks a minute |
@@ -174,7 +173,7 @@ When you turn registration off, guests can no longer open the form, and confirma
 | The page says "This change needs something that is not set up yet" | Nothing was saved. The rows it lists are what is missing. Put them right and select **Save** again |
 | An extra consent is marked "(not published)" | Publish its text on the **Legal** tab, or take the consent off the list |
 | "One of the extra consents you chose is not published" | Someone took a text back while you were editing. Publish it again or take it off the list |
-| A phone question shows the browser's box although the styled boxes are on | The question asks for digits only, or sets a shortest or longest length. A country code would break that rule. Remove the rule if the question should take a country |
+| A phone question shows the browser's box | The question asks for digits only, or sets a shortest or longest length. A country code would break that rule. Remove the rule if the question should take a country |
 | A guest sees "This event is not open to your company account." | The sign-in does not hold one of your allowed values. Ask a Superadmin to check the claim and the values in **Event settings**, **Registration** |
 | A guest sees "Your company account did not give us a verified email address" | The identity provider sent no email address, or says the address is not verified. A Superadmin maps the email claim of the provider |
 | Saving says "Only a superadmin can change the access method" or "Only a superadmin can change the restriction to one company" | The access method and the restriction to one company are a Superadmin's to set, in **Event settings → Registration**. Ask a Superadmin to change it |

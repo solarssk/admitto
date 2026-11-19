@@ -8,6 +8,7 @@ import {
   registrantRawLimit,
 } from "@admitto/tickets";
 import { describe, expect, it } from "vitest";
+import { registrationStyledControlsScript } from "../../src/registration/form-controls-script.js";
 import { botChallengeCData } from "../../src/registration/bot-challenge.js";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
 import { REGISTRATION_FORM_SCRIPT } from "../../src/registration/form-script.js";
@@ -353,10 +354,10 @@ describe("a long text, a date, a date and time and a phone number", () => {
   });
 
   describe("a date and a time", () => {
-    it("names the event's time zone under a time, after the organiser's note", () => {
+    it("names the event's place under a time, in the line of the organiser's note", () => {
       const doc2 = documentOf(render({ event: { ...formModel().event, timezone: "America/New_York" } }));
       expect(doc2.querySelector("[data-custom=arrival_time] .reg-slot__hint")?.textContent).toBe(
-        "Roughly is fine.\nTime in the event's time zone (America/New_York).",
+        "Roughly is fine. Use the event's local time (New York).",
       );
     });
 
@@ -365,7 +366,7 @@ describe("a long text, a date, a date and time and a phone number", () => {
         questions: [question({ key: "t", label: "T", type: "datetime" }), question({ key: "d", label: "D", type: "date", description: "Any day." })],
       });
       const doc2 = documentOf(html);
-      expect(doc2.querySelector("[data-custom=t] .reg-slot__hint")?.textContent).toBe("Time in the event's time zone (Europe/Warsaw).");
+      expect(doc2.querySelector("[data-custom=t] .reg-slot__hint")?.textContent).toBe("Use the event's local time (Warsaw).");
       expect(doc2.querySelector("[data-custom=d] .reg-slot__hint")?.textContent).toBe("Any day.");
     });
   });
@@ -501,11 +502,13 @@ describe("a form whose bot protection is not used", () => {
     expect(doc.querySelector("script[src]")).toBeNull();
   });
 
-  it("carries only the script of the form, under the nonce, and the fixed fields in their order without the check", () => {
+  it("carries only the scripts of the form, under the nonce, and the fixed fields in their order without the check", () => {
     const scripts = [...doc.querySelectorAll("script")] as Dom[];
-    expect(scripts).toHaveLength(1);
-    expect(scripts[0]!.hasAttribute("src")).toBe(false);
-    expect(scripts[0]!.getAttribute("nonce")).toBe(NONCE);
+    expect(scripts).toHaveLength(2);
+    for (const script of scripts) {
+      expect(script.hasAttribute("src")).toBe(false);
+      expect(script.getAttribute("nonce")).toBe(NONCE);
+    }
     const keys = [...doc.querySelectorAll("[data-field]")].map((el: Dom) => el.getAttribute("data-field"));
     expect(keys).not.toContain("challenge");
     expect(keys).toContain("terms");
@@ -513,13 +516,14 @@ describe("a form whose bot protection is not used", () => {
 });
 
 describe("scripts, nonce and what the page loads", () => {
-  it("has one inline script, under the nonce of the response, and Cloudflare's widget script", () => {
+  it("has two inline scripts, under the nonce of the response (the form's and its own boxes'), and Cloudflare's widget script", () => {
     const scripts = [...documentOf(render()).querySelectorAll("script")] as Dom[];
-    expect(scripts).toHaveLength(2);
+    expect(scripts).toHaveLength(3);
     const inline = scripts.filter((s) => !s.hasAttribute("src"));
-    expect(inline).toHaveLength(1);
-    expect(inline[0]!.getAttribute("nonce")).toBe(NONCE);
+    expect(inline).toHaveLength(2);
+    expect(inline.map((s) => s.getAttribute("nonce"))).toEqual([NONCE, NONCE]);
     expect(inline[0]!.textContent).toBe(REGISTRATION_FORM_SCRIPT);
+    expect(inline[1]!.textContent).toBe(registrationStyledControlsScript({ date: true, time: true }));
     const external = scripts.filter((s) => s.hasAttribute("src"));
     expect(external.map((s) => s.getAttribute("src"))).toEqual(["https://challenges.cloudflare.com/turnstile/v0/api.js"]);
   });

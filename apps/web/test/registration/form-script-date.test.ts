@@ -30,7 +30,7 @@ const named = (iso: string): string => {
   return new Intl.DateTimeFormat("en", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(y!, m! - 1, d)));
 };
 
-describe("the date question of an event with the styled boxes on", { timeout: 30_000 }, () => {
+describe("the date question of a form", { timeout: 30_000 }, () => {
   it("keeps the browser's own box in the page as the text box, with its id, label and note, and puts a calendar button after it", () => {
     const page = boot();
     const box = boxOf(page, "d");

@@ -24,12 +24,12 @@ function stubFetch() {
  * its real script run, a fetch that records, and a fake Turnstile. `edit` can change the page's HTML first, to build a
  * page the server would not write (a condition that names no question, say). `before` runs on the document before the
  * script does, the way a browser restores what a guest had ticked. `model` changes the form's model, to ask for the password
- * of the event, say, or to switch the styled boxes on. The scripts that run are the ones the page carries, in its order: the
- * first alone, or the first and then the second of an event with the styled boxes.
+ * of the event, say. The scripts that run are the ones the page carries, in its order: the
+ * first alone, or the first and then the second, of a form that has an own box.
  */
 export function bootPage(
   questions: readonly FormQuestion[],
-  options: { edit?: (html: string) => string; before?: (doc: Dom) => void; model?: Partial<RegistrationFormModel> } = {},
+  options: { edit?: (html: string) => string; before?: (doc: Dom) => void; model?: Partial<RegistrationFormModel>; firstScriptOnly?: boolean } = {},
 ) {
   const html = renderRegistrationFormPage(formModel({ questions: [...questions], ...options.model }), { nonce: NONCE });
   const dom = new JSDOM(options.edit ? options.edit(html) : html, { runScripts: "outside-only", pretendToBeVisual: true, url: PAGE_URL });
@@ -38,7 +38,9 @@ export function bootPage(
   win.fetch = fetchMock;
   win.turnstile = { reset: vi.fn() };
   options.before?.(win.document);
-  for (const script of win.document.querySelectorAll("script[nonce]")) win.eval(script.textContent ?? "");
+  // `firstScriptOnly`: the page of a guest whose browser did not run the second script, so every box is the browser's own.
+  const scripts = [...win.document.querySelectorAll("script[nonce]")];
+  for (const script of options.firstScriptOnly ? scripts.slice(0, 1) : scripts) win.eval(script.textContent ?? "");
   return { win, doc: win.document as Dom, fetchMock };
 }
 

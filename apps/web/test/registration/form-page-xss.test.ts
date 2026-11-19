@@ -1,3 +1,4 @@
+import { eventTimeNote } from "../../src/registration/event-place-name.js";
 import { describe, expect, it } from "vitest";
 import type { GuestFormIcon } from "@admitto/shared";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
@@ -32,7 +33,7 @@ function injected(html: string): string[] {
     }
   }
   const scripts = doc.querySelectorAll("script").length;
-  if (scripts !== 2) found.push(`${scripts} script elements`);
+  if (scripts !== 3) found.push(`${scripts} script elements`);
   for (const tag of ["iframe", "object", "embed", "frame", "meta[http-equiv]", "base"]) {
     if (doc.querySelector(tag)) found.push(tag);
   }
@@ -79,7 +80,7 @@ describe.each(PAYLOADS)("organiser text %j on the form", (payload) => {
   it("keeps the style block closed by its own tag only", () => {
     expect(html.split("</style").length - 1).toBe(1);
     expect(html.split("<style").length - 1).toBe(1);
-    expect(html.split("</script").length - 1).toBe(2);
+    expect(html.split("</script").length - 1).toBe(3);
   });
 
   it("prints the title, the date and the venue as text", () => {
@@ -103,7 +104,7 @@ describe.each(PAYLOADS)("organiser text %j on the form", (payload) => {
     const label = (selector: string) => doc.querySelector(`${selector} .at-label`).textContent;
     expect(label("[data-custom=k_long]")).toBe(payload);
     expect(hint("[data-custom=k_long]")).toBe(`${payload}\nFor example: ${payload}`);
-    expect(hint("[data-custom=k_datetime]")).toBe(`${payload}\nTime in the event's time zone (${payload}).`);
+    expect(hint("[data-custom=k_datetime]")).toBe(`${payload} ${eventTimeNote(payload)}`);
     const date = doc.querySelectorAll("input[type=date]");
     expect(date).toHaveLength(1);
     expect(date[0].closest(".at-field").getAttribute("data-custom")).toBe(payload);

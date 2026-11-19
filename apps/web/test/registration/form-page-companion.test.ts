@@ -198,7 +198,8 @@ describe.each(PAYLOADS)("organiser text %j in a question about the companion", (
         expect(attribute.name.startsWith("on") || ["autofocus", "srcdoc"].includes(attribute.name), `${el.tagName}[${attribute.name}]`).toBe(false);
       }
     }
-    expect(doc.querySelectorAll("script")).toHaveLength(2);
+    // The form's own script, the one of its own boxes, and Cloudflare's widget.
+    expect(doc.querySelectorAll("script")).toHaveLength(3);
     expect(doc.querySelector("iframe, object, embed, base, meta[http-equiv]")).toBeNull();
   });
 
