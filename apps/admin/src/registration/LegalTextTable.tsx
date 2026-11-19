@@ -3,7 +3,7 @@ import type { EventDto } from "../api/types.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
-import { KIND_LABEL, PUBLISH_FIRST_REASON, lockReason, textDescription, type LegalTextRow } from "./legalTexts.js";
+import { BUSY_REASON, KIND_LABEL, PUBLISH_FIRST_REASON, lockReason, textDescription, type LegalTextRow } from "./legalTexts.js";
 import "../components/item-table.css";
 import "../requirements/requirements.css";
 import "./legal-texts.css";
@@ -18,8 +18,8 @@ export type PendingAction = { ref: string; action: "asked" | "publish" | "unpubl
 /** What a row can do. The list behind it holds the requests; a row only asks. */
 export interface LegalRowControls {
   event: Pick<EventDto, "archived_at">;
-  /** Registration is on: the texts it needs cannot be withdrawn. */
-  registrationOn: boolean;
+  /** Registration is on: the texts it needs cannot be withdrawn. Null while that is not known. */
+  registrationOn: boolean | null;
   pending: PendingAction | null;
   onOpen: (row: LegalTextRow) => void;
   onToggleAsked: (row: LegalTextRow, asked: boolean) => void;
@@ -45,8 +45,15 @@ function AskedSwitch({ row, controls }: Readonly<{ row: LegalTextRow; controls: 
   const { document } = row;
   if (document === null) return null;
   const busy = controls.pending?.ref === row.target.ref && controls.pending.action === "asked";
+  // One request at a time: while another row's request runs, this switch says so instead of dropping the change.
+  const otherBusy = controls.pending !== null && !busy;
   return (
-    <ArchivedGuard event={controls.event} reasonId={`legal-asked-reason-${row.target.ref}`} disabled={!document.published} tooltip={PUBLISH_FIRST_REASON}>
+    <ArchivedGuard
+      event={controls.event}
+      reasonId={`legal-asked-reason-${row.target.ref}`}
+      disabled={!document.published || otherBusy}
+      tooltip={document.published ? BUSY_REASON : PUBLISH_FIRST_REASON}
+    >
       {(guard) => (
         <Switch
           aria-label={`Asked on the form: ${document.title}`}
@@ -71,9 +78,11 @@ function RowMenu({ row, controls }: Readonly<{ row: LegalTextRow; controls: Lega
   const locked = lockReason(row, controls.registrationOn);
   // The reason is told twice: as the tooltip, and as the line under the name of the item, because a phone has no hover.
   const archivedReason = archived ? ARCHIVED_ACTION_TOOLTIP : null;
-  const withdrawReason = archivedReason ?? locked;
+  // While a request runs, every mutation of every row waits, with the reason.
+  const busyReason = controls.pending === null ? null : BUSY_REASON;
+  const withdrawReason = archivedReason ?? locked ?? busyReason;
   const unpublishing = document.published;
-  const publishWhy = unpublishing ? withdrawReason : archivedReason;
+  const publishWhy = unpublishing ? withdrawReason : (archivedReason ?? busyReason);
   return (
     <div className="more-actions-menu" ref={rootRef}>
       <button

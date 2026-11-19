@@ -27,7 +27,7 @@ type OpenText = { target: LegalTextTarget; exists: boolean; newConsent: boolean 
 const NEW_CONSENT: OpenText = { target: { ref: "", kind: "consent", key: null }, exists: false, newConsent: true };
 
 /** One event, one tab: a different `:eventId` is a fresh tab (its own read and editor), never the previous one's. */
-export function RegistrationLegalTab({ registrationOn = false, onChecksStale }: Readonly<{ registrationOn?: boolean; onChecksStale?: () => void }>) {
+export function RegistrationLegalTab({ registrationOn = null, onChecksStale }: Readonly<{ registrationOn?: boolean | null; onChecksStale?: () => void }>) {
   const { eventId } = useParams();
   if (!eventId) return <p>Missing event.</p>;
   return <RegistrationLegalBody key={eventId} eventId={eventId} registrationOn={registrationOn} onChecksStale={onChecksStale} />;
@@ -39,7 +39,7 @@ export function RegistrationLegalTab({ registrationOn = false, onChecksStale }: 
  * `useCardLoad`): a placeholder in the card's own shape for the first read, an error with a busy Retry that stays on screen
  * until the answer is in, and the list kept, blocked and dimmed, while the read that follows a change runs.
  */
-function RegistrationLegalBody({ eventId, registrationOn, onChecksStale }: Readonly<{ eventId: string; registrationOn: boolean; onChecksStale?: () => void }>) {
+function RegistrationLegalBody({ eventId, registrationOn, onChecksStale }: Readonly<{ eventId: string; registrationOn: boolean | null; onChecksStale?: () => void }>) {
   // What the checklist needs (a required text published, a required question) changes with this list: the page reads it again.
   const onData = useAfterFirstAnswer(onChecksStale);
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -63,7 +63,7 @@ function RegistrationLegalBody({ eventId, registrationOn, onChecksStale }: Reado
   );
   const list = useListLoad({ fetcher: fetchList, fallback: "Could not load the legal texts.", onData });
   const card = useCardLoad(list);
-  const actions = useLegalTextActions({ eventId, items: list.data?.items ?? [], reload: list.reload });
+  const actions = useLegalTextActions({ eventId, items: list.data?.items ?? [], reload: list.reload, update: list.update });
   const { confirm } = actions;
   const confirmCopy = WITHDRAW_COPY[confirm?.action ?? "unpublish"];
 

@@ -258,7 +258,7 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
 
   const isNewConsent = newConsent && saved === null;
   const keyProblem = isNewConsent ? consentKeyProblem(keyText, usedKeys) : undefined;
-  const { dirty, tooLong, canSave } = legalFormState({
+  const { dirty, empty, tooLong, canSave } = legalFormState({
     title,
     savedTitle: saved?.title ?? defaultTitle(target.kind),
     html,
@@ -391,6 +391,7 @@ function LegalTextForm({ eventId, event, target, initial, newConsent, usedKeys, 
             <p id={hintId} className="at-hint">
               {editorHint(saved)}
             </p>
+            {empty && saved !== null && !archived && html !== null && <p className="at-hint">Write some text before saving.</p>}
             {tooLong && (
               <p className="at-hint at-hint--error" role="alert">
                 This text is too long to save: the limit is {limits.content_chars} characters, formatting included.

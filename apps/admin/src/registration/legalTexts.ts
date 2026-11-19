@@ -138,15 +138,19 @@ export function textDescription(row: LegalTextRow): string {
 export const LOCKED_FIXED_REASON = "Registration is on. Turn it off first.";
 export const LOCKED_CONSENT_REASON = "The form asks for it. Switch off Asked first.";
 export const PUBLISH_FIRST_REASON = "Publish it first.";
+export const LOCKED_UNKNOWN_REASON = "Checking whether registration is on.";
+export const BUSY_REASON = "Another change is on its way.";
 
 /**
- * Why a text cannot be unpublished or deleted now, or null when it can: registration needs the privacy notice and the terms while it
+ * Why a text cannot be unpublished or deleted now, or null when it can (`registrationOn` null: not known yet, so a text it may need waits): registration needs the privacy notice and the terms while it
  * is on, and a consent while the form asks for it. The server holds the same rule (409 `legal_document_in_use`).
  */
-export function lockReason(row: LegalTextRow, registrationOn: boolean): string | null {
-  if (!registrationOn || row.document === null) return null;
-  if (row.target.kind !== "consent") return LOCKED_FIXED_REASON;
-  return row.document.required ? LOCKED_CONSENT_REASON : null;
+export function lockReason(row: LegalTextRow, registrationOn: boolean | null): string | null {
+  if (registrationOn === false || row.document === null) return null;
+  const needed = row.target.kind !== "consent" || row.document.required;
+  if (!needed) return null;
+  if (registrationOn === null) return LOCKED_UNKNOWN_REASON;
+  return row.target.kind === "consent" ? LOCKED_CONSENT_REASON : LOCKED_FIXED_REASON;
 }
 
 /** The keys of the consents the form asks for, as the list tells them. */

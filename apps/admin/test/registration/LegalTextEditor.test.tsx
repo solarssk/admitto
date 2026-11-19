@@ -441,6 +441,19 @@ describe("LegalTextEditor: a text that has not been written", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
+  it("keeps the short hint when a saved text has its words cleared and Save is off, and has none for a text that is new", async () => {
+    renderEditor();
+    const editor = await tiptap();
+    expect(screen.queryByText("Write some text before saving.")).toBeNull();
+
+    act(() => {
+      editor.commands.clearContent(true);
+    });
+
+    expect(await screen.findByText("Write some text before saving.")).toBeTruthy();
+    expect(isOff(button("Save"))).toBe(true);
+  });
+
   it("is saved with its ref, and then has a state, a public page to publish and a way to delete it", async () => {
     saveLegalDocument.mockImplementation(async (_e, ref, body) =>
       stored({ ref, kind: "event_terms", title: body.title, content_html: body.content_html, public_path: "/legal/demo/event-terms" }),

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useToast } from "@admitto/ui";
 import { ApiError, deleteLegalDocument, publishLegalDocument, saveRegistrationSettings, unpublishLegalDocument } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { LegalDocumentDto } from "../api/types.js";
+import type { LegalDocumentDto, LegalDocumentsListResponse } from "../api/types.js";
 import { redirectToLogin } from "../identity/loginRedirect.js";
 import { askedKeysWith, type LegalTextRow } from "./legalTexts.js";
 import type { PendingAction } from "./LegalTextTable.js";
@@ -29,6 +29,8 @@ export interface LegalTextActionsInput {
   items: readonly LegalDocumentDto[];
   /** Something changed: the list reads again (and the page reads the checks again with it). */
   reload: () => Promise<void>;
+  /** Puts what the server has just confirmed into the list on screen, so that it is true even when the read that follows fails. */
+  update: (change: (data: LegalDocumentsListResponse) => LegalDocumentsListResponse) => void;
 }
 
 /**
@@ -38,9 +40,11 @@ export interface LegalTextActionsInput {
  * ever missing. A refusal is worded by `operatorApiErrorMessage`, and the list reads again after any failure, since a refusal says that
  * what is on screen is out of date.
  */
-export function useLegalTextActions({ eventId, items, reload }: Readonly<LegalTextActionsInput>) {
+export function useLegalTextActions({ eventId, items, reload, update }: Readonly<LegalTextActionsInput>) {
   const { addToast } = useToast();
   const busy = useRef(false);
+  // The form stopped asking for a consent, and the request that follows may still fail: the dialog then says so.
+  const askedSwitchedOff = useRef(false);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [confirm, setConfirm] = useState<ConfirmTarget | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -61,14 +65,17 @@ export function useLegalTextActions({ eventId, items, reload }: Readonly<LegalTe
     }
   }
 
-  /** Writes the consents the form asks for, the whole list: the server takes the list, not a change. */
-  function writeAsked(row: LegalTextRow, asked: boolean) {
-    return saveRegistrationSettings(eventId, { consent_keys: askedKeysWith(items, row.target.key ?? "", asked) });
+  /** Writes the consents the form asks for, the whole list: the server takes the list, not a change. What was saved is shown at once. */
+  async function writeAsked(row: LegalTextRow, asked: boolean) {
+    await saveRegistrationSettings(eventId, { consent_keys: askedKeysWith(items, row.target.key ?? "", asked) });
+    update((data) => ({ ...data, items: data.items.map((item) => (item.ref === row.target.ref ? { ...item, required: asked } : item)) }));
   }
 
   /** A consent the form asks for leaves the form before it is withdrawn, or the form would keep asking for a text that is not there. */
   async function withdraw(row: LegalTextRow, job: () => Promise<unknown>) {
-    if (row.document?.required && row.target.kind === "consent") await writeAsked(row, false);
+    const dropsAsked = row.document?.required === true && row.target.kind === "consent";
+    if (dropsAsked) await writeAsked(row, false);
+    askedSwitchedOff.current = dropsAsked;
     await job();
   }
 
@@ -96,6 +103,7 @@ export function useLegalTextActions({ eventId, items, reload }: Readonly<LegalTe
     if (confirm === null) return;
     const { action, row } = confirm;
     const ref = row.target.ref;
+    askedSwitchedOff.current = false;
     const outcome =
       action === "unpublish"
         ? await run("unpublish", ref, () => withdraw(row, () => unpublishLegalDocument(eventId, ref)), "Could not unpublish this text.")
@@ -103,7 +111,7 @@ export function useLegalTextActions({ eventId, items, reload }: Readonly<LegalTe
     if (outcome.ok) {
       setConfirm(null);
       addToast(action === "unpublish" ? "Text unpublished. Guests can no longer read it." : "Text deleted.", "success");
-    } else setConfirmError(outcome.message);
+    } else setConfirmError(outcome.message === null || !askedSwitchedOff.current ? outcome.message : `${outcome.message} The form no longer asks for this consent. Switch Asked on again if you still want it.`);
   }
 
   const confirmBusy = confirm !== null && pending?.ref === confirm.row.target.ref && pending.action === confirm.action;

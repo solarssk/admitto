@@ -44,7 +44,7 @@ function TabPanel({
   if (id === "requests") return <RegistrationRequestsTab counts={counts} />;
   if (id === "fields") return <RegistrationFieldsTab onChecksStale={onChecksStale} />;
   if (id === "checklist") return <RegistrationChecklistTab settings={settings} reg={reg} onSettings={onSettings} />;
-  return <RegistrationLegalTab registrationOn={settings?.mode != null} onChecksStale={onChecksStale} />;
+  return <RegistrationLegalTab registrationOn={settings === null ? null : settings.mode !== null} onChecksStale={onChecksStale} />;
 }
 
 /** How people get into the event: their requests, the questions they answer, the legal texts they read, and what is still missing. Registration is switched on and off in its header. */

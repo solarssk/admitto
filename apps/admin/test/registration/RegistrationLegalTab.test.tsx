@@ -474,6 +474,8 @@ describe("RegistrationLegalTab: what a row does", () => {
     renderTab({ withEvent });
     await listLoaded();
     await waitFor(() => expect(fetchRegistrationSettings).toHaveBeenCalled());
+    // The settings have been applied: what registration is doing is known.
+    await act(async () => undefined);
   }
   const rowOf = (title: string) => rows().find((row) => row.querySelector(".requirements-item-name")?.textContent === title) as HTMLElement;
   const askedSwitch = (title: string) => within(rowOf(title)).getByRole("switch", { name: `Asked on the form: ${title}` }) as HTMLInputElement;
@@ -722,4 +724,83 @@ describe("RegistrationLegalTab: what a row does", () => {
 
     expect(await screen.findByRole("textbox", { name: "Checkbox label" })).toBeTruthy();
   });
+
+  it("shows what was saved even when the read that follows fails, and builds the next write from it", async () => {
+    saveRegistrationSettings.mockResolvedValue({});
+    await loaded([privacy, terms, asked, news]);
+    fetchLegalDocuments.mockRejectedValue(new ApiError(500, "unexpected_failure"));
+
+    fireEvent.click(askedSwitch("News"));
+    await screen.findByText(/Could not refresh this list/);
+    expect(askedSwitch("News").checked).toBe(true);
+
+    fireEvent.click(askedSwitch("Photos and video"));
+    await waitFor(() => expect(saveRegistrationSettings).toHaveBeenLastCalledWith("evt-1", { consent_keys: ["news"] }));
+  });
+
+  it("does not take registration for off while the settings are not known: the required texts wait, with the reason", async () => {
+    fetchRegistrationSettings.mockRejectedValue(new ApiError(500, "unexpected_failure"));
+    fetchLegalDocuments.mockResolvedValue(answer([privacy, terms, news]));
+    renderTab();
+    await listLoaded();
+    await waitFor(() => expect(fetchRegistrationSettings).toHaveBeenCalled());
+    await act(async () => undefined);
+
+    openMenu("Privacy notice");
+    expect(isOff(item("Unpublish"))).toBe(true);
+    expect(item("Unpublish").textContent).toContain("Checking whether registration is on.");
+    expect(isOff(item("Delete"))).toBe(true);
+    fireEvent.keyDown(document, { key: "Escape" });
+    // A consent the form does not ask for is never needed by registration.
+    openMenu("News");
+    expect(isOff(item("Delete"))).toBe(false);
+  });
+
+  it("blocks the controls of the other rows, with the reason, while one request runs", async () => {
+    const running = deferred<LegalDocumentDto>();
+    publishLegalDocument.mockReturnValue(running.promise);
+    await loaded([privacy, terms, draftConsent, news]);
+
+    openMenu("Diet");
+    fireEvent.click(item("Publish"));
+    await waitFor(() => expect(item("Publish").getAttribute("aria-busy")).toBe("true"));
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    const other = askedSwitch("News");
+    expect(other.disabled).toBe(true);
+    expect(document.getElementById(other.getAttribute("aria-describedby") ?? "")?.textContent).toBe("Another change is on its way.");
+    openMenu("News");
+    expect(isOff(item("Unpublish"))).toBe(true);
+    expect(item("Unpublish").textContent).toContain("Another change is on its way.");
+    expect(isOff(item("Delete"))).toBe(true);
+
+    await act(async () => running.resolve(doc("consent-diet", publishedNow)));
+    await waitFor(() => expect(askedSwitch("News").disabled).toBe(false));
+  });
+
+  it("says that Asked was switched off when the unpublish that followed fails", async () => {
+    saveRegistrationSettings.mockResolvedValue({});
+    unpublishLegalDocument.mockRejectedValue(new ApiError(500, "unexpected_failure"));
+    await loaded([privacy, terms, asked, news]);
+
+    openMenu("Photos and video");
+    fireEvent.click(item("Unpublish"));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Unpublish" }));
+
+    expect(await screen.findByText(/The form no longer asks for this consent\. Switch Asked on again/)).toBeTruthy();
+  });
+
+  it("does not add that line when the form never asked for the consent", async () => {
+    unpublishLegalDocument.mockRejectedValue(new ApiError(500, "unexpected_failure"));
+    await loaded([privacy, terms, news]);
+
+    openMenu("News");
+    fireEvent.click(item("Unpublish"));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Unpublish" }));
+
+    await waitFor(() => expect(unpublishLegalDocument).toHaveBeenCalled());
+    await waitFor(() => expect(addToast).not.toHaveBeenCalled());
+    expect(screen.queryByText(/Switch Asked on again/)).toBeNull();
+  });
 });
+
