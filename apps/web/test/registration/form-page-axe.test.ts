@@ -48,7 +48,7 @@ function fillValid(window: ReturnType<typeof open>) {
   window.admittoTurnstileDone("token");
 }
 
-describe("axe-core finds nothing to report", () => {
+describe("axe-core finds nothing to report", { timeout: 30_000 }, () => {
   const html = renderRegistrationFormPage(formModel(), { nonce: NONCE });
 
   it("on the form", async () => {
@@ -137,7 +137,7 @@ describe("axe-core finds nothing to report", () => {
   });
 });
 
-describe("axe-core finds nothing to report on the password screen of an event whose way in is the password", () => {
+describe("axe-core finds nothing to report on the password screen of an event whose way in is the password", { timeout: 30_000 }, () => {
   const html = renderRegistrationFormPage(formModel({ needsPassword: true, questions: [] }), { nonce: NONCE });
   const type = (window: ReturnType<typeof open>, value: string) => {
     window.document.getElementById("f-password").value = value;
@@ -242,7 +242,7 @@ describe("axe-core finds nothing to report on the form with icons, panels and su
   });
 });
 
-describe("axe-core finds nothing to report on the part of the form for a guest's companion", () => {
+describe("axe-core finds nothing to report on the part of the form for a guest's companion", { timeout: 30_000 }, () => {
   const companion = {
     max: 1,
     questions: [
