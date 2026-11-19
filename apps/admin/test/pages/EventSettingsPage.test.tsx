@@ -3352,6 +3352,55 @@ describe("EventSettingsPage General tab: the card Address for guests", () => {
     await waitFor(() => expect(leave()).toBe(true));
   });
 
+  it("shows the address as set, not checked yet, once it is saved, and the Registration tab reads the settings again", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(saveCustomDomain).mockResolvedValue({
+      custom_domain: "events.example.com",
+      custom_domain_status: "unchecked",
+      custom_domain_check_result: null,
+      custom_domain_verified_at: null,
+      custom_domain_checked_at: null,
+    });
+    renderSettings();
+    const field = await screen.findByLabelText("Own address");
+
+    fireEvent.change(field, { target: { value: "events.example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set address" }));
+
+    await waitFor(() => expect(saveCustomDomain).toHaveBeenCalledWith("evt-1", "events.example.com"));
+    expect(await screen.findByText("events.example.com: Not checked yet")).toBeTruthy();
+  });
+
+  it("keeps the unsaved changes of the Registration tab when the address is saved, and does not read that tab again", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(saveCustomDomain).mockResolvedValue({
+      custom_domain: "events.example.com",
+      custom_domain_status: "unchecked",
+      custom_domain_check_result: null,
+      custom_domain_verified_at: null,
+      custom_domain_checked_at: null,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=registration");
+    await screen.findByRole("switch", { name: "Waiting list" });
+    fireEvent.click(screen.getByRole("switch", { name: "Ask for the company" }));
+    const leave = () => {
+      const closing = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(closing);
+      return closing.defaultPrevented;
+    };
+    await waitFor(() => expect(leave()).toBe(true));
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    const field = await screen.findByLabelText("Own address");
+
+    fireEvent.change(field, { target: { value: "events.example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set address" }));
+
+    expect(await screen.findByText("events.example.com: Not checked yet")).toBeTruthy();
+    expect(leave()).toBe(true);
+  });
+
   it("says the event has no address of its own when it has none", async () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);

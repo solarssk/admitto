@@ -628,6 +628,18 @@ describe("the card for somebody who is not a superadmin", () => {
 });
 
 describe("reading the card", () => {
+  it("is the same error with a Retry when the read fails with something that is not an answer of the server", async () => {
+    api.fetchRegistrationSettings.mockRejectedValueOnce(new Error("network down"));
+    api.fetchRegistrationSettings.mockResolvedValue(settings());
+    render(<EventAddressCard eventId="evt-1" archived={false} superadmin refreshEvent={refreshEvent} onChanged={onChanged} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not load the address for guests");
+    expect(screen.queryByText(/network down/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByLabelText("Own address")).toBeTruthy();
+  });
+
   it("is an error with a Retry when the settings cannot be read, and shows the card when the Retry works", async () => {
     api.fetchRegistrationSettings.mockRejectedValueOnce(new ApiError(500, "internal_error", "internal_error"));
     api.fetchRegistrationSettings.mockResolvedValue(settings());

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
-import { getTooltipText, isOff, plain } from "../test-utils.js";
+import { deferred, getTooltipText, isOff, plain } from "../test-utils.js";
 import { api } from "./accessApiMocks.js";
 import { PROVIDERS, settings, ssoEventSettings } from "./accessData.js";
 import { card, radio, resetApi, saveButton } from "./accessFixtures.js";
@@ -426,6 +426,26 @@ describe("the identity provider of Company SSO, in Event settings", () => {
     fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "a" } });
     fireEvent.click(saveButton());
     await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { sso_claim_name: "tid", sso_claim_values: ["a"], expected_sso_provider_id: "idp-google" }));
+  });
+
+  it("shows what the newest read found, not an older read that answers last, when the provider changed twice in a row", async () => {
+    await renderPanel(ssoSettings());
+    const google = ssoSettings({ sso_provider_id: "idp-google", sso_provider: { ...ENTRA, id: "idp-google", display_name: "Contoso Google", kind: "google" } });
+    const older = deferred<RegistrationSettingsDto>();
+    api.fetchRegistrationSettings.mockReset();
+    api.fetchRegistrationSettings.mockReturnValueOnce(older.promise).mockResolvedValue(google);
+    api.saveRegistrationSettings.mockRejectedValue(new ApiError(409, "sso_provider_changed"));
+
+    fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid" } });
+    fireEvent.change(screen.getByLabelText("Allowed values"), { target: { value: "a" } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(api.fetchRegistrationSettings).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText("Claim name"), { target: { value: "tid2" } });
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(trigger().getAttribute("aria-label")).toBe("Identity provider, Contoso Google"));
+    await act(async () => older.resolve(ssoSettings()));
+
+    expect(trigger().getAttribute("aria-label")).toBe("Identity provider, Contoso Google");
   });
 
   it("is told when the server refuses a change of the access method because registration is not ready, and reads the settings again", async () => {

@@ -222,6 +222,7 @@ function MoreItems({
   archived,
   onChecklist,
   close,
+  onCopy,
   onGoToChecklist,
 }: Readonly<{
   status: RegistrationHeaderStatus;
@@ -229,6 +230,7 @@ function MoreItems({
   archived: boolean;
   onChecklist: boolean;
   close: () => void;
+  onCopy: () => void;
   onGoToChecklist: () => void;
 }>) {
   const url = reg.settings?.guest_url ?? null;
@@ -247,9 +249,9 @@ function MoreItems({
         <MoreActionsMenuItem icon="player-pause" label="Turn registration off" hint="Guests can no longer open the form" disabled={archived} tooltip={archivedTip} onClick={run(() => reg.request(null))} />
       )}
       {status.kind === "not_ready" && (
-        <MoreActionsMenuItem icon="player-play" label="Turn registration on" hint="Finish the Checklist first" disabled tooltip={archivedTip ?? stepsOpen(status.open)} onClick={() => undefined} />
+        <MoreActionsMenuItem icon="player-play" label="Turn registration on" hint="Finish the Checklist first" disabled tooltip={archivedTip ?? stepsOpen(status.open)} onClick={run(onGoToChecklist)} />
       )}
-      {status.kind !== "open" && <MoreActionsMenuItem icon="copy" label="Copy link" hint="Works once registration is on" disabled tooltip={reason} onClick={() => undefined} />}
+      {status.kind !== "open" && <MoreActionsMenuItem icon="copy" label="Copy link" hint="Works once registration is on" disabled tooltip={reason} onClick={run(onCopy)} />}
       {!onChecklist && (status.kind === "open" || status.kind === "closed") && (
         <MoreActionsMenuItem icon="list-check" label="See the Checklist" hint="What is set up and what is not" onClick={run(onGoToChecklist)} />
       )}
@@ -293,7 +295,7 @@ export function RegistrationHeaderActions({
         </Button>
         {open && (
           <div className="more-actions-menu__panel at-scroll" role="menu" ref={panelRef} style={panelStyle}>
-            <MoreItems status={status} reg={reg} archived={archived} onChecklist={onChecklist} close={() => setOpen(false)} onGoToChecklist={onGoToChecklist} />
+            <MoreItems status={status} reg={reg} archived={archived} onChecklist={onChecklist} close={() => setOpen(false)} onCopy={onCopy} onGoToChecklist={onGoToChecklist} />
           </div>
         )}
       </div>

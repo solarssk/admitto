@@ -69,6 +69,7 @@ function EventAddressBody({ eventId, archived, superadmin, refreshEvent, onChang
     );
   }
   assertPresent(settings);
+  const loaded = settings;
   return (
     <AccessAddressCard
       superadmin={superadmin}
@@ -78,7 +79,7 @@ function EventAddressBody({ eventId, archived, superadmin, refreshEvent, onChang
       instanceHost={settings.instance_host}
       disabled={archived}
       onChanged={(state: CustomDomainDto) => {
-        setSettings((current) => (current === null ? current : { ...current, own_address: ownAddressOf(state) }));
+        setSettings({ ...loaded, own_address: ownAddressOf(state) });
         onChanged?.();
       }}
       onArchived={() => void refreshEvent?.()}

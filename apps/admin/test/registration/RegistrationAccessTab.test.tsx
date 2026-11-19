@@ -320,6 +320,17 @@ describe("RegistrationAccessTab: the mode of registration", () => {
     expect(addToast).toHaveBeenCalledWith("Registration settings saved.", "success");
   });
 
+  it("sends the mode that waits for approval when the switch is turned back on", async () => {
+    await renderLoaded(settings({ mode: "automatic" }));
+    expect(toggle("Approve requests by hand").checked).toBe(false);
+    api.saveRegistrationSettings.mockResolvedValue(settings({ mode: "approval" }));
+
+    fireEvent.click(toggle("Approve requests by hand"));
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { mode: "approval" }));
+  });
+
   it("is off, with the way to turn registration on, while registration is off, and never turns it on", async () => {
     await renderLoaded(settings({ mode: null }));
 

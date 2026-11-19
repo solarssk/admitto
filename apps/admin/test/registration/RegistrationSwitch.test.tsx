@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
+import { goToLogin } from "../../src/auth/login-navigation.js";
+import { useRegistrationSwitch } from "../../src/registration/RegistrationSwitch.js";
 import type { RegistrationSettingsDto } from "../../src/api/types.js";
 import { deferred, getTooltipText, isOff, setViewport } from "../test-utils.js";
 import { addToast, api, refreshEvent } from "./accessApiMocks.js";
@@ -62,6 +64,7 @@ const banner = () => document.querySelector(".at-notice") as HTMLElement;
 
 beforeEach(() => {
   resetApi();
+  vi.mocked(goToLogin).mockClear();
   Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockResolvedValue(undefined) }, configurable: true });
 });
 
@@ -290,6 +293,28 @@ describe("the header of the Registration page: turning registration on", { timeo
     expect(status()).toBe("Closed");
   });
 
+  it("hands the browser to the sign-in when the session has ended, and says nothing", async () => {
+    await renderHeader();
+    api.saveRegistrationSettings.mockRejectedValue(refusal(401, "authentication_required"));
+
+    fireEvent.click(mainButton("Turn registration on"));
+
+    await waitFor(() => expect(goToLogin).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("says it could not save, in the words of the app, when the request fails with something that is not an answer of the server", async () => {
+    await renderHeader();
+    api.saveRegistrationSettings.mockRejectedValue(new Error("connection reset"));
+
+    fireEvent.click(mainButton("Turn registration on"));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Could not save the registration settings.");
+    expect(alert.textContent).not.toContain("connection reset");
+  });
+
   it("has the page read the event again when the event turns out to be archived", async () => {
     await renderHeader();
     api.saveRegistrationSettings.mockRejectedValue(refusal(403, "event_archived"));
@@ -297,6 +322,23 @@ describe("the header of the Registration page: turning registration on", { timeo
     fireEvent.click(mainButton("Turn registration on"));
 
     await waitFor(() => expect(refreshEvent).toHaveBeenCalled());
+  });
+});
+
+describe("the switch of registration: requests that must not start", { timeout: 30_000 }, () => {
+  it("sends one request while one is out, and none without an event", async () => {
+    const answer = deferred<RegistrationSettingsDto>();
+    api.saveRegistrationSettings.mockReturnValue(answer.promise);
+    const { result } = renderHook(() => useRegistrationSwitch({ eventId: "evt-1", settings: settings({ readiness: checks() }), onSettings: vi.fn() }));
+
+    act(() => result.current.request("approval"));
+    act(() => result.current.request("approval"));
+    expect(api.saveRegistrationSettings).toHaveBeenCalledTimes(1);
+    await act(async () => answer.resolve(settings({ mode: "approval", readiness: checks() })));
+
+    const none = renderHook(() => useRegistrationSwitch({ eventId: undefined, settings: null, onSettings: vi.fn() }));
+    act(() => none.result.current.request("approval"));
+    expect(api.saveRegistrationSettings).toHaveBeenCalledTimes(1);
   });
 });
 
