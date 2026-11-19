@@ -165,20 +165,21 @@ export const REGISTRATION_STYLED_CONTROLS_CSS = `
  * boxes side by side (one under the other on a phone), and the month or the lists of times open as a floating layer over the form, as the
  * staff app's pickers do: fixed (the card of the page clips what sticks out of it, a fixed layer is not clipped), at the stacking token of
  * the staff app's lists, placed by the script under the box, or above it when there is no room, and inside the screen. Nothing below the
- * box moves. The wrappers of the kits do not take part in the layout (`display: contents`), so the boxes are the cells of one grid.
+ * box moves. The wrapper of a panel does not take part in the layout (`display: contents`), so the icon button is a part of the box.
  * Every colour is a token.
  *
  * The cells of the month and the options of a list are 44 px high; the month is as wide as the row on a phone, which makes its cells
  * 44 px wide on a screen of 390 px, and a compact month and list on a wide screen with a pointer.
  */
 export const REGISTRATION_DATE_CONTROLS_CSS = `
-.reg-dt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: start; }
-.reg-dt > .at-control, .reg-dt > .at-inputgroup, .reg-dt__time > .at-control { min-width: 0; }
-.reg-dt__pop, .reg-dt__time { display: contents; }
-.reg-dt__button { position: relative; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: var(--control-h); height: var(--control-h); padding: 0; border: var(--border-width) solid var(--border-strong); border-radius: var(--radius); background: var(--surface-card); color: var(--text-secondary); font-size: 1.1rem; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
-.reg-dt__button:hover:not(:disabled) { border-color: var(--at-gray-400); color: var(--text-primary); }
-.reg-dt__button:focus-visible:not(:disabled), .reg-dt__button[aria-expanded="true"]:not(:disabled) { outline: none; border-color: var(--border-focus); box-shadow: var(--ring); }
-.reg-dt__button:disabled { cursor: not-allowed; opacity: 0.6; }
+.reg-dt { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); align-items: start; }
+.reg-dt__pop { display: contents; }
+/* The boxes are the product's bordered box with an icon button at its left inside (at-inputgroup with at-inputgroup__icon--action,
+   whose rules are the shared ones), as the staff app's date and time boxes are. These add only the colour of the icon, and the red
+   border of a box that holds an answer the page refused: the shared rule paints the border of the input, which this box does not have. */
+.reg-dt .at-inputgroup__icon--action { color: var(--text-muted); font-size: 1.05rem; padding: 0; }
+.reg-dt .at-inputgroup__icon--action:disabled { cursor: not-allowed; opacity: 0.6; }
+.reg-dt .at-inputgroup:has(.at-input--invalid) { border-color: var(--status-error); }
 .reg-dt__panel { position: fixed; left: 0; top: 0; z-index: var(--z-dropdown); margin: 0; box-sizing: border-box; width: 21rem; max-width: calc(100vw - 16px); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card); box-shadow: var(--shadow-md); }
 .reg-date { padding: var(--space-2) var(--space-1); }
 .reg-date__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-1) var(--space-2); }
@@ -209,21 +210,15 @@ export const REGISTRATION_DATE_CONTROLS_CSS = `
 .reg-time__opt[aria-selected="true"] { background: var(--primary); color: var(--text-on-primary); font-weight: var(--fw-semibold); }
 .reg-time__opt:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
 @media (min-width: 481px) {
-  .reg-dt--pair { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }
-  .reg-dt--pair > .at-control, .reg-dt--pair > .at-inputgroup, .reg-dt--pair .reg-dt__time > .at-control, .reg-dt--pair .reg-dt__button { grid-row: 1; }
-  .reg-dt--pair .reg-dt__time > .at-control { margin-left: var(--space-3); }
+  .reg-dt--pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 481px) and (pointer: fine) {
   .reg-date__day, .reg-date__action { height: 2.25rem; min-height: 2.25rem; }
   .reg-date__nav { width: 2rem; height: 2rem; }
   .reg-time__opt { min-height: 2rem; }
 }
-@media (pointer: coarse) {
-  .reg-dt__button { min-width: 2.75rem; }
-  .reg-dt__button::after { content: ""; position: absolute; top: -4px; bottom: -4px; left: 0; right: 0; }
-}
 @media (prefers-reduced-motion: reduce) {
-  .reg-dt__button, .reg-date__nav, .reg-date__day, .reg-time__opt { transition: none; }
+  .reg-date__nav, .reg-date__day, .reg-time__opt { transition: none; }
 }
 `;
 

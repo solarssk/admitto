@@ -39,6 +39,8 @@ export const GUEST_PAGE_COMPONENT_CLASSES: readonly string[] = [
   "at-textarea--invalid",
   "at-inputgroup",
   "at-inputgroup__icon",
+  // The icon button at the left inside a box (the staff app's date and time boxes; the date and the time of the guest form).
+  "at-inputgroup__icon--action",
   "at-check",
   "at-check__box",
   "at-btn",

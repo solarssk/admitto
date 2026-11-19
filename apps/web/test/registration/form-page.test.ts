@@ -354,10 +354,10 @@ describe("a long text, a date, a date and time and a phone number", () => {
   });
 
   describe("a date and a time", () => {
-    it("names the event's time zone under a time, after the organiser's note", () => {
+    it("names the event's place under a time, in the line of the organiser's note", () => {
       const doc2 = documentOf(render({ event: { ...formModel().event, timezone: "America/New_York" } }));
       expect(doc2.querySelector("[data-custom=arrival_time] .reg-slot__hint")?.textContent).toBe(
-        "Roughly is fine.\nTime in the event's time zone (America/New_York).",
+        "Roughly is fine. Use the event's local time (New York).",
       );
     });
 
@@ -366,7 +366,7 @@ describe("a long text, a date, a date and time and a phone number", () => {
         questions: [question({ key: "t", label: "T", type: "datetime" }), question({ key: "d", label: "D", type: "date", description: "Any day." })],
       });
       const doc2 = documentOf(html);
-      expect(doc2.querySelector("[data-custom=t] .reg-slot__hint")?.textContent).toBe("Time in the event's time zone (Europe/Warsaw).");
+      expect(doc2.querySelector("[data-custom=t] .reg-slot__hint")?.textContent).toBe("Use the event's local time (Warsaw).");
       expect(doc2.querySelector("[data-custom=d] .reg-slot__hint")?.textContent).toBe("Any day.");
     });
   });

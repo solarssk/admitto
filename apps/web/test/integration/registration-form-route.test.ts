@@ -290,7 +290,7 @@ describe("the organiser's questions", () => {
     for (const key of ["why", "checkin", "flight", "extension"]) expect(control(key).hasAttribute("required"), key).toBe(true);
     const hint = (key: string) => doc.querySelector(`[data-custom=${key}] .reg-slot__hint`)?.textContent;
     expect(hint("why")).toBe("A few lines.\n20 to 500 characters.");
-    expect(hint("flight")).toBe("Time in the event's time zone (Europe/Warsaw).");
+    expect(hint("flight")).toBe("Use the event's local time (Warsaw).");
     expect(hint("checkin")).toBeUndefined();
     expect(hint("extension")).toBe("3 to 6 digits. For example: 1234");
     expect(doc.querySelector("[data-custom=extension]").getAttribute("data-invalid")).toBe("Enter a valid phone number. Use 3 to 6 digits.");
@@ -321,7 +321,7 @@ describe("the organiser's questions", () => {
     expect(doc.querySelectorAll("[onerror], [onload]")).toHaveLength(0);
     expect(html).not.toContain("<img src=x onerror");
     expect(doc.querySelector("[data-custom=mobile] .reg-slot__hint").textContent).toBe(`${payload}\nFor example: ${payload}`);
-    expect(doc.querySelector("[data-custom=when] .reg-slot__hint").textContent).toBe("Time in the event's time zone (Europe/Warsaw).");
+    expect(doc.querySelector("[data-custom=when] .reg-slot__hint").textContent).toBe("Use the event's local time (Warsaw).");
     expect(doc.querySelector("[data-custom=when] .at-label").textContent).toBe(payload);
   });
 

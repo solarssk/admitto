@@ -1,3 +1,4 @@
+import { eventTimeNote } from "../../src/registration/event-place-name.js";
 import { describe, expect, it } from "vitest";
 import type { GuestFormIcon } from "@admitto/shared";
 import { renderRegistrationClosedPage, renderRegistrationFormPage } from "../../src/registration/form-page.js";
@@ -103,7 +104,7 @@ describe.each(PAYLOADS)("organiser text %j on the form", (payload) => {
     const label = (selector: string) => doc.querySelector(`${selector} .at-label`).textContent;
     expect(label("[data-custom=k_long]")).toBe(payload);
     expect(hint("[data-custom=k_long]")).toBe(`${payload}\nFor example: ${payload}`);
-    expect(hint("[data-custom=k_datetime]")).toBe(`${payload}\nTime in the event's time zone (${payload}).`);
+    expect(hint("[data-custom=k_datetime]")).toBe(`${payload} ${eventTimeNote(payload)}`);
     const date = doc.querySelectorAll("input[type=date]");
     expect(date).toHaveLength(1);
     expect(date[0].closest(".at-field").getAttribute("data-custom")).toBe(payload);

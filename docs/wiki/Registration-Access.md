@@ -86,8 +86,8 @@ Every form draws its own boxes, in the style of Admitto, for a phone, a date and
 | Question | What the guest gets |
 |---|---|
 | Phone | A button with a flag and a country code, a list of countries with a search box, and the number beside it |
-| Date | A text box with a calendar button beside it. The calendar opens under the box |
-| Date and time | A date box and a time box side by side, one under the other on a phone. Each has its own button, for a calendar and for a list of times |
+| Date | A text box with a calendar icon at its left inside. The icon opens the calendar, which floats over the form |
+| Date and time | A date box and a time box side by side, one under the other on a phone. Each has its icon at its left inside, a calendar and a clock, which open a calendar and a list of times |
 
 - A guest picks a country from the list, or types the number with a `+` and the country code. The answer is saved as the code and the digits, for example `+48500100200`.
 - A phone question that asks for digits only, or sets a shortest or longest length, keeps the browser's box. A country code would break its rule. This suits a desk extension.

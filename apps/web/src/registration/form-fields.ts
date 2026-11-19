@@ -63,6 +63,7 @@ import {
   customDataErrorKey,
 } from "./form-contract.js";
 import { styledKindOf, type StyledKind } from "./form-controls.js";
+import { eventTimeNote } from "./event-place-name.js";
 import { checkTick, icon, type GuestIcon } from "./form-icons.js";
 import type { FormConsent, FormQuestion, RegistrationFormModel } from "./form-model.js";
 import { botChallengeCData } from "./bot-challenge.js";
@@ -360,6 +361,13 @@ function questionNote(question: FormQuestion, ...more: readonly string[]): strin
   return lines.length > 0 ? lines.join("\n") : null;
 }
 
+/** The note of a date and time: the organiser's words and rules, and then, on the same line, whose clock to use. */
+function dateTimeNote(question: FormQuestion, timeZone: string): string {
+  const base = questionNote(question);
+  const zone = eventTimeNote(timeZone);
+  return base === null ? zone : `${base} ${zone}`;
+}
+
 /** A numeric keypad for an answer that is digits only. */
 function inputModeOf(question: FormQuestion): "numeric" | undefined {
   return question.rules?.digits_only ? "numeric" : undefined;
@@ -461,7 +469,7 @@ function renderDateTimeQuestion(question: FormQuestion, id: string, context: Que
     message: "Enter a date and time.",
     invalid: invalidMessage(question),
     inputType: "datetime-local",
-    note: questionNote(question, `Time in the event's time zone (${context.timeZone}).`),
+    note: dateTimeNote(question, context.timeZone),
     styled: styledKindOf(question),
   });
 }

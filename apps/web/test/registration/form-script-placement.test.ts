@@ -198,12 +198,10 @@ describe("the placement of the list of countries", { timeout: 30_000 }, () => {
 });
 
 describe("the placement of the calendar and the list of times", { timeout: 30_000 }, () => {
-  it("anchor the calendar to the date box before the button, and the list of times to the time box", () => {
+  it("anchor the calendar to the date box, and the list of times to the time box, the boxes that hold their icon buttons", () => {
     const page = bootDates([DATETIME]);
     screen(page);
-    const row = page.doc.querySelector(".reg-dt");
-    const [dateBox, , timePart] = [...row.children] as Dom[];
-    const timeBox = timePart.querySelector(".at-control");
+    const [dateBox, timeBox] = [...page.doc.querySelector(".reg-dt").children] as Dom[];
     anchorAt(dateBox, 12, 200, 150, 40);
     anchorAt(timeBox, 100, 200, 150, 40);
     size(page, calendar(page), 336, 300);
@@ -217,7 +215,7 @@ describe("the placement of the calendar and the list of times", { timeout: 30_00
   it("is moved in from the right edge, so that the list of times stays inside a narrow screen", () => {
     const page = bootDates([DATETIME]);
     screen(page);
-    const timeBox = page.doc.querySelector(".reg-dt__time .at-control");
+    const timeBox = page.doc.querySelector("[data-time-root]");
     anchorAt(timeBox, 300, 200, 90, 40);
     size(page, clockPanel(page), 240, 200);
     click(page, clockButton(page));

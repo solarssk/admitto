@@ -67,6 +67,50 @@ function reference(raw: string): string {
 }
 
 describe("the date and time question of a form", { timeout: 30_000 }, () => {
+  it("draws each box as the product's bordered box with the icon button at its left inside, and no button after it", () => {
+    const page = bootDates([question({ key: "dt", label: "Expected arrival", type: "datetime", icon: "clock" })]);
+    const [dateBox, timeBox] = [...page.doc.querySelector(".reg-dt").children] as Dom[];
+    for (const [box, button, input] of [
+      [dateBox, calendarButton(page), field(page)],
+      [timeBox, clockButton(page), timeField(page)],
+    ] as const) {
+      expect(box.classList.contains("at-inputgroup")).toBe(true);
+      expect(box.classList.contains("at-control")).toBe(false);
+      // The button is the first thing in the box (in the wrapper of its panel, which takes no part in the layout), a real button with
+      // the shared classes, and the text box follows it.
+      expect(box.firstElementChild.contains(button)).toBe(true);
+      expect(box.firstElementChild.classList.contains("reg-dt__pop")).toBe(true);
+      expect(button.className).toBe("at-inputgroup__icon at-inputgroup__icon--action");
+      expect(button.getAttribute("type")).toBe("button");
+      expect(button.getAttribute("aria-label")).toContain("Expected arrival");
+      expect(box.contains(input)).toBe(true);
+      expect(button.compareDocumentPosition(input) & 4).toBe(4);
+      expect(box.lastElementChild).toBe(input);
+    }
+    // The icon of the question is replaced by the button: one icon in the box.
+    expect(dateBox.querySelectorAll(".at-inputgroup__icon")).toHaveLength(1);
+    expect(page.doc.querySelectorAll(".reg-dt__button")).toHaveLength(0);
+    expect(page.doc.querySelector(".reg-dt").children).toHaveLength(2);
+  });
+
+  it("makes the same box of a question that has no icon of its own", () => {
+    const page = boot();
+    const dateBox = page.doc.querySelector(".reg-dt").firstElementChild;
+    expect(dateBox.classList.contains("at-inputgroup")).toBe(true);
+    expect(dateBox.classList.contains("at-control")).toBe(false);
+    expect(dateBox.querySelectorAll(".at-inputgroup__icon")).toHaveLength(1);
+  });
+
+  it("opens the calendar from the icon, and the list from the clock, and the text boxes open them with Down", () => {
+    const page = boot();
+    click(page, calendarButton(page));
+    expect(calendar(page).hidden).toBe(false);
+    press(page, "Escape");
+    expect(calendar(page).hidden).toBe(true);
+    click(page, clockButton(page));
+    expect(clockPanel(page).hidden).toBe(false);
+  });
+
   it("keeps the browser's own box in the page as the date box and puts a time box beside it, each with its button", () => {
     const page = boot();
     const box = boxOf(page, "dt");
@@ -91,7 +135,7 @@ describe("the date and time question of a form", { timeout: 30_000 }, () => {
   it("keeps the note that names the time zone of the event, under the boxes", () => {
     const page = boot();
     const slot = page.doc.getElementById("m-f-q0");
-    expect(slot.textContent).toContain("Time in the event's time zone (Europe/Warsaw).");
+    expect(slot.textContent).toContain("Use the event's local time (Warsaw).");
     expect(boxOf(page, "dt").lastElementChild).toBe(slot);
   });
 

@@ -67,9 +67,9 @@ const PHONE_AND_WINDOW_SCRIPT = String.raw`
     // The panel is a fixed layer (the rules in the stylesheet), placed here as the staff app places its lists: under the box it
     // belongs to, or above it when the room below is smaller and the room above is larger, inside the visible screen, and no taller
     // than the room it has. The box is the scope itself, or, for the date and the time, whose scope takes no part in the layout
-    // (display: contents), the text box before it. Nothing below the box moves, as the panel is out of the flow.
+    // (display: contents), the box that holds it: the bordered box with the icon button and the text box. Nothing below the box moves, as the panel is out of the flow.
     function place() {
-      var box = (window.getComputedStyle(scope).display === "contents" ? scope.previousElementSibling : null) || scope;
+      var box = window.getComputedStyle(scope).display === "contents" ? scope.parentNode : scope;
       var rect = box.getBoundingClientRect();
       var view = window.visualViewport;
       var left = view ? view.offsetLeft : 0;

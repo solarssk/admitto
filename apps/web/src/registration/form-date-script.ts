@@ -492,7 +492,12 @@ export const DATE_FIELD_SCRIPT = `
       host.insertBefore(line, wrap);
       host.insertBefore(carrier, line);
       line.appendChild(wrap);
-      line.appendChild(datePart);
+      // The box is the product's bordered box with an icon button at its left inside, as the staff app's date box is: the calendar
+      // button takes the place of the icon of the question, if it had one, and the box is the same box with or without one.
+      var ownIcon = wrap.querySelector(".at-inputgroup__icon");
+      if (ownIcon) wrap.removeChild(ownIcon);
+      wrap.className = "at-inputgroup";
+      wrap.insertBefore(datePart, field);
       if (timePart) line.appendChild(timePart);
       field.removeAttribute("data-control");
       field.setAttribute("data-picker-trigger", "");

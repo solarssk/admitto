@@ -54,14 +54,15 @@ const NATIVE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFormModel
  * Fingerprint of the fixed script of the page and of each model's page without its stylesheet (the stylesheet is tested apart, in
  * guest-page-css.test.ts, and follows the product's own CSS), as they were at the base of PR 113g-1, before the own boxes
  * existed. The page of a form is to be that page and the additions of the own boxes (see `withoutOwnBoxes`) and no other change: if
- * one of these changes on purpose, the PR that does it records the new value, and the reviewer sees the page it changed.
+ * one of these changes on purpose, the PR that does it records the new value, and the reviewer sees the page it changed. (The note
+ * under a date and time changed on purpose: it names the place of the event on one line, see `eventTimeNote`.)
  */
 const NATIVE_HASH = {
   script: "fd4e7e41d681d7b5-26848",
-  default: "c3e1d32059ce9555-48952",
+  default: "93270d164d0deff8-48942",
   panels: "30baf454f7d312f7-50176",
-  gate: "85cee41b8e2d2591-53752",
-  required: "46cc95506c591fd5-43727",
+  gate: "3b904de80d60df21-53732",
+  required: "d8a0ea5bdaed0cfc-43717",
 } as const;
 
 describe("the page of a form with no question that an own box takes over", () => {
@@ -124,13 +125,13 @@ const STYLED_PHONE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFor
  * changes on purpose, the PR that does it records the new value, and the reviewer sees the page it changed.
  */
 const STYLED_HASH = {
-  script: "2a1e39e637a389b1-18174",
+  script: "21c81a6fb8cea97e-18207",
   css: "9036c763940f6130-1469",
-  styleSheet: "0cefdacafe8d0c6a-58210",
+  styleSheet: "dbe3e69a979fcdd6-58879",
   phoneKit: "d72fe234ef011226-13580",
-  phone: "9d71b4415c22bcc2-73197",
-  phoneRequired: "4fcd4c64e2eb149b-73269",
-  companionPhone: "c56cd24f37aa94d6-74987",
+  phone: "0dcb196eff3ddfa1-73230",
+  phoneRequired: "6572ed654127a1ea-73302",
+  companionPhone: "1a0e3b66516bfb5d-75020",
 } as const;
 
 describe("the page of a form with a phone and no date or time", () => {
@@ -303,7 +304,7 @@ describe("which date questions the own boxes take", () => {
     const both = doc.querySelector("[data-custom=dt]");
     expect(both.querySelector("input").getAttribute("type")).toBe("datetime-local");
     expect(both.querySelector("input").id).toBe("f-q1");
-    expect(both.textContent).toContain("Time in the event's time zone (Europe/Warsaw).");
+    expect(both.textContent).toContain("Use the event's local time (Warsaw).");
     expect(doc.querySelectorAll(".reg-dt, .reg-dt__pop, [data-date-pop], [data-time-root]")).toHaveLength(0);
   });
 
@@ -485,7 +486,7 @@ describe("the second script is a fixed text", () => {
     // The weight of the addition: a form without a date or a time does not carry any of it.
     expect(withDate.length).toBeGreaterThan(phoneOnly.length);
     expect(withTime.length).toBeGreaterThan(withDate.length);
-    expect([phoneOnly.length, withDate.length, withTime.length]).toEqual([18174, expect.any(Number), expect.any(Number)]);
+    expect([phoneOnly.length, withDate.length, withTime.length]).toEqual([18207, expect.any(Number), expect.any(Number)]);
   });
 
   it("is the same text every time it is made", () => {
@@ -672,7 +673,14 @@ describe("the styles of the date and the time boxes", () => {
     expect(css).not.toMatch(/\.reg-(?:date|time)[\w_-]*[^{]*\{[^}]*position: (?:absolute|fixed)/);
     expect(css).not.toContain("grid-column: 1 / -1");
     expect(css).not.toContain(".reg-dt__panel { grid-row");
-    expect(css).toContain(".reg-dt__pop, .reg-dt__time { display: contents; }");
+    expect(css).toContain(".reg-dt__pop { display: contents; }");
+  });
+
+  it("colour the icon of a box and the border of a box with a refused answer, and nothing else of a box: the rest is the shared rules", () => {
+    expect(css).toContain(".reg-dt .at-inputgroup__icon--action { color: var(--text-muted); font-size: 1.05rem; padding: 0; }");
+    expect(css).toContain(".reg-dt .at-inputgroup:has(.at-input--invalid) { border-color: var(--status-error); }");
+    expect(everything).toContain(".at-inputgroup .at-inputgroup__icon--action {");
+    expect(everything).toContain(".at-inputgroup:has(.at-inputgroup__icon--action) {");
   });
 
   it("give the lists of times a width of their own, which the screen caps", () => {
@@ -682,7 +690,7 @@ describe("the styles of the date and the time boxes", () => {
 
   it("put a date and time side by side on a wide screen and one under the other on a phone, where the form's own rows break", () => {
     expect(REGISTRATION_PAGE_CSS).toContain("@media (max-width: 480px) {\n  .reg-row { grid-template-columns: 1fr; }");
-    expect(css).toContain("@media (min-width: 481px) {\n  .reg-dt--pair { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }");
+    expect(css).toContain("@media (min-width: 481px) {\n  .reg-dt--pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }");
     expect(css).not.toContain("max-width: 480px");
   });
 
@@ -692,7 +700,7 @@ describe("the styles of the date and the time boxes", () => {
     expect(css).toContain(".reg-time__opt { display: flex; align-items: center; justify-content: center; min-height: 2.75rem;");
     expect(css).toContain(".reg-date__action { min-height: 2.75rem;");
     expect(css).toContain("@media (min-width: 481px) and (pointer: fine) {");
-    expect(css).toContain("@media (pointer: coarse) {\n  .reg-dt__button { min-width: 2.75rem; }");
+    expect(css).not.toContain("reg-dt__button");
   });
 
   it("keep the 16 px of the text boxes of the product on a phone: the boxes are its own .at-control, which has the rule", () => {
@@ -705,7 +713,7 @@ describe("the styles of the date and the time boxes", () => {
   });
 
   it("stop their transitions for a guest who asks for less motion", () => {
-    expect(css).toContain("@media (prefers-reduced-motion: reduce) {\n  .reg-dt__button, .reg-date__nav, .reg-date__day, .reg-time__opt { transition: none; }\n}");
+    expect(css).toContain("@media (prefers-reduced-motion: reduce) {\n  .reg-date__nav, .reg-date__day, .reg-time__opt { transition: none; }\n}");
     expect(css.match(/transition:/g)?.length).toBeGreaterThan(0);
     expect(css).not.toContain("animation");
   });

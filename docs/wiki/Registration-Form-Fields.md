@@ -21,8 +21,8 @@ The form opens for an event only when registration is turned on for it, with the
 |---|---|---|
 | Text | A one-line box. A list of suggestions opens under it when the field has some | A short answer, up to 100 characters |
 | Long text | A box four lines tall that can be pulled taller | Up to 1000 characters, with line breaks |
-| Date | A text box with a calendar button beside it | One day |
-| Date and time | A date box and a time box side by side, each with its own button | One day and a time on the clock |
+| Date | A text box with a calendar icon at its left, inside the box | One day |
+| Date and time | A date box and a time box side by side, each with its icon (a calendar, a clock) at its left inside the box | One day and a time on the clock |
 | Phone | A one-line box that opens the number keypad on a phone, with a button with a flag and a country code, and a list of countries, beside it | 3 to 15 digits, with an optional `+` at the start |
 | Single choice | A button that opens a list, with a search box past six options, as in the admin | One of your options |
 | Yes / No | A tick box. A required one is a list of Yes and No instead, drawn like a single choice | Yes or No |
@@ -90,14 +90,14 @@ The rules on the form are hints. The form does not stop a guest from sending bec
 Every form draws its own boxes for these questions, and there is nothing to switch on:
 
 - A phone question shows the button of a country beside the number. The guest opens the list, searches by the name or the code of a country, and picks one with the mouse, a tap or the keys. The answer is the code and the digits of the number.
-- A date question shows a text box and a calendar button. The calendar opens under the box, with the month, the days and the buttons for the previous and the next month, for today and for clearing the date (not offered for a required question). The guest picks a day, or types it. The keys work as in any calendar: the arrows move by a day and a week, Home and End go to the start and the end of the week, Page Up and Page Down by a month, and with Shift by a year.
-- A date and time question shows the date box and, beside it, a time box with a button that opens the lists of hours and minutes. The minutes are offered a quarter of an hour apart (00, 15, 30, 45), and the guest can still type any time, such as `18:07`.
+- A date question shows a text box with a calendar icon at its left. The icon, or the Down key in the box, opens the calendar. The calendar opens under the box, with the month, the days and the buttons for the previous and the next month, for today and for clearing the date (not offered for a required question). The guest picks a day, or types it. The keys work as in any calendar: the arrows move by a day and a week, Home and End go to the start and the end of the week, Page Up and Page Down by a month, and with Shift by a year.
+- A date and time question shows the date box and, beside it, a time box with a clock icon at its left that opens the lists of hours and minutes. The minutes are offered a quarter of an hour apart (00, 15, 30, 45), and the guest can still type any time, such as `18:07`.
 
 A phone question with a digits-only rule or a length rule keeps the browser's box, because a country code would break the rule. A date or a date and time question has no such rule, so it always gets the boxes. The guest's browser decides the order of day, month and year, the first day of the week and the 12 or 24-hour clock, as the browser's own boxes do. The names of the months and days are in English, like the rest of the form.
 
 ## Date and time
 
-A guest's time is read as the clock at the event, in the time zone saved for the event. The hint says so: `Time in the event's time zone (Europe/Warsaw).` Admitto saves no time zone with the answer. When the event has no time zone saved, the hint names UTC.
+A guest's time is read as the clock at the event, in the time zone saved for the event. The hint says so, in one sentence after your own hint text: `Use the event's local time (Warsaw).` It names the place of the time zone (`Los Angeles` for America/Los_Angeles) and never the technical name. Admitto saves no time zone with the answer. When the event has no time zone saved, the hint names UTC.
 
 The form does not send a date or a time that is only half filled. The guest sees `Enter a valid date.` or `Enter a valid date and time.` under the box, also when the question is optional.
 
