@@ -667,7 +667,7 @@ describe("the styles of the date and the time boxes", () => {
 
   it("float the panel over the form as a fixed layer at the stacking token of the staff app, never wider than the screen, with its look of a list of the staff app", () => {
     expect(css).toContain(
-      ".reg-dt__panel { position: fixed; left: 0; top: 0; z-index: var(--z-dropdown); margin: 0; box-sizing: border-box; width: 21rem; max-width: calc(100vw - 16px); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card); box-shadow: var(--shadow-md); }",
+      ".reg-dt__panel { position: fixed; left: 0; top: 0; z-index: var(--z-dropdown); margin: 0; box-sizing: border-box; width: 19rem; max-width: calc(100vw - 16px); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card); box-shadow: var(--shadow-md); }",
     );
     // The panel is the only thing the date and the time put out of the flow, and nothing is placed by a grid row any more.
     expect(css).not.toMatch(/\.reg-(?:date|time)[\w_-]*[^{]*\{[^}]*position: (?:absolute|fixed)/);
@@ -684,22 +684,24 @@ describe("the styles of the date and the time boxes", () => {
   });
 
   it("give the lists of times a width of their own, which the screen caps", () => {
-    expect(css).toContain(".reg-time { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); width: 15rem;");
-    expect(css).toContain(".reg-time--twelve { grid-template-columns: repeat(3, minmax(0, 1fr)); width: 19rem; }");
+    expect(css).toContain(".reg-time { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); width: 13rem;");
+    expect(css).toContain(".reg-time--twelve { grid-template-columns: repeat(3, minmax(0, 1fr)); width: 17rem; }");
   });
 
-  it("put a date and time side by side on a wide screen and one under the other on a phone, where the form's own rows break", () => {
+  it("keep a date and time side by side on every screen, the date a little wider, while the form's own rows break on a phone", () => {
     expect(REGISTRATION_PAGE_CSS).toContain("@media (max-width: 480px) {\n  .reg-row { grid-template-columns: 1fr; }");
-    expect(css).toContain("@media (min-width: 481px) {\n  .reg-dt--pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }");
+    expect(css).toContain(".reg-dt--pair { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }");
     expect(css).not.toContain("max-width: 480px");
   });
 
-  it("make the cells of the month and the options of the lists 44 px high, and the arrows 44 px square, unless a pointer is fine and the screen wide", () => {
-    expect(css).toContain(".reg-date__day { height: 2.75rem;");
-    expect(css).toContain(".reg-date__nav { flex: none; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 2.75rem; height: 2.75rem;");
-    expect(css).toContain(".reg-time__opt { display: flex; align-items: center; justify-content: center; min-height: 2.75rem;");
-    expect(css).toContain(".reg-date__action { min-height: 2.75rem;");
-    expect(css).toContain("@media (min-width: 481px) and (pointer: fine) {");
+  it("make the cells of the month, the options of the lists and the arrows 36 px on every screen, as compact as the staff app", () => {
+    expect(css).toContain(".reg-date__day { height: 2.25rem;");
+    expect(css).toContain(".reg-date__nav { flex: none; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 2.25rem; height: 2.25rem;");
+    expect(css).toContain(".reg-time__opt { display: flex; align-items: center; justify-content: center; min-height: 2.25rem;");
+    expect(css).toContain(".reg-date__action { min-height: 2.25rem;");
+    expect(css).not.toContain("pointer: fine");
+    expect(css).toContain(".reg-dt__panel { animation: reg-dt-in 0.15s ease-out; }");
+    expect(css).toContain(".reg-dt__panel { animation: none; }");
     expect(css).not.toContain("reg-dt__button");
   });
 
@@ -712,10 +714,10 @@ describe("the styles of the date and the time boxes", () => {
     expect(buildRegistrationPageStyles(undefined, WITH_DATE_AND_TIME)).toContain(".at-control > .at-input, .at-control > .at-select { flex: none; font-size: 16px;");
   });
 
-  it("stop their transitions for a guest who asks for less motion", () => {
-    expect(css).toContain("@media (prefers-reduced-motion: reduce) {\n  .reg-date__nav, .reg-date__day, .reg-time__opt { transition: none; }\n}");
+  it("stop their transitions and the fade of the panel for a guest who asks for less motion", () => {
+    expect(css).toContain("@media (prefers-reduced-motion: reduce) {\n  .reg-date__nav, .reg-date__day, .reg-time__opt { transition: none; }\n  .reg-dt__panel { animation: none; }\n}");
     expect(css.match(/transition:/g)?.length).toBeGreaterThan(0);
-    expect(css).not.toContain("animation");
+    expect(css.match(/animation:/g)).toHaveLength(2);
   });
 
   it("show the picked day and the chosen option with the primary colour, and the text on it in the colour the page keeps readable", () => {
