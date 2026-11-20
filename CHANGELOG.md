@@ -70,7 +70,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Give the guest registration form its own colour and font in Organisation settings > Branding, drop the live preview there, and label its sections like the Filters panel ([#1960](https://github.com/solarssk/admitto/pull/1960))
 
 ### Changed
-- Tidy the Requests tab: a note over the list says how many requests wait and when the oldest came in, the table sits in a box, and Delete all matching moves to More actions
+- Tidy the Requests tab: a note over the list says how many requests wait and when the oldest came in, the table sits in a box, and Delete all matching moves to More actions ([#1965](https://github.com/solarssk/admitto/pull/1965))
 - Redesign the Legal tab: two cards with plain tables, an Asked switch for each extra consent, Publish and Delete in a row menu, and Back in the editor footer ([#1957](https://github.com/solarssk/admitto/pull/1957))
 - Remove the "Styled form boxes" switch: every guest form now has its own phone, date and time boxes, and the time list offers quarter hours while any typed time still works ([#1954](https://github.com/solarssk/admitto/pull/1954))
 - Keep the date and time of a guest form question on one row on a phone, make the date and time pickers smaller and fade them in ([#1956](https://github.com/solarssk/admitto/pull/1956))
