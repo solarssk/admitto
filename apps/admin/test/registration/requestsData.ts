@@ -100,6 +100,7 @@ export function detail(id: string, over: Partial<RegistrationDetailDto> = {}): R
     decided_at: null,
     decided_by: null,
     locale: null,
+    origin: { ip: null, time_zone: null, country: null, region: null },
     attendee_id: null,
     mails: [mailRow(`${id}-mail`)],
     ...over,

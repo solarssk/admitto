@@ -172,6 +172,34 @@ describe("what a request says", () => {
     expect(valueOf(box, "Decision")).toBe(utc("2026-10-23T12:30:00.000Z"));
   });
 
+  it("shows where the request came from under its own heading: the zone, the approximate place, the address as code, and the language", async () => {
+    api.fetchRegistration.mockResolvedValue(
+      detail("r1", { created_at: "2026-01-15T10:00:00.000Z", locale: "pl-PL", origin: { ip: "203.0.113.7", time_zone: "Europe/Warsaw", country: "PL", region: "Mazovia" } }),
+    );
+    renderTab({ search: EVERY_STATE });
+    await loaded();
+
+    const box = await openRequest("r1", "Ann Kowalska");
+    await within(box).findByText("Where it came from", { selector: "h3" });
+
+    expect(valueOf(box, "Time zone")).toBe("Europe/Warsaw (CET)");
+    expect(valueOf(box, "Location")).toBe("Mazovia, Poland (approximate)");
+    expect(valueOf(box, "IP address")).toBe("203.0.113.7");
+    expect(within(box).getByText("203.0.113.7").className).toBe("mono");
+    expect(valueOf(box, "Language")).toBe("pl-PL");
+  });
+
+  it("has no heading for where it came from when nothing of it was kept", async () => {
+    api.fetchRegistration.mockResolvedValue(detail("r1"));
+    renderTab({ search: EVERY_STATE });
+    await loaded();
+
+    const box = await openRequest("r1", "Ann Kowalska");
+    await within(box).findByText("Request", { selector: "h3" });
+
+    expect(within(box).queryByText("Where it came from")).toBeNull();
+  });
+
   it("says a decision that was not made is a dash, and terms that were not accepted as well", async () => {
     api.fetchRegistration.mockResolvedValue(detail("r1", { accepted_at: null }));
     renderTab({ search: EVERY_STATE });

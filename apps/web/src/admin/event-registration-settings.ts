@@ -58,6 +58,8 @@ export type SettingsValues = {
   /** The bot check of the link and password forms of this event. Only a superadmin changes it, and it counts only while the organisation's
    * own switch (`bot_protection` of the answer) is on. */
   bot_protection_enabled: boolean;
+  /** A new request keeps where it came from: the guest's time zone, the approximate place of the IP address and the address itself. Only requests that come after the change. */
+  keep_origin: boolean;
   /** The company sign-in only (D-C4): the one claim of the provider's token that a guest must hold, and the values that let
    * them register. Both are empty (`null` and `[]`) for no restriction; they move together. */
   sso_claim_name: string | null;
@@ -80,6 +82,7 @@ export function defaultSettings(): SettingsValues {
     ask_department: false,
     consent_keys: [],
     bot_protection_enabled: true,
+    keep_origin: true,
     sso_claim_name: null,
     sso_claim_values: [],
     sso_provider_id: null,
@@ -181,6 +184,7 @@ const SETTINGS_SELECT = {
   ask_department: true,
   consent_keys: true,
   bot_protection_enabled: true,
+  keep_origin: true,
   sso_claim_name: true,
   sso_claim_values: true,
   sso_provider_id: true,
@@ -206,6 +210,7 @@ function valuesOf(row: StoredRow): SettingsValues {
     ask_department: row.ask_department,
     consent_keys: [...row.consent_keys],
     bot_protection_enabled: row.bot_protection_enabled,
+    keep_origin: row.keep_origin,
     // Both or none, as the table checks; a row that holds one without the other reads as no restriction.
     sso_claim_name: row.sso_claim_values.length > 0 ? row.sso_claim_name : null,
     sso_claim_values: row.sso_claim_name === null ? [] : [...row.sso_claim_values],
@@ -290,6 +295,7 @@ function mergeSettings(current: SettingsValues, patch: RegistrationSettingsPatch
     ask_department: patch.ask_department ?? current.ask_department,
     consent_keys: patch.consent_keys === undefined ? current.consent_keys : [...new Set(patch.consent_keys)],
     bot_protection_enabled: patch.bot_protection_enabled ?? current.bot_protection_enabled,
+    keep_origin: patch.keep_origin ?? current.keep_origin,
     ...claimAfter(current, patch, accessMethods.includes("sso")),
     sso_provider_id: providerAfter(current, patch, accessMethods.includes("sso")),
   };

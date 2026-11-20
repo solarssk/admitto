@@ -227,6 +227,49 @@ describe("what is sent", () => {
     expect(sent.consents).toEqual([]);
   });
 
+  describe("the zone of the browser", () => {
+    /** Makes the browser of the page report `zone` (a function that throws is a browser without the API). */
+    function reportZone(page: Page, zone: string | (() => never)) {
+      page.win.Intl.DateTimeFormat = (() => ({
+        resolvedOptions: typeof zone === "function" ? zone : () => ({ timeZone: zone }),
+      })) as unknown as typeof Intl.DateTimeFormat;
+    }
+    const sendValid = async (page: Page) => {
+      fillValid(page);
+      send(page);
+      await until(() => expect(page.fetchMock).toHaveBeenCalledTimes(1));
+    };
+
+    it("is sent as time_zone by a form that keeps where a request came from, after the check and not before", async () => {
+      const page = boot({ model: { keepOrigin: true } });
+      reportZone(page, "Europe/Warsaw");
+      await sendValid(page);
+      expect(body(page).time_zone).toBe("Europe/Warsaw");
+      expect(Object.keys(body(page)).at(-1)).toBe("time_zone");
+    });
+
+    it("is not sent by a form that does not keep it, whatever the browser reports", async () => {
+      const page = boot({ model: { keepOrigin: false } });
+      reportZone(page, "Europe/Warsaw");
+      await sendValid(page);
+      expect(Object.keys(body(page))).not.toContain("time_zone");
+    });
+
+    it("is left out when the browser has no zone to report: it says nothing, and the form is still sent", async () => {
+      const silent = boot({ model: { keepOrigin: true } });
+      reportZone(silent, () => {
+        throw new Error("no Intl");
+      });
+      await sendValid(silent);
+      expect(Object.keys(body(silent))).not.toContain("time_zone");
+
+      const empty = boot({ model: { keepOrigin: true } });
+      reportZone(empty, "");
+      await sendValid(empty);
+      expect(Object.keys(body(empty))).not.toContain("time_zone");
+    });
+  });
+
   it("does not record a Yes/No that was left unticked as a no", async () => {
     const page = boot();
     fillValid(page);

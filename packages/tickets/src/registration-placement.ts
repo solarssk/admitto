@@ -55,7 +55,23 @@ export type RegistrantSubmission = {
    */
   companions?: RegistrationCompanion[];
   locale?: string | null;
+  /** Where the request came from, for an event that keeps it (`keep_origin`); absent for one that does not. Personal data: erased with the row. */
+  origin?: RegistrationOrigin;
 };
+
+/** What a request keeps of where it came from (`Registration.submitted_*`): each part is null when the guest's browser did not say or the data is not there. */
+export type RegistrationOrigin = {
+  /** The client IP address the rate limits use. */
+  ip: string | null;
+  /** The IANA time zone of the guest's browser. */
+  time_zone: string | null;
+  /** The ISO country code of the address, from the GeoIP data. */
+  country: string | null;
+  /** The first-level region name of the address, when the GeoIP data carries it. Never a city. */
+  region: string | null;
+};
+
+const NO_ORIGIN: RegistrationOrigin = { ip: null, time_zone: null, country: null, region: null };
 
 /**
  * Who a guest is when they signed in with the company's identity provider (D-C4): the provider and the provider's stable id of
@@ -249,6 +265,7 @@ async function queueMailFor(context: SubmissionContext, registrationId: string, 
 }
 
 function registrationColumns({ eventId, now, registrant, companions, sso }: SubmissionContext) {
+  const origin = registrant.origin ?? NO_ORIGIN;
   return {
     sso_provider_id: sso?.providerId ?? null,
     sso_subject: sso?.subject ?? null,
@@ -264,6 +281,10 @@ function registrationColumns({ eventId, now, registrant, companions, sso }: Subm
     accepted_at: registrant.accepted_at ?? null,
     consents: registrant.consents ?? {},
     locale: registrant.locale ?? null,
+    submitted_ip: origin.ip,
+    submitted_timezone: origin.time_zone,
+    submitted_country: origin.country,
+    submitted_region: origin.region,
     created_at: now,
   };
 }

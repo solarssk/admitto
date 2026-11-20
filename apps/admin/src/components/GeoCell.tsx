@@ -5,7 +5,7 @@ function flagEmoji(countryCode: string): string {
   return String.fromCodePoint(...[...countryCode.toUpperCase()].map((c) => 127397 + (c.codePointAt(0) ?? 0)));
 }
 
-function countryDisplayName(countryCode: string): string {
+export function countryDisplayName(countryCode: string): string {
   try {
     return new Intl.DisplayNames([getPreferredLocale() ?? "en"], { type: "region" }).of(countryCode.toUpperCase()) ?? countryCode;
   } catch {

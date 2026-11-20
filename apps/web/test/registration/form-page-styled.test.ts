@@ -55,14 +55,16 @@ const NATIVE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFormModel
  * guest-page-css.test.ts, and follows the product's own CSS), as they were at the base of PR 113g-1, before the own boxes
  * existed. The page of a form is to be that page and the additions of the own boxes (see `withoutOwnBoxes`) and no other change: if
  * one of these changes on purpose, the PR that does it records the new value, and the reviewer sees the page it changed. (The note
- * under a date and time changed on purpose: it names the place of the event on one line, see `eventTimeNote`.)
+ * under a date and time changed on purpose: it names the place of the event on one line, see `eventTimeNote`. The script changed on purpose
+ * once more: it sends the zone of the browser for a form that carries `data-keep-origin`, which the fixtures leave off, so no page
+ * changed but through the script it holds.)
  */
 const NATIVE_HASH = {
-  script: "fd4e7e41d681d7b5-26848",
-  default: "93270d164d0deff8-48942",
-  panels: "30baf454f7d312f7-50176",
-  gate: "3b904de80d60df21-53732",
-  required: "d8a0ea5bdaed0cfc-43717",
+  script: "a37fc56c2f7a5cad-27383",
+  default: "f177db32778d3826-49477",
+  panels: "301cd2025ac0dd5f-50711",
+  gate: "658fee98f66e0ba1-54267",
+  required: "f473f6355c4e84b2-44252",
 } as const;
 
 describe("the page of a form with no question that an own box takes over", () => {
@@ -129,9 +131,9 @@ const STYLED_HASH = {
   css: "9036c763940f6130-1469",
   styleSheet: "dbe3e69a979fcdd6-58879",
   phoneKit: "d72fe234ef011226-13580",
-  phone: "e59637cc764ec723-73690",
-  phoneRequired: "73a8d73157aa1440-73762",
-  companionPhone: "02ac2e532aeeec9f-75480",
+  phone: "fe278d678680a4c3-74225",
+  phoneRequired: "7e3b8dc8877bbdfe-74297",
+  companionPhone: "68685e2ea66f22d7-76015",
 } as const;
 
 describe("the page of a form with a phone and no date or time", () => {

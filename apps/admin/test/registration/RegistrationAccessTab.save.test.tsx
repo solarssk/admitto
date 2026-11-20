@@ -78,6 +78,17 @@ describe("RegistrationAccessTab: what a save sends", () => {
     expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { waitlist_enabled: false });
   });
 
+  it("sends the switch that keeps where a request came from, with its title and its sentence, and nothing else", async () => {
+    await renderLoaded();
+    savedAs({ keep_origin: false });
+
+    expect(toggle("Keep where a request came from").checked).toBe(true);
+    fireEvent.click(toggle("Keep where a request came from"));
+    await save();
+
+    expect(api.saveRegistrationSettings).toHaveBeenCalledWith("evt-1", { keep_origin: false });
+  });
+
   it("sends two settings when two were changed, and says nothing of the rest", async () => {
     await renderLoaded();
     savedAs({ ask_company: true, ask_department: true });

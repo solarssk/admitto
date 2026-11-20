@@ -28,7 +28,7 @@ The list runs from the oldest request to the newest. A request does not move whe
 **Work through the requests that wait**
 
 1. Open the **Requests** tab. When staff decide by hand and some requests wait, the list opens on **Waiting for a decision**. A note above the list says how many requests wait and when the oldest one came in, in UTC. It is gone when none waits. To see all requests, or only one state, use **Filters**.
-2. Select a guest's name to open the request. The window shows the answers, the consents, the person the guest brings and the emails the guest was sent. It is read-only: it shows the person as the guest sent them. To correct or remove the companion of a guest who is accepted, use the attendee's page (see [Managing Attendees](Managing-Attendees#correct-or-remove-a-guests-companion)).
+2. Select a guest's name to open the request. The window shows the answers, the consents, the person the guest brings and the emails the guest was sent. When the event kept where the request came from (see [Registration Access](Registration-Access)), a part called **Where it came from** shows the guest's time zone, the approximate location, the IP address and the language of the browser. A part that was not kept, or is not known, is left out. It is read-only: it shows the person as the guest sent them. To correct or remove the companion of a guest who is accepted, use the attendee's page (see [Managing Attendees](Managing-Attendees#correct-or-remove-a-guests-companion)).
 3. Select **Accept** or **Reject**, and confirm.
 4. The request leaves the list, and the keyboard focus moves to the next one. Press Enter to open it.
 

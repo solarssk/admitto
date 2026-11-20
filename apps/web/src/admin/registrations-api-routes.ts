@@ -114,6 +114,17 @@ export type RegistrationCompanionDto = {
   custom_data: Record<string, unknown> | null;
 };
 
+export type RegistrationOriginDto = {
+  /** The client address the request came from. */
+  ip: string | null;
+  /** The IANA time zone of the guest's browser. */
+  time_zone: string | null;
+  /** The ISO country code of the address. */
+  country: string | null;
+  /** The region of the address, when the GeoIP data carries one. */
+  region: string | null;
+};
+
 export type RegistrationDetailDto = {
   id: string;
   status: RegistrationStatus;
@@ -137,6 +148,9 @@ export type RegistrationDetailDto = {
   /** The staff member who decided; null for an automatic decision or none yet. */
   decided_by: { id: string; name: string } | null;
   locale: string | null;
+  /** Where the request came from, as far as the event kept it (`keep_origin`): every part is null when it was not kept or not known. Personal data of
+   * the guest: for the staff who may open the request only, never in a log or an audit entry, erased with the row. */
+  origin: RegistrationOriginDto;
   /** The attendee this registration was accepted as; null for any other state. */
   attendee_id: string | null;
   /** Oldest first. */
@@ -174,6 +188,10 @@ const DETAIL_SELECT = {
   decided_at: true,
   decided_by: true,
   locale: true,
+  submitted_ip: true,
+  submitted_timezone: true,
+  submitted_country: true,
+  submitted_region: true,
   attendee_id: true,
 } as const satisfies Prisma.RegistrationSelect;
 
@@ -306,6 +324,7 @@ function serializeDetail(
     decided_at: isoOrNull(row.decided_at),
     decided_by: decidedBy,
     locale: row.locale,
+    origin: { ip: row.submitted_ip, time_zone: row.submitted_timezone, country: row.submitted_country, region: row.submitted_region },
     attendee_id: row.attendee_id,
     mails: mails.map((mail) => serializeMail(mail, row, nowMs)),
   };
