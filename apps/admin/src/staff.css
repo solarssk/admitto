@@ -3304,6 +3304,13 @@ html:not(.icons-ready) .ti {
   align-items: center;
 }
 
+/* The icon tile (the one of the identity rows) beside the name and the line under it. */
+.theme-surface-text {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 /* A label+description row with one Switch (Check-in behaviour): the Switch sits at the vertical
    middle of the text block, as in the Wallet platform rows and Theme-by-surface, not on its first line. */
 .settings-row--switch {

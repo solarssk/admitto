@@ -941,9 +941,14 @@ export function BrandingSettingsPanel() {
             </p>
             <div className="theme-surface-rows">
               <div className="settings-row">
-                <div className="settings-row__text">
-                  <strong>Admin panel</strong>
-                  <p>Staff dashboard, tables, and settings, applied live to this app.</p>
+                <div className="settings-row__text theme-surface-text">
+                  <span className="identity-row-icon" aria-hidden="true">
+                    <i className="ti ti-layout-dashboard" />
+                  </span>
+                  <div>
+                    <strong>Admin panel</strong>
+                    <p>Staff dashboard, tables, and settings, applied live to this app.</p>
+                  </div>
                 </div>
                 <div className="settings-row__controls">
                   <ColorSurfaceControl
@@ -976,9 +981,14 @@ export function BrandingSettingsPanel() {
               </div>
 
               <div className="settings-row">
-                <div className="settings-row__text">
-                  <strong>Ticket page</strong>
-                  <p>The public ticket page attendees open after check-in.</p>
+                <div className="settings-row__text theme-surface-text">
+                  <span className="identity-row-icon" aria-hidden="true">
+                    <i className="ti ti-ticket" />
+                  </span>
+                  <div>
+                    <strong>Ticket page</strong>
+                    <p>The public ticket page attendees open after check-in.</p>
+                  </div>
                 </div>
                 <div className="settings-row__controls">
                   <ColorSurfaceControl
@@ -1015,9 +1025,14 @@ export function BrandingSettingsPanel() {
               </div>
 
               <div className="settings-row" style={{ borderBottom: 0, paddingBottom: 0 }}>
-                <div className="settings-row__text">
-                  <strong>Registration form</strong>
-                  <p>The public sign-up page attendees fill in, and its confirmation page.</p>
+                <div className="settings-row__text theme-surface-text">
+                  <span className="identity-row-icon" aria-hidden="true">
+                    <i className="ti ti-forms" />
+                  </span>
+                  <div>
+                    <strong>Registration form</strong>
+                    <p>The public sign-up page attendees fill in, and its confirmation page.</p>
+                  </div>
                 </div>
                 <div className="settings-row__controls">
                   <ColorSurfaceControl

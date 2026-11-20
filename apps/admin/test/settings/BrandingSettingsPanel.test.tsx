@@ -700,6 +700,8 @@ describe("BrandingSettingsPanel - Registration form row", () => {
 
     const rows = [...document.querySelectorAll(".theme-surface-rows .settings-row strong")].map((el) => el.textContent);
     expect(rows).toEqual(["Admin panel", "Ticket page", "Registration form"]);
+    const icons = [...document.querySelectorAll(".theme-surface-rows .settings-row .identity-row-icon i")].map((el) => el.className);
+    expect(icons).toEqual(["ti ti-layout-dashboard", "ti ti-ticket", "ti ti-forms"]);
     expect(registrationColorValue()).toBe("Same as Ticket page");
     expect(registrationFontValue()).toBe("Same as Ticket page");
     expect(isDisabled(registrationColorTrigger())).toBe(false);
