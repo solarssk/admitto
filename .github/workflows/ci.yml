@@ -848,7 +848,12 @@ jobs:
             | grep -qx 'migration-destructive-approved'; then
             echo "MIGRATION_DESTRUCTIVE_LABEL_APPROVED=1" >> "$GITHUB_ENV"
           fi
+      # A pull request is scanned against its own base branch, so a PR into release/x.y.z checks only
+      # the migrations it adds, not every migration the release already carries. The release's pull
+      # request into main has base main and so scans all of them (and needs the label for a drop).
       - name: Scan new migrations for destructive SQL
+        env:
+          MIGRATION_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'origin/main' }}
         run: bash scripts/check-migrations-destructive.sh
       - name: Migration guard unit tests
         run: bash scripts/check-migrations-destructive.test.sh
