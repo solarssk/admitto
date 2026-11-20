@@ -108,6 +108,8 @@ interface ColorPaletteFieldProps {
   readonly disabled: boolean;
   readonly onPick: (key: string, hex: string) => void;
   readonly onCustomChange: (hex: string) => void;
+  /** The native colour picker (a window of the system) was opened from the custom tile. */
+  readonly onNativePickerOpen: () => void;
 }
 
 /** 12-color curated palette + a custom picker tile, replacing a bare hex input box. */
@@ -118,6 +120,7 @@ function ColorPaletteField({
   disabled,
   onPick,
   onCustomChange,
+  onNativePickerOpen,
 }: Readonly<ColorPaletteFieldProps>) {
   return (
     <div className="theme-swatch-grid">
@@ -156,6 +159,7 @@ function ColorPaletteField({
           disabled={disabled}
           aria-label="Custom colour picker"
           className="theme-swatch__color-input"
+          onClick={onNativePickerOpen}
           onChange={(e) => onCustomChange(e.target.value)}
         />
       </label>
@@ -240,10 +244,20 @@ function ColorSurfaceControl({
   // choosing a colour (swatch, custom hex, or the "Same as ..." row) so trying several in a row
   // means one open/close cycle, not one per attempt; only useDropdownMenu's own outside-click/
   // Escape handling closes it.
+  // The native colour picker is a window of the system: the press that dismisses it lands on the page, and would close this
+  // popover too. The first outside press after the picker was opened is therefore left alone (the next one closes it as usual).
+  const nativePickerOpened = useRef(false);
   const { open, setOpen, openUpward, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<
     HTMLButtonElement,
     HTMLDivElement
-  >({ align: "start" });
+  >({
+    align: "start",
+    ignoreOutside: () => {
+      if (!nativePickerOpened.current) return false;
+      nativePickerOpened.current = false;
+      return true;
+    },
+  });
 
   // While inheriting ("Same as ..." active), the palette below must show no swatch (and
   // not the custom tile either) as active - colorKey/mode otherwise still hold whatever was last
@@ -296,6 +310,9 @@ function ColorSurfaceControl({
             disabled={disabled}
             onPick={onPick}
             onCustomChange={onCustomChange}
+            onNativePickerOpen={() => {
+              nativePickerOpened.current = true;
+            }}
           />
         </div>
       )}

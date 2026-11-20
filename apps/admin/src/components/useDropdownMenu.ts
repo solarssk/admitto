@@ -68,6 +68,10 @@ export interface UseDropdownMenuOptions {
    * handler always steps aside for what it thinks is a nested combobox - instead the dropdown's
    * bubble-phase Escape handler fires, closing the panel out from under the still-open dialog. */
   escapeSuspended?: boolean;
+  /** Asked before an outside pointer press or focus closes the panel: returning true keeps it open. For a panel that holds a control
+   * which opens a window of the system (the native colour picker): the press that dismisses that window lands on the page and must not
+   * also close the panel. */
+  ignoreOutside?: () => boolean;
 }
 
 /** Open/close state, click-outside, Escape-to-close, first-`menuitem` focus, and `position:
@@ -90,7 +94,7 @@ export function useDropdownMenu<
   TTrigger extends HTMLElement = HTMLButtonElement,
   TPanel extends HTMLElement = HTMLDivElement,
 >(options: UseDropdownMenuOptions = {}) {
-  const { gap = 4, align = "start", matchTriggerWidth = false, minWidth, escapeSuspended = false } = options;
+  const { gap = 4, align = "start", matchTriggerWidth = false, minWidth, escapeSuspended = false, ignoreOutside } = options;
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<TTrigger>(null);
@@ -117,7 +121,10 @@ export function useDropdownMenu<
     if (reason !== "focus" && reason !== "scroll") triggerRef.current?.focus({ preventScroll: true });
   };
 
-  useClickOutside(rootRef, open, close);
+  useClickOutside(rootRef, open, (reason) => {
+    if (ignoreOutside?.()) return;
+    close(reason);
+  });
 
   // `openUpward` is for consumers that need more than the position from `panelStyle` (SearchableSelect
   // and PhoneCountrySelect reverse their children so the search box stays next to the trigger): the
