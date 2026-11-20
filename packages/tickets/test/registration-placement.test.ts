@@ -874,6 +874,22 @@ describe("placeRegistration: where the request came from", () => {
     expect(await db.registration.findFirst({ where: { event_id: waiting } })).toMatchObject({ status: "awaiting_email", submitted_ip: "203.0.113.7" });
   });
 
+  it("stores no origin when the switch of the event is off at the write, whatever the request carries: it is judged under the locks, not when the request came in", async () => {
+    const eventId = await make.event({ mode: "approval", verify: false });
+    await db.eventRegistrationSettings.update({ where: { event_id: eventId }, data: { keep_origin: false } });
+    const email = make.address();
+
+    await place(eventId, make.registrant({ email, origin: { ip: "203.0.113.9", time_zone: "Europe/Warsaw", country: "PL", region: "Mazovia" }, locale: "pl-PL" }));
+
+    expect(await db.registration.findFirst({ where: { event_id: eventId, email } })).toMatchObject({
+      submitted_ip: null,
+      submitted_timezone: null,
+      submitted_country: null,
+      submitted_region: null,
+      locale: "pl-PL",
+    });
+  });
+
   it("stores nothing of it for a request without an origin, and a part that is not known stays empty", async () => {
     const eventId = await make.event({ mode: "approval", verify: false });
     const without = make.address();

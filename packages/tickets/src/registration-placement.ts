@@ -183,11 +183,12 @@ const EVENT_SELECT = {
   event_hours_start: true,
   event_hours_end: true,
   timezone: true,
-  registration_settings: { select: { mode: true, waitlist_enabled: true, verify_email: true, max_companions: true } },
+  registration_settings: { select: { mode: true, waitlist_enabled: true, verify_email: true, max_companions: true, keep_origin: true } },
 } satisfies Prisma.EventSelect;
 
 type OpenSettings = { mode: RegistrationMode; waitlist_enabled: boolean; verify_email: boolean; max_companions: number };
-type OpenEvent = { capacity: number | null; settings: OpenSettings };
+/** `keepOrigin`: the event's switch as it is now, read with the rest under the locks: the origin of a submission is stored only if it is on when the row is written. */
+type OpenEvent = { capacity: number | null; settings: OpenSettings; keepOrigin: boolean };
 
 function asMode(value: string | null | undefined): RegistrationMode | null {
   return REGISTRATION_MODE.find((mode) => mode === value) ?? null;
@@ -209,7 +210,7 @@ async function readOpenEvent(tx: Prisma.TransactionClient, eventId: string, now:
   });
   if (now.getTime() >= end.getTime()) return null;
   const { waitlist_enabled, verify_email, max_companions } = event.registration_settings;
-  return { capacity: event.capacity, settings: { mode, waitlist_enabled, verify_email, max_companions } };
+  return { capacity: event.capacity, settings: { mode, waitlist_enabled, verify_email, max_companions }, keepOrigin: event.registration_settings.keep_origin };
 }
 
 /** The registration queue of the event, without waiting for it (the place of step 5 in the order of locks). */
@@ -455,11 +456,14 @@ async function submitInTransaction(
     seatsNeeded(companions),
   );
   if (placement === "full") return { outcome: "full" };
+  // The switch is judged here, as the companion limit is: a submission that waited for its turn, while an administrator turned the
+  // switch off, stores no origin.
+  const stored = event.keepOrigin ? registrant : { ...registrant, origin: undefined };
   const context: SubmissionContext = {
     tx,
     eventId,
     now,
-    registrant,
+    registrant: stored,
     companions,
     verifiedByProvider: input.method === "sso",
     sso,
