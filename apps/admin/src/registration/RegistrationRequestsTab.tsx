@@ -16,8 +16,9 @@ import { RequestDecisionDialogs } from "./RequestDecisionDialogs.js";
 import { RequestDetailDialog } from "./RequestDetailDialog.js";
 import { RequestsBulkBar } from "./RequestsBulkBar.js";
 import { RequestsEmpty, RequestsRows, RequestsSkeleton, type OpenRequest, type RequestsEmptyKind } from "./RequestsList.js";
-import { RequestsQueue } from "./RequestsQueue.js";
+import { RequestsBanner } from "./RequestsBanner.js";
 import { RequestsToolbar } from "./RequestsToolbar.js";
+import { useDeleteMatchingOffer, type DeleteMatchingOffer } from "./useDeleteMatchingOffer.js";
 import { selectionActions } from "./registrationDecisions.js";
 import { useRegistrationDecisions, type ActionDone } from "./useRegistrationDecisions.js";
 import { REQUEST_PAGE_SIZE_OPTIONS, useRegistrationRequests, type RequestsAnswer } from "./useRegistrationRequests.js";
@@ -31,10 +32,13 @@ import "./registration-requests.css";
 const NO_ROWS: RegistrationListItemDto[] = [];
 
 /** One event, one tab: a different `:eventId` is a fresh tab (its own read and filters), never the previous one's. */
-export function RegistrationRequestsTab({ counts }: Readonly<{ counts: ListLoad<RegistrationCountsDto> }>) {
+export function RegistrationRequestsTab({
+  counts,
+  onDeleteMatching,
+}: Readonly<{ counts: ListLoad<RegistrationCountsDto>; onDeleteMatching: (offer: DeleteMatchingOffer | null) => void }>) {
   const { eventId } = useParams();
   if (!eventId) return <p>Missing event.</p>;
-  return <RegistrationRequestsBody key={eventId} eventId={eventId} counts={counts} />;
+  return <RegistrationRequestsBody key={eventId} eventId={eventId} counts={counts} onDeleteMatching={onDeleteMatching} />;
 }
 
 /** What an empty page is: nothing sent yet, a queue with nothing waiting (only "waiting for a decision" is on), or a search and filters that select nothing. */
@@ -104,7 +108,7 @@ function useOpenRequest() {
 
 /**
  * The requests guests have sent to the event: a table of one page (cards on a narrow screen) with a search, the Filters of the
- * Attendees list (the state, from the address, and the age), the shortcut to the requests that wait for a decision, and its pager. A
+ * Attendees list (the state, from the address, and the age), a banner that says how many requests wait for a decision, and its pager. A
  * request opens in a window with its answers and its emails, and the checkboxes give the bulk bar the same actions the window has
  * (accept, reject, send an email again, delete). It follows the loading standard of a card with a list (`useListLoad` and
  * `useCardLoad`): a placeholder in the shape of the table for the first read, an error with a busy Retry that stays on screen until the
@@ -112,7 +116,11 @@ function useOpenRequest() {
  * never blocks it: the confirmed change is applied to the rows, and the list and the numbers are read again quietly. The numbers of
  * each state come from the page (`counts`) and are read again when the tab opens.
  */
-function RegistrationRequestsBody({ eventId, counts }: Readonly<{ eventId: string; counts: ListLoad<RegistrationCountsDto> }>) {
+function RegistrationRequestsBody({
+  eventId,
+  counts,
+  onDeleteMatching,
+}: Readonly<{ eventId: string; counts: ListLoad<RegistrationCountsDto>; onDeleteMatching: (offer: DeleteMatchingOffer | null) => void }>) {
   const { event, refreshEvent } = useOutletContext<{ event: EventDto; refreshEvent?: () => Promise<unknown> }>();
   const { reportApiError } = useConnectionState();
   // Only an administrator of the organization (or a superadmin) is offered "Show" for the sensitive answers; the server refuses the others.
@@ -152,6 +160,8 @@ function RegistrationRequestsBody({ eventId, counts }: Readonly<{ eventId: strin
   );
   const decisions = useRegistrationDecisions({ eventId, list, counts, refreshEvent, reportApiError, onChanged });
   const lookups = useRequestLookups(eventId);
+  // Deleting what the filter selects is in the "More actions" menu of the page header: the tab offers it while the list that names it is in.
+  useDeleteMatchingOffer(onDeleteMatching, list.refreshing ? null : (decisions.matching?.total ?? null), decisions.askDeleteMatching);
 
   const totalPages = Math.max(1, Math.ceil((answer?.total ?? 0) / pageSize));
   const actions = selectionActions(selection.rows);
@@ -188,13 +198,7 @@ function RegistrationRequestsBody({ eventId, counts }: Readonly<{ eventId: strin
             counts={counts.data}
           />
         )}
-        <RequestsQueue
-          status={status}
-          counts={counts.data}
-          onStatusChange={setStatus}
-          matching={list.refreshing ? null : decisions.matching}
-          onDeleteMatching={decisions.askDeleteMatching}
-        />
+        <RequestsBanner counts={counts.data} />
         <RequestsBody
           card={card}
           refreshing={list.refreshing}

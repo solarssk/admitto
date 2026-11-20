@@ -10,6 +10,7 @@ function counts(over: { pending?: number; waitlist?: number; mode?: Registration
     mode: over.mode === undefined ? "approval" : over.mode,
     by_status: { awaiting_email: 4, pending, waitlist: over.waitlist ?? 0, accepted: 30, rejected: 1 },
     needs_decision: pending,
+    oldest_waiting_at: pending > 0 ? "2026-10-23T10:14:00.000Z" : null,
   };
 }
 

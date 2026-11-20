@@ -2433,6 +2433,7 @@ describe("EventOverviewPage: the Registrations row of the Setup checklist (D-B11
     mode,
     by_status: { awaiting_email: 2, pending, waitlist, accepted: 30, rejected: 1 },
     needs_decision: pending,
+    oldest_waiting_at: pending > 0 ? "2026-10-23T10:14:00.000Z" : null,
   });
   const registrationRow = () => within(checklistCard()).queryByRole("link", { name: /^Registrations/ });
 

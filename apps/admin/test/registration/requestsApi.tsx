@@ -11,6 +11,7 @@ import type {
   RejectRegistrationsDto,
   RetryRegistrationMailsDto,
 } from "../../src/api/types.js";
+import { settings } from "./accessData.js";
 import { answer, counts, detail } from "./requestsData.js";
 
 // The real class, not the mocked module's own door to it: what the code under test checks with `instanceof` is this one.
@@ -24,6 +25,7 @@ const { ApiError } = await vi.importActual<typeof import("../../src/api/client.j
 export const api = {
   fetchRegistrations: vi.fn(),
   fetchRegistrationCounts: vi.fn(),
+  fetchRegistrationSettings: vi.fn(),
   fetchRegistration: vi.fn(),
   acceptRegistrations: vi.fn(),
   rejectRegistrations: vi.fn(),
@@ -42,6 +44,7 @@ export async function mockedClient() {
     ...original,
     fetchRegistrations: (...args: unknown[]) => api.fetchRegistrations(...args),
     fetchRegistrationCounts: (...args: unknown[]) => api.fetchRegistrationCounts(...args),
+    fetchRegistrationSettings: (...args: unknown[]) => api.fetchRegistrationSettings(...args),
     fetchRegistration: (...args: unknown[]) => api.fetchRegistration(...args),
     acceptRegistrations: (...args: unknown[]) => api.acceptRegistrations(...args),
     rejectRegistrations: (...args: unknown[]) => api.rejectRegistrations(...args),
@@ -59,11 +62,13 @@ export const loginNavigationModule = () => ({ goToLogin: (...args: unknown[]) =>
 export const fieldsTabModule = () => ({ RegistrationFieldsTab: () => <p>The attendee fields card</p> });
 export const legalTabModule = () => ({ RegistrationLegalTab: () => <p>The legal texts of the event</p> });
 
-/** Puts every handle back to what a page of requests needs to open: no request, nothing waiting, no questions and no texts. */
+/** Puts every handle back to what a page of requests needs to open: no request, nothing waiting, no questions and no texts, and registration on. */
 export function resetApi() {
   for (const fn of Object.values(api)) fn.mockReset();
   api.fetchRegistrations.mockResolvedValue(answer([]));
   api.fetchRegistrationCounts.mockResolvedValue(counts({}, "automatic"));
+  // The header of the page has its buttons (the menu of "More actions" holds deleting what a filter selects) once the settings are read.
+  api.fetchRegistrationSettings.mockResolvedValue(settings({ mode: "approval" }));
   api.fetchEventCustomFields.mockResolvedValue([]);
   api.fetchLegalDocuments.mockResolvedValue({ items: [], missing: [], limits: { title_chars: 200, content_chars: 100_000, consents: 10 } });
   api.fetchRegistration.mockImplementation(async (_event: string, id: string) => detail(id));

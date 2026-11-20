@@ -40,6 +40,16 @@ describe("registrationTabItems", () => {
     expect(registrationTabItems(4).map((item) => item.count)).toEqual([4, undefined, undefined, undefined]);
   });
 
+  it("names the count of requests for assistive tech, and has no number for none", () => {
+    const requests = (waiting?: number) => registrationTabItems(waiting).find((item) => item.id === "requests");
+
+    expect(requests(4)).toMatchObject({ count: 4, countLabel: "4 requests wait for a decision" });
+    expect(requests(1)).toMatchObject({ count: 1, countLabel: "1 request waits for a decision" });
+    expect(requests(0)?.count).toBeUndefined();
+    expect(requests(0)?.countLabel).toBeUndefined();
+    expect(requests()?.count).toBeUndefined();
+  });
+
   it("puts the open steps on Checklist, named for assistive tech, and nothing on it when none is open or the number is unknown", () => {
     const checklist = (steps?: number) => registrationTabItems(undefined, steps).find((item) => item.id === "checklist");
 

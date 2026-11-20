@@ -10,16 +10,17 @@ import {
   requestMailTone,
 } from "./registrationRequests.js";
 import type { RequestSelection } from "./useRequestSelection.js";
+import "../components/item-table.css";
 import "./registration-requests.css";
 
 /** Rows a placeholder draws when it does not know how many the list will have. Cards are taller, so fewer of them fill a screen, and the note that says the wait is long, under them, stays in view on a phone. */
 const SKELETON_ROWS = 6;
 const SKELETON_CARDS = 3;
 /** The height of a request in the table (two lines: the name and the address) and in the cards (the guest, the company, the state and the last email; 122px when the guest has no company), measured in Chrome against the real ones. */
-const TABLE_ROW_HEIGHT = 64;
+const TABLE_ROW_HEIGHT = 66;
 const CARD_HEIGHT = 150;
 /** What a row and a card add around the bar that stands for their content: the padding and the rule under them. */
-const TABLE_ROW_CHROME = 21;
+const TABLE_ROW_CHROME = 25;
 const CARD_CHROME = 25;
 
 /** The last email a request was queued, as a badge and what it was; a request that was queued none says so. */
@@ -198,7 +199,7 @@ export function RequestsRows({
   if (!isDesktop) {
     return (
       <div className="registration-requests__cards-wrap">
-        <div className="attendees-cards__selectall">
+        <div className="registration-requests__selectall">
           <Checkbox label="Select all" checked={selection.allSelected} onChange={selection.toggleAll} />
         </div>
         <ul className="registration-requests__cards" aria-label="Requests">
@@ -210,19 +211,21 @@ export function RequestsRows({
     );
   }
   return (
-    <div className="registration-requests__table-wrap">
-      <table className="table registration-requests__table" aria-label="Requests">
-        <thead>
-          <ColumnHeads
-            selectAll={<Checkbox checked={selection.allSelected} onChange={selection.toggleAll} aria-label="Select all" />}
-          />
-        </thead>
-        <tbody>
-          {items.map((row) => (
-            <RequestTableRow key={row.id} {...rowProps(row)} />
-          ))}
-        </tbody>
-      </table>
+    <div className="item-table registration-requests__box">
+      <div className="attendees-table-wrap registration-requests__table-wrap">
+        <table className="table registration-requests__table" aria-label="Requests">
+          <thead>
+            <ColumnHeads
+              selectAll={<Checkbox checked={selection.allSelected} onChange={selection.toggleAll} aria-label="Select all" />}
+            />
+          </thead>
+          <tbody>
+            {items.map((row) => (
+              <RequestTableRow key={row.id} {...rowProps(row)} />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -299,25 +302,27 @@ export function RequestsSkeleton({
   return (
     <div className={held ? "at-loading-hold" : "at-fade-in"} aria-busy="true">
       {isDesktop ? (
-        <div className="registration-requests__table-wrap">
-          <table className="table registration-requests__table" aria-hidden="true">
-            <thead>
-              <ColumnHeads />
-            </thead>
-            <tbody>
-              {Array.from({ length: SKELETON_ROWS }, (_, row) => (
-                <tr key={row}>
-                  <td colSpan={COLUMNS.length + 1}>
-                    <Skeleton variant="rect" height={TABLE_ROW_HEIGHT - TABLE_ROW_CHROME} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="item-table registration-requests__box">
+          <div className="attendees-table-wrap registration-requests__table-wrap">
+            <table className="table registration-requests__table" aria-hidden="true">
+              <thead>
+                <ColumnHeads />
+              </thead>
+              <tbody>
+                {Array.from({ length: SKELETON_ROWS }, (_, row) => (
+                  <tr key={row}>
+                    <td colSpan={COLUMNS.length + 1}>
+                      <Skeleton variant="rect" height={TABLE_ROW_HEIGHT - TABLE_ROW_CHROME} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div className="registration-requests__cards-wrap" aria-hidden="true">
-          <div className="attendees-cards__selectall">
+          <div className="registration-requests__selectall">
             <Skeleton variant="rect" width={88} height={16} />
           </div>
           <div className="registration-requests__cards">

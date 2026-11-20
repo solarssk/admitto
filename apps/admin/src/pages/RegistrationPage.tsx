@@ -11,6 +11,7 @@ import { RegistrationChecklistTab } from "../registration/RegistrationChecklistT
 import { RegistrationFieldsTab } from "../registration/RegistrationFieldsTab.js";
 import { RegistrationLegalTab } from "../registration/RegistrationLegalTab.js";
 import { RegistrationRequestsTab } from "../registration/RegistrationRequestsTab.js";
+import type { DeleteMatchingOffer } from "../registration/useDeleteMatchingOffer.js";
 import {
   registrationHeaderStatus,
   RegistrationHeaderActions,
@@ -33,6 +34,7 @@ function TabPanel({
   reg,
   onSettings,
   onChecksStale,
+  onDeleteMatching,
 }: Readonly<{
   id: RegistrationTab["id"];
   counts: ListLoad<RegistrationCountsDto>;
@@ -40,8 +42,9 @@ function TabPanel({
   reg: RegistrationSwitchState;
   onSettings: (settings: RegistrationSettingsDto) => void;
   onChecksStale: () => void;
+  onDeleteMatching: (offer: DeleteMatchingOffer | null) => void;
 }>) {
-  if (id === "requests") return <RegistrationRequestsTab counts={counts} />;
+  if (id === "requests") return <RegistrationRequestsTab counts={counts} onDeleteMatching={onDeleteMatching} />;
   if (id === "fields") return <RegistrationFieldsTab onChecksStale={onChecksStale} />;
   if (id === "checklist") return <RegistrationChecklistTab settings={settings} reg={reg} onSettings={onSettings} />;
   return <RegistrationLegalTab registrationOn={settings === null ? null : settings.mode !== null} onChecksStale={onChecksStale} />;
@@ -63,6 +66,9 @@ function RegistrationPageBody({ eventId }: Readonly<{ eventId: string | undefine
   // while it is unknown, or zero, the tab has no number.
   const counts = useRegistrationCounts(eventId);
   const waiting = counts.data?.needs_decision;
+  // Deleting everything the Requests filter selects is an item of the "More actions" menu in this header, and the filter is in the tab:
+  // the tab hands the offer up while it has one.
+  const [deleteMatching, setDeleteMatching] = useState<DeleteMatchingOffer | null>(null);
   // The settings of the registration are one state for the page: the switch in the header, the number on the Checklist tab and the
   // banner of the Checklist all follow it. The Checklist tab reads the settings itself and tells the page what it found; on the other
   // tabs the page reads them (once for each visit to such a tab), and a save of the switch brings the answer.
@@ -113,7 +119,7 @@ function RegistrationPageBody({ eventId }: Readonly<{ eventId: string | undefine
           </>
         }
         subtitle="Who gets in, and what you ask them."
-        actions={eventId && !switchUnavailable ? <RegistrationHeaderActions reg={reg} eventId={eventId} archived={archived} status={status} onChecklist={tab.id === "checklist"} /> : undefined}
+        actions={eventId && !switchUnavailable ? <RegistrationHeaderActions reg={reg} eventId={eventId} archived={archived} status={status} onChecklist={tab.id === "checklist"} deleteMatching={deleteMatching} /> : undefined}
       />
       {eventId && <RegistrationSwitchOverlays reg={reg} eventId={eventId} superadmin={superadmin} />}
       <Tabs
@@ -123,7 +129,7 @@ function RegistrationPageBody({ eventId }: Readonly<{ eventId: string | undefine
       />
       {/* Keyed by the tab, so the panel enters with the same fade as every other tab's content. */}
       <div key={tab.id} role="tabpanel" aria-label={tab.label}>
-        <TabPanel id={tab.id} counts={counts} settings={settings} reg={reg} onSettings={setSettings} onChecksStale={onChecksStale} />
+        <TabPanel id={tab.id} counts={counts} settings={settings} reg={reg} onSettings={setSettings} onChecksStale={onChecksStale} onDeleteMatching={setDeleteMatching} />
       </div>
     </div>
   );

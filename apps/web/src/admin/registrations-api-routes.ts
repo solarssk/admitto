@@ -93,6 +93,8 @@ export type RegistrationCountsDto = {
   by_status: Record<RegistrationStatus, number>;
   /** The number on the tab (D-B11): registrations that wait for a decision. The waiting list is counted apart. */
   needs_decision: number;
+  /** When the oldest of those requests came in (ISO), or null when none waits. The banner over the list says it. */
+  oldest_waiting_at: string | null;
 };
 
 export type RegistrationMailDto = RegistrationMailBriefDto & {
@@ -436,7 +438,18 @@ export async function handleCountEventRegistrations(c: Context, db: PrismaClient
     REGISTRATION_STATUS.map((status) => [status, counted.get(status) ?? 0]),
   ) as Record<RegistrationStatus, number>;
 
-  const body: RegistrationCountsDto = { mode: event.mode, by_status: byStatus, needs_decision: byStatus.pending };
+  const oldest = await db.registration.findFirst({
+    where: { event_id: event.id, status: "pending" },
+    orderBy: { created_at: "asc" },
+    select: { created_at: true },
+  });
+
+  const body: RegistrationCountsDto = {
+    mode: event.mode,
+    by_status: byStatus,
+    needs_decision: byStatus.pending,
+    oldest_waiting_at: oldest?.created_at.toISOString() ?? null,
+  };
   return c.json(body);
 }
 

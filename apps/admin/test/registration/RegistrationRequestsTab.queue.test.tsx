@@ -3,9 +3,10 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { RegistrationCountsDto, RegistrationListDto } from "../../src/api/types.js";
+import { formatUtcDateTime } from "../../src/utils/event-dates.js";
 import { deferred, mockMatchMedia } from "../test-utils.js";
 import { api, resetApi } from "./requestsApi.js";
-import { answer, cardPanel, counts, openIds, renderTab, request, requestsPanel } from "./requestsFixtures.js";
+import { OLDEST_WAITING, answer, cardPanel, counts, openIds, renderTab, request, requestsPanel } from "./requestsFixtures.js";
 
 vi.mock("../../src/api/client.js", async () => (await import("./requestsApi.js")).mockedClient());
 vi.mock("../../src/connection/ConnectionStateProvider.js");
@@ -15,7 +16,9 @@ vi.mock("../../src/registration/RegistrationLegalTab.js", async () => (await imp
 
 /** The state each read of the list asked for ("every state" is none), in order. */
 const askedStates = () => api.fetchRegistrations.mock.calls.map((call) => (call[1] as { status?: string }).status ?? "all");
-const queueChoice = (name: RegExp) => screen.getByRole("radio", { name });
+const filtersButton = () => screen.getByRole("button", { name: /^Filters/ });
+/** The banner over the table, or null when there is none. */
+const banner = () => requestsPanel().querySelector<HTMLElement>(".registration-requests__banner");
 
 beforeEach(() => {
   mockMatchMedia(true);
@@ -37,8 +40,8 @@ describe("what the tab opens on", () => {
     await screen.findByRole("table", { name: "Requests" });
 
     expect(askedStates()).toEqual(["pending"]);
-    expect(queueChoice(/^Waiting for a decision/).getAttribute("aria-checked")).toBe("true");
-    expect(queueChoice(/^All/).getAttribute("aria-checked")).toBe("false");
+    // The state is one of the Filters, and is the one that is on.
+    expect(filtersButton().textContent).toContain("1");
     // Nothing was written to the address: it still says nothing, and the tab opens on the same again.
     expect(router.state.location.search).toBe("?tab=requests");
   });
@@ -51,7 +54,7 @@ describe("what the tab opens on", () => {
     await screen.findByRole("table", { name: "Requests" });
 
     expect(askedStates()).toEqual(["all"]);
-    expect(queueChoice(/^All/).getAttribute("aria-checked")).toBe("true");
+    expect(filtersButton().textContent).not.toMatch(/\d/);
   });
 
   it("is every state when the event accepts by itself, whatever the numbers say waits", async () => {
@@ -120,7 +123,7 @@ describe("what the tab opens on", () => {
     await screen.findByRole("table", { name: "Requests" });
 
     expect(askedStates()).toEqual(["all"]);
-    expect(queueChoice(/^All/).getAttribute("aria-checked")).toBe("true");
+    expect(filtersButton().textContent).not.toMatch(/\d/);
   });
 
   it("stays on the queue when the numbers say later that nothing waits any more, and does not switch to every state under the staff member", async () => {
@@ -136,73 +139,99 @@ describe("what the tab opens on", () => {
     await screen.findByRole("table", { name: "Requests" });
     await waitFor(() => expect(screen.getByRole("tab", { name: /Requests/ }).textContent).toBe("Requests"));
 
-    // The numbers changed under it, and every read, before and after, was for the queue.
-    expect(queueChoice(/^Waiting for a decision/).textContent).toBe("Waiting for a decision (0)");
+    // The numbers changed under it, and every read, before and after, was for the queue; nothing waits, so the banner is gone.
+    expect(banner()).toBeNull();
+    fireEvent.click(filtersButton());
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by status/ }));
+    expect(screen.getByRole("button", { name: "Waiting for a decision (0)" })).toBeTruthy();
     expect(new Set(askedStates())).toEqual(new Set(["pending"]));
   });
 });
 
-describe("the shortcut to the queue", () => {
+describe("the banner over the table", () => {
   beforeEach(() => {
     api.fetchRegistrationCounts.mockResolvedValue(counts({ pending: 4, waitlist: 3, accepted: 120, rejected: 2, awaiting_email: 11 }));
     api.fetchRegistrations.mockResolvedValue(answer([request("r1")]));
   });
 
-  it("says how many wait and how many there are in all", async () => {
+  it("says how many wait and when the oldest came in, in UTC, the same text for every viewer", async () => {
     renderTab();
     await screen.findByRole("table", { name: "Requests" });
 
-    expect(queueChoice(/^Waiting for a decision/).textContent).toBe("Waiting for a decision (4)");
-    expect(queueChoice(/^All/).textContent).toBe("All (140)");
-    expect(screen.getByRole("radiogroup", { name: "Requests to show" })).toBeTruthy();
+    expect(banner()?.textContent).toBe(`4 requests wait for your decision. The oldest came in on ${formatUtcDateTime(OLDEST_WAITING)}.`);
+    const time = banner()?.querySelector("time");
+    expect(time?.getAttribute("datetime")).toBe(OLDEST_WAITING);
+    expect(time?.textContent).toMatch(/ UTC$/);
   });
 
-  it("says nothing of the numbers until they are known", async () => {
+  it("is over the table, under the toolbar, in the amber of a warning, and is no button and no tile", async () => {
+    renderTab();
+    await screen.findByRole("table", { name: "Requests" });
+
+    const panel = cardPanel() as HTMLElement;
+    const parts = [...panel.children].map((part) => part.className.split(" ")[0]);
+    expect(parts.indexOf("registration-requests__banner")).toBe(parts.indexOf("attendees-toolbar") + 1);
+    expect(banner()?.querySelector(".at-notice--warning")).not.toBeNull();
+    expect(within(banner() as HTMLElement).queryByRole("button")).toBeNull();
+  });
+
+  it("says it in the singular for one request", async () => {
+    api.fetchRegistrationCounts.mockResolvedValue(counts({ pending: 1 }));
+    renderTab();
+    await screen.findByRole("table", { name: "Requests" });
+
+    expect(banner()?.textContent).toContain("1 request waits for your decision.");
+  });
+
+  it("says only how many wait when the oldest is not known", async () => {
+    api.fetchRegistrationCounts.mockResolvedValue({ ...counts({ pending: 2 }), oldest_waiting_at: null });
+    renderTab();
+    await screen.findByRole("table", { name: "Requests" });
+
+    expect(banner()?.textContent).toBe("2 requests wait for your decision.");
+  });
+
+  it("is not there when nobody waits, and not before the numbers are known", async () => {
+    api.fetchRegistrationCounts.mockResolvedValue(counts({ pending: 0, accepted: 5 }));
+    api.fetchRegistrations.mockResolvedValue(answer([request("r1", { status: "accepted" })]));
+    renderTab();
+    await screen.findByRole("table", { name: "Requests" });
+    expect(banner()).toBeNull();
+
+    cleanup();
     api.fetchRegistrationCounts.mockRejectedValue(new ApiError(500, "internal_error", "internal_error"));
     renderTab();
     await screen.findByRole("table", { name: "Requests" });
-
-    expect(queueChoice(/^Waiting for a decision/).textContent).toBe("Waiting for a decision");
-    expect(queueChoice(/^All/).textContent).toBe("All");
+    expect(banner()).toBeNull();
   });
 
-  it("shows every state, and writes it to the address, when All is chosen", async () => {
-    const { router } = renderTab();
+  it("stays over a list of another state, as it is about the event and not about the list", async () => {
+    renderTab({ search: "?tab=requests&status=accepted" });
     await screen.findByRole("table", { name: "Requests" });
 
-    fireEvent.click(queueChoice(/^All/));
-
-    await waitFor(() => expect(askedStates().at(-1)).toBe("all"));
-    expect(router.state.location.search).toBe("?tab=requests&status=all");
-    expect(queueChoice(/^All/).getAttribute("aria-checked")).toBe("true");
+    expect(banner()?.textContent).toContain("4 requests wait for your decision.");
   });
 
-  it("shows what waits again, and writes it to the address, when it is chosen after another state", async () => {
-    const { router } = renderTab({ search: "?tab=requests&status=accepted" });
+  it("leaves the line under the search to the search and the Filters: no shortcut to a state and no delete button", async () => {
+    renderTab({ search: "?tab=requests&status=rejected" });
     await screen.findByRole("table", { name: "Requests" });
 
-    fireEvent.click(queueChoice(/^Waiting for a decision/));
-
-    await waitFor(() => expect(askedStates().at(-1)).toBe("pending"));
-    expect(router.state.location.search).toBe("?tab=requests&status=pending");
+    expect(screen.queryByRole("radiogroup", { name: "Requests to show" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^All \(/ })).toBeNull();
+    expect(within(requestsPanel()).queryByRole("button", { name: /^Delete all matching/ })).toBeNull();
+    expect(within(cardPanel() as HTMLElement).queryByRole("button", { name: /^Waiting for a decision/ })).toBeNull();
   });
 
-  it("has neither choice on while another state is shown, which only the Filters choose", async () => {
-    renderTab({ search: "?tab=requests&status=waitlist" });
-    await screen.findByRole("table", { name: "Requests" });
-
-    expect(queueChoice(/^Waiting for a decision/).getAttribute("aria-checked")).toBe("false");
-    expect(queueChoice(/^All/).getAttribute("aria-checked")).toBe("false");
-  });
-
-  it("starts again at the first page when it is chosen", async () => {
+  it("chooses the state in the Filters, and starts again at the first page", async () => {
     api.fetchRegistrations.mockImplementation(async (_event: string, params: { page: number; pageSize: number }) => answer([request(`p${params.page}`)], 60, params.page, params.pageSize));
     renderTab({ search: "?tab=requests&status=all" });
     await screen.findByRole("table", { name: "Requests" });
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(screen.getByText("Page 2 of 3")).toBeTruthy());
 
-    fireEvent.click(queueChoice(/^Waiting for a decision/));
+    fireEvent.click(filtersButton());
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by status/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Waiting for a decision/ }));
 
     await waitFor(() => expect(api.fetchRegistrations.mock.calls.at(-1)?.[1]).toEqual({ page: 1, pageSize: 25, status: "pending" }));
   });
@@ -260,7 +289,7 @@ describe("a queue with nothing in it", () => {
 });
 
 describe("what the tab does with an address that names the state", () => {
-  it("reads the requests that wait for the Overview link and shows them checked on the queue", async () => {
+  it("reads the requests that wait for the Overview link and shows the state as a filter that is on", async () => {
     api.fetchRegistrationCounts.mockResolvedValue(counts({ pending: 3 }));
     api.fetchRegistrations.mockResolvedValue(answer([request("r1"), request("r2")]));
     renderTab({ search: "?tab=requests&status=pending" });
@@ -268,6 +297,6 @@ describe("what the tab does with an address that names the state", () => {
     await screen.findByRole("table", { name: "Requests" });
 
     expect(openIds()).toEqual(["r1", "r2"]);
-    expect(within(requestsPanel()).getByRole("radio", { name: /^Waiting for a decision/ }).getAttribute("aria-checked")).toBe("true");
+    expect(filtersButton().textContent).toContain("1");
   });
 });

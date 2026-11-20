@@ -24,6 +24,9 @@ export function registrationTabFromSearch(searchParams: URLSearchParams): Regist
 /** What the number on the Checklist tab says, for assistive tech. */
 const stepsOpen = (count: number) => `${count} ${count === 1 ? "step" : "steps"} open`;
 
+/** What the number on the Requests tab says, for assistive tech. */
+const requestsWaiting = (count: number) => `${count} ${count === 1 ? "request waits" : "requests wait"} for a decision`;
+
 /**
  * The tab strip. Requests carries the number of requests that wait for a decision (D-B11) and Checklist the number of steps that are
  * still open, each once it is known and more than zero.
@@ -31,6 +34,7 @@ const stepsOpen = (count: number) => `${count} ${count === 1 ? "step" : "steps"}
 export function registrationTabItems(requestsCount?: number, openSteps?: number): TabItem[] {
   return REGISTRATION_TABS.map(({ id, label }) => {
     if (id === "checklist" && openSteps) return { id, label, count: openSteps, countLabel: stepsOpen(openSteps) };
-    return { id, label, count: id === "requests" ? requestsCount : undefined };
+    if (id === "requests" && requestsCount) return { id, label, count: requestsCount, countLabel: requestsWaiting(requestsCount) };
+    return { id, label };
   });
 }

@@ -908,6 +908,7 @@ describe("the counts", () => {
       mode: null,
       by_status: { awaiting_email: 0, pending: 0, waitlist: 0, accepted: 0, rejected: 0 },
       needs_decision: 0,
+      oldest_waiting_at: null,
     });
   });
 
@@ -924,11 +925,22 @@ describe("the counts", () => {
         await addRegistration({ email: `${status}-${n}@example.com`, status });
       }
     }
-    expect(await counts()).toEqual({
+    const body = await counts();
+    expect(body).toMatchObject({
       mode: null,
       by_status: { awaiting_email: 2, pending: 3, waitlist: 1, accepted: 2, rejected: 4 },
       needs_decision: 3,
     });
+    expect(typeof body.oldest_waiting_at).toBe("string");
+  });
+
+  it("name the oldest request that waits for a decision, and no other state's", async () => {
+    await addRegistration({ email: "waitlist-old@example.com", status: "waitlist", createdAt: new Date("2026-01-01T08:00:00.000Z") });
+    await addRegistration({ email: "newer@example.com", status: "pending", createdAt: new Date("2026-02-03T10:00:00.000Z") });
+    await addRegistration({ email: "oldest@example.com", status: "pending", createdAt: new Date("2026-02-01T09:30:00.000Z") });
+    await addRegistration({ email: "other-event@example.com", status: "pending", eventId: EVENT_A2, createdAt: new Date("2026-01-15T00:00:00.000Z") });
+
+    expect((await counts()).oldest_waiting_at).toBe("2026-02-01T09:30:00.000Z");
   });
 
   it("agree with the list, state by state", async () => {
@@ -962,7 +974,7 @@ describe("the counts", () => {
 
   it("are not taken for the id of a registration", async () => {
     const body = (await (await get(regsUrl(EVENT_A, "/counts"))).json()) as Record<string, unknown>;
-    expect(Object.keys(body).sort()).toEqual(["by_status", "mode", "needs_decision"]);
+    expect(Object.keys(body).sort()).toEqual(["by_status", "mode", "needs_decision", "oldest_waiting_at"]);
   });
 });
 

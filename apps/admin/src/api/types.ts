@@ -1603,6 +1603,8 @@ export interface RegistrationCountsDto {
   by_status: Record<RegistrationStatus, number>;
   /** Requests that wait for a decision. The waiting list is counted apart. */
   needs_decision: number;
+  /** When the oldest of them came in (ISO), or null when none waits. */
+  oldest_waiting_at: string | null;
 }
 
 /** The checks that decide whether an event may have registration on. The server holds the list (`READINESS_KEYS` in

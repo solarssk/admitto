@@ -325,14 +325,23 @@ describe("the Requests tab of the Registration page", () => {
     }
   });
 
-  it("keeps the delete-all button quiet until it is pointed at, and gives the queue line a place to wrap on a phone", () => {
-    expect(sets(bodyOf(requests, ".registration-requests__delete-matching"), "color", "var\\(--text-secondary\\)")).toBe(true);
-    expect(sets(bodyOf(requests, ".registration-requests__queue"), "flex-wrap", "wrap")).toBe(true);
+  it("insets the banner of the waiting requests and the boxed table by the card's own spacing, so neither touches its edge", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__banner"), "padding", "var\\(--space-4\\) var\\(--space-4\\) 0")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__box"), "margin", "var\\(--space-4\\)")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__cards-wrap"), "margin", "var\\(--space-4\\)")).toBe(true);
   });
 
-  it("keeps the table at a width it can be read in, and lets only it scroll sideways, never the page", () => {
-    expect(sets(bodyOf(requests, ".registration-requests__table"), "min-width", "640px")).toBe(true);
-    expect(sets(bodyOf(requests, ".registration-requests__table-wrap"), "overflow-x", "auto")).toBe(true);
+  it("keeps the table at a width it can be read in, and lets only it scroll sideways, inside its box, never the page", () => {
+    const box = ".item-table.registration-requests__box";
+    expect(sets(bodyOf(requests, `${box} .registration-requests__table-wrap .table`), "min-width", "640px")).toBe(true);
+    expect(sets(bodyOf(requests, `${box} .registration-requests__table-wrap .table`), "table-layout", "auto")).toBe(true);
+    expect(sets(bodyOf(requests, `${box} .registration-requests__table-wrap`), "overflow-x", "auto")).toBe(true);
+  });
+
+  it("gives the cards a box that looks like the table's: a border, rounded corners and a grey head row for Select all", () => {
+    expect(sets(bodyOf(requests, ".registration-requests__cards-wrap"), "border", "1px solid var\\(--border\\)")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__cards-wrap"), "overflow", "hidden")).toBe(true);
+    expect(sets(bodyOf(requests, ".registration-requests__selectall"), "background", "var\\(--surface-sunken\\)")).toBe(true);
   });
 
   it("puts the badge and the name of the last email on one line in a card, and in a column in the table", () => {

@@ -14,6 +14,7 @@ import { redirectToLogin } from "../identity/loginRedirect.js";
 import { missingChecks } from "./accessSettings.js";
 import { ProblemMessage, TURN_OFF_MESSAGE } from "./AccessFormParts.js";
 import type { AccessProblem } from "./useAccessForm.js";
+import type { DeleteMatchingOffer } from "./useDeleteMatchingOffer.js";
 import "../attendees/attendees.css";
 import "./registration-access.css";
 
@@ -240,6 +241,7 @@ function MoreItems({
   archived,
   onChecklist,
   close,
+  deleteMatching,
   onCopy,
   onGoToChecklist,
 }: Readonly<{
@@ -247,6 +249,8 @@ function MoreItems({
   reg: RegistrationSwitchState;
   archived: boolean;
   onChecklist: boolean;
+  /** What the Requests tab offers to delete, while it offers anything. */
+  deleteMatching: DeleteMatchingOffer | null;
   close: () => void;
   onCopy: () => void;
   onGoToChecklist: () => void;
@@ -273,6 +277,19 @@ function MoreItems({
       {!onChecklist && (status.kind === "open" || status.kind === "closed") && (
         <MoreActionsMenuItem icon="list-check" label="See the Checklist" hint="What is set up and what is not" onClick={run(onGoToChecklist)} />
       )}
+      {deleteMatching && (
+        <>
+          <hr className="more-actions-menu__divider" />
+          {/* Not archived-guarded: a request to delete personal data does not expire with the event. */}
+          <MoreActionsMenuItem
+            icon="trash"
+            variant="danger"
+            label={`Delete all matching (${deleteMatching.total})`}
+            hint="Every request the filter selects, for good"
+            onClick={run(deleteMatching.ask)}
+          />
+        </>
+      )}
     </>
   );
 }
@@ -289,7 +306,15 @@ export function RegistrationHeaderActions({
   archived,
   status,
   onChecklist,
-}: Readonly<{ reg: RegistrationSwitchState; eventId: string; archived: boolean; status: RegistrationHeaderStatus; onChecklist: boolean }>) {
+  deleteMatching,
+}: Readonly<{
+  reg: RegistrationSwitchState;
+  eventId: string;
+  archived: boolean;
+  status: RegistrationHeaderStatus;
+  onChecklist: boolean;
+  deleteMatching: DeleteMatchingOffer | null;
+}>) {
   const isDesktop = useIsDesktop();
   const navigate = useNavigate();
   const { addToast } = useToast();
@@ -313,7 +338,7 @@ export function RegistrationHeaderActions({
         </Button>
         {open && (
           <div className="more-actions-menu__panel at-scroll" role="menu" ref={panelRef} style={panelStyle}>
-            <MoreItems status={status} reg={reg} archived={archived} onChecklist={onChecklist} close={() => setOpen(false)} onCopy={onCopy} onGoToChecklist={onGoToChecklist} />
+            <MoreItems status={status} reg={reg} archived={archived} onChecklist={onChecklist} deleteMatching={deleteMatching} close={() => setOpen(false)} onCopy={onCopy} onGoToChecklist={onGoToChecklist} />
           </div>
         )}
       </div>
