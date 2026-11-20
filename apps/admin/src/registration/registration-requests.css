@@ -1,5 +1,5 @@
 /* The Requests tab of the Registration page: a card with the Attendees list's toolbar and bulk bar (attendees.css, which both
-   import), the queue line, the requests as a table or as cards, and the pager. The toolbar, the bulk bar, the table headings,
+   import), the banner of the requests that wait, the requests as a boxed table or as cards, and the pager. The toolbar, the bulk bar, the table headings,
    the checkboxes and the busy and dimmed states are the ones the other lists use; what is here is the shape of a request. */
 
 /* The notice and the card are 12px apart, the space the notice has under the tabs: the same on both sides of it. */
@@ -9,13 +9,31 @@
   gap: var(--space-3);
 }
 
-.registration-requests__table-wrap {
-  position: relative;
+/* How many requests wait, over the table, inset like it. The Notice is the kit's (amber), with no colour of its own. */
+.registration-requests__banner {
+  padding: var(--space-4) var(--space-4) 0;
+}
+
+/* The table is the boxed table of the other lists (components/item-table.css), inset by the card. This one has six columns with
+   long content (an address, a company and a department, the name of an email), so it does not take the standard's fixed layout and the
+   28% of its first column: the columns share the room by their content, the checkbox column is narrow, and under 640px the table
+   scrolls inside its box, never the page. Below 1024px the requests are cards, so the standard's ladder for columns does not apply. */
+.registration-requests__box {
+  margin: var(--space-4);
+}
+
+.item-table.registration-requests__box .registration-requests__table-wrap {
   overflow-x: auto;
 }
 
-.registration-requests__table {
+.item-table.registration-requests__box .registration-requests__table-wrap .table {
   min-width: 640px;
+  table-layout: auto;
+}
+
+.item-table.registration-requests__box .table th:first-child,
+.item-table.registration-requests__box .table td:first-child {
+  width: 3rem;
 }
 
 /* The guest is what a person reads first and the column that holds the longest text (an address), so it asks for its room before the others do. The
@@ -35,7 +53,7 @@
 }
 
 /* Cells top-aligned: a long name or address makes a tall row, and its badges stay level with the name instead of the middle of it. */
-.registration-requests__table tbody td {
+.item-table.registration-requests__box .table tbody td {
   vertical-align: top;
 }
 
@@ -119,7 +137,28 @@
   color: var(--text-secondary);
 }
 
-/* Cards, below the width the table fits: one request each, in the rhythm of the Attendees cards. */
+/* The time of a row is one line ("20 Nov 2026, 08:14 UTC"), not three. */
+.registration-requests__table time {
+  white-space: nowrap;
+}
+
+/* Cards, below the width the table fits: one request each, in a box that looks like the table's (a border, rounded corners, a grey
+   head row with the checkbox that selects the page, hairlines between the cards). */
+.registration-requests__cards-wrap {
+  margin: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.registration-requests__selectall {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+}
+
 .registration-requests__cards {
   display: flex;
   flex-direction: column;
@@ -211,35 +250,6 @@
 /* PaginationFooter assumes a padded card body; this card has none, so the table can reach its edges. */
 .registration-requests__footer {
   padding: 0 var(--space-4) var(--space-4);
-}
-
-/* The line under the toolbar: the shortcut to the queue on the left, and deleting what a filter selects on the right. They share the
-   line while they fit and the second goes under the first on a phone. */
-.registration-requests__queue {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
-}
-
-/* The toggle's own bottom margin is for standing alone above other content. */
-.registration-requests__queue .seg-control {
-  margin-bottom: 0;
-}
-
-/* Deleting is the one thing on the line that cannot be undone. It is not the work of the queue, so it stays quiet until it is pointed at
-   or reached with the keyboard, and then says what it is in the colour of an error. */
-.registration-requests__delete-matching {
-  color: var(--text-secondary);
-}
-
-.registration-requests__delete-matching:hover:not(:disabled, [aria-disabled="true"]),
-.registration-requests__delete-matching:focus-visible {
-  color: var(--status-error);
-  background: var(--status-error-tint);
 }
 
 /* What a confirmation adds under its message: the seats an acceptance takes, the requests it leaves out, what a checkbox does. */

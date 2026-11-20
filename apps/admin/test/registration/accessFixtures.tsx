@@ -18,7 +18,7 @@ export function resetApi(): void {
   refreshEvent.mockResolvedValue(undefined);
   api.fetchRegistrationSettings.mockResolvedValue(settings());
   api.fetchLegalDocuments.mockResolvedValue(legalAnswer(texts(["photo", "Photos and video", true], ["news", "News about our events", false])));
-  api.fetchRegistrationCounts.mockResolvedValue({ mode: null, by_status: { awaiting_email: 0, pending: 0, waitlist: 0, accepted: 0, rejected: 0 }, needs_decision: 0 });
+  api.fetchRegistrationCounts.mockResolvedValue({ mode: null, by_status: { awaiting_email: 0, pending: 0, waitlist: 0, accepted: 0, rejected: 0 }, needs_decision: 0, oldest_waiting_at: null });
 }
 
 /** The Registration page, in the frame every page of an event has (the event is in the outlet context). */

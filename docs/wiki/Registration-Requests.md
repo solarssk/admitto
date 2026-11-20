@@ -27,7 +27,7 @@ The list runs from the oldest request to the newest. A request does not move whe
 
 **Work through the requests that wait**
 
-1. Open the **Requests** tab. When staff decide by hand and some requests wait, the list opens on **Waiting for a decision**. The two buttons above the list switch between that and **All**. The number beside each is how many requests it holds.
+1. Open the **Requests** tab. When staff decide by hand and some requests wait, the list opens on **Waiting for a decision**. A note above the list says how many requests wait and when the oldest one came in, in UTC. It is gone when none waits. To see all requests, or only one state, use **Filters**.
 2. Select a guest's name to open the request. The window shows the answers, the consents, the person the guest brings and the emails the guest was sent. It is read-only: it shows the person as the guest sent them. To correct or remove the companion of a guest who is accepted, use the attendee's page (see [Managing Attendees](Managing-Attendees#correct-or-remove-a-guests-companion)).
 3. Select **Accept** or **Reject**, and confirm.
 4. The request leaves the list, and the keyboard focus moves to the next one. Press Enter to open it.
@@ -58,10 +58,10 @@ Only the last email of a request is sent again, and only when it failed for good
 **Delete everything a filter selects**
 
 1. Choose a state, an age or a search, so that the list shows the requests you want to remove.
-2. Select **Delete all matching**. The number on the button is how many it will delete, on every page.
+2. At the top of the page, select **More actions**, then **Delete all matching**. The number beside it is how many it will delete, on every page.
 3. Read the dialog, and confirm.
 
-The button is shown only when the filter selects 500 requests or fewer.
+The item is in the menu only on the **Requests** tab, and only when the filter selects 500 requests or fewer.
 
 **Find a request**
 
@@ -73,7 +73,7 @@ The button is shown only when the filter selects 500 requests or fewer.
 
 ## Expected result
 
-A page of requests with its guest, company, state, last email and the time it was sent. The number on the **Requests** tab is how many requests wait for a decision. It has no number when none does.
+A page of requests with its guest, company, state, last email and the time it was sent. The number on the **Requests** tab is how many requests wait for a decision. It has no number when none does. While some wait, a note over the list says so.
 
 After you accept, reject, send an email again or delete, a short message says what was done. The list and the numbers update at once, and you can go on with the next request without waiting.
 

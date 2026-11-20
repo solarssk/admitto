@@ -83,11 +83,14 @@ function openTab(): HTMLElement {
 
 const requestsTab = () => screen.getByRole("tab", { name: /Requests/ });
 
+const OLDEST = "2026-10-23T10:14:00.000Z";
+
 function counts(pending: number): RegistrationCountsDto {
   return {
     mode: "approval",
     by_status: { awaiting_email: 0, pending, waitlist: 2, accepted: 5, rejected: 1 },
     needs_decision: pending,
+    oldest_waiting_at: pending > 0 ? OLDEST : null,
   };
 }
 

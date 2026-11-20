@@ -10,7 +10,7 @@ import { EVENT } from "./requestsData.js";
  * and how to find things in it. The data is in requestsData.ts, and the mocks of the API are each test file's own (a `vi.mock` only
  * works where it is written; requestsApi.tsx has the handles).
  */
-export { EVENT, FAILED_MAIL, answer, counts, detail, mailRow, named, request } from "./requestsData.js";
+export { EVENT, FAILED_MAIL, OLDEST_WAITING, answer, counts, detail, mailRow, named, request } from "./requestsData.js";
 
 export interface RenderTabOptions {
   search?: string;

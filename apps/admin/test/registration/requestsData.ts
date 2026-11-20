@@ -45,6 +45,9 @@ export function answer(
   return { items, total, page, pageSize, selection_digest: null, ...over };
 }
 
+/** When the oldest request that waits came in, for the numbers of a test that has some that wait. */
+export const OLDEST_WAITING = "2026-10-23T10:14:00.000Z";
+
 export function counts(
   byStatus: Partial<RegistrationCountsDto["by_status"]> = {},
   mode: RegistrationCountsDto["mode"] = "approval",
@@ -53,6 +56,7 @@ export function counts(
     mode,
     by_status: { awaiting_email: 0, pending: 0, waitlist: 0, accepted: 0, rejected: 0, ...byStatus },
     needs_decision: byStatus.pending ?? 0,
+    oldest_waiting_at: byStatus.pending ? OLDEST_WAITING : null,
   };
 }
 

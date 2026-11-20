@@ -32,9 +32,21 @@ const bulkBar = () => requestsPanel().querySelector<HTMLElement>(".attendees-bul
 const loaded = () => screen.findByRole("table", { name: "Requests" });
 const dialogNamed = (name: string | RegExp) => screen.findByRole("dialog", { name });
 const press = (dialog: HTMLElement, name: string) => fireEvent.click(within(dialog).getByRole("button", { name }));
-const deleteAllButton = () => screen.queryByRole("button", { name: /^Delete all matching/ });
-/** The button that deletes what the filter selects, once the list that names it is in. */
-const deleteAllReady = () => screen.findByRole("button", { name: /^Delete all matching/ });
+/** The item of the "More actions" menu in the page header that deletes what the filter selects, or null while the tab offers none. The menu is opened if it is not. */
+function deleteAllButton(): HTMLElement | null {
+  const header = document.querySelector<HTMLElement>(".registration-pageheader") as HTMLElement;
+  if (!within(header).queryByRole("menu")) fireEvent.click(within(header).getByRole("button", { name: /^More actions/ }));
+  return within(header).queryByRole("menuitem", { name: /^Delete all matching/ });
+}
+/** What the item says it takes: "Delete all matching (3)". */
+const deleteAllLabel = () => deleteAllButton()?.querySelector(".more-actions-menu__item-text > span")?.textContent;
+/** The item that deletes what the filter selects, once the list that names it is in. */
+const deleteAllReady = () =>
+  waitFor(() => {
+    const item = deleteAllButton();
+    if (item === null) throw new Error("Delete all matching is not offered yet");
+    return item;
+  });
 
 /** Ticks the requests and asks to delete them from the menu of the bulk bar. */
 function askToDelete(...names: string[]) {
@@ -306,10 +318,49 @@ describe("deleting everything a filter selects", () => {
     renderTab({ search: REJECTED });
     await loaded();
 
-    expect(deleteAllButton()?.textContent).toBe("Delete all matching (3)");
+    expect(deleteAllLabel()).toBe("Delete all matching (3)");
 
     fireEvent.change(screen.getByRole("textbox", { name: "Search requests by name or email" }), { target: { value: "cy" } });
-    await waitFor(() => expect(deleteAllButton()?.textContent).toBe("Delete all matching (1)"));
+    await waitFor(() => expect(deleteAllLabel()).toBe("Delete all matching (1)"));
+  });
+
+  it("is an item of the More actions menu of the page header, set apart at the end and marked as dangerous, and not a button of the list", async () => {
+    new FakeServer(mix());
+    renderTab({ search: REJECTED });
+    await loaded();
+
+    const item = await deleteAllReady();
+
+    expect(item.classList.contains("more-actions-menu__item--danger")).toBe(true);
+    expect(item.closest('[role="menu"]')?.lastElementChild?.contains(item)).toBe(true);
+    expect(item.parentElement?.previousElementSibling?.tagName).toBe("HR");
+    expect(item.textContent).toContain("Every request the filter selects, for good");
+    expect(within(requestsPanel()).queryByRole("button", { name: /^Delete all matching/ })).toBeNull();
+  });
+
+  it("is offered on an archived event too: a request to delete personal data does not expire with the event", async () => {
+    new FakeServer(mix());
+    renderTab({ search: REJECTED, event: ARCHIVED });
+    await loaded();
+
+    expect(deleteAllLabel()).toBe("Delete all matching (3)");
+    expect(deleteAllButton()?.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("is not in the menu of another tab, and is back when the Requests tab is", async () => {
+    new FakeServer(mix());
+    renderTab({ search: REJECTED });
+    await loaded();
+    await deleteAllReady();
+
+    fireEvent.click(screen.getByRole("tab", { name: /^Fields/ }));
+    await screen.findByText("The attendee fields card");
+    expect(deleteAllButton()).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: /^Requests/ }));
+    await loaded();
+    // The tab opens on what waits (the address no longer names a state), and the filter selects the one request that does.
+    await waitFor(() => expect(deleteAllLabel()).toBe("Delete all matching (1)"));
   });
 
   it("is not offered when nothing matches, and not when the server did not name the requests because too many match", async () => {
@@ -332,7 +383,7 @@ describe("deleting everything a filter selects", () => {
     renderTab({ search: REJECTED });
     await loaded();
     fireEvent.change(screen.getByRole("textbox", { name: "Search requests by name or email" }), { target: { value: "park" } });
-    await waitFor(() => expect(deleteAllButton()?.textContent).toBe("Delete all matching (1)"));
+    await waitFor(() => expect(deleteAllLabel()).toBe("Delete all matching (1)"));
 
     fireEvent.click(await deleteAllReady());
 
@@ -426,7 +477,7 @@ describe("deleting everything a filter selects", () => {
     expect(alert.textContent).toBe("The list changed since you looked at it, so nothing was deleted. Reload the list and check what is selected.");
     expect(server.rows.filter((row) => row.status === "rejected")).toHaveLength(4);
     await dialogNamed("Delete all 4 requests that match?");
-    expect(deleteAllButton()?.textContent).toBe("Delete all matching (4)");
+    expect(deleteAllLabel()).toBe("Delete all matching (4)");
     // It can be confirmed again, now that it names what is there.
     press(await dialogNamed("Delete all 4 requests that match?"), "Delete 4");
     expect(await screen.findByText("4 requests deleted.")).toBeTruthy();
@@ -466,7 +517,7 @@ describe("deleting everything a filter selects", () => {
     // Requests that match are there again, and the next read brings them: nobody asked for a deletion, so nothing opens.
     server.rows = [...server.rows, ...rejected];
     fireEvent.change(screen.getByRole("textbox", { name: "Search requests by name or email" }), { target: { value: "cy" } });
-    await waitFor(() => expect(deleteAllButton()?.textContent).toBe("Delete all matching (1)"));
+    await waitFor(() => expect(deleteAllLabel()).toBe("Delete all matching (1)"));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -513,19 +564,21 @@ describe("deleting everything a filter selects", () => {
     const next = deferred<ReturnType<FakeServer["page"]>>();
     api.fetchRegistrations.mockImplementationOnce(() => next.promise);
 
-    fireEvent.click(screen.getByRole("radio", { name: /^Waiting for a decision/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by status/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Waiting for a decision/ }));
 
     await waitFor(() => expect(api.fetchRegistrations).toHaveBeenCalledTimes(2));
     expect(deleteAllButton()).toBeNull();
     await act(async () => next.resolve(answer([named("r1", "Ann", "Kowalska")], 1, 1, 25, { selection_digest: "b".repeat(64) })));
-    await waitFor(() => expect(deleteAllButton()?.textContent).toBe("Delete all matching (1)"));
+    await waitFor(() => expect(deleteAllLabel()).toBe("Delete all matching (1)"));
   });
 
   it("is hidden once an action changed what the filter selects, until the list that is read again brings its new name", async () => {
     const server = new FakeServer([named("r1", "Ann", "Kowalska"), named("r2", "Bo", "Lee"), named("r3", "Cy", "Park")]);
     renderTab({ search: "?tab=requests&status=pending" });
     await loaded();
-    expect(deleteAllButton()?.textContent).toBe("Delete all matching (3)");
+    expect(deleteAllLabel()).toBe("Delete all matching (3)");
     const next = deferred<ReturnType<FakeServer["page"]>>();
     api.fetchRegistrations.mockImplementationOnce(() => next.promise);
     tick("Ann Kowalska");
@@ -536,6 +589,6 @@ describe("deleting everything a filter selects", () => {
     // What the filter selects is two now, and the name the list gave was of three: nothing can be deleted by it yet.
     expect(deleteAllButton()).toBeNull();
     await act(async () => next.resolve(server.page({ page: 1, pageSize: 25, status: "pending" })));
-    await waitFor(() => expect(deleteAllButton()?.textContent).toBe("Delete all matching (2)"));
+    await waitFor(() => expect(deleteAllLabel()).toBe("Delete all matching (2)"));
   });
 });

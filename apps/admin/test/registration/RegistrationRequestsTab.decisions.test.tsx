@@ -28,7 +28,8 @@ const loaded = () => screen.findByRole("table", { name: "Requests" });
 const dialogNamed = (name: string | RegExp) => screen.findByRole("dialog", { name });
 const press = (dialog: HTMLElement, name: string) => fireEvent.click(within(dialog).getByRole("button", { name }));
 const menuItem = (name: RegExp) => screen.getByRole("menuitem", { name });
-const queueLabel = () => screen.getByRole("radio", { name: /^Waiting for a decision/ }).textContent;
+/** What the banner over the table says of the requests that wait, or null when there is none. */
+const bannerText = () => requestsPanel().querySelector(".registration-requests__banner")?.textContent ?? null;
 
 /** Opens the menu of the bulk bar. */
 const openMenu = () => fireEvent.click(barButton(/^More/));
@@ -180,7 +181,7 @@ describe("the selection and the bulk bar", () => {
   it("starts again with nothing ticked on another page, in another state, with another search and with another page size", async () => {
     const many = Array.from({ length: 30 }, (_, index) => named(`m${index + 1}`, `Guest${index + 1}`, "Lee"));
     new FakeServer(many);
-    renderTab({ search: EVERY_STATE });
+    const { router } = renderTab({ search: EVERY_STATE });
     await loaded();
 
     tick("Guest1 Lee");
@@ -192,7 +193,8 @@ describe("the selection and the bulk bar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     await waitFor(() => expect(screen.getByText("Page 1 of 2")).toBeTruthy());
     tick("Guest1 Lee");
-    fireEvent.click(screen.getByRole("radio", { name: /^Waiting for a decision/ }));
+    // Another state is another address (the Overview link, Back): the Filters are not there while requests are ticked.
+    await act(async () => void router.navigate(`/admin/events/evt-1/registration${QUEUE}`));
     await waitFor(() => expect(bulkBar()).toBeNull());
 
     await waitFor(() => expect(openButton("m1")).not.toBeNull());
@@ -257,7 +259,7 @@ describe("accepting", () => {
     const refreshEvent = vi.fn().mockResolvedValue(true);
     renderTab({ search: QUEUE, refreshEvent });
     await loaded();
-    expect(queueLabel()).toBe("Waiting for a decision (3)");
+    expect(bannerText()).toContain("3 requests wait for your decision.");
 
     tick("Ann Kowalska", "Bo Lee");
     fireEvent.click(barButton("Accept"));
@@ -270,8 +272,8 @@ describe("accepting", () => {
     expect(api.acceptRegistrations).toHaveBeenCalledWith("evt-1", ["r1", "r2"]);
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(openIds()).toEqual(["r3"]));
-    // The queue, the tab and the Filters read the numbers again; the list is read again too, without a sign of it.
-    await waitFor(() => expect(queueLabel()).toBe("Waiting for a decision (1)"));
+    // The banner, the tab and the Filters read the numbers again; the list is read again too, without a sign of it.
+    await waitFor(() => expect(bannerText()).toContain("1 request waits for your decision."));
     await waitFor(() => expect(screen.getByRole("tab", { name: /Requests/ }).textContent).toBe("Requests1"));
     expect(api.fetchRegistrations.mock.calls.length).toBeGreaterThanOrEqual(2);
     // The seats of the event changed, so the layout reads it again; the selection is gone with the requests.

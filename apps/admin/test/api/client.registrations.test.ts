@@ -85,7 +85,7 @@ describe("fetchRegistrationCounts (client)", () => {
   });
 
   it("reads the numbers of the event, with the session and the abort signal, and returns the whole answer", async () => {
-    const counts = { mode: "approval", by_status: { awaiting_email: 1, pending: 2, waitlist: 3, accepted: 4, rejected: 5 }, needs_decision: 2 };
+    const counts = { mode: "approval", by_status: { awaiting_email: 1, pending: 2, waitlist: 3, accepted: 4, rejected: 5 }, needs_decision: 2, oldest_waiting_at: "2026-10-23T10:14:00.000Z" };
     const fetchMock = stubFetch(counts);
     const controller = new AbortController();
 
