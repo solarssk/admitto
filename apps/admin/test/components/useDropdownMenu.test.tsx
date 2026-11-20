@@ -574,4 +574,38 @@ describe("useDropdownMenu: a panel that was never attached", () => {
     expect(() => fireEvent.keyDown(document, { key: "ArrowDown" })).not.toThrow();
     expect(document.activeElement).toBe(document.body);
   });
+
+  it("keeps the panel open for an outside press that ignoreOutside answers true for, and closes on the next one", () => {
+    let ignore = true;
+    function GuardedMenu() {
+      const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+        ignoreOutside: () => {
+          const answer = ignore;
+          ignore = false;
+          return answer;
+        },
+      });
+      return (
+        <div ref={rootRef}>
+          <button ref={triggerRef} onClick={() => setOpen((o) => !o)}>
+            Trigger
+          </button>
+          {open && (
+            <div ref={panelRef} role="menu" style={panelStyle}>
+              <button role="menuitem">Item</button>
+            </div>
+          )}
+        </div>
+      );
+    }
+    render(<GuardedMenu />);
+    fireEvent.click(screen.getByText("Trigger"));
+    expect(screen.getByRole("menu")).toBeTruthy();
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.getByRole("menu")).toBeTruthy();
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });

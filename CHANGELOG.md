@@ -95,6 +95,8 @@ Each entry is one line that starts with a verb and links to the pull request wit
 
 ### Fixed
 
+- Keep the colour popover in Branding open when you click away to dismiss the system colour picker, instead of closing both at once ([#1964](https://github.com/solarssk/admitto/pull/1964))
+
 - Save an attendee's email in lower case when staff add or edit it, and refuse an address that differs from another's only in capitals ([#1781](https://github.com/solarssk/admitto/pull/1781))
 - Fix saving a single choice field when only its label or Required switch changed, which failed with "Check the form and try again" ([#1784](https://github.com/solarssk/admitto/pull/1784))
 - Fix Escape closing a whole dialog, and what was typed in it, together with an open date or time picker ([#1784](https://github.com/solarssk/admitto/pull/1784))

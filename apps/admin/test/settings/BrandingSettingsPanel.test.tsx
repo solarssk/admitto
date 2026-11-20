@@ -615,6 +615,26 @@ describe("BrandingSettingsPanel - colour palette", () => {
     expect(adminColorValue()).toBe("#abcdef");
   });
 
+  it("keeps the colour popover open for the press that dismisses the native colour picker, and closes on the next outside press", async () => {
+    await renderWithTheme();
+
+    fireEvent.click(adminColorTrigger());
+    fireEvent.click(screen.getByLabelText("Custom colour picker"));
+    fireEvent.pointerDown(document.body);
+    expect(screen.getByLabelText("Custom colour picker")).toBeTruthy();
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByLabelText("Custom colour picker")).toBeNull();
+  });
+
+  it("closes the colour popover on the first outside press when the native colour picker was never opened", async () => {
+    await renderWithTheme();
+
+    fireEvent.click(adminColorTrigger());
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByLabelText("Custom colour picker")).toBeNull();
+  });
+
   it("switches Ticket page to its own custom colour via the native colour picker, independent of Admin panel", async () => {
     await renderWithTheme();
 
