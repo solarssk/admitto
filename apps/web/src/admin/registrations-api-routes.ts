@@ -428,21 +428,27 @@ export async function handleCountEventRegistrations(c: Context, db: PrismaClient
   const event = await resolveEvent(c, db);
   if (event instanceof Response) return event;
 
-  const groups = await db.registration.groupBy({
-    by: ["status"],
-    where: { event_id: event.id },
-    _count: { _all: true },
-  });
+  // One snapshot for the counts and the oldest waiting request: a decision taken between two reads would otherwise pair a count
+  // with the oldest time of a different set (the list above reads its rows the same way).
+  const { groups, oldest } = await db.$transaction(
+    async (tx) => ({
+      groups: await tx.registration.groupBy({
+        by: ["status"],
+        where: { event_id: event.id },
+        _count: { _all: true },
+      }),
+      oldest: await tx.registration.findFirst({
+        where: { event_id: event.id, status: "pending" },
+        orderBy: { created_at: "asc" },
+        select: { created_at: true },
+      }),
+    }),
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+  );
   const counted = new Map(groups.map((group) => [group.status, group._count._all]));
   const byStatus = Object.fromEntries(
     REGISTRATION_STATUS.map((status) => [status, counted.get(status) ?? 0]),
   ) as Record<RegistrationStatus, number>;
-
-  const oldest = await db.registration.findFirst({
-    where: { event_id: event.id, status: "pending" },
-    orderBy: { created_at: "asc" },
-    select: { created_at: true },
-  });
 
   const body: RegistrationCountsDto = {
     mode: event.mode,
