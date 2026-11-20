@@ -6,7 +6,7 @@
  * 1. the product's own tokens, element rules and component rules ({@link GUEST_PAGE_PRODUCT_CSS},
  *    derived from `packages/ui/src/styles` and kept in step by a test);
  * 2. the ticket page's shell and the instance branding (`buildTicketPageStyles`): the card frame
- *    (`.ticket*`), the accent colour and the font the organisation chose;
+ *    (`.ticket*`), the accent colour and the font the organisation chose for the form (else for the ticket page, else the admin's);
  * 3. what the form adds and the product does not have: the layout of the form, the rows of options,
  *    the message slot under a field, and the status screens ({@link REGISTRATION_PAGE_CSS}).
  *
@@ -19,6 +19,7 @@ import { resolveThemeVars } from "@admitto/ui";
 import { buildTicketPageStyles } from "../ticket-inline-styles.js";
 import type { StyledNeeds } from "./form-controls.js";
 import { GUEST_PAGE_PRODUCT_CSS } from "./guest-page-css.generated.js";
+import { registrationBrandingTheme } from "./registration-theme.js";
 
 /** What the form adds. The state classes are set by the page script: `has-error` on a field whose
  * message slot shows an error. A slot with a note keeps its height either way; one without takes no
@@ -291,10 +292,12 @@ export function inkOnPrimaryRule(theme?: BrandingTheme | null): string {
  * the time only when the form asks a date or a time. `companySignIn`: the page is one of an event whose way in is the company
  * sign-in, which has the rules of REGISTRATION_SSO_CSS and no other page has. */
 export function buildRegistrationPageStyles(
-  theme?: BrandingTheme | null,
+  brandingTheme?: BrandingTheme | null,
   styled: StyledNeeds | null = null,
   companySignIn = false,
 ): string {
+  // The colour and the font of the form: its own pick, else the ticket page's, else the admin's.
+  const theme = registrationBrandingTheme(brandingTheme);
   return [
     GUEST_PAGE_PRODUCT_CSS,
     buildTicketPageStyles(theme),

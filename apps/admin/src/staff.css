@@ -3304,6 +3304,13 @@ html:not(.icons-ready) .ti {
   align-items: center;
 }
 
+/* The icon tile (the one of the identity rows) beside the name and the line under it. */
+.theme-surface-text {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 /* A label+description row with one Switch (Check-in behaviour): the Switch sits at the vertical
    middle of the text block, as in the Wallet platform rows and Theme-by-surface, not on its first line. */
 .settings-row--switch {
@@ -3963,6 +3970,37 @@ html:not(.icons-ready) .ti {
   position: relative;
 }
 
+/* The three rows of Theme by surface line up: the colour control and the font select are 220px each (the longest label,
+   "Same as Admin panel", and a font name fit), whatever is picked. On a phone the controls stack and take the row. */
+.theme-surface-rows .settings-row__controls > * {
+  flex: 0 0 220px;
+  width: 220px;
+  min-width: 0;
+}
+
+/* Under 1024px the content is too narrow for the text and 448px of controls side by side (a 768px screen has about 460px of
+   content): the controls go under the text, the colour and the font side by side while they fit and one under the other
+   when they do not, and on a phone each takes the row. The centring above is for a row beside its controls. */
+@media (max-width: 1023px) {
+  .theme-surface-rows .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .theme-surface-rows .settings-row__controls {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .theme-surface-rows .settings-row__controls > * {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+}
+
 /* Same box as .searchable-select__trigger (font picker, right next to this one in the same row) -
    only the colour dot inside is specific to this control, so the two read as one control family
    instead of the colour picker looking like a different kind of widget. */
@@ -3970,7 +4008,7 @@ html:not(.icons-ready) .ti {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: 160px;
+  width: 100%;
   height: var(--control-h);
   box-sizing: border-box;
   padding: 0 var(--space-3);
@@ -4009,10 +4047,6 @@ html:not(.icons-ready) .ti {
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
-}
-
-.color-surface-control__label--placeholder {
-  color: var(--text-muted);
 }
 
 .color-surface-control__chevron {
@@ -4426,17 +4460,7 @@ html:not(.icons-ready) .ti {
   background: var(--primary-tint);
 }
 
-/* No card-within-a-card chrome (border/background/padding) - it read as a separate box and,
-   since that padding wasn't shared by "Font"/"Theme by surface" above it, put "Live preview"
-   slightly out of horizontal alignment with them. Sits directly in the Theme card's own flow
-   instead, at the same 20px section gap as Font. */
-.theme-preview {
-  margin-top: 20px;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Font / Theme by surface: same rhythm as .theme-preview - tight label→hint, 10px to the
+/* Font / Theme by surface: tight label→hint, 10px to the
    control, 20px between sections. Do not wrap these in .settings-card-stack (its uniform gap
    stacks with the section margins and blows out the spacing). */
 .theme-section {
@@ -4453,7 +4477,7 @@ html:not(.icons-ready) .ti {
 }
 
 .theme-section > .at-label,
-.theme-section > .overline {
+.theme-section > .attendees-section-label {
   margin-bottom: 0;
 }
 
@@ -4466,117 +4490,6 @@ html:not(.icons-ready) .ti {
 /* Card intro → first theme section: same 20px step as between sections. */
 .settings-card-intro + .theme-section {
   margin-top: 20px;
-}
-
-/* Same reasoning as .logo-upload: a uniform gap would also space the heading from its own
-   description below it - tight there to match Font/Theme by surface, every other pair keeps the
-   same 10px rhythm as before. */
-.theme-preview > *:not(:last-child) {
-  margin-bottom: 10px;
-}
-
-.theme-preview > .at-label,
-.theme-preview > .overline {
-  margin-bottom: 0;
-}
-
-.theme-preview__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 11px 16px;
-  border-radius: var(--radius-md);
-  color: #fff;
-  font-weight: 600;
-  font-size: var(--fs-sm);
-}
-
-.theme-preview__row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.theme-preview__bar--sm {
-  justify-content: center;
-  padding: 9px;
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.85;
-}
-
-.theme-preview__tint {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  padding: 9px;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-}
-
-.theme-preview__controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.theme-preview__btn {
-  border: 0;
-  color: #fff;
-  font-weight: 600;
-  font-size: var(--fs-sm);
-  padding: 9px 18px;
-  border-radius: var(--radius);
-  cursor: default;
-}
-
-.theme-preview__btn--outline {
-  background: transparent;
-  border: var(--border-width) solid var(--border-strong);
-  color: var(--text-primary);
-}
-
-.theme-preview__badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 5px 12px;
-  border-radius: var(--radius-pill);
-  background: var(--at-gray-100, #f1f5f9);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  /* No align-self override - .theme-preview__controls' own align-items: center already
-     vertically centers every child; flex-start here fought that and sat the badge flush to
-     the row's top edge instead of level with the buttons beside it. */
-}
-
-.theme-preview__sample {
-  margin: 6px 0 0;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-
-.theme-preview__variants {
-  display: flex;
-  gap: 18px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: var(--border-width) dashed var(--border);
-  /* Larger than the app's usual body text on purpose - this row exists specifically to let
-     someone see the Regular/Bold/Italic weight contrast at a glance, and that contrast is much
-     harder to judge at normal body size. */
-  font-size: var(--fs-h2);
-  color: var(--text-primary);
-}
-
-.theme-preview__faux {
-  font-size: var(--fs-xs);
-  margin-left: 4px;
-  color: var(--text-disabled);
-  vertical-align: middle;
 }
 
 /* Mail transport panel */

@@ -56,6 +56,9 @@ export async function handlePutStaffTheme(c: Context, db: PrismaClient): Promise
     font_family_name: typeof raw.font_family_name === "string" ? raw.font_family_name : undefined,
     ticket_font_family_name:
       typeof raw.ticket_font_family_name === "string" ? raw.ticket_font_family_name : undefined,
+    registration_primary: typeof raw.registration_primary === "string" ? raw.registration_primary : undefined,
+    registration_font_family_name:
+      typeof raw.registration_font_family_name === "string" ? raw.registration_font_family_name : undefined,
     // Shape-cast only - setBrandingTheme's own sanitizeTheme() is the real validation boundary
     // and re-checks every family's name and every variant's weight/style/url at runtime
     // regardless of what's cast here.

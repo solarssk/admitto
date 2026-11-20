@@ -67,6 +67,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Add a Bot protection card to Organisation settings: turn bot protection On or Off, and test the Turnstile secret key ([#1926](https://github.com/solarssk/admitto/pull/1926))
 - Rename "Way in" to "How guests open the form" and "company sign-in" to "Company SSO", and grey out a way that is not turned on, with the reason on hover ([#1927](https://github.com/solarssk/admitto/pull/1927))
 - Add a Registration tab to Event settings for superadmins, with the Company SSO restriction and the Address for guests, moved from the Registration page ([#1928](https://github.com/solarssk/admitto/pull/1928))
+- Give the guest registration form its own colour and font in Organisation settings > Branding, drop the live preview there, and label its sections like the Filters panel ([#1960](https://github.com/solarssk/admitto/pull/1960))
 
 ### Changed
 - Redesign the Legal tab: two cards with plain tables, an Asked switch for each extra consent, Publish and Delete in a row menu, and Back in the editor footer ([#1957](https://github.com/solarssk/admitto/pull/1957))
