@@ -6,6 +6,8 @@ Read when a change touches CI workflows, SonarCloud, ESLint, Vitest, workspace p
 
 **SonarCloud runs CI-based analysis only** - the `sonarcloud` job in `.github/workflows/ci.yml`, authenticated with a `SONAR_TOKEN` secret, reading `sonar-project.properties`. Automatic Analysis (the GitHub App) is off, and its config file, `.sonarcloud.properties`, has been removed - don't recreate it, and don't assume Automatic-Analysis semantics (e.g. that `sonar-project.properties` is ignored) anywhere in this repo. `sonar-project.properties`'s own comments document its `sonar.tests`/`sonar.exclusions`/coverage-exclusion gotchas (wildcards unsupported, source/test path overlap fails the whole scan, `*.config.ts`/backfill-script coverage exclusions) directly above each property - read those before editing it, not this file. See [docs/dev/sonarcloud-ci-coverage-migration.md](../docs/dev/sonarcloud-ci-coverage-migration.md) for the sourced history of why Automatic Analysis couldn't stay (it cannot ingest coverage, full stop - not a config gap, a removed product capability) and the migration this repo went through.
 
+**The migration scan compares a pull request with its own base branch** (`MIGRATION_DIFF_BASE` in the `migration-safety` job of `ci.yml`), so a PR into a release branch checks only the migrations it adds. The release's PR into `main` has base `main`, scans all of them, and needs the label `migration-destructive-approved` for a drop.
+
 **No production installs of unreleased feature work.** Admitto has no customer/staging deploy of WIP branches or unreleased milestone features until a tagged stable release ships. Do **not** invent “legacy cleanup”, migration backfills, or compatibility shims for code that only ever existed on a PR branch. If a review says delete dead “older builds” cleanup, delete it.
 
 **New `process.env.X` reads must be registered in `deploy/env-catalog.json`, then regenerated.**
@@ -52,6 +54,8 @@ set `fileParallelism: false`), so cross-file failures there are leftover-state p
 concurrency races - fix them with cleanup in the polluting file, not with `sequence.concurrent`
 (that option only affects tests within one file).
 
+**After a `findBy*` that waits for a form to load, `await act(async () => {})` before typing into a date or time picker.** The picker mounts when a mocked fetch answers, outside `act()`, and on a busy runner the test resumes before its effects have run: the first `fireEvent.change` then runs them, and the picker's own effect writes its old text over what was typed. The field stays empty and the test fails ten seconds later for no bug. A picker mounted by `render` or by a click is flushed by `act` already. Proof: `openWith` in `apps/admin/test/attendees/AddAttendeeModal.test.tsx`.
+
 **`eslint-disable-next-line` only covers the literal next line.** When the reason needs 2-3 lines
 of prose, put the plain `//` explanation lines first and the `eslint-disable-next-line` comment
 itself last, directly above the code it's suppressing for - reversing that order (or splitting
@@ -79,4 +83,4 @@ Confirmed empirically on two files sharing a near-identical 5-line explanation:
 
 Keep any such comment as short as possible, and re-check the actual SonarCloud PR analysis after pushing - don't assume a comment is free just because it isn't executable code.
 
-**The dependency audit is `scripts/audit-gate.sh`, not a bare `npm audit`.** It fails on every high or critical advisory except the one id in `ACCEPTED_ADVISORY` in the `lint-and-typecheck` step of `ci.yml` (today GHSA-fc5q-39xc-vjpf, picomatch, dev tooling only, no patched release). Accept an advisory only when it has no fix and does not reach `npm ls --omit=dev`; put the reason and date in the comment above the variable. Remove the variable when a fix exists: the script prints a `::notice::` once the advisory leaves the report. Run it locally with `ACCEPTED_ADVISORY=<id> bash scripts/audit-gate.sh`; its test is `scripts/audit-gate.test.mjs`.
+**The dependency audit is `scripts/audit-gate.sh`, not a bare `npm audit`.** It fails on every high or critical advisory; today there is no exception. Fix an advisory with a patched release or a root `overrides` entry. Only when no fix exists and the package does not reach `npm ls --omit=dev` may a step set `ACCEPTED_ADVISORY=<id>` (the script supports one id), with the reason and date in a comment above it; remove it as soon as a fix exists (the script prints a `::notice::` once the advisory leaves the report). Run it locally with `bash scripts/audit-gate.sh`; its test is `scripts/audit-gate.test.mjs`.

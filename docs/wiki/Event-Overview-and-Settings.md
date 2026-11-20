@@ -31,6 +31,7 @@ Open the correct organisation and event. If another manager may be editing the s
    - Its bar and the **N of M done** count show progress.
    - The bar turns amber or red when a check needs attention.
    - Problems are listed first, and each row opens the page where you fix it.
+   - When registration is on for the event, the checklist also has a **Registrations** row. It counts the requests that wait for a decision and the guests on the waiting list, and says when the event holds more seats than its limit. It opens the requests that wait for a decision. See [Registration Requests](Registration-Requests).
 3. Review the KPI tiles (including attendees and **Failed delivery**), the **Check-in progress** card, and **Recent activity**. Recent activity covers check-ins, attendees added, item issue, return and revoke, mail failures, and imports.
 4. Use **Pinned note**, **Key contacts** and **Important links & files** when your event keeps that operational context on Overview.
 5. Follow a readiness prompt when it points to unfinished setup.
@@ -43,6 +44,7 @@ A key contact is checked when you save it:
 **What Check-in progress shows**
 
 - How many attendees have checked in.
+- **People on site** appears once a companion has been let in. It adds those companions to the attendees who have checked in, and says how many of each. The ring and the checked-in figure count attendees only.
 - The rest are **not yet arrived** while the event can still fill up, and **no-shows** once it is over. "Over" means after its end time when one is set in Event settings, otherwise at the end of its day.
 - Below it, **Last check-in** sits next to **Wallet passes installed** when the event uses wallets (a template and API key are saved, and Apple or Google is switched on). Without wallets, it sits next to **Busiest hour**.
 - **Wallet passes installed** counts attendees whose pass was confirmed on a device at any point. It does not drop if someone later removes the pass.
@@ -54,13 +56,14 @@ Each card that needs saving (Basic information, Location, Ticket types, Images, 
 
 | Tab | Who | Purpose |
 |-----|-----|---------|
-| General | Organisation Admin | Title, date, time zone, capacity, event type |
+| General | Organisation Admin | Title, date, time zone, capacity, event type, and the address for guests (set by a Superadmin, shown to everybody else) |
 | Location | Organisation Admin | Venue, map pin, directions, accessibility, access points |
 | Ticket types | Organisation Admin | Event ticket-type catalog |
-| Images | Organisation Admin | Logo, header, mail image assets |
-| Check-in | Organisation Admin | Scan, manual lookup and item behaviour. See [Event Items and Check-in Behaviour](Event-Items-and-Check-in-Behaviour) |
+| Registration | Organisation Admin | What the registration form asks, whether requests wait for approval, in four cards that follow a guest's way: Access method, Company SSO, Form (what guests fill in), and Handling requests (confirming the email address, approving requests, the waiting list). Registration is switched on and off in the header of the Registration page. A Superadmin also sets the access method of the form (with the event password and the identity provider for Company SSO), the bot protection of the event (a row of the Access method card, greyed while the organisation has it off) and the limit of Company SSO to one company; everybody else sees these, greyed out |
 | Mailing | Superadmin | Event mail transport and bounce detection |
 | Wallet | Superadmin | Per-event PassCreator API key, template, and Apple and Google toggles |
+| Images | Organisation Admin | Logo, header, mail image assets |
+| Check-in | Organisation Admin | Scan, manual lookup and item behaviour. See [Event Items and Check-in Behaviour](Event-Items-and-Check-in-Behaviour) |
 | Integrations | Superadmin | Not yet built. A placeholder for future inbound API connections |
 | Danger zone | Superadmin (an Organisation Admin can open the tab, but its actions are disabled) | Export personal data, bulk revoke, archive or restore, and delete |
 
@@ -157,7 +160,7 @@ The overview reflects the current event lifecycle, and saved settings are used b
 
 ## Important decisions
 
-- The event slug (link name) is created once and cannot be edited later. It appears in agency ticket URLs (`/t/{link-name}/a/…`). Ordinary tickets use `/t/{token}` without the link name.
+- A new event gets a random link name (a 26-character code), made by the server, never from the title; it is not shown in the settings and cannot be changed. It appears in the guest form, legal-text and agency ticket addresses (`/r/{link-name}`, `/legal/{link-name}/…`, `/t/{link-name}/a/…`); copy the whole address from the page that shows it. Events made before this change keep their old link name, so addresses already sent stay valid. Ordinary tickets use `/t/{token}` without the link name.
 - Capacity is managed here, not in the **New event** dialog. A blank capacity means unlimited.
 - Use the event's real time zone. Check-in times and report times depend on it.
 - **The Location tab is the only place to set an event's venue name and address.** The Location tab also holds the map coordinates and the directions and accessibility notes. It is optional. Leave it blank if the event needs no map.
@@ -201,7 +204,7 @@ The data is being read from the server. Wait a moment and check your connection.
 - [Create an Event](Create-an-Event)
 - [First Event Checklist](First-Event-Checklist)
 - [Ticket Types](Ticket-Types)
-- [Requirements and Fulfilment](Requirements-and-Fulfilment)
+- [Event items and Fulfilment](Requirements-and-Fulfilment)
 - [Reports and Archiving](Reports-and-Archiving)
 - [Mail Delivery Administration](Mail-Delivery-Administration)
 - [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup)

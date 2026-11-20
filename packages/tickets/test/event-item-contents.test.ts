@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildItemDetail } from "../src/event-item-contents.js";
+import { buildItemDetail, prefixCompanionNames } from "../src/event-item-contents.js";
 import { customDataValue } from "../src/custom-data.js";
 import type { EventItemContent } from "../src/types.js";
 
@@ -27,6 +27,22 @@ describe("buildItemDetail", () => {
       ["size", { label: "Size", source_field: "size", required: true }],
     ]);
     expect(buildItemDetail({ content_fields: ["size"] }, {}, sizeRequired)).toBe("Size*: -");
+  });
+
+  it("shows the answer to a long text, date, date and time or phone field as it is stored", () => {
+    const registry = new Map<string, EventItemContent>([
+      ["notes", { label: "Notes", source_field: "notes", type: "long_text" }],
+      ["arrival", { label: "Arrival", source_field: "arrival", type: "date" }],
+      ["arrives_at", { label: "Arrives", source_field: "arrives_at", type: "datetime" }],
+      ["phone", { label: "Phone", source_field: "phone", type: "phone", required: true }],
+    ]);
+    expect(
+      buildItemDetail(
+        { content_fields: ["notes", "arrival", "arrives_at", "phone"] },
+        { notes: "Two seats", arrival: "2026-11-04", arrives_at: "2026-11-04T10:30", phone: "+48600100200" },
+        registry,
+      ),
+    ).toBe("Notes: Two seats · Arrival: 2026-11-04 · Arrives: 2026-11-04T10:30 · Phone*: +48600100200");
   });
 
   it("joins multiple attributes with middle dot", () => {
@@ -73,6 +89,25 @@ describe("buildItemDetail", () => {
 
   it("returns undefined when content_fields is explicitly empty", () => {
     expect(buildItemDetail({ content_fields: [] }, { shirt_size: "L" }, new Map())).toBeUndefined();
+  });
+});
+
+describe("prefixCompanionNames", () => {
+  it("is the companion's name when the item has nothing else to say", () => {
+    expect(prefixCompanionNames(undefined, ["Companion Example"])).toBe("Companion Example");
+  });
+
+  it("puts the name ahead of what the content fields say, with the separator of the other hints", () => {
+    expect(prefixCompanionNames("Shirt size: L", ["Companion Example"])).toBe("Companion Example · Shirt size: L");
+  });
+
+  it("joins several companions with a comma", () => {
+    expect(prefixCompanionNames(undefined, ["First Companion", "Second Companion"])).toBe("First Companion, Second Companion");
+  });
+
+  it("leaves the hint as it is for a guest with no companion, and says nothing when there is nothing to say", () => {
+    expect(prefixCompanionNames("Shirt size: L", [])).toBe("Shirt size: L");
+    expect(prefixCompanionNames(undefined, [])).toBeUndefined();
   });
 });
 

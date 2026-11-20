@@ -1,0 +1,83 @@
+/* The window of one request (RequestDetailDialog). It stands on the shell, the title, the sections and the grid of pairs of the delivery
+   windows (delivery-modals.css, which the component imports itself, as every component imports the CSS it uses); what is here is what a
+   request adds: a name and an address that wrap, a long answer over the full row, the emails as a list, and a footer with Delete apart
+   from the decisions. */
+
+.request-detail__who {
+  min-width: 0;
+}
+
+.request-detail__name,
+.request-detail__email {
+  overflow-wrap: anywhere;
+}
+
+.request-detail__email {
+  font-family: var(--font-mono);
+}
+
+/* A long answer takes the whole row, under its question, instead of a column of half the window. */
+.request-detail__wide {
+  grid-column: 1 / -1;
+}
+
+/* On a phone a pair gets the whole width: in half of it a question such as "Arrival (at the event)" takes three lines. */
+@media (max-width: 520px) {
+  .request-detail__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.request-detail__mails {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One email: what it was and how it went on the first line, when under it, and what can be done about it. */
+.request-detail__mail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.request-detail__mail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.request-detail__mail-kind {
+  font-weight: var(--fw-semibold);
+}
+
+.request-detail__mail-meta,
+.request-detail__mail-error,
+.request-detail__none {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-secondary);
+}
+
+.request-detail__link {
+  font-weight: var(--fw-semibold);
+}
+
+/* Delete stands apart from the decisions, at the start of the row; the rest keep the end, and wrap under it on a phone. */
+.request-detail__footer {
+  align-items: center;
+}
+
+.request-detail__delete {
+  margin-right: auto;
+  color: var(--status-error);
+}

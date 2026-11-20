@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient, AttendeeStatus } from "@admitto/db";
 import { lockAttendeeRow } from "./attendee-lock.js";
 import { ensureBadgeEventItem } from "./event-items.js";
+import { filterItemsForAttendee } from "./item-audience.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import { isAdmittable } from "./admittable.js";
 
@@ -37,7 +38,8 @@ export class IllegalItemTransitionError extends Error {
 }
 
 /**
- * Lazy-init pending rows for enabled EventItems — idempotent (Lock #2).
+ * Lazy-init pending rows for the enabled EventItems that apply to the attendee - idempotent (Lock #2). An item for guests
+ * with a companion gets no row for a guest who has none (itemAppliesToAttendee).
  * Also ensures the default "badge" item exists first (safety net for events
  * created outside the admin API, e.g. seed scripts / legacy rows).
  */
@@ -48,10 +50,11 @@ export async function ensureAttendeeItemStates(
 ): Promise<void> {
   await ensureBadgeEventItem(eventId, db);
 
-  const items = await db.eventItem.findMany({
+  const enabled = await db.eventItem.findMany({
     where: { event_id: eventId, enabled: true },
-    select: { id: true },
+    select: { id: true, config: true },
   });
+  const items = await filterItemsForAttendee(db, attendeeId, enabled);
   if (items.length === 0) return;
 
   await db.attendeeItemState.createMany({
@@ -166,7 +169,10 @@ export function transitionItemState(
     const item = await tx.eventItem.findFirst({
       where: { event_id: params.eventId, key: params.itemKey, enabled: true },
     });
-    if (!item) throw new IllegalItemTransitionError("Item not found or disabled");
+    // An item the attendee is not offered (a companion's, for a guest with none) is not there for them.
+    if (!item || (await filterItemsForAttendee(tx, params.attendeeId, [item])).length === 0) {
+      throw new IllegalItemTransitionError("Item not found or disabled");
+    }
 
     const current = await tx.attendeeItemState.findUnique({
       where: {

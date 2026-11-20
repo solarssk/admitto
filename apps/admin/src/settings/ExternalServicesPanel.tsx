@@ -17,23 +17,40 @@ import {
 } from "@admitto/ui";
 import {
   fetchExternalServices,
+  fetchRegistrationTurnstile,
   saveMapsSettings,
+  saveRegistrationTurnstile,
   saveWeatherSettings,
   testWeatherConnection,
   testMapsConnection,
 } from "../api/client.js";
-import type { ExternalServicesResponse, WeatherProviderId } from "../api/types.js";
+import type {
+  ExternalServicesResponse,
+  MailSecretFieldDto,
+  RegistrationTurnstileDto,
+  WeatherProviderId,
+} from "../api/types.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { usePanelLoad } from "../hooks/usePanelLoad.js";
-import { NO_AUTOFILL_PROPS, SettingsFooter } from "./mailTransportFormParts.js";
+import { NO_AUTOFILL_PROPS, SecretFieldRow, SettingsFooter } from "./mailTransportFormParts.js";
+import type { SecretEditMode } from "./mailSettingsValidation.js";
 import { PanelLoadError } from "./PanelLoadError.js";
+import { RegistrationTurnstileCard } from "./RegistrationTurnstileCard.js";
+import {
+  buildTurnstileSaveBody,
+  turnstileDirty,
+  turnstileDraftFrom,
+  turnstileValidationErrors,
+  type TurnstileDraft,
+} from "./registrationTurnstile.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 
-/** The cards of the panel, for its placeholder: Weather and Maps, each with an intro and fields. */
+/** The cards of the panel, for its placeholder: Weather, Maps and Guest registration, each with an intro and fields or rows. */
 const EXTERNAL_SKELETON_CARDS: ReadonlyArray<SettingsSkeletonCard> = [
   { id: "weather", title: "Weather", intro: true, fields: 1, rows: 1, rowHeight: 24 },
   { id: "maps", title: "Maps", intro: true, fields: 4, controlHeight: 62 },
+  { id: "registration", title: "Guest registration", intro: true, fields: 2, columns: 2, controlHeight: 82, rows: 1, rowHeight: 36 },
 ];
 
 const WEATHER_CARD_HINT =
@@ -45,7 +62,8 @@ const WEATHER_PROVIDER_HINT =
 const WEATHER_BASE_URL_HINT =
   "Free (non-commercial): https://api.open-meteo.com. Commercial: https://customer-api.open-meteo.com (API key required). Self-hosted Open-Meteo: your own HTTPS base URL.";
 const WEATHER_API_KEY_HINT =
-  "Organisation API token for Open-Meteo. Required when Base URL is customer-api.open-meteo.com. Not your Admitto login password.";
+  "Needed for customer-api.open-meteo.com. Stays on the server and is never shown again.";
+const WEATHER_API_KEY_EMPTY_MSG = "Enter the API key, or choose Cancel to keep the saved one.";
 const WEATHER_API_KEY_REQUIRED_MSG =
   "API key is required for customer-api.open-meteo.com.";
 const WEATHER_METNO_CONTACT_MSG =
@@ -100,8 +118,8 @@ type WeatherDraft = {
   enabled: boolean;
   provider: WeatherProviderId;
   baseUrl: string;
-  apiKey: string;
-  clearApiKey: boolean;
+  /** Write-only: never loaded into the draft, so `idle` means "keep what is saved". */
+  apiKey: { mode: SecretEditMode; value: string };
 };
 
 type MapsDraft = {
@@ -122,8 +140,7 @@ function weatherDraftFrom(data: ExternalServicesResponse["weather"]): WeatherDra
     enabled: data.enabled,
     provider: normalizeWeatherProvider(data.provider),
     baseUrl: data.base_url,
-    apiKey: "",
-    clearApiKey: false,
+    apiKey: { mode: "idle", value: "" },
   };
 }
 
@@ -143,8 +160,7 @@ function weatherDirty(draft: WeatherDraft, saved: WeatherDraft): boolean {
     draft.enabled !== saved.enabled ||
     draft.provider !== saved.provider ||
     draft.baseUrl !== saved.baseUrl ||
-    draft.apiKey !== "" ||
-    draft.clearApiKey !== saved.clearApiKey
+    draft.apiKey.mode !== "idle"
   );
 }
 
@@ -159,9 +175,17 @@ function mapsDirty(draft: MapsDraft, saved: MapsDraft): boolean {
   );
 }
 
-function apiKeyPlaceholder(required: boolean, configured: boolean): string {
-  if (configured) return "••••••••";
-  return required ? "Required" : "Optional";
+interface ExternalServicesDrafts {
+  weather: WeatherDraft | null;
+  maps: MapsDraft | null;
+  turnstile: TurnstileDraft | null;
+}
+
+/** True when any of the three cards differs from what was last saved or loaded. */
+function externalServicesDirty(drafts: ExternalServicesDrafts, saved: ExternalServicesDrafts): boolean {
+  if (!drafts.weather || !saved.weather || !drafts.maps || !saved.maps) return false;
+  if (weatherDirty(drafts.weather, saved.weather) || mapsDirty(drafts.maps, saved.maps)) return true;
+  return drafts.turnstile !== null && saved.turnstile !== null && turnstileDirty(drafts.turnstile, saved.turnstile);
 }
 
 /** Probe endpoints should return human copy; map leftover machine codes just in case. */
@@ -196,12 +220,14 @@ function probeResultToastMessage(
 
 function collectSaveValidationErrors(opts: {
   apiKeyMissing: boolean;
+  apiKeyEmpty: boolean;
   saveWeather: boolean;
   saveMaps: boolean;
   mapsDraft: MapsDraft;
 }): string[] {
   const errors: string[] = [];
   if (opts.saveWeather && opts.apiKeyMissing) errors.push(WEATHER_API_KEY_REQUIRED_MSG);
+  else if (opts.saveWeather && opts.apiKeyEmpty) errors.push(WEATHER_API_KEY_EMPTY_MSG);
   if (!opts.saveMaps) return errors;
   const maxZoom = Number.parseInt(opts.mapsDraft.maxZoom, 10);
   if (!Number.isFinite(maxZoom) || maxZoom < 1 || maxZoom > 22) {
@@ -230,21 +256,24 @@ function buildWeatherSaveBody(draft: WeatherDraft): {
   };
   if (draft.provider !== "openmeteo") return body;
   body.baseUrl = draft.baseUrl.trim();
-  if (draft.clearApiKey) body.apiKey = "";
-  else if (draft.apiKey.trim() !== "") body.apiKey = draft.apiKey.trim();
+  if (draft.apiKey.mode === "clear") body.apiKey = "";
+  else if (draft.apiKey.mode === "replace" && draft.apiKey.value.trim() !== "") body.apiKey = draft.apiKey.value.trim();
   return body;
 }
 
 type SettledSave = PromiseSettledResult<ExternalServicesResponse["weather"] | null>;
 type SettledMapsSave = PromiseSettledResult<ExternalServicesResponse["maps"] | null>;
+type SettledTurnstileSave = PromiseSettledResult<RegistrationTurnstileDto | null>;
 
 function toastExternalServicesSaveResult(
   addToast: (message: string, variant: "success" | "error" | "info") => void,
   opts: {
     saveWeather: boolean;
     saveMaps: boolean;
+    saveTurnstile: boolean;
     weatherResult: SettledSave;
     mapsResult: SettledMapsSave;
+    turnstileResult: SettledTurnstileSave;
   },
 ): void {
   const failures: string[] = [];
@@ -256,6 +285,11 @@ function toastExternalServicesSaveResult(
   if (opts.saveMaps && opts.mapsResult.status === "rejected") {
     failures.push(
       operatorApiErrorMessage(opts.mapsResult.reason, "Failed to save maps settings."),
+    );
+  }
+  if (opts.saveTurnstile && opts.turnstileResult.status === "rejected") {
+    failures.push(
+      operatorApiErrorMessage(opts.turnstileResult.reason, "Failed to save guest registration settings."),
     );
   }
   if (failures.length === 0) {
@@ -289,33 +323,49 @@ export function ExternalServicesPanel() {
   const [mapsDraft, setMapsDraft] = useState<MapsDraft | null>(null);
   const weatherSavedRef = useRef<WeatherDraft | null>(null);
   const mapsSavedRef = useRef<MapsDraft | null>(null);
+  const [turnstile, setTurnstile] = useState<RegistrationTurnstileDto | null>(null);
+  const [turnstileDraft, setTurnstileDraft] = useState<TurnstileDraft | null>(null);
+  const turnstileSavedRef = useRef<TurnstileDraft | null>(null);
   const [weatherTesting, setWeatherTesting] = useState(false);
   const [mapsTesting, setMapsTesting] = useState(false);
 
   const panel = usePanelLoad({
-    fetch: fetchExternalServices,
-    apply: (res) => {
-      setData(res);
-      const w = weatherDraftFrom(res.weather);
-      const m = mapsDraftFrom(res.maps);
+    fetch: async (signal) => {
+      const [services, registration] = await Promise.all([
+        fetchExternalServices(signal),
+        fetchRegistrationTurnstile(signal),
+      ]);
+      return { services, registration };
+    },
+    apply: ({ services, registration }) => {
+      setData(services);
+      const w = weatherDraftFrom(services.weather);
+      const m = mapsDraftFrom(services.maps);
+      const t = turnstileDraftFrom(registration);
       setWeatherDraft(w);
       setMapsDraft(m);
+      setTurnstile(registration);
+      setTurnstileDraft(t);
       weatherSavedRef.current = w;
       mapsSavedRef.current = m;
+      turnstileSavedRef.current = t;
       setValidationErrors([]);
     },
     fallback: "Could not load external services.",
   });
 
-  const hasUnsavedChanges = useMemo(() => {
-    if (!weatherDraft || !mapsDraft || !weatherSavedRef.current || !mapsSavedRef.current) {
-      return false;
-    }
-    return (
-      weatherDirty(weatherDraft, weatherSavedRef.current) ||
-      mapsDirty(mapsDraft, mapsSavedRef.current)
-    );
-  }, [weatherDraft, mapsDraft]);
+  const hasUnsavedChanges = useMemo(
+    () =>
+      externalServicesDirty(
+        { weather: weatherDraft, maps: mapsDraft, turnstile: turnstileDraft },
+        {
+          weather: weatherSavedRef.current,
+          maps: mapsSavedRef.current,
+          turnstile: turnstileSavedRef.current,
+        },
+      ),
+    [weatherDraft, mapsDraft, turnstileDraft],
+  );
 
   const showOpenMeteoFields = weatherDraft?.provider === "openmeteo";
   const apiKeyRequired = Boolean(
@@ -326,9 +376,12 @@ export function ExternalServicesPanel() {
   const apiKeyMissing = Boolean(
     apiKeyRequired &&
       weatherDraft &&
-      !weatherDraft.apiKey.trim() &&
-      (weatherDraft.clearApiKey || !data?.weather.api_key.configured),
+      !weatherDraft.apiKey.value.trim() &&
+      (weatherDraft.apiKey.mode === "clear" || !data?.weather.api_key.configured),
   );
+  // Only Open-Meteo has a key field; for MET Norway an open and empty key edit is hidden and is not sent (see `buildWeatherSaveBody`).
+  const apiKeyEmpty =
+    weatherDraft?.provider === "openmeteo" && weatherDraft.apiKey.mode === "replace" && weatherDraft.apiKey.value.trim() === "";
   const showMetNoContactNotice = Boolean(
     weatherDraft?.enabled &&
       weatherDraft.provider === "metno" &&
@@ -359,15 +412,27 @@ export function ExternalServicesPanel() {
     );
   }
 
-  if (!data || !weatherDraft || !mapsDraft) return null;
+  // Every part has its answer once the panel is ready; these checks only narrow the types for the code below.
+  /* v8 ignore if */
+  if (!data || !weatherDraft || !mapsDraft || !turnstile || !turnstileDraft) return null;
 
   // Narrowed locals: nested handlers do not keep the null-check narrowing on state.
   const weather = weatherDraft;
   const maps = mapsDraft;
+  const registration = turnstileDraft;
+  const weatherApiKeyField: MailSecretFieldDto = {
+    set: data.weather.api_key.configured,
+    masked: data.weather.api_key.configured ? "••••" : null,
+    source: "db",
+    locked: false,
+  };
+  const setApiKey = (mode: SecretEditMode, value: string) =>
+    patchDraft(setWeatherDraft, (d) => ({ ...d, apiKey: { mode, value } }));
 
   function handleReset() {
     setWeatherDraft({ ...weatherSavedRef.current! });
     setMapsDraft({ ...mapsSavedRef.current! });
+    setTurnstileDraft({ ...turnstileSavedRef.current! });
     setValidationErrors([]);
   }
 
@@ -380,8 +445,8 @@ export function ExternalServicesPanel() {
     } = { provider: weather.provider };
     if (weather.provider === "openmeteo") {
       body.baseUrl = weather.baseUrl.trim();
-      if (weather.clearApiKey) body.clearApiKey = true;
-      else if (weather.apiKey.trim() !== "") body.apiKey = weather.apiKey.trim();
+      if (weather.apiKey.mode === "clear") body.clearApiKey = true;
+      else if (weather.apiKey.mode === "replace" && weather.apiKey.value.trim() !== "") body.apiKey = weather.apiKey.value.trim();
     }
     setWeatherTesting(true);
     try {
@@ -427,12 +492,18 @@ export function ExternalServicesPanel() {
     const savedMaps = mapsSavedRef.current!;
     const saveWeather = weatherDirty(weather, savedWeather);
     const saveMaps = mapsDirty(maps, savedMaps);
-    const errors = collectSaveValidationErrors({
-      apiKeyMissing,
-      saveWeather,
-      saveMaps,
-      mapsDraft: maps,
-    });
+    const turnstileBody = buildTurnstileSaveBody(registration, turnstileSavedRef.current!);
+    const saveTurnstile = turnstileBody !== null;
+    const errors = [
+      ...collectSaveValidationErrors({
+        apiKeyMissing,
+        apiKeyEmpty,
+        saveWeather,
+        saveMaps,
+        mapsDraft: maps,
+      }),
+      ...turnstileValidationErrors(registration),
+    ];
     if (errors.length > 0) {
       setValidationErrors(errors);
       return;
@@ -452,9 +523,10 @@ export function ExternalServicesPanel() {
         geocodingBaseUrl: maps.geocodingBaseUrl.trim(),
       };
 
-      const [weatherResult, mapsResult] = await Promise.allSettled([
+      const [weatherResult, mapsResult, turnstileResult] = await Promise.allSettled([
         saveWeather ? saveWeatherSettings(weatherBody) : Promise.resolve(null),
         saveMaps ? saveMapsSettings(mapsBody) : Promise.resolve(null),
+        saveTurnstile ? saveRegistrationTurnstile(turnstileBody) : Promise.resolve(null),
       ]);
 
       if (weatherResult.status === "fulfilled" && weatherResult.value) {
@@ -469,12 +541,20 @@ export function ExternalServicesPanel() {
         setMapsDraft(m);
         mapsSavedRef.current = m;
       }
+      if (turnstileResult.status === "fulfilled" && turnstileResult.value) {
+        const t = turnstileDraftFrom(turnstileResult.value);
+        setTurnstile(turnstileResult.value);
+        setTurnstileDraft(t);
+        turnstileSavedRef.current = t;
+      }
 
       toastExternalServicesSaveResult(addToast, {
         saveWeather,
         saveMaps,
+        saveTurnstile,
         weatherResult,
         mapsResult,
+        turnstileResult,
       });
     } finally {
       setSaving(false);
@@ -573,50 +653,18 @@ export function ExternalServicesPanel() {
                     }
                   />
                 </div>
-                <div className="at-field mail-secret-field">
-                  <span className="at-label">
-                    <HintLabel hint={WEATHER_API_KEY_HINT}>API key</HintLabel>
-                  </span>
-                  <Input
-                    type="text"
-                    id="external-weather-api-key"
-                    name="weather-org-api-token"
-                    value={weatherDraft.apiKey}
-                    disabled={weatherDraft.clearApiKey}
-                    invalid={apiKeyMissing}
-                    error={apiKeyMissing ? WEATHER_API_KEY_REQUIRED_MSG : undefined}
-                    placeholder={apiKeyPlaceholder(
-                      apiKeyRequired,
-                      data.weather.api_key.configured,
-                    )}
-                    {...NO_AUTOFILL_PROPS}
-                    onChange={(e) =>
-                      patchDraft(setWeatherDraft, (d) => ({
-                        ...d,
-                        apiKey: e.target.value,
-                        clearApiKey: false,
-                      }))
-                    }
-                  />
-                  {data.weather.api_key.configured && !apiKeyRequired && (
-                    <label className="form-check" style={{ marginTop: "var(--space-2)" }}>
-                      <input
-                        type="checkbox"
-                        id="external-weather-clear-api-key"
-                        name="weather-clear-api-key"
-                        checked={weatherDraft.clearApiKey}
-                        onChange={(e) =>
-                          patchDraft(setWeatherDraft, (d) => ({
-                            ...d,
-                            clearApiKey: e.target.checked,
-                            apiKey: e.target.checked ? "" : d.apiKey,
-                          }))
-                        }
-                      />
-                      <span>Clear organisation API key</span>
-                    </label>
-                  )}
-                </div>
+                <SecretFieldRow
+                  id="external-weather-api-key"
+                  label="API key"
+                  hint={WEATHER_API_KEY_HINT}
+                  field={weatherApiKeyField}
+                  edit={weatherDraft.apiKey}
+                  disabled={weatherTesting}
+                  onReplace={() => setApiKey("replace", "")}
+                  onClear={() => setApiKey("clear", "")}
+                  onValueChange={(value) => setApiKey("replace", value)}
+                  onCancel={() => setApiKey("idle", "")}
+                />
               </div>
             </>
           )}
@@ -662,7 +710,7 @@ export function ExternalServicesPanel() {
                     showLabel={false}
                     value={normalizeMapsProvider(mapsDraft.geocodingProvider)}
                     options={[{ id: "nominatim", label: "OpenStreetMap (Nominatim)" }]}
-                    disabled={mapsTesting}
+                    disabled
                     onChange={(id) =>
                       patchDraft(setMapsDraft, (d) => ({
                         ...d,
@@ -751,6 +799,8 @@ export function ExternalServicesPanel() {
           </div>
         </div>
       </Card>
+
+      <RegistrationTurnstileCard dto={turnstile} draft={registration} disabled={saving} onChange={setTurnstileDraft} />
 
       <SettingsFooter
         validationErrors={validationErrors}

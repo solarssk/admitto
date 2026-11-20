@@ -24,7 +24,6 @@ const CARD_HINT =
   "Archiving does not delete attendees, tickets, or delivery history.";
 const CARD_INTRO =
   "Archive completed events to hide them from default lists and make them read-only.";
-const EVENT_HINT = "The line below the title is the event's URL slug, used in links — not an internal ID.";
 const EVENT_DATE_HINT = "The event's own date and time, in its local timezone — not when it was created.";
 const VIEW_OPTIONS = [
   { value: "active" as const, label: "Active" },
@@ -189,7 +188,7 @@ export function EventArchivingPanel() {
           <thead>
             <tr>
               <th scope="col">
-                <HintLabel hint={EVENT_HINT}>Event</HintLabel>
+                Event
               </th>
               <th scope="col">
                 <HintLabel hint={EVENT_DATE_HINT}>Event date</HintLabel>
@@ -207,7 +206,6 @@ export function EventArchivingPanel() {
               <tr key={event.id}>
                 <td>
                   <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
-                  <div className="archiving-subdued">{event.slug}</div>
                 </td>
                 <td>{formatEventDateTime(event.date, event.timezone)}</td>
                 <td>{event.attendee_count ?? "-"}</td>
@@ -244,7 +242,6 @@ export function EventArchivingPanel() {
             <div className="archiving-card__head">
               <div>
                 <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
-                <div className="archiving-subdued">{event.slug}</div>
               </div>
               {renderAction(event)}
             </div>

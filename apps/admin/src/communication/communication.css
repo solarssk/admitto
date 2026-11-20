@@ -41,15 +41,25 @@
   margin-left: auto;
 }
 
-/* Keep the compact toolbar to one row on phones. The last-edited timestamp moves to the pencil
-   tooltip, leaving the selector enough room to show its label without making the card taller. */
+/* On phones the last-edited timestamp moves to the pencil tooltip, and the picker takes the first row to
+   itself, so that the name of the open template is not cut to its first letters ("R..." for "Registration:
+   confirm email", "Ti..." for "Ticket email"): the pencil and New template go under it. */
 @media (max-width: 720px) {
   .communication-template-picker > .at-badge {
     display: none;
   }
 
+  .communication-template-picker {
+    flex-wrap: wrap;
+  }
+
+  .communication-template-picker__select {
+    flex-basis: 100%;
+  }
+
   .communication-template-picker__actions {
     gap: var(--space-2);
+    margin-left: 0;
   }
 }
 
@@ -320,9 +330,11 @@
 
 /* .at-notice carries no margin of its own (packages/ui) - it normally relies on a flex/grid
    parent's gap, but here it sits directly between the placeholder chips and the Subject field
-   below, neither of which is a gap container, so it would otherwise touch Subject with zero
+   below (the wallet notice), or above the format hint (the note on a registration email),
+   neither of which is a gap container, so it would otherwise touch its neighbour with zero
    breathing room. */
-.communication-wallet-notice {
+.communication-wallet-notice,
+.communication-system-notice {
   margin-bottom: var(--space-3);
 }
 

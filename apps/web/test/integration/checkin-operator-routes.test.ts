@@ -258,6 +258,71 @@ describe("POST /api/checkin/items/:itemKey", () => {
     expect(publishSpy).toHaveBeenCalledWith(EVENT_A, { type: "activity_changed" });
     publishSpy.mockRestore();
   });
+
+  describe("the companion item", () => {
+    const COMPANION_NAME = "Zzyzx Companion Name";
+
+    async function withCompanionItem(work: (aloneId: string) => Promise<void>) {
+      await prisma.eventItem.create({
+        data: {
+          event_id: EVENT_A,
+          key: "companion",
+          label: "Companion",
+          config: { audience: "with_companion", requires_return: false, issue_on_checkin: false },
+        },
+      });
+      await prisma.attendeeCompanion.create({ data: { attendee_id: attendeeId, slot: 1, name: COMPANION_NAME } });
+      const alone = await prisma.attendee.create({
+        data: { id: "attendee-op-routes-alone", event_id: EVENT_A, email: "alone@firma.pl", name: "Alone Guest", token_hash: hashToken(generateToken()) },
+      });
+      try {
+        await work(alone.id);
+      } finally {
+        await prisma.attendeeActionLog.deleteMany({ where: { event_id: EVENT_A, attendee_id: { in: [attendeeId, alone.id] }, action_type: "item_issued" } });
+        await prisma.attendee.deleteMany({ where: { id: alone.id } });
+        await prisma.attendeeCompanion.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.eventItem.deleteMany({ where: { event_id: EVENT_A, key: "companion" } });
+      }
+    }
+
+    it("is issued to a guest with a companion, and the card in the answer names the companion", async () => {
+      await withCompanionItem(async () => {
+        const res = await post("/api/checkin/items/companion", {
+          eventId: EVENT_A,
+          attendeeId,
+          targetState: "issued",
+          deviceId: SESSION_DEVICE,
+        });
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { state: string; card: { items: { key: string; state: string; detail?: string }[] } };
+        expect(body.state).toBe("issued");
+        expect(body.card.items.find((item) => item.key === "companion")).toMatchObject({
+          state: "issued",
+          detail: COMPANION_NAME,
+        });
+        // The name is on the card, and nowhere the system keeps a record of the action.
+        const logs = await prisma.attendeeActionLog.findMany({ where: { event_id: EVENT_A } });
+        expect(JSON.stringify(logs)).not.toContain(COMPANION_NAME);
+        expect(JSON.stringify(querySystemLogs({}))).not.toContain(COMPANION_NAME);
+      });
+    });
+
+    it("is refused for a guest who has none: the item is not there for them", async () => {
+      await withCompanionItem(async (aloneId) => {
+        const res = await post("/api/checkin/items/companion", {
+          eventId: EVENT_A,
+          attendeeId: aloneId,
+          targetState: "issued",
+          deviceId: SESSION_DEVICE,
+        });
+
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "Item not found or disabled" });
+        expect(await prisma.attendeeItemState.count({ where: { attendee_id: aloneId, event_item: { key: "companion" } } })).toBe(0);
+      });
+    });
+  });
 });
 
 describe("POST /api/checkin/admit — session_id audit (Lock #5)", () => {

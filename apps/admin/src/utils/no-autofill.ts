@@ -15,3 +15,12 @@ export const NO_AUTOFILL_PROPS = {
   "data-bwignore": "true",
   "data-form-type": "other",
 } as const;
+
+/** For a field that holds the details of somebody else, which a member of staff types in (the email, the name, the company and the phone
+ * number of an attendee): the opt-out above, and a `name` that reads as a search box to Bitwarden's own test (see
+ * `test/checkin/bitwardenSearchField.ts`). Bitwarden honours the opt-out only for a user who switched that on, and otherwise offers to
+ * fill in the staff member's own email, name or phone. `key` tells the fields of one form apart. The word "email" is kept out of the name:
+ * Safari's "Hide My Email" reads it. */
+export function attendeeFieldAttrs(key: string) {
+  return { ...NO_AUTOFILL_PROPS, name: `${key}-search` } as const;
+}

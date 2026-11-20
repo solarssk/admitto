@@ -131,4 +131,21 @@ describe("check-in camera torch toggle — desktop operator action bar", () => {
     await screen.findByRole("button", { name: "Turn off torch" });
     expect(track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] });
   });
+
+  it("keeps the header buttons at the default size of every other page header, the torch button included", async () => {
+    desktopMatch = true;
+    mockCheckInBootstrap();
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use camera" }));
+    await screen.findByRole("button", { name: "Disable camera" });
+    await act(async () => {
+      capturedOnTrackChange?.(mockTrack(true));
+    });
+
+    for (const name of ["Disable camera", /sound|mute/i, "Turn on torch"]) {
+      const button = await screen.findByRole("button", { name });
+      expect(button.className).not.toContain("at-btn--sm");
+    }
+  });
 });

@@ -1,11 +1,8 @@
 import { fetchAttendeeDetail } from "../api/client.js";
 import type { AttendeeDetailDto, RsvpStatus } from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
-import {
-  fetchAttendeeCustomFields,
-  readCustomDataField,
-  type CustomDataFieldDef,
-} from "./customData.js";
+import { companionQuestions, guestQuestions } from "../utils/questionRecipient.js";
+import { fetchAnswerFields, readCustomDataField, type CustomDataFieldDef } from "./customData.js";
 
 export type AttendeeFormState = {
   first_name: string;
@@ -27,7 +24,8 @@ function customFieldsFromDetail(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const field of attributeFields) {
-    out[field.source_field] = readCustomDataField(detail.custom_data, field.source_field) ?? "";
+    // A sensitive answer is write-only (D-E6): its box starts empty, whatever the detail holds.
+    out[field.source_field] = field.sensitive === true ? "" : (readCustomDataField(detail.custom_data, field.source_field) ?? "");
   }
   return out;
 }
@@ -48,18 +46,27 @@ export function toAttendeeForm(
   };
 }
 
+/**
+ * The form after a reload: what the person changed since the last load stays, the rest is taken from the reload. `attributeFields` are
+ * the questions the reload brought and `previousFields` those the form was drawn from. A question that turned sensitive in between is
+ * write-only now (its box starts empty), so what the form still holds for it is the old plain answer and not something the person
+ * typed: it is dropped, and never kept as a replacement to send back.
+ */
 export function mergeFormAfterReload(
   currentForm: AttendeeFormState,
   previousDetail: AttendeeDetailDto,
   reloaded: AttendeeDetailDto,
   attributeFields: CustomDataFieldDef[],
+  previousFields: readonly CustomDataFieldDef[] = attributeFields,
 ): AttendeeFormState {
   const previousForm = toAttendeeForm(previousDetail, attributeFields);
   const nextForm = toAttendeeForm(reloaded, attributeFields);
   const customFields: Record<string, string> = { ...nextForm.customFields };
+  const wasSensitive = new Set(previousFields.filter((field) => field.sensitive === true).map((field) => field.source_field));
   for (const field of attributeFields) {
     const key = field.source_field;
-    if (currentForm.customFields[key] !== previousForm.customFields[key]) {
+    const turnedSensitive = field.sensitive === true && !wasSensitive.has(key);
+    if (!turnedSensitive && currentForm.customFields[key] !== previousForm.customFields[key]) {
       customFields[key] = currentForm.customFields[key] ?? "";
     }
   }
@@ -97,19 +104,23 @@ export async function loadAttendeeDetailData(
   signal?: AbortSignal,
 ): Promise<{
   detail: AttendeeDetailDto;
+  /** The questions about the guest: the fields of the attendee's own form. */
   attributeFields: CustomDataFieldDef[];
+  /** The questions about the person the guest brings: the fields of the companion's form. */
+  companionFields: CustomDataFieldDef[];
   itemsWarning: string | null;
 }> {
   const [detail, fieldsResult] = await Promise.all([
     fetchAttendeeDetail(eventId, attendeeId, signal, notesPage),
-    fetchAttendeeCustomFields(eventId, signal).then(
+    fetchAnswerFields(eventId, signal).then(
       (fields) => ({ ok: true as const, fields }),
       () => ({ ok: false as const }),
     ),
   ]);
   return {
     detail,
-    attributeFields: fieldsResult.ok ? fieldsResult.fields : [],
+    attributeFields: fieldsResult.ok ? guestQuestions(fieldsResult.fields) : [],
+    companionFields: fieldsResult.ok ? companionQuestions(fieldsResult.fields) : [],
     itemsWarning: fieldsResult.ok ? null : ITEMS_LOAD_WARNING,
   };
 }

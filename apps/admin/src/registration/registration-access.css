@@ -1,0 +1,399 @@
+/* The Access tab of the Registration page. Its cards are the settings cards of the app (.settings-sections, .settings-row), and its
+ * checklist rows wear the icon and the text of the Overview's setup checklist (.overview-check__*). Only what those do not give is here. */
+
+/* A segmented control in a card's column: it keeps its own width and takes no margin of its own, the column's gap spaces it. */
+.access-seg {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-bottom: 0;
+}
+
+/* The password row sits inside a card that spaces its parts with a gap: no rule under it and no padding of its own. */
+.access-password {
+  padding: 0;
+  border-bottom: 0;
+}
+
+/* The rows of a form card: one list, each row with its own rule. */
+.access-form-group__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The checklist: one row for each check, the icon, the heading with its sentence, and what to do about it. */
+.access-checklist,
+.access-missing {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.access-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+
+.access-check:first-child {
+  padding-top: 0;
+}
+
+.access-check:last-child {
+  padding-bottom: 0;
+}
+
+.access-check + .access-check {
+  border-top: 1px solid var(--border);
+}
+
+.access-check__remedy {
+  font-size: var(--fs-xs);
+}
+
+/* A sentence of what to do next (not a link) reads in the colour of the sentence above it, not the darker one it would inherit (#1894).
+ * A link keeps the link colour. */
+span.access-check__remedy {
+  color: var(--text-secondary);
+}
+
+/* What a refused save says is missing: the message, then a list that names each check and what to do. A message stands alone, so its
+ * lines are balanced (a lone last word is the fault that readability.md names). */
+.access-problem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.access-balanced .at-notice__body {
+  text-wrap: balance;
+}
+
+.access-missing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: var(--space-5);
+  list-style: disc;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+/* The restriction of the company SSO sits in the Way in card, under the choice: its fields are spaced by the card's gap, and a
+ * long GUID or an explanation wraps instead of widening the card. */
+.access-claim {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.access-claim .settings-card-intro {
+  overflow-wrap: anywhere;
+}
+
+/* The event's own address for guests: its state is a row of the checklist's kind with no rule above it; the field and its buttons are
+ * spaced by the card's gap, and the steps for IT are a numbered list that wraps instead of widening the card. */
+/* The controls add no gap of their own: their parts are items of the card's stack, as on the Weather and Wallet cards. */
+.access-address__controls {
+  display: contents;
+}
+
+/* The field and Set address together are the half of the card, with an address or without one. Check now and Remove come after them, to
+ * the right, and may reach past the half. The buttons keep their width; when the row is too narrow they wrap under the field and never
+ * leave the card. On a narrow screen the field takes what is left of its line. */
+.access-address__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.access-address__row > .access-address__field {
+  flex: 0 1 calc(50% - 7rem);
+  min-width: min(8rem, 100%);
+}
+
+.access-address__row > .at-btn {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .access-address__row > .access-address__field {
+    flex: 1 1 10rem;
+  }
+}
+
+/* The setup for IT: a white panel with a fine frame, as the other sub-panels, so that the grey values in it stand out as values, with a heading that opens and closes it and a
+ * button that copies all of it as text. The steps and the record wrap instead of widening the card. */
+.access-it {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-card, #fff);
+}
+
+.access-it__body {
+  padding: var(--space-2) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.access-it__body[hidden] {
+  display: none;
+}
+
+.access-it__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+.access-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: access-step;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.access-steps > li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-left: calc(1.25rem + var(--space-2));
+  counter-increment: access-step;
+}
+
+.access-steps > li::before {
+  content: counter(access-step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--surface-card, #fff);
+  border: 1px solid var(--border-strong);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+/* The record: three read only fields side by side, one under another on a narrow screen. Grey and in a fixed-width font, so that they do not
+ * look like something to type in; the button that copies a value is on the left of its field. */
+.access-dns {
+  display: grid;
+  grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.access-dns--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.at-input.access-readonly {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  background-color: var(--at-gray-100);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+}
+
+/* With the copy button, the frame is the group's: it is grey too, and it is as high as the box without a button beside it (the frame is
+ * inside that height, not on top of it). */
+.access-dns .at-inputgroup:has(.at-inputgroup__icon--action) {
+  box-sizing: border-box;
+  height: var(--control-h);
+}
+
+.access-dns .at-inputgroup .at-input {
+  height: 100%;
+}
+
+/* With the copy button, the frame is the group's: it is grey too. */
+.at-inputgroup:has(.at-input.access-readonly) {
+  background: var(--at-gray-100);
+}
+
+@media (max-width: 640px) {
+  .access-dns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+}
+
+.access-claim__values {
+  grid-column: 1 / -1;
+}
+
+/* The status is a row of the checklist's kind (.access-check): only the wrap of a long address is added. */
+.access-address__status {
+  padding: 0;
+  align-items: center;
+}
+
+.access-address__status .overview-check__body,
+.access-address__status .overview-check__detail {
+  overflow-wrap: anywhere;
+}
+
+/* The identity provider of Company SSO: the picker is one column of the grid of the Company SSO fields, beside the claim name, with its
+ * notice under it; on a narrow screen the grid is one column. */
+.access-provider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.access-provider .settings-card-intro,
+.access-provider .at-notice {
+  overflow-wrap: anywhere;
+}
+
+/* The link to the Checklist tab inside a sentence is underlined too (axe: link-in-text-block). */
+.access-text-link {
+  text-decoration: underline;
+}
+
+/* A link inside a sentence is underlined, so that it is told from the text by more than its colour (axe: link-in-text-block). */
+.access-provider .settings-card-intro a {
+  text-decoration: underline;
+}
+
+/* The bot check of the event, a switch row at the bottom of the Access method card, set off from the method by a rule as the extra
+ * consents are from the switches of the Form card. The row itself keeps the look of a switch row, with no rule of its own. */
+.access-bot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.access-bot .settings-row {
+  padding: 0;
+  border-bottom: 0;
+}
+
+/* The Checklist tab: a step has its action at the right, beside the sentence; a step that only a superadmin can do has a badge by its name. */
+/* The lines of what a step says stack like wrapped text: no gap between them, one line height. Only the name keeps a little room under it. */
+.access-check--step .overview-check__body {
+  flex: 1;
+  gap: 0;
+  min-width: 0;
+}
+
+.access-check__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.access-check__aside {
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+}
+
+/* Nothing is left for this person: an icon, what it means and what to do. */
+.access-ready {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-3);
+  text-align: center;
+}
+
+.access-ready__title {
+  font-size: var(--fs-h2);
+}
+
+.access-ready p {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.access-ready__icon {
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-6) + var(--space-5));
+  height: calc(var(--space-6) + var(--space-5));
+  border-radius: 50%;
+  font-size: var(--fs-display);
+  background: var(--status-ok-tint);
+  color: var(--status-ok-fg);
+}
+
+.access-ready__icon--info {
+  background: var(--status-info-tint);
+  color: var(--status-info-fg);
+}
+
+/* On a narrow screen the button goes under the sentence, so the sentence keeps its width. */
+@media (max-width: 640px) {
+  .access-check--step {
+    flex-wrap: wrap;
+  }
+
+  .access-check--step .overview-check__body {
+    flex-basis: calc(100% - var(--space-7));
+  }
+
+  .access-check__aside {
+    flex-basis: 100%;
+    margin-left: 0;
+    align-self: flex-start;
+  }
+}
+
+/* The grey block that holds the room of the header buttons until the first read is in. */
+.registration-switch {
+  display: flex;
+  align-items: center;
+  min-width: 9.5rem;
+}
+
+/* The state of registration beside the title. The title is large and bold, so the badge keeps its own small size and sits on the middle
+ * of the title's line; on a narrow screen it drops under the title when the two do not fit. */
+.registration-status {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: var(--space-3);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  letter-spacing: normal;
+  line-height: 1;
+}
+
+@media (max-width: 767px) {
+  .registration-status {
+    display: flex;
+    margin-left: 0;
+    margin-top: var(--space-1);
+  }
+}

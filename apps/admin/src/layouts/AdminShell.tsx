@@ -16,9 +16,10 @@ type NavItem = {
 // labels or "Soon" badges in the UI, they drift out of date (#263).
 const LIFECYCLE_NAV: NavItem[] = [
   { segment: "overview", icon: "layout-dashboard", label: "Overview" },
+  { segment: "registration", icon: "clipboard-check", label: "Registration" },
   { segment: "attendees", icon: "users", label: "Attendees" },
-  { segment: "requirements", icon: "clipboard-list", label: "Requirements" },
   { segment: "communication", icon: "mail", label: "Communication" },
+  { segment: "event-items", icon: "clipboard-list", label: "Event items" },
   { segment: "checkin", icon: "qrcode", label: "Check-in" },
   { segment: "thank-you", icon: "heart", label: "Post-event" },
   { segment: "reports", icon: "chart-bar", label: "Reports" },
@@ -27,9 +28,10 @@ const LIFECYCLE_NAV: NavItem[] = [
 
 const LIVE_SEGMENTS = new Set([
   "overview",
+  "registration",
   "attendees",
-  "requirements",
   "communication",
+  "event-items",
   "checkin",
   "reports",
   "settings",

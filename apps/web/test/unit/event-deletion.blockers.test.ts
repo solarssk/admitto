@@ -7,7 +7,7 @@ import {
 
 const emptySignals: EventActivitySignals = {
   attendeeCount: 0,
-  nonBadgeItemCount: 0,
+  customItemCount: 0,
   nonStandardTicketTypeCount: 0,
   contactCount: 0,
   resourceCount: 0,
@@ -28,7 +28,7 @@ describe("listEventDeletionBlockers / isEventDeletable", () => {
       { pinned_note: "Remember exits" },
       {
         attendeeCount: 2,
-        nonBadgeItemCount: 1,
+        customItemCount: 1,
         nonStandardTicketTypeCount: 1,
         contactCount: 1,
         resourceCount: 1,
@@ -49,7 +49,7 @@ describe("listEventDeletionBlockers / isEventDeletable", () => {
         { archived_at: null, pinned_note: "Remember exits" },
         {
           attendeeCount: 2,
-          nonBadgeItemCount: 1,
+          customItemCount: 1,
           nonStandardTicketTypeCount: 1,
           contactCount: 1,
           resourceCount: 1,

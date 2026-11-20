@@ -6,7 +6,7 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, resolveInstanceBaseUrl, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
-import { generateToken, hashToken } from "@admitto/tickets";
+import { eraseAttendees, generateToken, hashToken } from "@admitto/tickets";
 import { PassCreatorClient, WalletProviderError } from "@admitto/wallet";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
@@ -247,6 +247,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       resolved_header_image_url: string | null;
       admitted_count: number;
       issued_items_count: number;
+      exportable_attendee_count: number;
     };
     expect(body.id).toBe(EVENT_SET);
     expect(body.title).toBe("Settings Event");
@@ -268,6 +269,32 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.resolved_header_image_url).toBeNull();
     expect(body.admitted_count).toBe(0);
     expect(body.issued_items_count).toBe(0);
+    // The one attendee the suite seeds into this event (ATT_SET), not erased.
+    expect(body.exportable_attendee_count).toBe(1);
+  });
+
+  it("counts only attendees whose data is held in exportable_attendee_count: 0 for an event with none, erased ones left out", async () => {
+    const empty = await app.request(`/api/admin/events/${EVENT_ACTIVE_EMPTY}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(((await empty.json()) as { exportable_attendee_count: number }).exportable_attendee_count).toBe(0);
+
+    const erased = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_SET,
+        email: "erased-guest@example.com",
+        name: "Erased Guest",
+        status: "registered",
+      },
+    });
+    await prisma.$transaction((tx) => eraseAttendees(tx, { eventId: EVENT_SET, attendeeIds: [erased.id] }));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, { headers: { Cookie: adminCookie } });
+      // ATT_SET is live, the erased one is not counted.
+      expect(((await res.json()) as { exportable_attendee_count: number }).exportable_attendee_count).toBe(1);
+    } finally {
+      await prisma.attendee.delete({ where: { id: erased.id } });
+    }
   });
 
   it("normalizes legacy event and audit timezones in the settings response", async () => {
@@ -337,7 +364,13 @@ describe("GET /api/admin/events/:eventId/settings", () => {
         headers: { Cookie: adminCookie },
       });
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { admitted_count: number; issued_items_count: number };
+      const body = (await res.json()) as {
+        admitted_count: number;
+        issued_items_count: number;
+        exportable_attendee_count: number;
+      };
+      // The seeded ATT_SET plus the admitted guest.
+      expect(body.exportable_attendee_count).toBe(2);
       expect(body.admitted_count).toBe(1);
       expect(body.issued_items_count).toBe(1);
     } finally {
@@ -1305,6 +1338,35 @@ describe("PATCH /api/admin/events/:eventId", () => {
       body: JSON.stringify({ wallet_field_mapping: { shirt: "custom:T Shirt Size" } }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("refuses a wallet field mapping that names a sensitive field, saves one that names a plain field, and writes nothing on the refusal (D-E6)", async () => {
+    await prisma.eventCustomField.createMany({
+      data: [
+        { event_id: EVENT_SET, source_field: "t_shirt_size", label: "Shirt", type: "select", options: ["S", "M"] },
+        { event_id: EVENT_SET, source_field: "meal_allergy", label: "Allergy", type: "select", options: ["Nuts", "None"], sensitive: true },
+      ],
+    });
+    const patch = (mapping: Record<string, string> | null) =>
+      app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_field_mapping: mapping }),
+      });
+    try {
+      const refused = await patch({ shirt: "custom:t_shirt_size", allergy: "custom:meal_allergy" });
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({ error: "sensitive_wallet_field", field: "meal_allergy" });
+      const unchanged = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET }, select: { wallet_field_mapping: true } });
+      expect(unchanged.wallet_field_mapping).toBeNull();
+
+      expect((await patch({ shirt: "custom:t_shirt_size" })).status).toBe(200);
+      const saved = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET }, select: { wallet_field_mapping: true } });
+      expect(saved.wallet_field_mapping).toEqual({ shirt: "custom:t_shirt_size" });
+    } finally {
+      await patch(null);
+      await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_SET } });
+    }
   });
 
   it("returns 403 when an organisation admin tries to patch the wallet field mapping", async () => {

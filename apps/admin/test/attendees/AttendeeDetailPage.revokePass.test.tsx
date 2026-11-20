@@ -189,6 +189,38 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
+  it.each([
+    [2, 9, 10, "their companion need 2, and 1 is free"],
+    [3, 8, 10, "their companions need 3, and 2 are free"],
+    [2, 10, 10, "their companion need 2, and 0 are free"],
+  ])(
+    "says places, not people, when the attendee's companions need seats too (%i needed, %i of %i taken)",
+    async (incoming, current, capacity, tail) => {
+      mockLoad(baseDetail({ status: "revoked" }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      const { ApiError } = await import("../../src/api/client.js");
+      updateAttendee.mockRejectedValue(
+        new ApiError(409, "event_full", "event_full", { current, capacity, incoming, projected: current + incoming }),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: /Restore pass/ }));
+      const dialog = screen.getByRole("dialog", { name: "Restore pass?" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
+
+      await waitFor(() => {
+        expect(
+          within(dialog).getByText(
+            `Not enough free places: this attendee and ${tail}. Free a place or increase capacity before restoring this pass.`,
+          ),
+        ).toBeTruthy();
+      });
+      expect(within(dialog).queryByText(/Event is at capacity/)).toBeNull();
+    },
+  );
+
   it("keeps an unmapped 409 pass error in the revoke confirmation dialog", async () => {
     mockLoad(baseDetail());
     renderPage();

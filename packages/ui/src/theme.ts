@@ -31,6 +31,9 @@ export interface BrandingThemeInput {
   /** The active pick for the public ticket page - same rules as font_family_name, falls back to
    * it when unset so a single global font remains the default until someone overrides it. */
   ticket_font_family_name?: string;
+  /** The registration form's own colour and font: each falls back to the ticket page's pick, then the admin's. */
+  registration_primary?: string;
+  registration_font_family_name?: string;
   custom_font_families?: BrandingCustomFontFamily[];
 }
 

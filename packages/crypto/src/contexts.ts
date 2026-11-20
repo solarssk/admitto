@@ -11,4 +11,7 @@ export const SECRET_CONTEXTS = {
   walletApiKey: "admitto:event-wallet-api-key",
   imapPassword: "admitto:bounce-imap-password",
   notificationWebhookUrl: "admitto:notification-webhook-url",
+  // Lives inside the `registration_turnstile` SystemSettings JSON, not in a column, and is always
+  // written with this context, so no legacy value exists for `db:rebind-secret-contexts` to rewrite.
+  turnstileSecret: "admitto:registration-turnstile-secret",
 } as const;

@@ -21,9 +21,10 @@ Open **Reports**. It has these tabs: Event day, Wallets (only when the event off
 1. Review the compact KPI tiles, the hourly admissions chart, **Attendance confirmation**, **Check-in method**, **By device**, the ticket-type breakdowns, **By operator**, and the admission log (newest admission first).
 2. **By operator** and the admission log show the authenticated operator who performed the check-in (a staff account), not only a self-declared device label.
 3. The admission log and the CSV and PDF exports also show which event-day items were issued to each admitted attendee.
-4. Apply filters when you need a narrower result.
-5. Check the displayed times against the event time zone.
-6. Use the export control only for an approved event purpose.
+4. Once a companion has been let in, one line under the KPI tiles gives **People on site**: the admitted attendees plus those companions. The tiles count attendees only.
+5. Apply filters when you need a narrower result.
+6. Check the displayed times against the event time zone.
+7. Use the export control only for an approved event purpose.
 
 #### Wallets
 
@@ -52,10 +53,12 @@ Pass adoption always equals Registration state's registered plus previously regi
 
 #### Custom fields
 
-A chart for each custom field configured on the event's Requirements page:
+A chart for each custom field configured on the **Fields** tab of the event's **Registration** page:
 
 - A selector or yes/no field shows a donut: how many attendees hold each value, plus how many have not answered.
 - A free-text field shows a gauge: how many attendees have filled it in.
+
+Until at least one attendee has answered a field, the tab shows only "No answers yet" (or "No custom fields yet" when the event has none).
 
 A newly added custom field gets a chart here automatically, with no extra setup.
 
@@ -76,7 +79,9 @@ Email delivery analytics:
 
 #### Export
 
-**Export report** follows whichever tab is open. It exports one CSV row per attendee (wallet status, email delivery, or each custom field's own answer, depending on the tab), or a printable PDF summary of that tab's own cards.
+**Export** follows whichever tab is open. It exports one CSV row per attendee (wallet status, email delivery, or each custom field's own answer, depending on the tab), or a printable PDF summary of that tab's own cards.
+
+**Export** is off, with the hint "Nothing to export yet.", while the open tab shows only its empty state: Event day before the first check-in, Wallets before the first pass, Custom fields before the first answer, and Mail before the first email.
 
 ### Archive the event
 
@@ -121,7 +126,7 @@ Reports reflect the recorded admissions and event data. An archived event remain
 
 The report is being read from the server. After 30 seconds, or when the read fails, the tab stops waiting and shows an error with a **Retry** button. The button stays on screen, busy, until the answer is in.
 
-- **Event day** ("Could not load report"): the header, the tabs and **Export report** stay on screen, and **Export report** waits for the report. Once the report is there, live check-ins update it as they happen. **Export report** shows a spinner while a CSV file is being made, and its menu opens again when the file is in.
+- **Event day** ("Could not load report"): the header, the tabs and **Export** stay on screen, and **Export** waits for the report. Once the report is there, live check-ins update it as they happen. **Export** shows a spinner while a CSV file is being made, and its menu opens again when the file is in.
 - **Wallets, Custom fields and Mail** ("Could not load wallet report", "custom field report" or "mail report"): each tab is read from the server the first time you open it, and its charts load together with its data. Grey cards of the tab's own shape show while it loads. They stay invisible for the first fraction of a second, so a quick answer shows no flash. When it works, the keyboard focus goes to the tab. Going back to a tab you have already opened does not read it again.
 
 ## Related pages

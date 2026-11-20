@@ -50,8 +50,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     searchGeocoding: vi.fn(),
     reverseGeocoding: vi.fn(),
     fetchTimezoneForCoordinates: vi.fn(),
+    fetchRegistrationSettings: vi.fn(() => new Promise(() => undefined)),
   };
 });
+
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("../../src/settings/MapPicker.js", () => ({
   MapPicker: () => <div data-testid="map-picker" />,
@@ -85,6 +88,7 @@ const activeEvent = {
   deletion_blockers: [] as string[],
   admitted_count: 0,
   issued_items_count: 0,
+  exportable_attendee_count: 3,
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
 };
 

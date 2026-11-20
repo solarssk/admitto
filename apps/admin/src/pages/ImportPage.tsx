@@ -19,6 +19,7 @@ import type {
   ImportSampleRow,
   ImportSkippedRow,
 } from "../api/types.js";
+import { answerImportNote } from "../attendees/answerFormat.js";
 import { fetchAttendeeCustomFields, type CustomDataFieldDef } from "../attendees/customData.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
@@ -346,8 +347,9 @@ function UploadFileControl({
 }
 
 /** Describes the type-specific note appended to a custom field's description in the "Required
- * CSV columns" table (select options, or the boolean Yes/No hint) - a plain lookup instead of a
- * nested ternary (Sonar S3776: kept this branching out of ImportPage's own complexity count). */
+ * CSV columns" table (select options, the boolean Yes/No hint, the format of a date or a phone
+ * number, a field's format rules) - a plain lookup instead of a nested ternary (Sonar S3776: kept
+ * this branching out of ImportPage's own complexity count). */
 function attributeFieldNote(field: CustomDataFieldDef): string {
   if (field.type === "select" && field.options?.length) {
     return ` (select: ${field.options.join(", ")})`;
@@ -355,7 +357,8 @@ function attributeFieldNote(field: CustomDataFieldDef): string {
   if (field.type === "boolean") {
     return " (Yes/No or true/false)";
   }
-  return "";
+  const note = answerImportNote(field);
+  return note ? ` (${note})` : "";
 }
 
 /** One row of the "Required CSV columns" table for a custom attribute field - extracted

@@ -1,4 +1,4 @@
-import { IMPORT_STOPPED_BY_ERASURE_ERROR } from "@admitto/tickets";
+import { IMPORT_STOPPED_BY_ERASURE_ERROR, IMPORT_STOPPED_BY_FIELD_DELETION_ERROR } from "@admitto/tickets";
 import { STALE_IMPORT_JOB_ERROR, STALE_IMPORT_PENDING_ERROR } from "./reclaimStaleImportJobs.js";
 
 export const IMPORT_JOB_FAILED_ERROR = "Import failed. Upload the file again.";
@@ -8,6 +8,7 @@ const SAFE_IMPORT_ERRORS = new Set([
   IMPORT_JOB_FAILED_ERROR,
   IMPORT_CAPACITY_ERROR,
   IMPORT_STOPPED_BY_ERASURE_ERROR,
+  IMPORT_STOPPED_BY_FIELD_DELETION_ERROR,
   STALE_IMPORT_JOB_ERROR,
   STALE_IMPORT_PENDING_ERROR,
   "Import stopped before it finished.",

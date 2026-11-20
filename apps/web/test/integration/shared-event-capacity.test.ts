@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { commitImport, executeImportCommit, ImportCapacityExceededError } from "@admitto/import";
-import { eraseAttendees } from "@admitto/tickets";
+import { admitRegistrations, countSeatsInUse, deleteRegistrations, eraseAttendees } from "@admitto/tickets";
 import { handleCreateEventAttendee, handlePatchEventAttendee } from "../../src/admin/attendees-api-routes.js";
 
 let db: PrismaClient;
@@ -47,11 +47,14 @@ afterEach(async () => {
   await db.event.delete({ where: { id: eventId } });
   await db.user.delete({ where: { id: userId } });
   await db.organization.delete({ where: { id: orgId } });
+  // The clients a test opened (the paused and the observed one) are done: only the shared client stays, so that this
+  // file does not hold a connection per pair of writers until its end.
+  await Promise.all(clients.splice(1).map((client) => client.$disconnect()));
 });
 afterAll(async () => { await Promise.all(clients.map((client) => client.$disconnect())); });
 
-type Writer = "manual" | "import" | "direct";
-async function write(kind: Writer, client = db, force = false, targetEventId = eventId): Promise<"created" | "event_full"> {
+type Writer = "manual" | "import" | "direct" | "registration";
+async function write(kind: Writer, client = db, force = false, targetEventId = eventId, bringsCompanion = false): Promise<"created" | "event_full"> {
   const email = `capacity-entry-${++sequence}@example.com`;
   if (kind === "manual") {
     // Exercise the real handler after authentication, including its own role/capacity checks.
@@ -68,6 +71,20 @@ async function write(kind: Writer, client = db, force = false, targetEventId = e
     expect(response.status).toBe(409);
     expect((await response.json() as { code: string }).code).toBe("event_full");
     return "event_full";
+  }
+  if (kind === "registration") {
+    // An organiser admits a guest's registration: the shared function of @admitto/tickets, under the same lock.
+    const registration = await client.registration.create({
+      data: {
+        event_id: targetEventId, email, first_name: "Synthetic", last_name: "Registration",
+        name: "Synthetic Registration", status: "pending",
+        companions: bringsCompanion ? [{ name: "Synthetic Companion", custom_data: {} }] : [],
+      },
+    });
+    const result = await admitRegistrations(client, { eventId: targetEventId, ids: [registration.id], actor: { operator: userId } });
+    if (result.status === "not_enough_seats") return "event_full";
+    expect(result.outcomes[0]?.outcome).toBe("accepted");
+    return "created";
   }
   try {
     const result = kind === "direct"
@@ -86,6 +103,11 @@ async function write(kind: Writer, client = db, force = false, targetEventId = e
   }
 }
 
+/** Whether a raw query is the count of the seats of the event (countSeatsInUse): over the attendees and their companions, for this event. */
+function isSeatCount(strings: readonly string[], values: readonly unknown[]): boolean {
+  return strings.some((piece) => piece.includes('"AttendeeCompanion"')) && values.includes(eventId);
+}
+
 /** Pause after a real count result, retaining the real transaction and its locks. */
 function pauseCapacityRead() {
   const reached = gate();
@@ -97,21 +119,16 @@ function pauseCapacityRead() {
     get(target, key, receiver) {
       if (key !== "$transaction") return Reflect.get(target, key, receiver);
       return <T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, options?: { timeout?: number; maxWait?: number }) => transaction(async (tx) => {
-        const attendee = new Proxy(tx.attendee, {
-          get(delegate, method, delegateReceiver) {
-            if (method !== "count") return Reflect.get(delegate, method, delegateReceiver);
-            return async (args: Prisma.AttendeeCountArgs) => {
-              const value = await delegate.count(args);
-              if (!paused && args.where?.event_id === eventId) {
-                paused = true; reached.release(); await release.waiting;
-              }
-              return value;
-            };
-          },
-        });
+        const queryRaw = async (strings: readonly string[], ...values: unknown[]) => {
+          const rows: unknown = await Reflect.apply(tx.$queryRaw, tx, [strings, ...values]);
+          if (!paused && isSeatCount(strings, values)) {
+            paused = true; reached.release(); await release.waiting;
+          }
+          return rows;
+        };
         return operation(new Proxy(tx, {
           get(actual, property, actualReceiver) {
-            return property === "attendee" ? attendee : Reflect.get(actual, property, actualReceiver);
+            return property === "$queryRaw" ? queryRaw : Reflect.get(actual, property, actualReceiver);
           },
         }));
       }, options);
@@ -157,7 +174,11 @@ async function completedOrBlocked(completed: () => boolean, pid: () => number | 
 }
 
 describe("shared final event capacity (real migrated PostgreSQL)", () => {
-  it.each([["manual", "import"], ["import", "manual"], ["manual", "manual"], ["import", "import"], ["manual", "direct"], ["direct", "manual"], ["direct", "direct"]] as const)("serializes %s followed by %s at the last place", async (firstKind, secondKind) => {
+  it.each([
+    ["manual", "import"], ["import", "manual"], ["manual", "manual"], ["import", "import"], ["manual", "direct"], ["direct", "manual"], ["direct", "direct"],
+    ["registration", "manual"], ["manual", "registration"], ["registration", "import"], ["import", "registration"],
+    ["registration", "direct"], ["direct", "registration"], ["registration", "registration"],
+  ] as const)("serializes %s followed by %s at the last place", async (firstKind, secondKind) => {
     const paused = pauseCapacityRead();
     const first = Promise.allSettled([write(firstKind, paused.client)]);
     await paused.reached;
@@ -258,6 +279,16 @@ describe("shared final event capacity (real migrated PostgreSQL)", () => {
     expect((await db.attendee.findUniqueOrThrow({ where: { id: attendee.id } })).status).toBe("cancelled");
     expect(await write("import")).toBe("created");
   });
+  it("frees the place of an accepted registration that staff delete, for the next writer", async () => {
+    await write("registration");
+    const accepted = await db.registration.findFirstOrThrow({ where: { event_id: eventId, status: "accepted" } });
+    await db.$transaction((tx) =>
+      deleteRegistrations(tx, { eventId, target: { kind: "ids", ids: [accepted.id] }, actor: { operator: userId } }),
+    );
+    expect((await db.attendee.findFirstOrThrow({ where: { event_id: eventId } })).status).toBe("cancelled");
+    expect(await write("import")).toBe("created");
+    expect(await write("manual")).toBe("event_full");
+  });
   it("allows an overwrite that consumes no additional place", async () => {
     await write("manual");
     const attendee = await db.attendee.findFirstOrThrow({ where: { event_id: eventId } });
@@ -265,6 +296,105 @@ describe("shared final event capacity (real migrated PostgreSQL)", () => {
     expect(result.updated).toBe(1);
     expect(result.created).toBe(0);
     expect(await db.attendee.count({ where: { event_id: eventId } })).toBe(1);
+  });
+
+  /** Restores the attendee through the real handler, on `client`, with the version of the row the staff member saw. */
+  function restoring(client: PrismaClient, attendee: { id: string; updated_at: Date }) {
+    const app = new Hono();
+    app.patch("/events/:eventId/attendees/:id", (c) => {
+      c.set("auth", { userId });
+      return handlePatchEventAttendee(c, client);
+    });
+    return Promise.resolve(app.request(`/events/${eventId}/attendees/${attendee.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "registered", expected_updated_at: attendee.updated_at.toISOString() }),
+    }));
+  }
+
+  it("serializes an admission that brings a companion followed by a manual add at the last two places", async () => {
+    await db.event.update({ where: { id: eventId }, data: { capacity: 2 } });
+    const paused = pauseCapacityRead();
+    const first = Promise.allSettled([write("registration", paused.client, false, eventId, true)]);
+    await paused.reached;
+    let completed = false;
+    const observer = observedConnection();
+    const second = Promise.allSettled([write("manual", observer.client)]).then((result) => { completed = true; return result; });
+    let interleaving: string;
+    try { interleaving = await completedOrBlocked(() => completed, observer.pid); }
+    finally { paused.release(); }
+    const [a] = await first;
+    const [b] = await second;
+    expect.soft(interleaving!).toBe("blocked");
+    expect.soft(a.status === "fulfilled" && a.value).toBe("created");
+    expect.soft(b.status === "fulfilled" && b.value).toBe("event_full");
+    expect(await countSeatsInUse(db, eventId)).toBe(2);
+    expect(await db.attendee.count({ where: { event_id: eventId } })).toBe(1);
+    expect(await db.attendeeCompanion.count({ where: { attendee: { event_id: eventId } } })).toBe(1);
+  });
+
+  it("serializes a manual add followed by an admission that brings a companion: the guest and the companion no longer fit", async () => {
+    await db.event.update({ where: { id: eventId }, data: { capacity: 2 } });
+    const paused = pauseCapacityRead();
+    const first = Promise.allSettled([write("manual", paused.client)]);
+    await paused.reached;
+    let completed = false;
+    const observer = observedConnection();
+    const second = Promise.allSettled([write("registration", observer.client, false, eventId, true)]).then((result) => { completed = true; return result; });
+    let interleaving: string;
+    try { interleaving = await completedOrBlocked(() => completed, observer.pid); }
+    finally { paused.release(); }
+    const [a] = await first;
+    const [b] = await second;
+    expect.soft(interleaving!).toBe("blocked");
+    expect.soft(a.status === "fulfilled" && a.value).toBe("created");
+    expect.soft(b.status === "fulfilled" && b.value).toBe("event_full");
+    expect(await countSeatsInUse(db, eventId)).toBe(1);
+    expect(await db.attendeeCompanion.count({ where: { attendee: { event_id: eventId } } })).toBe(0);
+  });
+
+  it("serializes an import followed by the restoration of an attendee with a companion: the two places are no longer free", async () => {
+    await db.event.update({ where: { id: eventId }, data: { capacity: 2 } });
+    const attendee = await db.attendee.create({
+      data: { event_id: eventId, email: "restore-companion@example.com", name: "Synthetic Restore", status: "revoked", companions: { create: { slot: 1, name: "Synthetic Companion" } } },
+    });
+    const paused = pauseCapacityRead();
+    const first = Promise.allSettled([write("import", paused.client)]);
+    await paused.reached;
+    const observer = observedConnection();
+    let completed = false;
+    const restored = restoring(observer.client, attendee).then((response) => { completed = true; return response; });
+    let interleaving: string;
+    try { interleaving = await completedOrBlocked(() => completed, observer.pid); }
+    finally { paused.release(); }
+    expect((await first)[0].status).toBe("fulfilled");
+    const response = await restored;
+    expect(interleaving!).toBe("blocked");
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "event_full", capacity: 2, current: 1, incoming: 2 });
+    expect((await db.attendee.findUniqueOrThrow({ where: { id: attendee.id } })).status).toBe("revoked");
+    expect(await countSeatsInUse(db, eventId)).toBe(1);
+  });
+
+  it("serializes the restoration of an attendee with a companion followed by an import: the event is then full", async () => {
+    await db.event.update({ where: { id: eventId }, data: { capacity: 2 } });
+    const attendee = await db.attendee.create({
+      data: { event_id: eventId, email: "restore-first@example.com", name: "Synthetic Restore", status: "revoked", companions: { create: { slot: 1, name: "Synthetic Companion" } } },
+    });
+    const paused = pauseCapacityRead();
+    const first = restoring(paused.client, attendee);
+    await paused.reached;
+    let completed = false;
+    const observer = observedConnection();
+    const second = Promise.allSettled([write("import", observer.client)]).then((result) => { completed = true; return result; });
+    let interleaving: string;
+    try { interleaving = await completedOrBlocked(() => completed, observer.pid); }
+    finally { paused.release(); }
+    expect((await first).status).toBe(200);
+    const [imported] = await second;
+    expect(interleaving!).toBe("blocked");
+    expect(imported.status === "fulfilled" && imported.value).toBe("event_full");
+    expect((await db.attendee.findUniqueOrThrow({ where: { id: attendee.id } })).status).toBe("registered");
+    expect(await countSeatsInUse(db, eventId)).toBe(2);
   });
 
   it("does not block another event's capacity while the first event waits", async () => {

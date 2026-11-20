@@ -81,24 +81,6 @@ describe("WizardStep4Event", () => {
     );
   });
 
-  it("shows the slug-conflict toast when creation returns 409", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
-    mockCreateEvent.mockRejectedValueOnce(new ApiError(409, "slug_taken"));
-    const ref = createRef<WizardStep4EventHandle>();
-    renderWithToast(
-      <WizardProvider>
-        <WizardStep4Event ref={ref} onCanContinueChange={() => {}} onHasExistingEventsChange={() => {}} />
-      </WizardProvider>,
-    );
-    fireEvent.change(await screen.findByLabelText("Event name"), { target: { value: "Test Event" } });
-    const date = screen.getByRole("textbox", { name: "Date" });
-    fireEvent.change(date, { target: { value: "09/29/2026" } });
-    fireEvent.blur(date);
-
-    await expect(ref.current?.createAndContinue()).resolves.toBe(false);
-    expect(await screen.findByText("An event with a similar name already exists. Change the title slightly and try again.")).toBeTruthy();
-  });
-
   it("shows a safe toast for a generic create failure", async () => {
     mockCreateEvent.mockRejectedValueOnce(new Error("network down"));
     const ref = createRef<WizardStep4EventHandle>();
@@ -381,7 +363,6 @@ describe("WizardStep4Event", () => {
     await waitFor(() => {
       expect(mockCreateEvent).toHaveBeenCalledWith({
         title: "Test Event",
-        slug: "test-event",
         date: "2026-09-29",
         timezone: expect.any(String),
         venue_name: "Palace of Culture Annex",

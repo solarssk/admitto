@@ -16,6 +16,10 @@
       "types": "./dist/placeholders.d.ts",
       "default": "./dist/placeholders.js"
     },
+    "./systemTemplates": {
+      "types": "./dist/systemTemplates.d.ts",
+      "default": "./dist/systemTemplates.js"
+    },
     "./branding": {
       "types": "./dist/branding.d.ts",
       "default": "./dist/branding.js"

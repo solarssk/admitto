@@ -25,7 +25,7 @@ import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { isEventArchived } from "../components/ArchivedGuard.js";
+import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { panelView, usePanelLoad } from "../hooks/usePanelLoad.js";
@@ -33,6 +33,7 @@ import { failReportLoad } from "../hooks/useReportFetch.js";
 import { ReportsEventDaySkeleton } from "../reports/ReportsEventDaySkeleton.js";
 import { CustomFieldsReportsTab, MailReportsTab, WalletsReportsTab } from "../reports/ReportsTabs.js";
 import { calendarDateInZone, formatEventDateTime, formatEventTime } from "../utils/event-dates.js";
+import { peopleOnSiteBreakdown } from "../utils/peopleOnSite.js";
 import { handleExportRequestError } from "./handleExportRequestError.js";
 import "./reports-page.css";
 
@@ -99,39 +100,54 @@ const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: st
 interface ReportsExportMenuProps {
   readonly exportingCsv: boolean;
   readonly disabled: boolean;
-  readonly isDesktop: boolean;
+  /** The active tab has nothing to export: the button is off, with the reason. */
+  readonly nothingToExport: boolean;
   readonly onExport: (format: ExportFormat) => void;
 }
 
-/** Single "Export report" entry point for CSV/PDF, replacing two separate buttons - same
+/** Single "Export" entry point for CSV/PDF, replacing two separate buttons - same
  * useDropdownMenu-backed pattern as the Attendees list's own Export menu. The trigger is the
  * button that holds the keyboard focus once the menu has closed on a click, so it is the one
  * that shows a CSV export at work (`loading`: a spinner, and the menu stays shut until the file
  * is in, as on Attendees); `disabled` is only for a report that is not there to export.
- * Label shortens to "Export" below desktop (same isDesktop-driven pattern as Attendees'
- * "+ Add attendee"/"Send tickets") so it keeps sitting beside the title instead of forcing the
- * header to stack (reports-pageheader override in reports-page.css). */
-function ReportsExportMenu({ exportingCsv, disabled, isDesktop, onExport }: Readonly<ReportsExportMenuProps>) {
+ * The label is "Export" at every width, as on Attendees: the page is already Reports, and the short word keeps the button
+ * beside the title instead of forcing the header to stack (reports-pageheader override in reports-page.css). */
+function ReportsExportMenu({ exportingCsv, disabled, nothingToExport, onExport }: Readonly<ReportsExportMenuProps>) {
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
+  // The menu can be open while the tab is still reading: when it turns out empty, the menu closes.
+  useEffect(() => {
+    if (nothingToExport) setOpen(false);
+  }, [nothingToExport, setOpen]);
 
   return (
     <div className="reports-export-menu" ref={rootRef}>
-      <Button
-        ref={triggerRef}
-        type="button"
-        variant="secondary"
-        icon={<i className="ti ti-download" aria-hidden="true" />}
-        hasMenu
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={disabled}
-        loading={exportingCsv}
-        onClick={() => setOpen((current) => !current)}
+      {/* Export is not an edit, so no event is passed: only the reason is shown (as on the Attendees Export). */}
+      <ArchivedGuard
+        event={null}
+        reasonId="export-reason"
+        disabled={nothingToExport}
+        tooltip="Nothing to export yet."
       >
-        {isDesktop ? "Export report" : "Export"}
-      </Button>
+        {(guard) => (
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="secondary"
+            icon={<i className="ti ti-download" aria-hidden="true" />}
+            hasMenu
+            aria-haspopup="menu"
+            aria-expanded={open}
+            {...guard}
+            disabled={guard.disabled || disabled}
+            loading={exportingCsv}
+            onClick={() => setOpen((current) => !current)}
+          >
+            Export
+          </Button>
+        )}
+      </ArchivedGuard>
       {open && (
         <div className="reports-export-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           {EXPORT_FORMATS.map((format) => (
@@ -142,7 +158,7 @@ function ReportsExportMenu({ exportingCsv, disabled, isDesktop, onExport }: Read
               className="reports-export-menu__item"
               onClick={() => {
                 close();
-                onExport(format.key);
+                if (!nothingToExport) onExport(format.key);
               }}
             >
               <span className="reports-export-menu__item-icon">
@@ -775,8 +791,13 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const walletsTabAvailable = walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung;
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
-  const isDesktop = useIsDesktop();
   const exportAbortRef = useRef<AbortController | null>(null);
+
+  // Whether each tab's report has nothing to export, as that tab says once its read is in (a tab not read yet is not empty:
+  // the export is a request of its own). Event day is read below, from its own summary.
+  const [walletsEmpty, setWalletsEmpty] = useState(false);
+  const [customFieldsEmpty, setCustomFieldsEmpty] = useState(false);
+  const [mailEmpty, setMailEmpty] = useState(false);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<ReportsTab>(() => reportsTabFromSearch(searchParams));
@@ -830,6 +851,8 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   const seenCheckinsRef = useRef(new Map<string, number>());
   const reconcileTimerRef = useRef<number | null>(null);
   const reconcileAbortRef = useRef<AbortController | null>(null);
+  // A signal fell due while a reconcile was still on its way: one more follows when that one has ended.
+  const reconcileQueuedRef = useRef(false);
   // Mirrors optimisticAdmittedDelta so scheduleReconcile's setTimeout callback (a stable
   // useCallback that can't depend on the latest delta without losing its identity) can read the
   // delta as of when its fetch actually starts, not when it was scheduled.
@@ -861,7 +884,9 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
       window.clearTimeout(reconcileTimerRef.current);
       reconcileTimerRef.current = null;
     }
+    reconcileQueuedRef.current = false;
     reconcileAbortRef.current?.abort();
+    reconcileAbortRef.current = null;
   }, []);
 
   // The first read of Event day (and its Retry): nothing is drawn for the first 200ms and a placeholder after that,
@@ -890,11 +915,20 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   // live check-in mid-session doesn't flash the whole page back to its skeleton state. Guarded against the page going
   // (and against a read that replaces the data): aborted via reconcileAbortRef (see cancelReconcile) and double-checked
   // against ac.signal.aborted before touching state, since an in-flight fetch can still resolve after it.
+  // Bounded, not a plain reset-on-every-call debounce (the call EventOverviewPage made): a pending timer is left alone rather than
+  // restarted, so a steady stream of signals (a queue at the door, a busy hand-out desk) still reconciles within ~3s of the *first*
+  // one instead of only after a quiet gap. It matters most for an item signal, which has no optimistic bump to fall back on meanwhile.
+  // One read at a time, and a read on its way is never cancelled by the next signal: with a server that takes longer than the
+  // timer and a signal every second, each read would be cancelled before it ended and the page would never be reconciled. A
+  // signal that falls due meanwhile waits for it, and one more read follows (after the timer again, so reads are spaced out).
   const scheduleReconcile = useCallback(() => {
-    if (reconcileTimerRef.current != null) window.clearTimeout(reconcileTimerRef.current);
+    if (reconcileTimerRef.current != null) return;
     reconcileTimerRef.current = window.setTimeout(() => {
       reconcileTimerRef.current = null;
-      reconcileAbortRef.current?.abort();
+      if (reconcileAbortRef.current) {
+        reconcileQueuedRef.current = true;
+        return;
+      }
       const ac = new AbortController();
       reconcileAbortRef.current = ac;
       const deltaAtFetchStart = deltaRef.current;
@@ -908,6 +942,15 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
         })
         .catch(() => {
           /* keep the optimistic count until the next live event or a manual retry */
+        })
+        .finally(() => {
+          // A read that was cancelled (a first read or Retry of the page, or the page going) has been forgotten by `cancelReconcile`.
+          if (reconcileAbortRef.current !== ac) return;
+          reconcileAbortRef.current = null;
+          if (reconcileQueuedRef.current) {
+            reconcileQueuedRef.current = false;
+            scheduleReconcile();
+          }
         });
     }, 3000);
   }, [eventId]);
@@ -923,7 +966,8 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
   );
 
   // An archived event takes no check-ins and the stream answers it with a 403, which the hook would retry before giving up.
-  useEventStream(isEventArchived(event) ? undefined : eventId, handleLiveCheckin);
+  // An item issued, returned or revoked changes the companions on site with no check-in to bump anything, so it asks for the reconcile too.
+  useEventStream(isEventArchived(event) ? undefined : eventId, handleLiveCheckin, scheduleReconcile);
 
   // A pending reconcile timer or in-flight reconcile fetch must not outlive the page: this page is one event's (an in-SPA
   // switch to another event renders a new instance), so a stale reconcile can never overwrite the next event's data.
@@ -971,6 +1015,15 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
     ? pctOf(liveAdmitted, data.summary.total_attendees)
     : 0;
   const liveNoShowRatePct = data ? pctOf(liveNoShows, data.summary.total_attendees) : 0;
+  // Event day shows only its empty state, and Export is off, until someone has checked in (no attendees is the same).
+  const eventDayEmpty = liveAdmitted === 0;
+  // What each export would hold; a tab is empty by the same answer that makes it draw only its empty state.
+  const tabIsEmpty: Record<ReportsTab, boolean> = {
+    eventday: view === "ready" && eventDayEmpty,
+    wallets: walletsEmpty,
+    customfields: customFieldsEmpty,
+    mail: mailEmpty,
+  };
 
   return (
     <div className="screen reports-page">
@@ -987,7 +1040,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
             // day's state while one of them is active would disable the button for a fetch that
             // has nothing to do with what it's about to export.
             disabled={activeTab === "eventday" && view !== "ready"}
-            isDesktop={isDesktop}
+            nothingToExport={tabIsEmpty[activeTab]}
             onExport={handleExport}
           />
         }
@@ -1007,7 +1060,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
       {customFieldsTabVisited && (
         // Same display:contents reasoning as the Wallets wrapper below.
         <div style={{ display: activeTab === "customfields" ? "contents" : "none" }}>
-          <CustomFieldsReportsTab eventId={eventId} isActive={activeTab === "customfields"} />
+          <CustomFieldsReportsTab eventId={eventId} isActive={activeTab === "customfields"} onEmptyChange={setCustomFieldsEmpty} />
         </div>
       )}
 
@@ -1020,14 +1073,19 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
         // exactly as the rows were before this wrapper existed. display:none when hidden still
         // works the normal way (contents has no "hidden" state of its own to toggle).
         <div style={{ display: activeTab === "wallets" ? "contents" : "none" }}>
-          <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} isActive={activeTab === "wallets"} />
+          <WalletsReportsTab
+            eventId={eventId}
+            walletPlatforms={walletPlatforms}
+            isActive={activeTab === "wallets"}
+            onEmptyChange={setWalletsEmpty}
+          />
         </div>
       )}
 
       {mailTabVisited && (
         // Same display:contents reasoning as the Wallets/Custom fields wrappers above.
         <div style={{ display: activeTab === "mail" ? "contents" : "none" }}>
-          <MailReportsTab eventId={eventId} isActive={activeTab === "mail"} />
+          <MailReportsTab eventId={eventId} isActive={activeTab === "mail"} onEmptyChange={setMailEmpty} />
         </div>
       )}
 
@@ -1049,7 +1107,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
           {view === "ready" && (
             // What replaces the placeholder fades in; the wrapper is a column of its own with the section's rhythm.
             <div className="reports-eventday__ready at-fade-in">
-              {liveAdmitted === 0 && (
+              {eventDayEmpty && (
                 <EmptyState
                   icon={<i className="ti ti-chart-bar-off" aria-hidden="true" />}
                   title="No check-ins yet"
@@ -1057,7 +1115,7 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
                 />
               )}
 
-              {data && liveAdmitted > 0 && (
+              {data && !eventDayEmpty && (
                 <>
                 <div className="reports-stats-grid">
                   <Card>
@@ -1105,6 +1163,15 @@ function ReportsPageBody({ eventId }: Readonly<{ eventId: string }>) {
                     />
                   </Card>
                 </div>
+
+                {/* Only once a companion has been let in. The cards above stay on the guests (the heads); this one
+                 * sentence adds the companions who came in with them. */}
+                {data.summary.companions_admitted > 0 && (
+                  <p className="reports-people-on-site">
+                    People on site: {liveAdmitted + data.summary.companions_admitted} (
+                    {peopleOnSiteBreakdown(liveAdmitted, data.summary.companions_admitted)}).
+                  </p>
+                )}
 
                 <div className="reports-panels">
                   <Card

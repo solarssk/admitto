@@ -5,6 +5,8 @@ export interface TabItem {
   label: string;
   icon?: ReactNode;
   count?: number;
+  /** What the number means, for assistive tech ("3 steps open"): the tab is then named "Label, 3 steps open". */
+  countLabel?: string;
 }
 
 export interface TabsProps {
@@ -63,6 +65,7 @@ export function Tabs({ tabs = [], value, defaultValue, onChange }: Readonly<Tabs
           type="button"
           role="tab"
           aria-selected={active === t.id}
+          aria-label={t.count != null && t.countLabel ? `${t.label}, ${t.countLabel}` : undefined}
           tabIndex={active === t.id ? 0 : -1}
           className={["at-tab", active === t.id && "at-tab--active"].filter(Boolean).join(" ")}
           onClick={() => select(t.id)}
@@ -75,7 +78,8 @@ export function Tabs({ tabs = [], value, defaultValue, onChange }: Readonly<Tabs
           )}
           {t.label}
           {t.count != null && (
-            <span style={{ marginLeft: 6, color: "var(--text-muted)", fontWeight: 400 }}>{t.count}</span>
+            // The secondary text colour, not the muted one: the muted grey is 4.3:1 on the page background, under the 4.5:1 that text of this size needs.
+            <span style={{ marginLeft: 6, color: "var(--text-secondary)", fontWeight: 400 }}>{t.count}</span>
           )}
         </button>
       ))}

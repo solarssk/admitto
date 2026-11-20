@@ -15,6 +15,25 @@ export interface MockOidcIdp {
    * real OIDC protocol: this mock IdP is a standalone server the test already controls directly,
    * so a simple stateful setter is the only way a test can choose what claim it issues. */
   setNextGroups(groups: string[]): void;
+  /** Chooses what the NEXT issued ID token holds, then reverts to the defaults: a test of the guest sign-in calls this
+   * before the redirect to `/authorize`. A claim set to `undefined` is left out of the token. */
+  setNextToken(token: MockIdTokenOverrides): void;
+  /** How many times the token endpoint was called: a callback that is refused before it asks the provider leaves this alone. */
+  tokenRequests(): number;
+  /** The `redirect_uri` of each call of the token endpoint, in order: a real provider refuses a code whose redirect differs from the
+   * one of the authorize request, and a test of a flow on several hosts compares the two. */
+  tokenRedirectUris(): string[];
+  /** A real provider spends a code on its first use. With `true` this one does not, so that a test of the guest sign-in can
+   * show that it is the state, and not the provider, that stops a second callback. */
+  reuseCodes(on: boolean): void;
+}
+
+export interface MockIdTokenOverrides {
+  subject?: string;
+  /** The `nonce` of the token. Default: the one the authorize request carried. */
+  nonce?: string;
+  /** Other claims, laid over `email` (`oidc-flow@example.com`) and `groups`. */
+  claims?: Record<string, unknown>;
 }
 
 export async function startMockOidcIdp(): Promise<MockOidcIdp> {
@@ -27,8 +46,12 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
   let jwksUri = "";
   let tokenEndpoint = "";
   let authorizeEndpoint = "";
-  const codeState = new Map<string, { nonce: string; groups: string[] }>();
+  const codeState = new Map<string, { nonce: string; groups: string[]; token: MockIdTokenOverrides }>();
   let nextGroups: string[] = [];
+  let nextToken: MockIdTokenOverrides = {};
+  let tokenRequests = 0;
+  const tokenRedirectUris: string[] = [];
+  let reuseCodes = false;
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", issuer || "http://127.0.0.1");
@@ -60,16 +83,19 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
         res.end("invalid code");
         return;
       }
-      codeState.delete(code);
+      if (!reuseCodes) codeState.delete(code);
+      tokenRequests += 1;
+      tokenRedirectUris.push(body.get("redirect_uri") ?? "");
       const idToken = await new jose.SignJWT({
-        nonce: state.nonce,
+        nonce: state.token.nonce ?? state.nonce,
         email: "oidc-flow@example.com",
         groups: state.groups,
+        ...state.token.claims,
       })
         .setProtectedHeader({ alg: "RS256", kid: "test-key" })
         .setIssuer(issuer)
         .setAudience("test-oidc-client")
-        .setSubject("mock-subject-oidc")
+        .setSubject(state.token.subject ?? "mock-subject-oidc")
         .setIssuedAt()
         .setExpirationTime("2h")
         .sign(privateKey);
@@ -82,8 +108,9 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
       const authState = url.searchParams.get("state")!;
       const nonce = url.searchParams.get("nonce") ?? "";
       const code = randomUUID();
-      codeState.set(code, { nonce, groups: nextGroups });
+      codeState.set(code, { nonce, groups: nextGroups, token: nextToken });
       nextGroups = [];
+      nextToken = {};
       const target = new URL(redirectUri);
       target.searchParams.set("code", code);
       target.searchParams.set("state", authState);
@@ -114,6 +141,14 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
     server,
     setNextGroups: (groups: string[]) => {
       nextGroups = groups;
+    },
+    setNextToken: (token: MockIdTokenOverrides) => {
+      nextToken = token;
+    },
+    tokenRequests: () => tokenRequests,
+    tokenRedirectUris: () => [...tokenRedirectUris],
+    reuseCodes: (on: boolean) => {
+      reuseCodes = on;
     },
   };
 }

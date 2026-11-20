@@ -192,7 +192,7 @@ export function computeWalletCustomFieldPreview(
   if (customFields === undefined) return WALLET_VALUE_NOT_LOADED;
   const sourceField = id.slice(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX.length);
   const field = customFields.find(
-    (f) => f.source_field === sourceField && (f.type === "select" || f.type === "boolean"),
+    (f) => f.source_field === sourceField && !f.sensitive && (f.type === "select" || f.type === "boolean"),
   );
   if (!field) return WALLET_VALUE_NOT_SET;
   return field.type === "boolean" ? "e.g. Yes" : `e.g. ${field.options?.[0] ?? "…"}`;

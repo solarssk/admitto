@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 const mockFetchAttendeeDetail = vi.fn();
-const mockFetchAttendeeCustomFields = vi.fn();
+const mockFetchAnswerFields = vi.fn();
 
 vi.mock("../../src/api/client.js", () => ({
   fetchAttendeeDetail: (...args: unknown[]) => mockFetchAttendeeDetail(...args),
@@ -10,7 +10,7 @@ vi.mock("../../src/attendees/customData.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/attendees/customData.js")>();
   return {
     ...actual,
-    fetchAttendeeCustomFields: (...args: unknown[]) => mockFetchAttendeeCustomFields(...args),
+    fetchAnswerFields: (...args: unknown[]) => mockFetchAnswerFields(...args),
   };
 });
 
@@ -60,28 +60,43 @@ const sizeField: CustomDataFieldDef = {
 describe("loadAttendeeDetailData", () => {
   it("returns the detail and attribute fields when both requests succeed", async () => {
     mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
-    mockFetchAttendeeCustomFields.mockResolvedValueOnce([sizeField]);
+    mockFetchAnswerFields.mockResolvedValueOnce([sizeField]);
 
     const result = await loadAttendeeDetailData("evt-1", "att-1");
 
     expect(result.detail.id).toBe("att-1");
     expect(result.attributeFields).toEqual([sizeField]);
+    expect(result.companionFields).toEqual([]);
     expect(result.itemsWarning).toBeNull();
+  });
+
+  it("splits the questions of the event, read once, into those about the guest and those about the companion", async () => {
+    const badgeField: CustomDataFieldDef = { ...sizeField, id: "f-badge", source_field: "badge", label: "Badge name", applies_to: "companion" };
+    const explicitGuest: CustomDataFieldDef = { ...sizeField, id: "f-shirt", source_field: "shirt", label: "Shirt", applies_to: "guest" };
+    mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
+    mockFetchAnswerFields.mockResolvedValueOnce([sizeField, badgeField, explicitGuest]);
+
+    const result = await loadAttendeeDetailData("evt-1", "att-1");
+
+    expect(result.attributeFields).toEqual([sizeField, explicitGuest]);
+    expect(result.companionFields).toEqual([badgeField]);
+    expect(mockFetchAnswerFields).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to an empty field list and a warning when the custom fields fetch fails", async () => {
     mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
-    mockFetchAttendeeCustomFields.mockRejectedValueOnce(new Error("network"));
+    mockFetchAnswerFields.mockRejectedValueOnce(new Error("network"));
 
     const result = await loadAttendeeDetailData("evt-1", "att-1");
 
     expect(result.attributeFields).toEqual([]);
+    expect(result.companionFields).toEqual([]);
     expect(result.itemsWarning).toBe(ITEMS_LOAD_WARNING);
   });
 
   it("passes an explicitly selected notes page to the detail request", async () => {
     mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
-    mockFetchAttendeeCustomFields.mockResolvedValueOnce([]);
+    mockFetchAnswerFields.mockResolvedValueOnce([]);
 
     await loadAttendeeDetailData("evt-1", "att-1", 3);
 
@@ -90,13 +105,13 @@ describe("loadAttendeeDetailData", () => {
 
   it("gives its signal to both requests, so the page's 30 second limit ends both", async () => {
     mockFetchAttendeeDetail.mockResolvedValueOnce(detail());
-    mockFetchAttendeeCustomFields.mockResolvedValueOnce([]);
+    mockFetchAnswerFields.mockResolvedValueOnce([]);
     const { signal } = new AbortController();
 
     await loadAttendeeDetailData("evt-1", "att-1", 2, signal);
 
     expect(mockFetchAttendeeDetail).toHaveBeenCalledWith("evt-1", "att-1", signal, 2);
-    expect(mockFetchAttendeeCustomFields).toHaveBeenCalledWith("evt-1", signal);
+    expect(mockFetchAnswerFields).toHaveBeenCalledWith("evt-1", signal);
   });
 });
 
@@ -171,5 +186,65 @@ describe("mergeFormAfterReload", () => {
 describe("formatDateTime", () => {
   it("returns a dash placeholder for a null timestamp", () => {
     expect(formatDateTime(null)).toBe("-");
+  });
+});
+
+describe("toAttendeeForm and a sensitive question", () => {
+  it("starts the box of a sensitive question empty, whatever the detail holds, and fills an ordinary one", () => {
+    const fields = [
+      { id: "1", source_field: "shirt", label: "Shirt", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "2", source_field: "access", label: "Access", type: "text", required: false, options: null, sensitive: true, created_at: "2026-01-01T00:00:00.000Z" },
+    ] as unknown as CustomDataFieldDef[];
+
+    const form = toAttendeeForm(detail({ custom_data: { shirt: "M", access: "needs a ramp" } }), fields);
+
+    expect(form.customFields).toEqual({ shirt: "M", access: "" });
+  });
+});
+
+describe("mergeFormAfterReload and a question that turns sensitive", () => {
+  const sensitiveSize: CustomDataFieldDef = { ...sizeField, sensitive: true };
+
+  it("drops the old plain answer the form still holds for a question that turned sensitive since the form was drawn", () => {
+    const previousDetail = detail({ custom_data: { size: "M" } });
+    const reloaded = detail({ custom_data: null });
+    const currentForm = toAttendeeForm(previousDetail, [sizeField]);
+    expect(currentForm.customFields.size).toBe("M");
+
+    const merged = mergeFormAfterReload(currentForm, previousDetail, reloaded, [sensitiveSize], [sizeField]);
+
+    expect(merged.customFields.size).toBe("");
+  });
+
+  it("drops it also when the person had typed over it: a plain box was not a replacement for a write-only one", () => {
+    const previousDetail = detail({ custom_data: { size: "M" } });
+    const reloaded = detail({ custom_data: null });
+    const currentForm = toAttendeeForm(previousDetail, [sizeField]);
+    currentForm.customFields.size = "XL";
+
+    const merged = mergeFormAfterReload(currentForm, previousDetail, reloaded, [sensitiveSize], [sizeField]);
+
+    expect(merged.customFields.size).toBe("");
+  });
+
+  it("keeps a replacement typed into the box of a question that was sensitive already", () => {
+    const previousDetail = detail({ custom_data: null });
+    const reloaded = detail({ custom_data: null });
+    const currentForm = toAttendeeForm(previousDetail, [sensitiveSize]);
+    currentForm.customFields.size = "XL";
+
+    const merged = mergeFormAfterReload(currentForm, previousDetail, reloaded, [sensitiveSize], [sensitiveSize]);
+
+    expect(merged.customFields.size).toBe("XL");
+  });
+
+  it("takes the questions to be the same when it is not told, as for a change that does not read them again", () => {
+    const previousDetail = detail({ custom_data: null });
+    const currentForm = toAttendeeForm(previousDetail, [sensitiveSize]);
+    currentForm.customFields.size = "XL";
+
+    const merged = mergeFormAfterReload(currentForm, previousDetail, detail({ custom_data: null }), [sensitiveSize]);
+
+    expect(merged.customFields.size).toBe("XL");
   });
 });

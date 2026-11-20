@@ -61,6 +61,9 @@ describe("formatHealthDisplayValue", () => {
     ["missing_directory", "Missing folder"],
     ["cannot_create_directory", "Cannot create the folder"],
     ["mail_secret_decryption_failed", "Could not decrypt the stored mail secret"],
+    ["keys_missing", "Turnstile keys are not saved"],
+    ["secret_unreadable", "Could not decrypt the stored Turnstile secret"],
+    ["address_stopped", "An address that worked has stopped"],
   ])("gives reason=%s the sentence %j", (code, sentence) => {
     expect(formatHealthDisplayValue("reason", code, TZ)).toBe(sentence);
   });

@@ -9,7 +9,7 @@ import "./delivery-modals.css";
  * seconds (`slow`) the region says it is taking longer than usual. The modal's own header, with its title and the
  * recipient, is on screen from the first frame.
  */
-function DeliveryModalSkeletonRegion({
+export function DeliveryModalSkeletonRegion({
   label,
   held,
   slow,
@@ -28,11 +28,16 @@ export const OVERVIEW_PAIRS = 12;
 export const RAW_FIELD_PAIRS = 6;
 
 /** One section of the details modal: its real title, and a grid of label and value pairs as tall as the real ones. */
-function KeyValueSection({ title, pairs, notice = false }: Readonly<{ title: string; pairs: number; notice?: boolean }>) {
+export function KeyValueSection({
+  title,
+  pairs,
+  notice = false,
+  gridClassName,
+}: Readonly<{ title: string; pairs: number; notice?: boolean; /** Another window's rule for its grid (a request has one column on a phone), so that the placeholder is laid out as the real section is. */ gridClassName?: string }>) {
   return (
     <div aria-hidden="true">
       <h3 className="delivery-modal__section-title">{title}</h3>
-      <div className="delivery-modal-kv delivery-modal-kv--skeleton">
+      <div className={["delivery-modal-kv", "delivery-modal-kv--skeleton", gridClassName].filter(Boolean).join(" ")}>
         {Array.from({ length: pairs }, (_, pair) => (
           <div key={pair} className="delivery-modal-skeleton-pair">
             <span className="delivery-modal-skeleton-line delivery-modal-skeleton-line--label">

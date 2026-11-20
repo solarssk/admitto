@@ -1,3 +1,4 @@
+import { EVENT_CUSTOM_FIELD_LONG_TEXT_MAX, type EventCustomFieldRules } from "@admitto/shared";
 import {
   filterCustomDataAttributeFields,
   isReservedCustomDataSourceField,
@@ -58,6 +59,19 @@ function readAttributeCell(
   return (ownStringValue(raw, labelKey) ?? "").trim();
 }
 
+// A date or date and time cell of an XLSX file reaches the importer as the instant the reader made of
+// it, "2026-11-04T10:30:00.000Z": the numbers are the cell's own wall-clock time (a spreadsheet keeps
+// no zone), and the Z is only how the reader writes them. Any other instant is left alone and refused.
+const SPREADSHEET_DATE = /^(\d{4}-\d{2}-\d{2})T00:00:00\.000Z$/;
+const SPREADSHEET_DATE_TIME = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}):00\.000Z$/;
+
+/** One cell as its field's type reads it: a date cell of an XLSX file is the date it shows. */
+function importCellValue(field: { type?: string }, value: string): string {
+  if (field.type === "date") return SPREADSHEET_DATE.exec(value)?.[1] ?? value;
+  if (field.type === "datetime") return SPREADSHEET_DATE_TIME.exec(value)?.[1] ?? value;
+  return value;
+}
+
 /** Validate and normalize only attribute cells present in the CSV row (no required-field check). */
 function buildPartialCustomDataFromInput(
   fields: EventItemContent[],
@@ -69,7 +83,7 @@ function buildPartialCustomDataFromInput(
   for (const [key, value] of Object.entries(input)) {
     const field = fieldByKey.get(key);
     if (!field) throw new Error(`unknown_custom_data_field:${key}`);
-    const normalized = normalizeCustomDataFieldValue(field, value);
+    const normalized = normalizeCustomDataFieldValue(field, importCellValue(field, value));
     if (normalized) setOwnStringValue(out, key, normalized);
   }
 
@@ -89,7 +103,28 @@ export function importCustomDataSkipReason(
   return "Invalid custom attribute data";
 }
 
-/** Human-readable hint appended to the "invalid value" reason, based on the field's type. */
+/** The length a field asks for, in words, or null when it asks for none. */
+function lengthExpectation(min: number | undefined, max: number | undefined): string | null {
+  if (min !== undefined && min === max) return `exactly ${min} characters`;
+  if (min !== undefined && max !== undefined) return `${min} to ${max} characters`;
+  if (min !== undefined) return `at least ${min} characters`;
+  return max === undefined ? null : `at most ${max} characters`;
+}
+
+/** What a `text`, `long_text` or `phone` field asks for, in words: its type, then its rules. */
+function textExpectations(field: ImportAttributeField): string[] {
+  const rules: EventCustomFieldRules = field.rules ?? {};
+  const parts: string[] = [];
+  if (field.type === "phone") parts.push("a phone number with 3 to 15 digits");
+  if (rules.digits_only) parts.push("digits only");
+  const maxLength = rules.max_length ?? (field.type === "long_text" ? EVENT_CUSTOM_FIELD_LONG_TEXT_MAX : undefined);
+  const length = lengthExpectation(rules.min_length, maxLength);
+  if (length) parts.push(length);
+  if (rules.example) parts.push(`for example ${rules.example}`);
+  return parts;
+}
+
+/** Human-readable hint appended to the "invalid value" reason, based on the field's type and rules. */
 function invalidValueHint(field: ImportAttributeField): string {
   if (field.type === "select" && field.options?.length) {
     return ` (expected one of: ${field.options.join(", ")})`;
@@ -97,7 +132,10 @@ function invalidValueHint(field: ImportAttributeField): string {
   if (field.type === "boolean") {
     return " (expected Yes/No or true/false)";
   }
-  return "";
+  if (field.type === "date") return " (expected a date as YYYY-MM-DD)";
+  if (field.type === "datetime") return " (expected a date and time as YYYY-MM-DDTHH:mm)";
+  const expected = textExpectations(field);
+  return expected.length > 0 ? ` (expected ${expected.join(", ")})` : "";
 }
 
 /** Find the first attribute field whose CSV cell fails normalization (used to build the
@@ -111,7 +149,7 @@ function findInvalidCustomDataField(
     const value = readAttributeCell(raw, field, duplicateLabels);
     if (!value) continue;
     try {
-      normalizeCustomDataFieldValue(field, value);
+      normalizeCustomDataFieldValue(field, importCellValue(field, value));
     } catch {
       return field;
     }

@@ -1,0 +1,191 @@
+/* Registration > Legal: the two cards of an event's texts, the card around the editor, and the copy dialog. The table is the shared one (item-table.css). */
+
+/* The two cards are one under the other, with the gap cards have on the other tabs. */
+.legal-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* The title and a button do not fit one line on a phone, and the header has a fixed height: it grows, with the title first and the
+   button under it, instead of the button hanging out of the card. */
+@media (max-width: 640px) {
+  .legal-texts-card .at-card__header {
+    flex-wrap: wrap;
+    height: auto;
+    padding-block: var(--space-3);
+  }
+
+  .legal-texts-card .at-card__actions {
+    flex: 1 1 100%;
+  }
+}
+
+.legal-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* A table in a card with an intro above it: no space of its own under it. */
+.legal-table.requirements-section {
+  margin-bottom: 0;
+}
+
+/* The table of Event items and Fields, with the widths of this one: the text takes what the columns after it leave. */
+.item-table.legal-table .table th:first-child,
+.item-table.legal-table .table td:first-child {
+  width: auto;
+}
+
+.legal-table .legal-status-col {
+  width: 8rem;
+  white-space: nowrap;
+}
+
+.legal-table .legal-asked-col {
+  width: 6.5rem;
+  white-space: nowrap;
+}
+
+.legal-table .legal-actions-col {
+  width: 7.5rem;
+}
+
+.legal-table .legal-item-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.legal-table .legal-item-desc {
+  display: block;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+.legal-table .requirements-item-actions__wrap {
+  flex-wrap: nowrap;
+}
+
+.legal-empty {
+  padding-block: var(--space-4);
+}
+
+/* Open is in the menu too, but only where the button has gone. */
+.more-actions-menu__item-wrapper.legal-menu-narrow-only {
+  display: none;
+}
+
+/* The admin shell has a fixed sidebar from 768px, so a screen under 1024px has a narrow content: the switch is a column of its own, the
+   button moves into the menu (which has an item for it), and the switch and the menu stay. The same screen-width ladder as the shared table. */
+@media (max-width: 1023px) {
+  .legal-table .legal-asked-col {
+    width: 5rem;
+  }
+
+  .legal-table .legal-actions-col {
+    width: 3rem;
+  }
+
+  .legal-table .legal-open-button {
+    display: none;
+  }
+
+  .more-actions-menu__item-wrapper.legal-menu-narrow-only {
+    display: block;
+  }
+}
+
+/* A phone: the line under the name goes too. */
+@media (max-width: 480px) {
+  .legal-table .legal-item-desc {
+    display: none;
+  }
+}
+
+/* The editor of one text: the way back, the card, then the footer with what can be done with the text. */
+.legal-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.legal-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* The way back, the state, then the buttons; on a phone the state goes under the others. */
+.legal-editor__footer {
+  flex-wrap: wrap;
+}
+
+.legal-editor__footer .settings-footer__status {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .legal-editor__footer .settings-footer__status {
+    order: 2;
+    flex: 1 1 100%;
+  }
+}
+
+.legal-editor__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.legal-editor__buttons {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* The copy dialog: the event to copy from, then what would happen to each text. */
+.legal-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: left;
+}
+
+.legal-copy-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.legal-copy-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.legal-copy-list__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.legal-copy-list__row:last-child {
+  border-bottom: 0;
+}
+
+.legal-copy-list__title {
+  flex: 1 1 10rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

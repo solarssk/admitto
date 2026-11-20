@@ -1,8 +1,8 @@
 import { vi } from "vitest";
 
-/** Handles for the five api/client.js calls every CommunicationPage.*.test.tsx file wants
+/** Handles for the six api/client.js calls every CommunicationPage.*.test.tsx file wants
  * individually controllable - which template loads (fetchEventTemplates/fetchEventTemplate/
- * fetchEventTemplateById) and the two the bounce banner/delivery log tab need
+ * fetchEventTemplateById/fetchEventSystemTemplate) and the two the bounce banner/delivery log tab need
  * (fetchEventOverview/fetchEventDeliveries). Each test file still registers its own local
  * vi.mock("../../src/api/client.js", ...) - Vitest's mock hoisting is a per-file static-analysis
  * transform that only sees calls written in the importing file's own source, so this can share
@@ -13,6 +13,7 @@ export const communicationApiMocks = {
   fetchEventTemplates: vi.fn(),
   fetchEventTemplate: vi.fn(),
   fetchEventTemplateById: vi.fn(),
+  fetchEventSystemTemplate: vi.fn(),
   fetchEventOverview: vi.fn(),
   fetchEventDeliveries: vi.fn(),
 };
@@ -30,19 +31,24 @@ export function buildCommunicationApiMock(actual: typeof import("../../src/api/c
     fetchEventTemplate: (...args: unknown[]) => communicationApiMocks.fetchEventTemplate(...args),
     fetchEventTemplateById: (...args: unknown[]) =>
       communicationApiMocks.fetchEventTemplateById(...args),
+    fetchEventSystemTemplate: (...args: unknown[]) =>
+      communicationApiMocks.fetchEventSystemTemplate(...args),
     fetchEventOverview: (...args: unknown[]) => communicationApiMocks.fetchEventOverview(...args),
     fetchEventDeliveries: (...args: unknown[]) => communicationApiMocks.fetchEventDeliveries(...args),
     // The Send/Templates tabs auto-render a preview on mount - resolved by default so that isn't
     // an unrelated "Preview failed" toast in tests that never cared about preview content.
     previewEventTemplate: vi.fn().mockResolvedValue({ subject: "", html: "" }),
     previewEventTemplateById: vi.fn().mockResolvedValue({ subject: "", html: "" }),
+    previewEventSystemTemplate: vi.fn().mockResolvedValue({ subject: "", html: "" }),
     saveEventTemplate: vi.fn(),
     saveEventTemplateById: vi.fn(),
+    saveEventSystemTemplate: vi.fn(),
     createEventTemplate: vi.fn(),
     deleteEventTemplate: vi.fn(),
     updateEventTemplateMetadata: vi.fn(),
     testSendEventTemplate: vi.fn(),
     testSendEventTemplateById: vi.fn(),
+    testSendEventSystemTemplate: vi.fn(),
     sendEventBulk: vi.fn(),
     fetchBulkSendStatus: vi.fn(),
     fetchTicketTypes: vi.fn().mockResolvedValue([]),

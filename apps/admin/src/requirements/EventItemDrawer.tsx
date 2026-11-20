@@ -36,8 +36,9 @@ type FormState = {
   content_fields: string[];
 };
 
-/** Map API item row to editable drawer form state. */
-function toForm(item: EventItemDto): FormState {
+/** Map API item row to editable drawer form state. `sensitiveKeys` are the questions that must not be shown on an item (D-E6):
+ * an item that still lists one (set before the question became sensitive) is edited without it, so saving it removes the entry. */
+function toForm(item: EventItemDto, sensitiveKeys: ReadonlySet<string>): FormState {
   const cfg = item.config ?? null;
   return {
     label: item.label,
@@ -47,19 +48,22 @@ function toForm(item: EventItemDto): FormState {
     // Match check-in runtime: only explicit false disables auto-issue.
     issue_on_checkin: cfg?.issue_on_checkin !== false,
     icon: normalizeEventItemIconForForm(item.icon),
-    content_fields: cfg?.content_fields ?? [],
+    content_fields: (cfg?.content_fields ?? []).filter((key) => !sensitiveKeys.has(key)),
   };
 }
 
 /** Build PATCH payload; `issue_on_checkin` is persisted only for the badge item.
  * content_fields is always included, even empty - omitting it when the operator unchecks
- * everything would leave the server unable to tell "clear it" apart from "don't touch it". */
-function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
+ * everything would leave the server unable to tell "clear it" apart from "don't touch it".
+ * What the drawer does not edit goes back as it was read, the audience above all (the Companion item is only for
+ * guests with a companion): the server replaces the whole config, so leaving it out would offer the item to every guest. */
+function toConfig(form: FormState, item: EventItemDto): EventItemConfigDto {
   const config: EventItemConfigDto = {
+    ...item.config,
     requires_return: form.requires_return,
     content_fields: form.content_fields,
   };
-  if (itemKey === "badge") {
+  if (item.key === "badge") {
     config.issue_on_checkin = form.issue_on_checkin;
   }
   return config;
@@ -75,7 +79,11 @@ export function EventItemDrawer({
   onUpdated,
 }: Readonly<EventItemDrawerProps>) {
   const { addToast } = useToast();
-  const [form, setForm] = useState<FormState>(() => toForm(item));
+  const sensitiveKeys = useMemo(
+    () => new Set(customFields.filter((f) => f.sensitive).map((f) => f.source_field)),
+    [customFields],
+  );
+  const [form, setForm] = useState<FormState>(() => toForm(item, sensitiveKeys));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -100,14 +108,16 @@ export function EventItemDrawer({
     return owners;
   }, [items, item.id]);
   const headerIcon = form.icon ?? item.icon ?? DEFAULT_EVENT_ITEM_ICON;
-  const dirty = JSON.stringify(form) !== JSON.stringify(toForm(item));
+  const dirty = JSON.stringify(form) !== JSON.stringify(toForm(item, sensitiveKeys));
   // Two custom fields can share a display label (only source_field is required to be unique) -
   // append the slug to disambiguate, same trigger CSV export/import already use.
   const duplicateFieldLabels = findDuplicateLabels(customFields.map((f) => f.label));
+  // A sensitive question is never shown on an item (D-E6): the server refuses it, so it is not offered.
+  const offeredFields = customFields.filter((f) => !f.sensitive);
 
   useEffect(() => {
-    setForm(toForm(item));
-  }, [item]);
+    setForm(toForm(item, sensitiveKeys));
+  }, [item, sensitiveKeys]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -120,7 +130,7 @@ export function EventItemDrawer({
         description: form.description.trim() || null,
         enabled: form.enabled,
         icon: form.icon,
-        config: toConfig(form, item.key),
+        config: toConfig(form, item),
       });
       onUpdated();
       onClose();
@@ -251,16 +261,16 @@ export function EventItemDrawer({
                 <p className="requirements-section-hint">
                   Show one or more custom attendee fields next to this item at check-in. Useful when
                   the item varies per person (e.g. shirt size on a gift bag). Manage the fields
-                  themselves in the "Custom attendee fields" card above.
+                  themselves in the "Attendee fields" card on the Fields tab of the Registration page.
                 </p>
-                {customFields.length === 0 ? (
+                {offeredFields.length === 0 ? (
                   <Notice variant="info">
-                    No custom fields defined for this event yet. Add fields in Custom attendee fields
-                    above, then link them here.
+                    No custom fields defined for this event yet. Add fields in the "Attendee fields" card
+                    on the Fields tab of the Registration page, then link them here.
                   </Notice>
                 ) : (
                   <div className="requirements-field-stack">
-                    {customFields.map((field) => {
+                    {offeredFields.map((field) => {
                       const checked = form.content_fields.includes(field.source_field);
                       const claimedBy = fieldOwners.get(field.source_field);
                       const disabled = !checked && !!claimedBy;

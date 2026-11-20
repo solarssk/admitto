@@ -77,12 +77,6 @@
   margin: 0;
 }
 
-.slug-field input:disabled {
-  background: var(--surface-sunken);
-  color: var(--text-disabled);
-  cursor: not-allowed;
-}
-
 .event-settings--archived .at-input,
 .event-settings--archived .at-input:focus {
   background: var(--surface-sunken);

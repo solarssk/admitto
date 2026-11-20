@@ -189,3 +189,20 @@ export function isOff(button: HTMLElement): boolean {
   return (button as HTMLButtonElement).disabled || button.getAttribute("aria-disabled") === "true";
 }
 
+
+/** The text of a node as it is read: the no-break space that keeps the end of a sentence together is an ordinary space. */
+export function plain(text: string | null | undefined): string {
+  return (text ?? "").replaceAll("\u00A0", " ");
+}
+
+/** The width of the screen, as the header asks the browser about it (jsdom has no `matchMedia`): a desktop by default, a phone with `false`. */
+export function setViewport(desktop: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: desktop,
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+  }));
+}

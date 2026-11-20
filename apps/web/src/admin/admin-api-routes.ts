@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
+import { generateEventSlug } from "@admitto/crypto";
 import { canManageInstance, getAdminEvent, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
@@ -33,7 +34,7 @@ import {
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { timezoneField } from "./timezone.js";
 import { addressComponentsSchema, componentsToJson } from "./event-location-routes.js";
-import { countActiveAttendees } from "./event-capacity.js";
+import { countActiveAttendees, countSeatsInUse } from "./event-capacity.js";
 
 const slugField = z
   .string()
@@ -55,7 +56,8 @@ const dateOnlyField = z
 // create-event form and the Location tab agree on limits.
 const createEventSchema = z.object({
   title: z.string().trim().min(1).max(200),
-  slug: slugField,
+  // Optional: the admin UI sends none and the server makes a random one; seeds, tests and scripts may still name it.
+  slug: slugField.optional(),
   date: z.union([z.string().datetime({ offset: true }), dateOnlyField]),
   timezone: timezoneField,
   event_hours_start: eventHoursField,
@@ -274,8 +276,25 @@ export async function handleGetAdminEvent(c: Context, db: PrismaClient): Promise
   // the Attendees page disable "Add attendee" before the server would reject it, rather than
   // relying only on the 409 event_full error. Confined to this single-event fetch, not the
   // picker list, to avoid an extra aggregate query per row there.
-  const activeAttendeeCount = await countActiveAttendees(db, event.id);
-  return c.json({ event: { ...withWeather!, active_attendee_count: activeAttendeeCount } });
+  // Seats are what "full" and "over the limit" compare against; heads stay as active_attendee_count.
+  const [activeAttendeeCount, seatsInUse] = await Promise.all([
+    countActiveAttendees(db, event.id),
+    countSeatsInUse(db, event.id),
+  ]);
+  return c.json({
+    event: { ...withWeather!, active_attendee_count: activeAttendeeCount, seats_in_use: seatsInUse },
+  });
+}
+
+const EVENT_SLUG_ATTEMPTS = 5;
+
+/** A random slug no event has yet; a taken one is simply drawn again. */
+export async function pickFreeEventSlug(db: PrismaClient): Promise<string> {
+  for (let attempt = 0; attempt < EVENT_SLUG_ATTEMPTS; attempt++) {
+    const slug = generateEventSlug();
+    if (!(await db.event.findUnique({ where: { slug }, select: { id: true } }))) return slug;
+  }
+  throw new Error("event_slug_exhausted");
 }
 
 /** POST /api/admin/events — create event (superadmin or org admin). */
@@ -297,7 +316,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
 
   const {
     title,
-    slug,
+    slug: givenSlug,
     date,
     timezone,
     event_hours_start,
@@ -329,8 +348,8 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
   if (orgIdOrRes instanceof Response) return orgIdOrRes;
   const orgId = orgIdOrRes;
 
-  const existing = await db.event.findUnique({ where: { slug } });
-  if (existing) {
+  const slug = givenSlug ?? (await pickFreeEventSlug(db));
+  if (givenSlug !== undefined && (await db.event.findUnique({ where: { slug } }))) {
     return c.json({ code: "slug_taken", error: "Slug is already in use." }, 409);
   }
 

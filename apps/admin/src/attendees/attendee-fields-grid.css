@@ -1,0 +1,25 @@
+/* The fields of an attendee form (Add attendee, Edit attendee): two columns where the dialog has room and one on a phone, so a form with
+   many fields is wide instead of one long column. A field that needs the whole row says so with `attendee-fields-grid__full`. */
+.attendee-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.attendee-fields-grid > .attendee-fields-grid__full,
+.attendee-fields-grid > .attendee-form__warn,
+.attendee-fields-grid > .custom-data-field--wide {
+  grid-column: 1 / -1;
+}
+
+/* A notice in the grid is spaced by the grid's gap. */
+.attendee-fields-grid > .attendee-form__warn {
+  margin-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .attendee-fields-grid {
+    grid-template-columns: 1fr;
+  }
+}

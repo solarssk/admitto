@@ -6,6 +6,11 @@ describe("logLevel", () => {
     expect(logLevel("FAILED connection refused")).toBe("error");
   });
 
+  it("maps a tick that found an address stopped working to warn, and one that found none to info", () => {
+    expect(logLevel("event_domains checked=3 verified=1 failing=1 errors=0")).toBe("warn");
+    expect(logLevel("event_domains checked=3 verified=1 failing=0 errors=0")).toBe("info");
+  });
+
   it("does not treat a message merely starting with the letters FAILED as error without the space", () => {
     expect(logLevel("FAILEDNESS is not a real message, but the prefix check must still be exact")).toBe("info");
   });

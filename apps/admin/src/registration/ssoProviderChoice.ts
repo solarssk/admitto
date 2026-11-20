@@ -1,0 +1,71 @@
+import type { EventSsoProviderDto, RegistrationSettingsDto } from "../api/types.js";
+import type { SearchableSelectOption } from "../components/SearchableSelect.js";
+import type { AccessDraft, AccessMethod } from "./accessSettings.js";
+import { ssoProviderIcon } from "./ssoProviderKind.js";
+
+type Providers = RegistrationSettingsDto["sso_providers"];
+
+/** The words of the choice of the identity provider of an event. */
+export const PROVIDER_HINT = "The provider guests sign in with. Providers are set up under Identity.";
+export const PROVIDER_TURNED_OFF = " (turned off)";
+const NOT_CHOSEN = "Choose an identity provider. Until you do, the form stays closed.";
+const GONE = "The identity provider that was chosen no longer exists, so the form stays closed. Choose another one.";
+const CHANGED = "Guests who are filling in the form will have to sign in again.";
+
+/** Why Company SSO cannot be chosen while no identity provider is turned on, and where to add one (the link text, and the sentence before it). */
+export const NO_PROVIDER = "No identity provider is turned on.";
+export const ADD_PROVIDER = "Add one under Identity.";
+
+/**
+ * What choosing a method changes in the form. Only Company SSO has an identity provider: another method clears it in the form (the
+ * server clears it on save). Company SSO takes back the provider the event has saved, else the only provider there is, else none.
+ */
+export function methodEdit(method: AccessMethod, savedProviderId: string | null, providers: Providers): Partial<AccessDraft> {
+  if (method !== "sso") return { method, sso_provider_id: null };
+  const only = providers.length === 1 ? providers[0] : undefined;
+  return { method, sso_provider_id: savedProviderId ?? only?.id ?? null };
+}
+
+/**
+ * The providers the picker lists: the ones that are turned on, by the name staff gave them, with the icon of their kind. The provider
+ * the event has chosen stays in the list when it is turned off, marked, so that the choice reads as it is.
+ */
+export function providerOptions(providers: Providers, current: EventSsoProviderDto | null, chosenId: string | null): SearchableSelectOption[] {
+  const options: SearchableSelectOption[] = providers.map((provider) => ({ id: provider.id, label: provider.display_name, icon: ssoProviderIcon(provider.kind) }));
+  const off = current !== null && current.id === chosenId && current.state === "disabled" && current.display_name !== null;
+  if (off && !options.some((option) => option.id === chosenId)) {
+    options.push({ id: current.id, label: `${current.display_name}${PROVIDER_TURNED_OFF}`, icon: current.kind === null ? undefined : ssoProviderIcon(current.kind) });
+  }
+  return options;
+}
+
+export interface ProviderNotice {
+  variant: "info" | "warning";
+  text: string;
+}
+
+/** How the choice in the form stands: ready, not made, turned off or gone. A provider that is off or gone keeps the form closed. */
+/** How the choice in the form stands, when it needs a word: nothing for a provider that is turned on. */
+function standOf(providers: Providers, current: EventSsoProviderDto | null, chosenId: string | null): ProviderNotice | null {
+  if (chosenId === null) return { variant: "warning", text: NOT_CHOSEN };
+  if (providers.some((provider) => provider.id === chosenId)) return null;
+  if (current !== null && current.id === chosenId && current.state === "disabled") {
+    const name = current.display_name ?? "This provider";
+    return { variant: "warning", text: `${name} is turned off, so the form stays closed. Choose another provider or turn it on under Identity.` };
+  }
+  return { variant: "warning", text: GONE };
+}
+
+/** The notice under the choice. A change of the provider of an event that already has one adds that guests who are signing in must do it again. */
+export function providerNotice(args: {
+  providers: Providers;
+  current: EventSsoProviderDto | null;
+  chosenId: string | null;
+  saved: { method: AccessMethod | null; providerId: string | null };
+}): ProviderNotice | null {
+  const { providers, current, chosenId, saved } = args;
+  const stand = standOf(providers, current, chosenId);
+  const moves = saved.method === "sso" && saved.providerId !== null && chosenId !== null && chosenId !== saved.providerId;
+  if (!moves) return stand;
+  return stand === null ? { variant: "info", text: CHANGED } : { ...stand, text: `${stand.text} ${CHANGED}` };
+}
