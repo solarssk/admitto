@@ -53,6 +53,7 @@ const row = {
     consent_keys: [],
     max_companions: 0,
     bot_protection_enabled: true,
+    keep_origin: true,
     sso_provider_id: null,
     sso_claim_name: null,
     sso_claim_values: [],
@@ -108,6 +109,15 @@ describe("loadRegistrationPage, when the answers of its dependencies do not agre
     vi.mocked(getBotProtectionMode).mockResolvedValue("not_used");
     const state = await loadRegistrationPage(db, "northwind-summit", NOW);
     expect(state.kind === "open" ? [state.form.needsChallenge, state.form.turnstileSiteKey] : null).toEqual([false, ""]);
+  });
+
+  it("asks the page to send the zone of the browser only while the event keeps where a request came from", async () => {
+    const on = await loadRegistrationPage(db, "northwind-summit", NOW);
+    const off = { event: { findUnique: vi.fn(async () => ({ ...row, registration_settings: { ...row.registration_settings, keep_origin: false } })) } } as unknown as PrismaClient;
+
+    expect(on.kind === "open" ? on.form.keepOrigin : null).toBe(true);
+    const state = await loadRegistrationPage(off, "northwind-summit", NOW);
+    expect(state.kind === "open" ? state.form.keepOrigin : null).toBe(false);
   });
 
   it("opens without the keys, with no widget and no site key, when the event has switched its own bot protection off", async () => {

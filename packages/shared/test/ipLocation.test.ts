@@ -45,6 +45,13 @@ describe("resolveIpLocation", () => {
     expect(result.city).toBeUndefined();
   });
 
+  it("returns the region name when the dataset carries it (ILA_FIELDS has region1_name), and omits it when it is empty", () => {
+    mockedLookup.mockReturnValue({ country: "PL", region1_name: "Mazovia" } as ReturnType<typeof lookup>);
+    expect(resolveIpLocation("203.0.113.9")).toEqual({ kind: "resolved", countryCode: "PL", region: "Mazovia" });
+    mockedLookup.mockReturnValue({ country: "PL", region1_name: "" } as ReturnType<typeof lookup>);
+    expect(resolveIpLocation("203.0.113.9").region).toBeUndefined();
+  });
+
   it("returns unknown when the dataset has no entry for a public IP", () => {
     mockedLookup.mockReturnValue(null);
     expect(resolveIpLocation("203.0.113.5")).toEqual({ kind: "unknown" });

@@ -63,6 +63,7 @@ describe("readEnvelope", () => {
       consents: ["photos"],
       challenge: "token",
       password: "test-password",
+      time_zone: "Europe/Warsaw",
     };
 
     expect(readEnvelope(body)).toEqual(body);
@@ -77,7 +78,12 @@ describe("readEnvelope", () => {
       consents: undefined,
       challenge: undefined,
       password: undefined,
+      time_zone: undefined,
     });
+  });
+
+  it("reads the zone of the browser as it came, and does not judge it: the route does, for an event that keeps the origin", () => {
+    for (const raw of ["Europe/Warsaw", 12, null, ["a"], "x".repeat(500)]) expect(readEnvelope({ time_zone: raw })?.time_zone).toEqual(raw);
   });
 
   it("reads the password as it came, a text or not, with its spaces, and does not judge it: that is for the route of an event that has one", () => {

@@ -25,6 +25,8 @@ export interface AccessDraft {
   ask_company: boolean;
   ask_department: boolean;
   companion: boolean;
+  /** A new request keeps where it came from: the guest's time zone, the approximate place of the address and the address. */
+  keep_origin: boolean;
   /** The bot check of the link and password forms of the event. Only a superadmin changes it. */
   bot_protection_enabled: boolean;
   /** The company SSO only: the claim a guest's token must hold, as typed. Empty for no restriction. */
@@ -51,6 +53,7 @@ export function draftFromSettings(settings: RegistrationSettingsDto): AccessDraf
     ask_company: settings.ask_company,
     ask_department: settings.ask_department,
     companion: settings.max_companions > 0,
+    keep_origin: settings.keep_origin,
     bot_protection_enabled: settings.bot_protection_enabled,
     sso_claim_name: settings.sso_claim_name ?? "",
     sso_claim_values: settings.sso_claim_values.join("\n"),
@@ -154,6 +157,7 @@ export function settingsPatch(draft: AccessDraft, base: AccessDraft): SaveRegist
   if (draft.ask_company !== base.ask_company) patch.ask_company = draft.ask_company;
   if (draft.ask_department !== base.ask_department) patch.ask_department = draft.ask_department;
   if (draft.companion !== base.companion) patch.max_companions = draft.companion ? 1 : 0;
+  if (draft.keep_origin !== base.keep_origin) patch.keep_origin = draft.keep_origin;
   return patch;
 }
 

@@ -854,3 +854,60 @@ describe("enqueueRegistrationMail", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("placeRegistration: where the request came from", () => {
+  it("stores the origin and the language of a request that carries them, on the row of a placed guest and of one that waits for its address", async () => {
+    const origin = { ip: "203.0.113.7", time_zone: "Europe/Warsaw", country: "PL", region: "Mazovia" };
+    const placed = await make.event({ mode: "approval", verify: false });
+    const waiting = await make.event({ mode: "approval", verify: true });
+    const email = make.address();
+    await place(placed, make.registrant({ email, origin, locale: "pl-PL" }));
+    await place(waiting, make.registrant({ origin }));
+
+    expect(await db.registration.findFirst({ where: { event_id: placed, email } })).toMatchObject({
+      submitted_ip: "203.0.113.7",
+      submitted_timezone: "Europe/Warsaw",
+      submitted_country: "PL",
+      submitted_region: "Mazovia",
+      locale: "pl-PL",
+    });
+    expect(await db.registration.findFirst({ where: { event_id: waiting } })).toMatchObject({ status: "awaiting_email", submitted_ip: "203.0.113.7" });
+  });
+
+  it("stores no origin when the switch of the event is off at the write, whatever the request carries: it is judged under the locks, not when the request came in", async () => {
+    const eventId = await make.event({ mode: "approval", verify: false });
+    await db.eventRegistrationSettings.update({ where: { event_id: eventId }, data: { keep_origin: false } });
+    const email = make.address();
+
+    await place(eventId, make.registrant({ email, origin: { ip: "203.0.113.9", time_zone: "Europe/Warsaw", country: "PL", region: "Mazovia" }, locale: "pl-PL" }));
+
+    expect(await db.registration.findFirst({ where: { event_id: eventId, email } })).toMatchObject({
+      submitted_ip: null,
+      submitted_timezone: null,
+      submitted_country: null,
+      submitted_region: null,
+      locale: "pl-PL",
+    });
+  });
+
+  it("stores nothing of it for a request without an origin, and a part that is not known stays empty", async () => {
+    const eventId = await make.event({ mode: "approval", verify: false });
+    const without = make.address();
+    const partial = make.address();
+    await place(eventId, make.registrant({ email: without }));
+    await place(eventId, make.registrant({ email: partial, origin: { ip: "203.0.113.8", time_zone: null, country: null, region: null } }));
+
+    expect(await db.registration.findFirst({ where: { event_id: eventId, email: without } })).toMatchObject({
+      submitted_ip: null,
+      submitted_timezone: null,
+      submitted_country: null,
+      submitted_region: null,
+    });
+    expect(await db.registration.findFirst({ where: { event_id: eventId, email: partial } })).toMatchObject({
+      submitted_ip: "203.0.113.8",
+      submitted_timezone: null,
+      submitted_country: null,
+      submitted_region: null,
+    });
+  });
+});

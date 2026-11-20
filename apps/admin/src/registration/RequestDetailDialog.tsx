@@ -13,6 +13,7 @@ import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { panelView, usePanelLoad } from "../hooks/usePanelLoad.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 import { canAccept, canReject } from "./registrationDecisions.js";
+import { originRows } from "./requestOrigin.js";
 import { requestGuestName, requestMailKind, requestMailTone } from "./registrationRequests.js";
 import { BreakableAddress } from "./RequestsList.js";
 import { RequestDetailSkeleton } from "./RequestDetailSkeleton.js";
@@ -143,6 +144,24 @@ function hasSensitive(fields: RequestLookups["fields"], of: (fields: RequestLook
   return of(fields).some((field) => field.sensitive === true);
 }
 
+/** Where the request came from, as far as the event kept it: the guest's time zone, the approximate place and the address, and the language of the browser. Nothing when none was kept. */
+function OriginSection({ detail }: Readonly<{ detail: RegistrationDetailDto }>) {
+  const rows = originRows(detail);
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <h3 className="delivery-modal__section-title">Where it came from</h3>
+      <dl className="delivery-modal-kv request-detail__grid">
+        {rows.map(({ label, text, mono }) => (
+          <Pair key={label} label={label}>
+            {mono ? <span className="mono">{text}</span> : text}
+          </Pair>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function RequestSection({
   eventId,
   detail,
@@ -172,9 +191,9 @@ function RequestSection({
           <Pair label="Decision">
             <Decision detail={detail} />
           </Pair>
-          {detail.locale ? <Pair label="Language">{detail.locale}</Pair> : null}
         </dl>
       </div>
+      <OriginSection detail={detail} />
       {answers.length > 0 || hasSensitive(lookups.fields, guestQuestions) ? (
         <div>
           <h3 className="delivery-modal__section-title">Answers</h3>

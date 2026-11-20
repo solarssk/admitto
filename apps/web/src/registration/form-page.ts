@@ -210,7 +210,7 @@ export function renderRegistrationFormPage(model: RegistrationFormModel, options
   const gate = behindPassword(model);
   const signedInAs = sso?.signedInAs ?? null;
   const questions = renderQuestions(model.questions, { timeZone: model.event.timezone });
-  const form = `<form class="reg-form" id="reg-form" method="post" action="/r/${esc(model.event.slug)}" novalidate data-hide-when-done${gate}>
+  const form = `<form class="reg-form" id="reg-form" method="post" action="/r/${esc(model.event.slug)}" novalidate data-hide-when-done${model.keepOrigin ? " data-keep-origin" : ""}${gate}>
       <p class="reg-legend"><span class="reg-req" aria-hidden="true">*</span> Required</p>
       ${renderPersonalFields(model, signedInAs)}${questions}${renderCompanion(model)}${renderAgreement(model)}
     </form>`;
