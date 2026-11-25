@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { keepLastWords } from "../utils/keep-last-words.js";
-import { ItPanel, RecordField } from "./ItSetup.js";
+import { CopyField } from "../components/CopyField.js";
+import { ItPanel } from "./ItSetup.js";
 import { Button, Card, Notice } from "@admitto/ui";
 import type { CustomDomainDto, RegistrationOwnAddressDto } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
@@ -75,9 +76,9 @@ function ItSteps({ own, address, instanceHost }: Readonly<{ own: OwnAddress; add
       <li>
         <span>{keepLastWords(`Create a CNAME record (a DNS entry that makes one name an alias of another) that points the address to ${target}.`)}</span>
         <div className="access-dns">
-          <RecordField label="Type" value="CNAME" placeholder="" copyLabel="Copy the type" />
-          <RecordField label="Name" value={name} placeholder={NAME_PLACEHOLDER} copyLabel="Copy the name" />
-          <RecordField label="Target" value={instanceHost ?? ""} placeholder="the address of this instance" copyLabel="Copy the target" />
+          <CopyField label="Type" value="CNAME" placeholder="" copyLabel="Copy the type" />
+          <CopyField label="Name" value={name} placeholder={NAME_PLACEHOLDER} copyLabel="Copy the name" />
+          <CopyField label="Target" value={instanceHost ?? ""} placeholder="the address of this instance" copyLabel="Copy the target" />
         </div>
       </li>
       <li>{keepLastWords("Serve HTTPS on the address with a valid certificate. Admitto does not issue certificates.")}</li>

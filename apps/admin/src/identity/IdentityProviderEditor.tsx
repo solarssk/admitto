@@ -12,6 +12,7 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
+import { CopyField } from "../components/CopyField.js";
 import { FailureIcon } from "../components/FailureIcon.js";
 import { useDelayedLoading, useLoadingGate } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
@@ -261,17 +262,10 @@ function resolveEditorView(mode: EditorMode, loadState: ProviderLoadState, showC
 interface OidcRedirectUriCalloutProps {
   /** Exact callback from the provider API; `null` when no public base URL is resolvable. */
   redirectUri: string | null;
-  onCopySuccess: () => void;
-  onCopyError: () => void;
 }
 
 /** Edit-mode Redirect URI: copyable once the server can resolve the public base URL. */
-function OidcRedirectUriCallout({
-  redirectUri,
-  onCopySuccess,
-  onCopyError,
-}: Readonly<OidcRedirectUriCalloutProps>) {
-  const fieldId = useId();
+function OidcRedirectUriCallout({ redirectUri }: Readonly<OidcRedirectUriCalloutProps>) {
   if (redirectUri === null) {
     return (
       <Notice variant="warning" role="status">
@@ -281,27 +275,11 @@ function OidcRedirectUriCallout({
     );
   }
 
-  const uri = redirectUri;
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(uri);
-      onCopySuccess();
-    } catch {
-      onCopyError();
-    }
-  }
-
   return (
-    <Input
-      id={fieldId}
+    <CopyField
       label="Redirect URI"
-      value={uri}
-      disabled
-      readOnly
-      icon={<i className="ti ti-copy" aria-hidden="true" />}
-      onIconClick={() => void handleCopy()}
-      iconLabel="Copy Redirect URI"
+      value={redirectUri}
+      copyLabel="Copy Redirect URI"
       hint="Register this exact URL at your identity provider (Entra App registration, Okta or Authentik Application)."
     />
   );
@@ -707,21 +685,15 @@ export function IdentityProviderEditor({
           />
         </div>
         {mode === "create" ? (
-          <Input
-            id="idp-redirect-uri-placeholder"
+          <CopyField
             label="Redirect URI"
-            value="https://<Instance URL>/api/auth/oidc/<provider-id>/callback"
-            disabled
-            readOnly
-            icon={<i className="ti ti-copy" aria-hidden="true" />}
+            value=""
+            placeholder="https://<Instance URL>/api/auth/oidc/<provider-id>/callback"
+            copyLabel="Copy Redirect URI"
             hint="Available to copy once you save this provider for the first time and reopen it. Set Instance URL under Organisation settings → General if it is missing."
           />
         ) : (
-          <OidcRedirectUriCallout
-            redirectUri={redirectUri}
-            onCopySuccess={() => addToast("Redirect URI copied to clipboard", "success")}
-            onCopyError={() => addToast("Could not copy Redirect URI.", "error")}
-          />
+          <OidcRedirectUriCallout redirectUri={redirectUri} />
         )}
       </Card>
 

@@ -45,6 +45,6 @@ Do not put `ApiError.message` into a toast or an inline string. Use `operatorApi
 
 - Never import the root of `@admitto/mail-templates`, `@admitto/tickets` or `@admitto/wallet`: they pull Prisma and Node-only server code into the browser bundle. Use the subpaths in [ui-gotchas.md](../../standards/admin-spa/ui-gotchas.md). Watch the `vite build` output for "externalized for browser compatibility".
 - Pages are lazy chunks: each component imports the CSS it uses itself.
-- Check `src/components/` (`SearchableSelect`, `MultiSelect`, `PhoneCountrySelect`) before writing a dropdown or a phone field.
+- Check `src/components/` (`SearchableSelect`, `MultiSelect`, `PhoneCountrySelect`, `CopyField`) before writing a dropdown, a phone field or a read only box with a copy button.
 - A `ConfirmDialog` opened over a modal must suspend the parent's focus trap. Test it with Escape.
 - Fonts bundled by the app are woff2 only. A `var(--token, #hex)` fallback must equal the token.

@@ -107,7 +107,7 @@ describe("the setup for IT in the Company SSO card", () => {
     expect(steps().map((step) => plain(step.querySelector("span")?.textContent ?? step.textContent))).toEqual([REDIRECT_HINT, GATEWAY_NOTE]);
     expect(field("Return address").value).toBe(INSTANCE.uri);
     expect(field("Return address").readOnly).toBe(true);
-    expect(field("Return address").classList.contains("access-readonly")).toBe(true);
+    expect(field("Return address").classList.contains("copy-field__input")).toBe(true);
   });
 
   it("adds the return address of the event's own address, and no other event's", async () => {

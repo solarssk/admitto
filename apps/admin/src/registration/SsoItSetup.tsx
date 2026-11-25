@@ -2,7 +2,8 @@ import type { RegistrationRedirectUriDto } from "../api/types.js";
 import { EVENT_ADDRESS_HINT, GATEWAY_NOTE, REDIRECT_HINT, UNVERIFIED_NOTE } from "./registrationSsoTexts.js";
 import { RetryHint } from "../components/RetryHint.js";
 import { keepLastWords } from "../utils/keep-last-words.js";
-import { ItPanel, RecordField } from "./ItSetup.js";
+import { CopyField } from "../components/CopyField.js";
+import { ItPanel } from "./ItSetup.js";
 
 const NO_INSTANCE_ADDRESS = "There is no return address yet, because the Instance URL is not set. Set it under General in Organisation settings.";
 
@@ -48,7 +49,7 @@ function ssoInstructionsText(addresses: readonly string[], claim: SavedClaim): s
 function ReturnAddress({ label, uri }: Readonly<{ label: string; uri: string }>) {
   return (
     <div className="access-dns access-dns--single">
-      <RecordField label={label} value={uri} placeholder="" copyLabel={`Copy the ${label.toLowerCase()}`} />
+      <CopyField label={label} value={uri} placeholder="" copyLabel={`Copy the ${label.toLowerCase()}`} />
     </div>
   );
 }
