@@ -56,7 +56,7 @@ Shared outbound connections. They are configured in this tab, not through deploy
 
 **Bot protection**
 
-- The **On/Off** switch says whether your organisation uses a bot check on guest registration at all. Only a Superadmin can change it. It is **On** by default.
+- The switch next to the card title says whether your organisation uses a bot check on guest registration at all. Only a Superadmin can change it. It is **On** by default.
 - Turn it **Off** for a form that runs inside your own network, or if your organisation does not use Cloudflare. Admitto asks you to confirm. The link and the password then work without keys, Admitto does not contact Cloudflare, and the provider and key fields are hidden.
 - Without the check, a script can send the form and guess an event password. The usual limits still apply, with no tightening: 30 password tries in 15 minutes from one address, 120 a minute for one event, and 600 registrations a minute for one event. You can retune them with `RATE_LIMIT_OVERRIDES`. An event password is often weak, so for an event with a public link or a weak password, use the company SSO or a strong password.
 - The saved keys are kept while the check is **Off**. Turn it **On** again and they apply.

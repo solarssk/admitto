@@ -65,11 +65,11 @@ describe("the company SSO as the way in of an event, on the Access tab", () => {
 
   it("does not offer the bot protection switch to an administrator who is not a superadmin, and keeps it for a superadmin", async () => {
     await renderLoaded(settings({ bot_protection: "required" }), { superadmin: false });
-    expect(isOff(screen.getByRole("switch", { name: "On" }))).toBe(true);
+    expect(isOff(screen.getByRole("switch", { name: "Bot protection" }))).toBe(true);
     cleanup();
 
     await renderLoaded(settings({ bot_protection: "required" }), { superadmin: true });
-    expect(isOff(screen.getByRole("switch", { name: "On" }))).toBe(false);
+    expect(isOff(screen.getByRole("switch", { name: "Bot protection" }))).toBe(false);
   });
 
   it("greys out the confirmation of the address for the company SSO and says why, and gives the switch back, unchanged, with the other ways in", async () => {

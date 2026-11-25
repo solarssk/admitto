@@ -554,7 +554,7 @@ export const EventBounceIngestPanel = forwardRef<
         actions={
           <Switch
             id="event-bounce-detection-enabled"
-            label={draft.enabled ? "On" : "Off"}
+            aria-label="Bounce detection"
             checked={draft.enabled}
             disabled={isArchived}
             onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}

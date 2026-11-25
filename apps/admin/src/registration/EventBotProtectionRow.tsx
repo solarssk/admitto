@@ -40,7 +40,7 @@ export function EventBotProtectionRow({
   const sw = (
     <Switch
       id="event-bot-protection-enabled"
-      label={shown ? "On" : "Off"}
+      aria-label="Bot protection"
       checked={shown}
       aria-describedby={organisationOn ? undefined : noteId}
       disabled={disabled || usesSso || !organisationOn}

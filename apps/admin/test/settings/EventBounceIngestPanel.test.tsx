@@ -202,7 +202,7 @@ describe("EventBounceIngestPanel", () => {
 
     expect(isDisabled(screen.getByLabelText("IMAP host"))).toBe(true);
     expect(isDisabled(screen.getByLabelText("Port"))).toBe(true);
-    expect(isDisabled(screen.getByRole("switch", { name: "On" }))).toBe(true);
+    expect(isDisabled(screen.getByRole("switch", { name: "Bounce detection" }))).toBe(true);
     expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
     expect(screen.getByText("This event is archived.")).toBeTruthy();
   });
@@ -404,7 +404,8 @@ describe("EventBounceIngestPanel", () => {
   it("shows Off when saved enabled is false even if the draft toggle is on", async () => {
     mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: false, lastRun: null }));
     renderPanel();
-    const toggle = await screen.findByRole("switch", { name: "Off" });
+    const toggle = await screen.findByRole("switch", { name: "Bounce detection" });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
     fireEvent.click(toggle);
     expect(
       screen.getByText(/Turn bounce detection on and save\. Automatic checks will appear here/),
@@ -548,8 +549,10 @@ describe("EventBounceIngestPanel", () => {
     renderPanel();
     await screen.findByLabelText("IMAP host");
 
-    fireEvent.click(screen.getByRole("switch", { name: "On" }));
-    expect(screen.getByRole("switch", { name: "Off" })).toBeTruthy();
+    const toggle = screen.getByRole("switch", { name: "Bounce detection" }) as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    fireEvent.click(toggle);
+    expect(toggle.checked).toBe(false);
 
     fireEvent.change(screen.getByLabelText("Username"), {
       target: { value: "bounce-edited@example.com" },

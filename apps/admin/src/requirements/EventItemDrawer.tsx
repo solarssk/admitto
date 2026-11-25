@@ -237,7 +237,6 @@ export function EventItemDrawer({
                     </div>
                     <Switch
                       id="event-item-active"
-                      label={form.enabled ? "On" : "Off"}
                       checked={form.enabled}
                       onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
                       aria-label="Item active"
@@ -320,7 +319,6 @@ export function EventItemDrawer({
                     </div>
                     <Switch
                       id="event-item-requires-return"
-                      label={form.requires_return ? "On" : "Off"}
                       checked={form.requires_return}
                       onChange={(e) =>
                         setForm((f) => ({ ...f, requires_return: e.target.checked }))
@@ -336,7 +334,6 @@ export function EventItemDrawer({
                       </div>
                       <Switch
                         id="event-item-issue-on-checkin"
-                        label={form.issue_on_checkin ? "On" : "Off"}
                         checked={form.issue_on_checkin}
                         onChange={(e) =>
                           setForm((f) => ({ ...f, issue_on_checkin: e.target.checked }))

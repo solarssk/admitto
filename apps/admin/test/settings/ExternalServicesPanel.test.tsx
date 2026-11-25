@@ -807,7 +807,7 @@ describe("ExternalServicesPanel", () => {
   it("saves maps when disabling the Maps switch", async () => {
     await renderLoaded();
     fireEvent.click(el<HTMLInputElement>("external-maps-enabled"));
-    expect(within(screen.getByText("Maps").closest(".at-card") as HTMLElement).getByText("Off")).toBeTruthy();
+    expect((within(screen.getByText("Maps").closest(".at-card") as HTMLElement).getByRole("switch", { name: "Maps" }) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(mockSaveMaps).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
@@ -1276,7 +1276,6 @@ describe("ExternalServicesPanel, the bot check of guest registration (A2)", () =
 
     expect(dialog()).toBeNull();
     expect(toggle().checked).toBe(false);
-    expect(within(card()).getByText("Off")).toBeTruthy();
     expect(document.getElementById("external-bot-protection-provider")).not.toBeNull();
     expect(document.getElementById("external-turnstile-site-key")).not.toBeNull();
     expect(isOff(save())).toBe(false);

@@ -36,10 +36,6 @@ function eventDaySwitch(): HTMLInputElement {
   return screen.getByRole("switch", { name: SWITCH_NAME });
 }
 
-function switchLabelText(input: HTMLInputElement): string {
-  return input.closest("label")?.textContent ?? "";
-}
-
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -64,7 +60,8 @@ describe("SecurityPanel: operators stay signed in on event day", () => {
 
     await screen.findByRole("switch", { name: SWITCH_NAME });
     expect(eventDaySwitch().checked).toBe(true);
-    expect(switchLabelText(eventDaySwitch())).toBe("On");
+    // The row has a title and a description, and the switch shows the state: no On or Off beside it.
+    expect(eventDaySwitch().closest("label")?.querySelector(".at-switch__label")).toBeNull();
     unmount();
 
     vi.mocked(fetchSecuritySettings).mockResolvedValue({
@@ -75,7 +72,6 @@ describe("SecurityPanel: operators stay signed in on event day", () => {
 
     await screen.findByRole("switch", { name: SWITCH_NAME });
     expect(eventDaySwitch().checked).toBe(false);
-    expect(switchLabelText(eventDaySwitch())).toBe("Off");
   });
 
   it("saves only operator_event_day_sessions: false after the switch is turned off", async () => {
@@ -92,7 +88,6 @@ describe("SecurityPanel: operators stay signed in on event day", () => {
 
     fireEvent.click(eventDaySwitch());
     expect(eventDaySwitch().checked).toBe(false);
-    expect(switchLabelText(eventDaySwitch())).toBe("Off");
     expect(save.disabled).toBe(false);
     fireEvent.click(save);
 
@@ -132,6 +127,5 @@ describe("SecurityPanel: operators stay signed in on event day", () => {
     await screen.findByRole("switch", { name: SWITCH_NAME });
     expect(eventDaySwitch().disabled).toBe(true);
     expect(eventDaySwitch().checked).toBe(false);
-    expect(switchLabelText(eventDaySwitch())).toBe("Off");
   });
 });

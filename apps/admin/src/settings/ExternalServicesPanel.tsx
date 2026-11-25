@@ -568,7 +568,7 @@ export function ExternalServicesPanel() {
         actions={
           <Switch
             id="external-weather-enabled"
-            label={weatherDraft.enabled ? "On" : "Off"}
+            aria-label="Weather"
             checked={weatherDraft.enabled}
             onChange={(e) =>
               patchDraft(setWeatherDraft, (d) => ({ ...d, enabled: e.target.checked }))
@@ -686,7 +686,7 @@ export function ExternalServicesPanel() {
         actions={
           <Switch
             id="external-maps-enabled"
-            label={mapsDraft.enabled ? "On" : "Off"}
+            aria-label="Maps"
             checked={mapsDraft.enabled}
             onChange={(e) =>
               patchDraft(setMapsDraft, (d) => ({ ...d, enabled: e.target.checked }))
