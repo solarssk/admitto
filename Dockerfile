@@ -21,13 +21,17 @@ RUN npm ci
 # corporate deployer with their own MaxMind account can instead set MAXMIND_LICENSE_KEY at
 # container runtime to fetch a fresh copy directly from MaxMind into a separate, persistent
 # location (see deploy/docker-entrypoint.sh and deploy/README.md) - no image rebuild needed.
-# ILA_FIELDS=country,city is what actually selects the City edition of the database over the
-# lighter Country-only one — country alone (this project's previous default) resolves to the
-# ~7MB Country edition regardless of ILA_LICENSE_KEY. These ENV vars are re-declared in the
-# production stage below so the running container reads the same, already-baked data instead of
-# re-fetching it.
+# ILA_FIELDS=country,region1_name,city is what actually selects the City edition of the database
+# over the lighter Country-only one — country alone (this project's previous default) resolves to
+# the ~7MB Country edition regardless of ILA_LICENSE_KEY. region1_name (a state or voivodeship) is
+# what a registration request keeps of where it came from; the City edition carries it already,
+# so it adds well under 100 KB. The same list must be in the production stage below, in
+# deploy/docker-entrypoint.sh (MAXMIND_FIELDS) and in apps/web/.env.example: ip-location-api
+# keeps each field list in its own data directory, so data baked with another list is not found.
+# These ENV vars are re-declared in the production stage below so the running container reads the
+# same, already-baked data instead of re-fetching it.
 ENV ILA_LICENSE_KEY=redist
-ENV ILA_FIELDS=country,city
+ENV ILA_FIELDS=country,region1_name,city
 ENV ILA_DATA_DIR=/app/data/geoip
 ENV ILA_AUTO_UPDATE=false
 # The dataset is downloaded from a public GitHub Release. Retry brief upstream
@@ -148,7 +152,7 @@ ENV NODE_ENV=production
 # the builder stage actually used. ILA_FIELDS must still match the builder stage exactly, since
 # ip-location-api's own fieldDir-hashing (src/setting.mjs) resolves a different data directory
 # than the one actually baked in and finds nothing there otherwise.
-ENV ILA_FIELDS=country,city
+ENV ILA_FIELDS=country,region1_name,city
 ENV ILA_DATA_DIR=/app/data/geoip
 ENV ILA_AUTO_UPDATE=false
 EXPOSE 3000

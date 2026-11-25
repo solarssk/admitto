@@ -486,6 +486,7 @@ docker compose up -d
 
 - `docker-entrypoint.sh` fetches a fresh GeoLite2 City database directly from MaxMind into `./geoip-data` (a bind mount, initialised by `./scripts/init-host-dirs.sh` like `uploads`/`emergency-exports` above) and caches it there.
 - A later restart with the same key reuses that download instead of re-fetching it.
+- After an upgrade that changes which fields the dataset keeps (0.8 adds the region), the first start fetches the database again once, even with an unchanged key, because the app only finds data of its own field list. Later restarts reuse the new download.
 - A failed fetch (bad key, network issue) falls back to the last good download rather than breaking startup. On a first-ever failed fetch, with no earlier download, it falls back to the built-in community-mirror dataset.
 - Remove `MAXMIND_LICENSE_KEY` and restart to go back to the default community-mirror dataset.
 
