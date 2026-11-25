@@ -403,14 +403,15 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
                 saved answer no longer fits can&apos;t be edited until that answer is replaced or cleared.
               </Notice>
             )}
+          </form>
+          <div className="event-item-modal__footer custom-field-modal__footer">
+            {/* Apart from the questions above, so that it is not read as the end of the last hint. */}
             {form.source_field && (
-              <p className="at-hint">
+              <p className="at-hint custom-field-modal__footer-note">
                 Column name in an import file: <code className="requirements-item-id">{form.source_field}</code>. It can&apos;t be
                 changed later.
               </p>
             )}
-          </form>
-          <div className="event-item-modal__footer">
             <div className="event-item-modal__footer-end">
               <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
                 Cancel

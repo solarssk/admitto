@@ -757,6 +757,17 @@
   margin-left: auto;
 }
 
+/* The field editor says the column name of the field at the left of its footer, apart from the questions above it. In a window too
+   narrow for the note and the buttons in one row, the note takes a row of its own above the buttons. */
+.custom-field-modal__footer {
+  flex-wrap: wrap;
+}
+
+.custom-field-modal__footer-note {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
 /* Requirements header: "Documentation" is a single short action - keep it beside the title on
    mobile too instead of the shared PageHeader's default stack-below-full-width, and shrink it
    to match .reports-pageheader/.event-settings-pageheader/.communication-pageheader/

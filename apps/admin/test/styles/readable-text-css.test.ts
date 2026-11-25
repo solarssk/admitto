@@ -449,4 +449,11 @@ describe("the window of the field editor", () => {
     expect(sets(bodyOf(requirements, ".event-item-modal__panel--wide", "@media (min-width: 1024px)"), "width", String.raw`min\(100%, 720px\)`)).toBe(true);
     expect(requirements.some((r) => r.selector === ".event-item-modal__panel--wide" && r.media === null)).toBe(false);
   });
+
+  it("says the column name at the left of the footer, in a row of its own above the buttons when the window is too narrow for both", () => {
+    expect(sets(bodyOf(requirements, ".custom-field-modal__footer"), "flex-wrap", "wrap")).toBe(true);
+    const note = bodyOf(requirements, ".custom-field-modal__footer-note");
+    expect(sets(note, "flex", "1 1 16rem")).toBe(true);
+    expect(sets(note, "min-width", "0")).toBe(true);
+  });
 });

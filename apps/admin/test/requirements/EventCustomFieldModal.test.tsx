@@ -77,7 +77,7 @@ async function waitForUsageLoaded() {
 }
 
 describe("EventCustomFieldModal — create", () => {
-  it("shows the column name for an import file, made from the label, in a quiet line at the bottom", () => {
+  it("shows the column name for an import file, made from the label, in a quiet line in the footer", () => {
     renderModal(null);
     expect(
       screen.getByText(
@@ -90,7 +90,11 @@ describe("EventCustomFieldModal — create", () => {
     });
     const line = screen.getByText("needs_parking").closest("p");
     expect(line?.textContent).toBe("Column name in an import file: needs_parking. It can't be changed later.");
-    expect(document.getElementById("custom-field-form")?.lastElementChild).toBe(line);
+    // In the footer, apart from the questions: at the end of the form it read as the end of the last hint.
+    expect(line?.closest(".event-item-modal__footer")).not.toBeNull();
+    expect(line?.classList.contains("custom-field-modal__footer-note")).toBe(true);
+    expect(line?.closest(".event-item-modal__footer")?.classList.contains("custom-field-modal__footer")).toBe(true);
+    expect(document.getElementById("custom-field-form")?.contains(line ?? null)).toBe(false);
     // Not at the top beside the label any more, and the sentence about items is gone.
     expect(screen.getByLabelText("Display label").closest(".at-field")?.textContent).not.toContain("needs_parking");
     expect(screen.queryByText(/Used to reference this field/)).toBeNull();
