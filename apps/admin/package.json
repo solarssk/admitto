@@ -25,7 +25,7 @@
     "@admitto/wallet": "*",
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/lang-html": "^6.4.12",
-    "@codemirror/lint": "^6.9.7",
+    "@codemirror/lint": "^6.9.8",
     "@floating-ui/dom": "^1.8.0",
     "@simplewebauthn/browser": "^14.0.0",
     "@tabler/icons-webfont": "3.49.0",
