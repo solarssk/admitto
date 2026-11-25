@@ -183,12 +183,11 @@ const EVENT_SELECT = {
   event_hours_start: true,
   event_hours_end: true,
   timezone: true,
-  registration_settings: { select: { mode: true, waitlist_enabled: true, verify_email: true, max_companions: true, keep_origin: true } },
+  registration_settings: { select: { mode: true, waitlist_enabled: true, verify_email: true, max_companions: true } },
 } satisfies Prisma.EventSelect;
 
 type OpenSettings = { mode: RegistrationMode; waitlist_enabled: boolean; verify_email: boolean; max_companions: number };
-/** `keepOrigin`: the event's switch as it is now, read with the rest under the locks: the origin of a submission is stored only if it is on when the row is written. */
-type OpenEvent = { capacity: number | null; settings: OpenSettings; keepOrigin: boolean };
+type OpenEvent = { capacity: number | null; settings: OpenSettings };
 
 function asMode(value: string | null | undefined): RegistrationMode | null {
   return REGISTRATION_MODE.find((mode) => mode === value) ?? null;
@@ -210,7 +209,20 @@ async function readOpenEvent(tx: Prisma.TransactionClient, eventId: string, now:
   });
   if (now.getTime() >= end.getTime()) return null;
   const { waitlist_enabled, verify_email, max_companions } = event.registration_settings;
-  return { capacity: event.capacity, settings: { mode, waitlist_enabled, verify_email, max_companions }, keepOrigin: event.registration_settings.keep_origin };
+  return { capacity: event.capacity, settings: { mode, waitlist_enabled, verify_email, max_companions } };
+}
+
+/**
+ * The event's switch `keep_origin`, read with a share lock on its settings row. The settings are saved without the placement locks, so
+ * the lock is what keeps the switch from changing between this read and the insert: a save that comes meanwhile waits until this
+ * transaction ends (the registration then counts as made while the switch was on), and one that came first has already committed and
+ * is what is read here. The origin is stored only if the switch is on when the row is written. A row that is not there (the placement
+ * has just read it, so this does not happen) counts as off: `some` says that without a branch of its own that no test can reach.
+ */
+async function lockKeepOrigin(tx: Prisma.TransactionClient, eventId: string): Promise<boolean> {
+  const rows = await tx.$queryRaw<{ keep_origin: boolean }[]>`
+    SELECT "keep_origin" FROM "EventRegistrationSettings" WHERE "event_id" = ${eventId} FOR SHARE`;
+  return rows.some((row) => row.keep_origin);
 }
 
 /** The registration queue of the event, without waiting for it (the place of step 5 in the order of locks). */
@@ -456,9 +468,9 @@ async function submitInTransaction(
     seatsNeeded(companions),
   );
   if (placement === "full") return { outcome: "full" };
-  // The switch is judged here, as the companion limit is: a submission that waited for its turn, while an administrator turned the
-  // switch off, stores no origin.
-  const stored = event.keepOrigin ? registrant : { ...registrant, origin: undefined };
+  // The switch is judged here, under the locks and under a share lock on its row, as the companion limit is: a submission that
+  // waited for its turn, while an administrator turned the switch off, stores no origin.
+  const stored = (await lockKeepOrigin(tx, eventId)) ? registrant : { ...registrant, origin: undefined };
   const context: SubmissionContext = {
     tx,
     eventId,

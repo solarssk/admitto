@@ -890,6 +890,43 @@ describe("placeRegistration: where the request came from", () => {
     });
   });
 
+  it("waits for a save of the settings that is not committed yet, and then stores no origin when that save turned the switch off", async () => {
+    const eventId = await make.event({ mode: "approval", verify: false });
+    const email = make.address();
+    const saving = holdTransaction(migrated.connection(), (tx) =>
+      tx.eventRegistrationSettings.update({ where: { event_id: eventId }, data: { keep_origin: false } }),
+    );
+    await saving.started;
+
+    const placing = place(eventId, make.registrant({ email, origin: { ip: "203.0.113.9", time_zone: "Europe/Warsaw", country: "PL", region: "Mazovia" } }));
+    await vi.waitFor(async () => expect(await lockWaiters(db)).toBeGreaterThan(0), { timeout: 5000, interval: 25 });
+    await saving.commit();
+
+    expect(await placing).toEqual(RECEIVED);
+    expect(await db.registration.findFirst({ where: { event_id: eventId, email } })).toMatchObject({ submitted_ip: null, submitted_timezone: null });
+  });
+
+  it("holds a share lock on the settings row while it decides, so a save of the switch waits for the placement to end and cannot change it between the read and the insert", async () => {
+    const eventId = await make.event({ mode: "approval", verify: false });
+    // What the placement holds from its read of the switch to its commit.
+    const placing = holdTransaction(migrated.connection(), (tx) =>
+      tx.$queryRaw`SELECT "keep_origin" FROM "EventRegistrationSettings" WHERE "event_id" = ${eventId} FOR SHARE`,
+    );
+    await placing.started;
+
+    let saved = false;
+    const saving = db.eventRegistrationSettings.update({ where: { event_id: eventId }, data: { keep_origin: false } }).then(() => {
+      saved = true;
+    });
+    await vi.waitFor(async () => expect(await lockWaiters(db)).toBeGreaterThan(0), { timeout: 5000, interval: 25 });
+    expect(saved).toBe(false);
+    await placing.commit();
+    await saving;
+
+    expect(saved).toBe(true);
+    expect((await db.eventRegistrationSettings.findUniqueOrThrow({ where: { event_id: eventId } })).keep_origin).toBe(false);
+  });
+
   it("stores nothing of it for a request without an origin, and a part that is not known stays empty", async () => {
     const eventId = await make.event({ mode: "approval", verify: false });
     const without = make.address();
