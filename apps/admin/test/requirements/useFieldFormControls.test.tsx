@@ -234,8 +234,10 @@ describe("useFieldFormControls: a move on the screen", () => {
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("goes on with the next move when the handling of a refused one throws", async () => {
-    reorderEventCustomFields.mockRejectedValueOnce(new ApiError(500, "x", "")).mockResolvedValueOnce([]);
+  it("goes on with the request queued behind a move whose handling throws", async () => {
+    const first = deferred<EventCustomFieldDto[]>();
+    reorderEventCustomFields.mockReturnValueOnce(first.promise);
+    updateEventCustomField.mockResolvedValueOnce({ ...a, show_on_form: true });
     const onChanged = vi.fn().mockImplementationOnce(() => {
       throw new Error("the host failed");
     });
@@ -243,16 +245,23 @@ describe("useFieldFormControls: a move on the screen", () => {
       const [fields, setFields] = useState([a, b, c]);
       return { fields, form: useFieldFormControls({ eventId: "evt-1", fields, onChanged, onUpdated: setFields, rootRef: { current: null } }) };
     });
+    let moved!: Promise<void>;
+    act(() => {
+      moved = result.current.form.move(0, "down");
+    });
+    act(() => {
+      void result.current.form.toggleOnForm(result.current.fields[1]!);
+    });
+    expect(updateEventCustomField).not.toHaveBeenCalled();
 
     await act(async () => {
-      await result.current.form.move(0, "down").catch(() => undefined);
-    });
-    await act(async () => {
-      await result.current.form.move(1, "down");
+      first.reject(new ApiError(500, "x", ""));
+      await moved.catch(() => undefined);
     });
 
-    // The first request was refused and the host failed while it was told; the line did not stop, so the second one went.
-    expect(reorderEventCustomFields).toHaveBeenCalledTimes(2);
+    // The move was refused and the host failed while it was told; the line did not stop, so the switch behind it went.
+    expect(updateEventCustomField).toHaveBeenCalledTimes(1);
+    expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "a", { show_on_form: true });
   });
 
   it("does not move a field past the end of the list", () => {
