@@ -38,6 +38,11 @@ ensure_emergency_export_dir_writable() {
 # scripts/test-geoip-entrypoint.sh can point it at a throwaway directory instead of /app/data.
 MAXMIND_DATA_DIR="${MAXMIND_DATA_DIR:-/app/data/geoip-custom}"
 MAXMIND_STAGING_DIR="${MAXMIND_DATA_DIR}.staging"
+# Where ip-location-api puts the zip and the CSV files it downloads to build the dataset (about
+# 400 MB). Its own default is inside node_modules, where they would stay in the container for as
+# long as it lives; here they sit next to the staging directory and are removed in both outcomes of
+# a fetch (#1853).
+MAXMIND_DOWNLOAD_DIR="${MAXMIND_DATA_DIR}.download"
 MAXMIND_KEY_MARKER="$MAXMIND_DATA_DIR/.maxmind-key-sha256"
 # The ip-location-api field list the dataset is fetched with. It must equal ILA_FIELDS in the
 # Dockerfile (both stages) and apps/web/.env.example: ip-location-api keeps each field list in its
@@ -77,10 +82,14 @@ maybe_refresh_geoip_from_maxmind() {
   # forever, while this function's own marker claimed the new key was in effect. Staging also
   # means a failed fetch can never destroy an already-working dataset - only a verified-good
   # download ever replaces it.
-  rm -rf "$MAXMIND_STAGING_DIR"
+  rm -rf "$MAXMIND_STAGING_DIR" "$MAXMIND_DOWNLOAD_DIR"
   mkdir -p "$MAXMIND_STAGING_DIR"
-  if ILA_LICENSE_KEY="$key" ILA_FIELDS="$MAXMIND_FIELDS" ILA_DATA_DIR="$MAXMIND_STAGING_DIR" ILA_AUTO_UPDATE=false \
+  if ILA_LICENSE_KEY="$key" ILA_FIELDS="$MAXMIND_FIELDS" ILA_DATA_DIR="$MAXMIND_STAGING_DIR" \
+      ILA_TMP_DATA_DIR="$MAXMIND_DOWNLOAD_DIR" ILA_DOWNLOAD_TYPE=false ILA_AUTO_UPDATE=false \
       node apps/web/scripts/prefetch-geo-db.mjs; then
+    # ILA_DOWNLOAD_TYPE=false makes the library delete the download directory itself; this makes
+    # sure of it whatever the library did, so no zip and CSV files stay behind in the container.
+    rm -rf "$MAXMIND_DOWNLOAD_DIR"
     # $MAXMIND_DATA_DIR is a Docker bind-mount root when MAXMIND_LICENSE_KEY is used through the
     # shipped Compose stack (docker-compose.yml) - `rm -rf` can empty a mount point's contents but
     # the kernel refuses to remove the mount point itself ("Resource busy"), which `set -e` would
@@ -96,7 +105,7 @@ maybe_refresh_geoip_from_maxmind() {
     export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
     log "geoip: MaxMind dataset ready"
   else
-    rm -rf "$MAXMIND_STAGING_DIR"
+    rm -rf "$MAXMIND_STAGING_DIR" "$MAXMIND_DOWNLOAD_DIR"
     # Same 4-1.dat check as the fast path above - a marker alone doesn't prove the last-good
     # dataset is still actually there (it could have been deleted since, the exact scenario that
     # got us into this failed-refetch branch in the first place). And the last-good dataset must

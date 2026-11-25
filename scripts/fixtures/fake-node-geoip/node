@@ -15,7 +15,20 @@ FAKE_NODE_CALL_LOG="${FAKE_NODE_CALL_LOG:-/dev/null}"
 echo "$*" >>"$FAKE_NODE_CALL_LOG"
 
 if [ "${1:-}" = "apps/web/scripts/prefetch-geo-db.mjs" ]; then
+  # Whether a download directory of an earlier, interrupted start is still there when the library
+  # begins is recorded for the test, which checks that the entrypoint hands over a clean one.
+  tmp_at_start="absent"
+  if [ -n "${ILA_TMP_DATA_DIR:-}" ] && [ -e "$ILA_TMP_DATA_DIR" ]; then tmp_at_start="present"; fi
+  # What the real library does when it has to download: make its download directory and put the zip
+  # (about 47 MB, with about 370 MB of CSV files unpacked next to it) in it.
+  download_into_tmp() {
+    if [ -n "${ILA_TMP_DATA_DIR:-}" ]; then
+      mkdir -p "$ILA_TMP_DATA_DIR"
+      : >"$ILA_TMP_DATA_DIR/GeoLite2-City-CSV.zip"
+    fi
+  }
   if [ "${FAKE_PREFETCH_FAIL:-0}" = "1" ]; then
+    download_into_tmp
     echo "fake prefetch: simulating a failed fetch" >&2
     exit 1
   fi
@@ -26,12 +39,24 @@ if [ "${1:-}" = "apps/web/scripts/prefetch-geo-db.mjs" ]; then
   if [ -f "$ILA_DATA_DIR/4-1.dat" ]; then
     echo "fake prefetch: data already present at $ILA_DATA_DIR - reusing (mimics real ip-location-api behavior)" >&2
   else
+    download_into_tmp
     : >"$ILA_DATA_DIR/4-1.dat"
     printf '%s' "$ILA_LICENSE_KEY" >"$ILA_DATA_DIR/fake-dataset-key"
     # Same idea for the field list: real ip-location-api keeps each list in its own directory, so
     # the test needs to see which list a fetch asked for.
     printf '%s' "${ILA_FIELDS:-unset}" >"$ILA_DATA_DIR/fake-dataset-fields"
+    # And for the download files: where they went, whether the library was told to delete them, and
+    # whether a directory of an earlier start was still there when it began.
+    printf '%s' "${ILA_TMP_DATA_DIR:-unset}" >"$ILA_DATA_DIR/fake-dataset-tmp-dir"
+    printf '%s' "${ILA_DOWNLOAD_TYPE:-unset}" >"$ILA_DATA_DIR/fake-dataset-download-type"
+    printf '%s' "$tmp_at_start" >"$ILA_DATA_DIR/fake-tmp-at-start"
     echo "fake prefetch: wrote fresh data for key $ILA_LICENSE_KEY" >&2
+  fi
+  # Like the real library, delete the download directory after a successful update unless
+  # ILA_DOWNLOAD_TYPE is "reuse". FAKE_PREFETCH_KEEP_TMP=1 plays a library that does not, so the
+  # test can show that the entrypoint does not depend on it.
+  if [ -n "${ILA_TMP_DATA_DIR:-}" ] && [ "${ILA_DOWNLOAD_TYPE:-reuse}" != "reuse" ] && [ "${FAKE_PREFETCH_KEEP_TMP:-0}" != "1" ]; then
+    rm -rf "$ILA_TMP_DATA_DIR"
   fi
   echo "ip-location-api: database ready (fake)."
   exit 0

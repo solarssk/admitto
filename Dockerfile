@@ -34,6 +34,14 @@ ENV ILA_LICENSE_KEY=redist
 ENV ILA_FIELDS=country,region1_name,city
 ENV ILA_DATA_DIR=/app/data/geoip
 ENV ILA_AUTO_UPDATE=false
+# ip-location-api downloads about 400 MB (a zip and the CSV files unpacked from it) to build the
+# dataset. By default it keeps them in node_modules/ip-location-api/tmp, and the production stage
+# copies node_modules as a whole, so they would travel into the image although the running app
+# never reads them (#1853). They go outside node_modules, and the library deletes them once the
+# dataset is built (ILA_DOWNLOAD_TYPE=false); the check after the prefetch fails the build if
+# anything is left. Only the dataset in ILA_DATA_DIR is copied into the production stage.
+ENV ILA_TMP_DATA_DIR=/tmp/geoip-download
+ENV ILA_DOWNLOAD_TYPE=false
 # The dataset is downloaded from a public GitHub Release. Retry brief upstream
 # outages during the image build, but still fail after the final attempt.
 RUN for attempt in 1 2 3; do \
@@ -44,6 +52,12 @@ RUN for attempt in 1 2 3; do \
       fi; \
     done; \
     exit 1
+# Fail here, where the cause is obvious, instead of shipping the download files in node_modules.
+RUN if [ -n "$(ls -A "$ILA_TMP_DATA_DIR" 2>/dev/null)" ] \
+      || [ -n "$(find node_modules/ip-location-api \( -name '*.csv' -o -name '*.zip' \) -print -quit)" ]; then \
+      echo "GeoIP download files were left behind by the prefetch (see ILA_TMP_DATA_DIR above)" >&2; \
+      exit 1; \
+    fi
 
 RUN npx prisma generate --schema packages/db/prisma/schema.prisma --config packages/db/prisma.config.ts
 
