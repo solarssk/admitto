@@ -343,7 +343,7 @@ describe("a second request", () => {
     expect(res.status).toBe(201);
     expect(await outcomeOf(res)).toEqual({
       added: ["travel"],
-      skipped: ["parking", "parking_plate", "arrival", "accommodation", "accessibility_needs"].map((source_field) => ({ source_field, reason: "exists" })),
+      skipped: ["arrival", "parking", "parking_plate", "accommodation", "accessibility_needs"].map((source_field) => ({ source_field, reason: "exists" })),
     });
     expect((await fieldsOf()).filter((row) => row.source_field !== "travel")).toEqual(others);
   });
@@ -365,7 +365,7 @@ describe("a second request", () => {
     const res = await addSuggested();
 
     expect(await outcomeOf(res)).toEqual({
-      added: ["parking", "parking_plate", "arrival", "accommodation", "accessibility_needs"],
+      added: ["arrival", "parking", "parking_plate", "accommodation", "accessibility_needs"],
       skipped: [{ source_field: "travel", reason: "exists" }],
     });
     expect((await fieldsOf()).find((row) => row.source_field === "travel")).toEqual(own);
@@ -443,7 +443,7 @@ describe("the limit on fields: all or nothing", () => {
       const res = await addSuggested();
 
       expect(res.status).toBe(201);
-      expect((await outcomeOf(res)).added).toEqual(["parking_plate", "arrival", "accommodation", "accessibility_needs"]);
+      expect((await outcomeOf(res)).added).toEqual(["arrival", "parking_plate", "accommodation", "accessibility_needs"]);
       expect(await prisma.eventCustomField.count({ where: { event_id: EVENT_A } })).toBe(MAX_CUSTOM_FIELDS_PER_EVENT);
     });
 
