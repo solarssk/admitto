@@ -701,6 +701,23 @@ describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
       await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Move Dietary requirements up" })));
     });
 
+    it("give the focus to the other arrow of a row that has reached the top", async () => {
+      vi.mocked(reorderEventCustomFields).mockImplementation(async (_eventId, ids) =>
+        ids.map((id) => [dietaryField, shirtField, parkingField].find((field) => field.id === id)!),
+      );
+      renderWithToast(<Host initial={[dietaryField, shirtField, parkingField]} />);
+      const button = screen.getByRole("button", { name: "Move Shirt size up" });
+
+      button.focus();
+      fireEvent.click(button);
+
+      expect(rowNames()).toEqual(["Shirt size", "Dietary requirements", "Needs parking"]);
+      // Now first: its Up is off, so the focus goes to the Down of the same row, not to the page, and stays there once the move lands.
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Move Shirt size down" }));
+      await waitFor(() => expect(button.hasAttribute("aria-busy")).toBe(false));
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Move Shirt size down" }));
+    });
+
     it("slide the two rows that change places to their new places, and no other", async () => {
       // jsdom has no layout and no Web Animations: rows are 40 px high and stack in the order they are drawn.
       const animate = vi.fn();

@@ -14,22 +14,21 @@ const SLIDE_MS = 180;
  */
 export function useRowSlide(rootRef: RefObject<HTMLElement | null>, order: readonly string[]): void {
   const orderRef = useRef(order);
-  const topsRef = useRef(new Map<string, number>());
+  const topsRef = useRef(new Map<HTMLElement, number>());
 
   // No list of dependencies on purpose: the places are read after every render, not only after a change of order.
   useLayoutEffect(() => {
-    const rows = Array.from(rootRef.current?.querySelectorAll<HTMLElement>("[data-row-id]") ?? []);
-    const tops = new Map(rows.map((row) => [row.dataset.rowId ?? "", row.offsetTop]));
+    const root = rootRef.current;
+    if (!root) return;
+    const tops = new Map(Array.from(root.querySelectorAll<HTMLElement>("[data-row-id]"), (row) => [row, row.offsetTop]));
     const before = topsRef.current;
     const reordered = orderRef.current.join("\n") !== order.join("\n");
     topsRef.current = tops;
     orderRef.current = order;
     if (!reordered || globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    for (const row of rows) {
-      const id = row.dataset.rowId ?? "";
-      const from = before.get(id);
-      const to = tops.get(id);
-      if (from === undefined || to === undefined || from === to || typeof row.animate !== "function") continue;
+    for (const [row, to] of tops) {
+      const from = before.get(row);
+      if (from === undefined || from === to || typeof row.animate !== "function") continue;
       row.animate({ transform: [`translateY(${from - to}px)`, "translateY(0)"] }, { duration: SLIDE_MS, easing: "ease-out" });
     }
   });

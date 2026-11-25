@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { useRef } from "react";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRowSlide } from "../../src/hooks/useRowSlide.js";
 
@@ -102,6 +102,13 @@ describe("useRowSlide", () => {
 
     view.rerender(<List order={["b", "a", "c"]} />);
 
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it("does nothing while the list is not on the page", () => {
+    const view = renderHook(({ order }) => useRowSlide({ current: null }, order), { initialProps: { order: ["a", "b"] } });
+
+    expect(() => view.rerender({ order: ["b", "a"] })).not.toThrow();
     expect(animate).not.toHaveBeenCalled();
   });
 

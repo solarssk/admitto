@@ -131,6 +131,15 @@ describe("useFieldFormControls: the answer of a move", () => {
     expect(shown.map((row) => row.id)).toEqual(["b", "a", "c", "d"]);
     expect(shown.map((row) => row.display_order)).toEqual([0, 1, 2, 3]);
   });
+
+  it("shows the move before the answer without a field that was deleted since", async () => {
+    const { optimistic } = await answeredMove(answerAfterMove);
+
+    const shown = optimistic([field("a", "A", 0), field("c", "C", 1)]);
+
+    expect(shown.map((row) => row.id)).toEqual(["a", "c"]);
+    expect(shown.map((row) => row.display_order)).toEqual([0, 1]);
+  });
 });
 
 describe("useFieldFormControls: a move on the screen", () => {
@@ -223,6 +232,27 @@ describe("useFieldFormControls: a move on the screen", () => {
 
     expect(addToast).toHaveBeenCalledWith(expect.stringMatching(/so it was refreshed\. Move the field again\./), "warning");
     expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes on with the next move when the handling of a refused one throws", async () => {
+    reorderEventCustomFields.mockRejectedValueOnce(new ApiError(500, "x", "")).mockResolvedValueOnce([]);
+    const onChanged = vi.fn().mockImplementationOnce(() => {
+      throw new Error("the host failed");
+    });
+    const { result } = renderHook(() => {
+      const [fields, setFields] = useState([a, b, c]);
+      return { fields, form: useFieldFormControls({ eventId: "evt-1", fields, onChanged, onUpdated: setFields, rootRef: { current: null } }) };
+    });
+
+    await act(async () => {
+      await result.current.form.move(0, "down").catch(() => undefined);
+    });
+    await act(async () => {
+      await result.current.form.move(1, "down");
+    });
+
+    // The first request was refused and the host failed while it was told; the line did not stop, so the second one went.
+    expect(reorderEventCustomFields).toHaveBeenCalledTimes(2);
   });
 
   it("does not move a field past the end of the list", () => {
