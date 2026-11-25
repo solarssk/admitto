@@ -424,3 +424,11 @@ describe("Theme by surface (Branding): the controls of the three rows line up an
     expect(sets(bodyOf(staff, controls, "@media (max-width: 640px)"), "width", "100%")).toBe(true);
   });
 });
+
+describe("the state of a secret field (Not set, the mask), on Mail and on Guest registration", () => {
+  it("is set in the product font and the size of the text of a field, not in monospace: one font on a screen", () => {
+    const body = bodyOf(staff, ".mail-secret-field__display-value");
+    expect(declares(body, "font-family")).toBe(false);
+    expect(sets(body, "font-size", String.raw`var\(--fs-body\)`)).toBe(true);
+  });
+});

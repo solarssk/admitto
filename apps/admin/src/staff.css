@@ -5027,12 +5027,13 @@ output.mail-field-hint {
   padding: 0;
 }
 
+/* The state of a secret ("Not set", the mask) is words, so it is set in the product font and the size of the text of a field
+   (one font on a screen: standards/admin-spa/readability.md). */
 .mail-secret-field__display-value {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-family: ui-monospace, monospace;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-body);
   color: var(--text-secondary);
 }
 
