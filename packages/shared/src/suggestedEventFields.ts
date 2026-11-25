@@ -23,7 +23,8 @@ export type SuggestedEventField = {
 };
 
 /**
- * The questions that "Add suggested questions" offers: parking, travel, accommodation and accessibility needs. Plain data, defined once: the admin app lists
+ * The questions that "Add suggested questions" offers: travel and arrival, parking (and the registration number that follows it), accommodation and
+ * accessibility needs, in the order a guest thinks of them: how they come, then whether they need a parking space. Plain data, defined once: the admin app lists
  * them before they are added, the server creates the fields from them, and the tests hold them to the schemas and the checks of a field
  * that is added by hand. A question comes after the one it depends on, because that is the order they are created in.
  *
@@ -35,20 +36,6 @@ export type SuggestedEventField = {
  * form). The set is a first version: the wording, the order and the icons are what an organiser changes.
  */
 export const SUGGESTED_EVENT_FIELDS: readonly SuggestedEventField[] = [
-  {
-    source_field: "parking",
-    label: "Do you need a parking space?",
-    type: "boolean",
-    rules: { icon: "parking" },
-  },
-  {
-    source_field: "parking_plate",
-    label: "Registration number",
-    description: "The registration number of your car, used for parking access.",
-    type: "text",
-    // Up to 12 characters holds the plates of most countries, with their spaces and dashes.
-    rules: { max_length: 12, example: "AB 123 CD", icon: "car", show_when: { field: "parking", value: true } },
-  },
   {
     // A single choice draws no icon on the form (guestFormDrawsIcon), so none is saved.
     source_field: "travel",
@@ -62,6 +49,20 @@ export const SUGGESTED_EVENT_FIELDS: readonly SuggestedEventField[] = [
     description: "Your best estimate is fine.",
     type: "datetime",
     rules: { icon: "clock" },
+  },
+  {
+    source_field: "parking",
+    label: "Do you need a parking space?",
+    type: "boolean",
+    rules: { icon: "parking" },
+  },
+  {
+    source_field: "parking_plate",
+    label: "Registration number",
+    description: "The registration number of your car, used for parking access.",
+    type: "text",
+    // Up to 12 characters holds the plates of most countries, with their spaces and dashes.
+    rules: { max_length: 12, example: "AB 123 CD", icon: "car", show_when: { field: "parking", value: true } },
   },
   {
     source_field: "accommodation",

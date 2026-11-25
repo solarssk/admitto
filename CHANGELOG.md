@@ -97,6 +97,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Move every registration setting into Event settings, Registration, open to every event administrator (a superadmin still sets how guests open the form), drop the Access tab of the Registration page, turn registration on and off, copy the guest link and see its state from the header of the Registration page, split the form settings into two cards (Form, Handling requests), and move the address for guests to Event settings, General ([#1953](https://github.com/solarssk/admitto/pull/1953))
 - Add the region to the built-in IP location data, and fetch a MaxMind download kept in `geoip-data` once more after the upgrade ([#1978](https://github.com/solarssk/admitto/pull/1978))
 - Make the Docker image about 400 MB smaller by leaving the GeoIP download files out of it, and delete them after a MaxMind fetch ([#1980](https://github.com/solarssk/admitto/pull/1980))
+- Offer the suggested travel and arrival questions before parking, so the form asks how a guest comes first ([#1983](https://github.com/solarssk/admitto/pull/1983))
 
 ### Fixed
 
