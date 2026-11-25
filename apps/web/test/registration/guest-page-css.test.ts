@@ -202,6 +202,45 @@ describe("the form's own rules for a panel under a row and the list under a text
   });
 });
 
+describe("a control that a browser extension adds beside an input", () => {
+  const BOX = ".reg-form .at-inputgroup:not(:has(.at-inputgroup__icon--action))";
+  const page = () => documentOf(renderRegistrationFormPage(panelModel(), { nonce: "bm9uY2UtdmFsdWU=" }));
+  const styleOf = (doc: Dom, el: Dom) => doc.defaultView.getComputedStyle(el);
+
+  it("goes to a row of its own below the input of a field with an icon, instead of taking a share of the input's row", () => {
+    const doc = page();
+    const input = doc.querySelector("#f-email");
+    const box = input.closest(".at-inputgroup");
+    input.after(doc.createElement("div")); // what a password manager does
+    // The input is as wide as its row, so nothing else fits on that line; the box wraps, so what does not fit goes to the next
+    // line; the icon is not an item of the row at all. A browser needs all three to keep the input at its full width.
+    expect(styleOf(doc, box).display).toBe("flex");
+    expect(styleOf(doc, box).flexWrap).toBe("wrap");
+    expect(styleOf(doc, input).width).toBe("100%");
+    expect(styleOf(doc, box.querySelector(".at-inputgroup__icon")).position).toBe("absolute");
+  });
+
+  it("leaves the icon on the input when the box grows taller than the input", () => {
+    const doc = page();
+    const icon = doc.querySelector("#f-email").closest(".at-inputgroup").querySelector(".at-inputgroup__icon");
+    expect(styleOf(doc, icon).top).toBe("calc(var(--control-h) / 2)");
+  });
+
+  it("leaves a box with an icon button, the one of a date, as the product has it", () => {
+    const doc = page();
+    const box = doc.querySelector("#f-email").closest(".at-inputgroup");
+    box.insertAdjacentHTML("afterbegin", '<button type="button" class="at-inputgroup__icon at-inputgroup__icon--action"></button>');
+    expect(styleOf(doc, box).flexWrap).not.toBe("wrap");
+    expect(styleOf(doc, box.querySelector(".at-inputgroup__icon--action")).top).not.toBe("calc(var(--control-h) / 2)");
+  });
+
+  it("keeps the one row of a touch screen, whose box has a fixed height and clips what does not fit", () => {
+    expect(REGISTRATION_PAGE_CSS).toContain(`@media (pointer: coarse) {\n  ${BOX} { flex-wrap: nowrap; }\n}`);
+    // After the rule that wraps, so that it wins at the same specificity.
+    expect(REGISTRATION_PAGE_CSS.indexOf("flex-wrap: nowrap")).toBeGreaterThan(REGISTRATION_PAGE_CSS.indexOf(`${BOX} { flex-wrap: wrap; }`));
+  });
+});
+
 describe("buildGuestPageProductCss, on a stylesheet written for the test", () => {
   const build = (components: string, tokens = ":root { --a: 1; }") =>
     buildGuestPageProductCss((relativePath) => (relativePath === "components.css" ? components : tokens)).split("\n");
