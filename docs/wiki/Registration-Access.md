@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Turn guest registration on or off for an event, copy the link you give to guests, and set what the form asks. You turn registration on and off, and copy the link, with the buttons in the header of the event's **Registration** page, which is in the event menu after **Overview**. The same header is on every tab, with a badge next to the title that says **Open**, **Closed** or **Not ready**. What the form asks is on the **Registration** tab of the event's **Event settings**, in four cards, in the order of a guest's way: **Access method**, **Company SSO**, **Form** (the questions and the look of the boxes; the extra consents are chosen on the **Legal** tab) and **Handling requests** (**Confirm email addresses**, **Approve requests by hand** and **Waiting list**). **Guests can bring one person** is in the **Form** card, because it adds a part to the form. What registration still needs is on the **Checklist** tab of the **Registration** page.
+Turn guest registration on or off for an event, copy the link you give to guests, and set what the form asks. You turn registration on and off, and copy the link, with the buttons in the header of the event's **Registration** page, which is in the event menu after **Overview**. The same header is on every tab, with a badge next to the title that says **Open**, **Closed** or **Not ready**. What the form asks is on the **Registration** tab of the event's **Event settings**, in four cards, in the order of a guest's way: **Access method**, **Company SSO**, **Form** (the questions and the look of the boxes; the extra consents are chosen on the **Legal** tab) and **Handling requests** (**Confirm email addresses**, **Approve requests by hand**, **Waiting list** and **Keep where a request came from**). **Guests can bring one person** is in the **Form** card, because it adds a part to the form. What registration still needs is on the **Checklist** tab of the **Registration** page.
 
 Registration is off for every event until you turn it on. Until then, the address of the form answers "not found".
 
@@ -52,6 +52,12 @@ On the **Checklist** tab, when every step is done, the green message has the but
 | **Approve requests by hand** on (the mode when you turn registration on) | The request waits on the **Requests** tab until you accept or reject it |
 
 When the event is full, a new request goes on the waiting list. You accept people from the list by hand, in either mode. Without the **Waiting list** switch, a full event says that no places are left and saves nothing.
+
+**Keep where a request came from**
+
+The switch is on when an event is made, and any administrator of the event can change it, on the **Registration** tab of **Event settings**, in the **Handling requests** card. While it is on, each new request keeps three things next to the guest's answers, so staff can see them in the request: the time zone of the guest's browser, the approximate location of the guest's IP address (the country, and the region when the instance's location data has one, never a city), and the IP address itself. Without a location database on the instance, the location stays empty and nothing fails. Turn the switch off, and a new request keeps none of the three. A request that was saved earlier keeps what it has until it is deleted. The language the guest's browser asks for is kept in either case.
+
+These are personal data. Mention them in the privacy notice of the event. They are shown only to staff who can open requests, they are not written to any log, and they are erased together with the request.
 
 **Link, password or company SSO**
 

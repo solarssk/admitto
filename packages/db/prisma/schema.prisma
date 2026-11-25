@@ -905,6 +905,9 @@ model EventRegistrationSettings {
   // check. Only a superadmin turns it off, and it has an effect only while the organisation's own switch is on (SystemSettings
   // "registration_bot_protection"). The company sign-in never has a check. Not personal data.
   bot_protection_enabled     Boolean           @default(true)
+  // Whether a new request keeps where it came from: the guest's time zone, the approximate place of the IP address (country and region) and the
+  // IP address itself, saved on the Registration so staff can see them. On by default; it changes only requests that come after it. Not personal data.
+  keep_origin                Boolean           @default(true)
   // Company sign-in only (method "sso", D-C4): ONE trusted claim of the provider's verified ID token (for example `tid`) and
   // the values of it that may register. Both are set or both are empty (EventRegistrationSettings_sso_claim_pair_check).
   // Never the end of an address. The guest's value is not stored beyond the 30 minutes of the sign-in cookie.
@@ -963,8 +966,15 @@ model Registration {
   decided_at         DateTime?
   // Staff user id (no FK, like AdminAuditLog.actor_user_id); null for an automatic decision.
   decided_by         String?
-  // Reserved for translated mails (D-D3).
+  // The language of the guest's browser (the first tag of Accept-Language), for translated mails (D-D3). Personal data: erased with the row.
   locale             String?
+  // Where the request came from, kept only while the event's keep_origin is on (EventRegistrationSettings): the IANA time zone of the guest's
+  // browser, the client IP address (the same one the rate limits use) and the approximate place of it from the GeoIP data (ISO country code and
+  // region name; never a city). Each is null when it was not kept or not known. Personal data: erased with the row, never in a log or an audit entry.
+  submitted_ip       String?
+  submitted_timezone String?
+  submitted_country  String?
+  submitted_region   String?
   // Proof of consent (D-F3): when the terms were accepted, and when each extra consent was
   // given (consent key -> ISO time). No text version is stored.
   accepted_at        DateTime?

@@ -40,6 +40,9 @@
  *   are kept apart from the guest's own (`askedCompanion`), and a condition refers only to the questions of its own panel.
  *   What is sent is `companions: [{ name, answers }]`, read from the fields of the panel. The companion is kept nowhere else.
  *
+ * - sends `time_zone`, the IANA zone the browser reports, when the form carries data-keep-origin (the event keeps where a request
+ *   came from). It is not something the guest typed and is not shown. A form without the attribute sends no key for it.
+ *
  * Nothing the guest typed is put in an address, and the page has no cookie.
  *
  * A form with a question that an own box takes over (D-E9) gets a second script after this one (./form-controls-script.ts). This one does
@@ -272,6 +275,16 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
     return true;
   }
 
+  // The IANA time zone of this browser, sent only by a form that carries data-keep-origin (the event keeps where a request came from).
+  // The server judges it: the script only reads what the browser says, and says nothing when it does not.
+  function browserTimeZone() {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch (ignored) {
+      return "";
+    }
+  }
+
   function buildBody() {
     var body = {};
     var answers = Object.create(null);
@@ -312,6 +325,10 @@ export const REGISTRATION_FORM_SCRIPT = String.raw`
       .map(function (box) { return box.getAttribute("data-consent"); });
     body.challenge = token;
     if (password !== null) body.password = password;
+    if (form.hasAttribute("data-keep-origin")) {
+      var zone = browserTimeZone();
+      if (zone) body.time_zone = zone;
+    }
     return body;
   }
 

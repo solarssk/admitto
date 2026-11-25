@@ -68,6 +68,8 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Rename "Way in" to "How guests open the form" and "company sign-in" to "Company SSO", and grey out a way that is not turned on, with the reason on hover ([#1927](https://github.com/solarssk/admitto/pull/1927))
 - Add a Registration tab to Event settings for superadmins, with the Company SSO restriction and the Address for guests, moved from the Registration page ([#1928](https://github.com/solarssk/admitto/pull/1928))
 - Give the guest registration form its own colour and font in Organisation settings > Branding, drop the live preview there, and label its sections like the Filters panel ([#1960](https://github.com/solarssk/admitto/pull/1960))
+- Add a switch "Keep where a request came from" to Event settings > Registration, which saves the guest's time zone, approximate location and IP address with a new request and shows them in the request window; it is on by default for existing events after the upgrade, so review the setting and your privacy notice ([#1967](https://github.com/solarssk/admitto/pull/1967))
+
 
 ### Changed
 - Tidy the Requests tab: a note over the list says how many requests wait and when the oldest came in, the table sits in a box, and Delete all matching moves to More actions ([#1965](https://github.com/solarssk/admitto/pull/1965))
@@ -118,7 +120,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Bump `zod` to 4.6.6 (high: memory exhaustion on oversized collections, GHSA-mrhx-c7xc-m3w5), and `hono` and `ip-address` past moderate advisories ([#1797](https://github.com/solarssk/admitto/pull/1797))
 - Bump `undici` (high: denial of service in the EventSource parser), `fast-uri` and `nodemailer` past their advisories ([#1805](https://github.com/solarssk/admitto/pull/1805))
 - Send HSTS from the application alone on every HTTPS answer, with no `includeSubDomains` on a guest address, and stop the bundled nginx adding its own ([#1921](https://github.com/solarssk/admitto/pull/1921))
-- Pin `effect` to 3.22.1 (high: ReDoS in `Schema.TemplateLiteral`, GHSA-7589-6fvf-x4pw), the copy that Prisma's config loader uses ([#1959](https://github.com/solarssk/admitto/pull/1959))
+- Pin `effect` to 3.22.5 (high: ReDoS in `Schema.TemplateLiteral`, GHSA-7589-6fvf-x4pw), the copy that Prisma's config loader uses and pins exactly ([#1959](https://github.com/solarssk/admitto/pull/1959), [#1977](https://github.com/solarssk/admitto/pull/1977))
 
 ## [0.7.7] - 2026-10-18
 

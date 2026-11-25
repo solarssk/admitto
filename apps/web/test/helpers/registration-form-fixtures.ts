@@ -17,6 +17,8 @@ export function formModel(overrides: Partial<RegistrationFormModel> = {}): Regis
     verifyEmail: true,
     askCompany: true,
     askDepartment: true,
+    // Off in the fixture: the page of a form that does not keep the origin is the page every earlier test pins byte for byte.
+    keepOrigin: false,
     questions: [
       question({ key: "day", label: "Which days will you attend?", type: "select", required: true, options: ["Both days", "Day 1 only"] }),
       question({ key: "parking", label: "I will arrive by car and need parking", type: "boolean" }),

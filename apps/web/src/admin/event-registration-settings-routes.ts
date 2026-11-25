@@ -33,7 +33,8 @@ export const MAX_REGISTRATION_SETTINGS_BODY_BYTES = 4_096;
  *
  * - `mode`: `null` (off), `"automatic"` or `"approval"`;
  * - `access_methods`: `[]` or exactly one of `"link"`, `"password"` and `"sso"` (the company sign-in);
- * - `waitlist_enabled`, `verify_email`, `ask_company`, `ask_department`: switches;
+ * - `waitlist_enabled`, `verify_email`, `ask_company`, `ask_department`, `keep_origin`: switches (`keep_origin`: a new request keeps the guest's time
+ *   zone, the approximate place of the IP address and the address itself; the administrator of the event decides);
  * - `max_companions`: 0 to `MAX_COMPANION_SLOTS`;
  * - `consent_keys`: keys of the event's published extra consents (a key it has not published is a 422);
  * - `sso_claim_name` and `sso_claim_values` (D-C4): the restriction of the company sign-in to the people whose token holds one
@@ -63,6 +64,7 @@ const putBodySchema = z
     ask_company: z.boolean().optional(),
     ask_department: z.boolean().optional(),
     bot_protection_enabled: z.boolean().optional(),
+    keep_origin: z.boolean().optional(),
     consent_keys: z.array(z.string().regex(LEGAL_CONSENT_KEY_PATTERN)).max(MAX_CONSENT_DOCUMENTS_PER_EVENT).optional(),
     sso_claim_name: z.string().trim().min(1).refine((name) => ssoClaimNameProblem(name) === null).nullable().optional(),
     // The provider of the company sign-in, a cuid of an identity provider: its existence and state are judged by the save.

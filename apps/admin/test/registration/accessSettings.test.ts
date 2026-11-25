@@ -42,6 +42,7 @@ describe("draftFromSettings", () => {
       ask_company: true,
       ask_department: true,
       companion: true,
+      keep_origin: true,
       bot_protection_enabled: true,
       sso_claim_name: "",
       sso_claim_values: "",
@@ -59,6 +60,11 @@ describe("draftFromSettings", () => {
     expect(draft.method).toBe("sso");
     expect(draft.sso_claim_name).toBe("tid");
     expect(draft.sso_claim_values).toBe("aaa\nbbb");
+  });
+
+  it("holds the switch that keeps where a request came from as it is saved", () => {
+    expect(draftFromSettings(settings({ keep_origin: false })).keep_origin).toBe(false);
+    expect(draftFromSettings(settings({ keep_origin: true })).keep_origin).toBe(true);
   });
 
   it("takes any number of companions above none as one, since the screen offers no other", () => {
@@ -80,6 +86,7 @@ describe("settingsPatch", () => {
     ["the company", { ask_company: true }, { ask_company: true }],
     ["the department", { ask_department: true }, { ask_department: true }],
     ["a person to bring", { companion: true }, { max_companions: 1 }],
+    ["keeping where a request came from", { keep_origin: false }, { keep_origin: false }],
   ])("holds only %s when that is all that changed", (_name, change, patch) => {
     const from = base({ mode: change.mode === null ? "approval" : null });
     expect(settingsPatch({ ...from, ...change }, from)).toEqual(patch);
