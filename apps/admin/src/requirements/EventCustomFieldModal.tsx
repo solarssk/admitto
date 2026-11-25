@@ -246,7 +246,7 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
   return (
     <dialog open className="event-item-modal" aria-modal="true" aria-labelledby="custom-field-modal-title">
       <ModalBackdrop />
-      <div ref={panelRef} className="event-item-modal__panel">
+      <div ref={panelRef} className="event-item-modal__panel event-item-modal__panel--wide">
         <div ref={scrollRef} className="event-item-modal__scroll at-scroll">
           <div className="event-item-modal__header">
             <div>
@@ -264,16 +264,9 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
           </div>
           <form id="custom-field-form" className="event-item-modal__body" onSubmit={handleFormSubmit}>
             <div className="at-field">
-              <div className="add-item-label-row">
-                <label className="at-label" htmlFor="cf-label">
-                  Display label
-                </label>
-                {form.source_field && (
-                  <span className="at-hint">
-                    ID: <code className="requirements-item-id">{form.source_field}</code>
-                  </span>
-                )}
-              </div>
+              <label className="at-label" htmlFor="cf-label">
+                Display label
+              </label>
               <div className="contents-row__key-row">
                 <input
                   id="cf-label"
@@ -298,10 +291,6 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
                   </Tooltip>
                 </div>
               </div>
-              <span className="at-hint">
-                Used to reference this field from items and to match it elsewhere. Can't be
-                changed after creation.
-              </span>
             </div>
             <div className="at-field">
               <label className="at-label" htmlFor="cf-description">
@@ -413,6 +402,12 @@ export function EventCustomFieldModal({ eventId, field, fields, onClose, onSaved
                 Answers already saved are not changed, but they are checked against the new type and rules. An attendee whose
                 saved answer no longer fits can&apos;t be edited until that answer is replaced or cleared.
               </Notice>
+            )}
+            {form.source_field && (
+              <p className="at-hint">
+                Column name in an import file: <code className="requirements-item-id">{form.source_field}</code>. It can&apos;t be
+                changed later.
+              </p>
             )}
           </form>
           <div className="event-item-modal__footer">

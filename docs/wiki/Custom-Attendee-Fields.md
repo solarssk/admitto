@@ -15,7 +15,7 @@ Decide which information is necessary for this event. Choose a stable field name
 1. Open the event's **Registration** page, then the **Fields** tab. The **Attendee fields** card lists the fields.
 2. Select **Add field**.
 3. Enter a clear **Display label**.
-4. Review the generated field ID. It is the source field used by imports and references.
+4. At the bottom of the window, check the **column name in an import file**. It is the field ID, Admitto makes it from the label, and it cannot be changed later.
 5. Add an optional description when operators need context.
 6. Under **Applies to**, choose **Guest** for a question about the guest, or **Companion** for a question about the person the guest brings. See [Questions about a companion](#questions-about-a-companion).
 7. Choose the type of answer: **Text**, **Long text**, **Date**, **Date and time**, **Phone**, **Single choice** or **Yes / No**. See [Types of answer](#types-of-answer).
@@ -33,7 +33,7 @@ The field appears in supported attendee and import workflows with the label, typ
 
 **Field ID and import**
 
-- The generated field ID cannot be changed after creation.
+- The field ID is the column name in an import file. It is made from the label when you create the field, is shown at the bottom of the field editor, and cannot be changed after creation.
 - Use the field ID, not only the display label, as the import column name.
 - A required field can prevent incomplete attendee data from being saved or imported.
 - Select values must match an allowed option.
@@ -105,7 +105,7 @@ What the window does when something is in the way:
 
 ### Sensitive questions
 
-Turn on **Sensitive** in the field editor for a question whose answers should not be seen by everyone, for example one about health or accessibility. It is off by default, and the list of fields marks a sensitive question with a **Sensitive** badge.
+Turn on **Sensitive** in the field editor for a question whose answers should not be seen by everyone, for example one about health or accessibility. It is off by default, and the list of fields marks a sensitive question with a **Sensitive** badge. The info icon next to **Sensitive** in the editor lists the places where the answers are hidden.
 
 - The answers are hidden in lists, search, filters, exports, reports, wallet passes, emails and on the operator card. The guest still answers the question on the registration form.
 - Only an Administrator of the organisation or a Superadmin can see the answers, by selecting **Show** on the attendee's page or in the request window. Every click is recorded in the audit log: who, when and which questions, never the answers. See [Roles and Permissions](Roles-and-Permissions#sensitive-answers).

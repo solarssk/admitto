@@ -651,6 +651,14 @@
   flex-direction: column;
 }
 
+/* The field editor holds a lot (type, who it is about, rules, icon, condition, suggestions), so on a desktop its window is wider than
+   the other windows of this shell. Below a desktop width it is as wide as they are. */
+@media (min-width: 1024px) {
+  .event-item-modal__panel--wide {
+    width: min(100%, 720px);
+  }
+}
+
 .event-item-modal__scroll {
   overflow: auto;
   /* No scrollbar-gutter: stable - matches .identity-modal__scroll / .add-attendee-modal__scroll:

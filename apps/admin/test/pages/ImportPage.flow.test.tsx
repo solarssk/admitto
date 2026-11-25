@@ -285,6 +285,9 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(await screen.findByText("shirt_size")).toBeTruthy();
     expect(screen.getByText("Attendee's t-shirt size for the swag bag")).toBeTruthy();
     expect(screen.queryByText("Shirt size")).toBeNull();
+    // The help under the table says it in plain words, with no "source_field slug".
+    expect(screen.getByText(/The columns for this event's own questions are named as in the table above/)).toBeTruthy();
+    expect(screen.queryByText(/source_field/)).toBeNull();
   });
 
   it("falls back to a plain 'No description provided' note for a custom field with no description set", async () => {

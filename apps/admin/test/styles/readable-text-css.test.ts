@@ -68,6 +68,7 @@ const attendees = parse(read("apps/admin/src/attendees/attendees.css"));
 const requests = parse(read("apps/admin/src/registration/registration-requests.css"));
 const requestDetail = parse(read("apps/admin/src/registration/request-detail.css"));
 const notifications = parse(read("apps/admin/src/settings/notifications-panel.css"));
+const requirements = parse(read("apps/admin/src/requirements/requirements.css"));
 
 describe("the baseline: running text runs to the edge of its column, short standalone texts are balanced", () => {
   it("is pretty on the body, so that every description, hint and paragraph inherits it and none is a narrow block with an empty strip beside it", () => {
@@ -430,5 +431,22 @@ describe("the state of a secret field (Not set, the mask), on Mail and on Guest 
     const body = bodyOf(staff, ".mail-secret-field__display-value");
     expect(declares(body, "font-family")).toBe(false);
     expect(sets(body, "font-size", String.raw`var\(--fs-body\)`)).toBe(true);
+  });
+});
+
+describe("the text area (the description of a question, a long answer, a note)", () => {
+  it("is set in the product font and the size of a field, not in monospace: it holds words, and the form had to override it", () => {
+    const body = bodyOf(components, ".at-textarea");
+    expect(declares(body, "font-family")).toBe(false);
+    expect(declares(body, "font-size")).toBe(false);
+    expect(sets(bodyOf(components, ".at-input, .at-select, .at-textarea"), "font-family", String.raw`var\(--font-sans\)`)).toBe(true);
+  });
+});
+
+describe("the window of the field editor", () => {
+  it("is wider than the other windows of its shell from a desktop width, and as wide as they are below it", () => {
+    expect(sets(bodyOf(requirements, ".event-item-modal__panel"), "width", String.raw`min\(100%, 600px\)`)).toBe(true);
+    expect(sets(bodyOf(requirements, ".event-item-modal__panel--wide", "@media (min-width: 1024px)"), "width", String.raw`min\(100%, 720px\)`)).toBe(true);
+    expect(requirements.some((r) => r.selector === ".event-item-modal__panel--wide" && r.media === null)).toBe(false);
   });
 });

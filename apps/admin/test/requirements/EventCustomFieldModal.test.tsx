@@ -77,7 +77,7 @@ async function waitForUsageLoaded() {
 }
 
 describe("EventCustomFieldModal — create", () => {
-  it("shows a live ID preview derived from the label", () => {
+  it("shows the column name for an import file, made from the label, in a quiet line at the bottom", () => {
     renderModal(null);
     expect(
       screen.getByText(
@@ -88,7 +88,22 @@ describe("EventCustomFieldModal — create", () => {
     fireEvent.change(screen.getByLabelText("Display label"), {
       target: { value: "Needs Parking" },
     });
-    expect(screen.getByText("needs_parking")).toBeTruthy();
+    const line = screen.getByText("needs_parking").closest("p");
+    expect(line?.textContent).toBe("Column name in an import file: needs_parking. It can't be changed later.");
+    expect(document.getElementById("custom-field-form")?.lastElementChild).toBe(line);
+    // Not at the top beside the label any more, and the sentence about items is gone.
+    expect(screen.getByLabelText("Display label").closest(".at-field")?.textContent).not.toContain("needs_parking");
+    expect(screen.queryByText(/Used to reference this field/)).toBeNull();
+  });
+
+  it("shows the column name of a field that exists in the same line", () => {
+    renderModal(dietaryField);
+    expect(screen.getByText("dietary").closest("p")?.textContent).toBe("Column name in an import file: dietary. It can't be changed later.");
+  });
+
+  it("has the wide window of the field editor", () => {
+    renderModal(null);
+    expect(document.querySelector(".event-item-modal__panel")?.classList.contains("event-item-modal__panel--wide")).toBe(true);
   });
 
   it("keeps Create field disabled when the display label is empty", () => {
