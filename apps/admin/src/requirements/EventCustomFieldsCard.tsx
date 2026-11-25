@@ -21,7 +21,7 @@ import "./requirements.css";
 
 const CARD_TEXT = {
   title: "Attendee fields",
-  hint: "Guests answer the fields that are on the form. A field marked Companion is asked about the person a guest brings, when the event lets a guest bring someone. The other fields are also used in the attendee form, CSV import, and exports. Fields used as item hints can't be deleted until removed from the item.",
+  hint: "Questions about each guest. The ones switched on are asked on the registration form. A question marked Companion is about the person a guest brings.",
   emptyTitle: "No attendee fields yet",
   emptyText: "Add a field to ask guests a question on the registration form, like dietary requirements or shirt size.",
 } as const;

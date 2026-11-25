@@ -265,7 +265,7 @@ A question can be shown only when another question has a certain answer. For exa
 | The other field is a yes/no field (the answer is Yes) or a select field (the answer is one of its options, written exactly) | The same message |
 | The other field has no condition of its own. So there are no chains of conditions and no cycles | The same message |
 | A field with a condition is on the registration form only if the field it depends on is on the form too. Taking that field off the form while a question that depends on it is on the form is refused as well | "A field with a condition can be on the registration form only when the field it depends on is on the form too." |
-| A field that other fields depend on can't be deleted, changed to another type, or lose or rename the option a condition names | "Other fields are shown only for an answer to this one. Change or remove their condition first." |
+| A field that other fields depend on can't be deleted, changed to another type, or lose or rename the option a condition names | "Other fields depend on this one. Remove their condition first." |
 
 These checks run when you save the field, in one step with every other change to the event's fields, so two people saving at the same time can't break them. An event that does not accept registrations is held to the same rules.
 
@@ -275,13 +275,13 @@ The field editor makes the same checks first, so you see what is wrong where the
 
 | What you did | What you'll see |
 |---|---|
-| Changed the type of a field that other fields are shown for, or removed or renamed an option that one of them is shown for | "“Registration number of your car” (for Yes) is shown only for an answer to this field, so this change can't be saved. Remove its condition first, or undo the change." With two or more fields: "…are shown only for an answer to this field… Remove their conditions first…" |
-| Opened the condition of a field that other fields are shown for | "“Registration number of your car” is shown only for an answer to this field, so it can't have a condition itself." The control is off |
-| Chose a question that is not on the registration form for a field that is | "“Parking” is not on the registration form. A question with a condition can be on the form only when the question it depends on is too. Put “Parking” on the form first, or choose another question." |
+| Changed the type of a field that other fields are shown for, or removed or renamed an option that one of them is shown for | "“Registration number of your car” (for Yes) depends on this field, so this change can't be saved. Remove its condition first, or undo the change." With two or more fields: "…depend on this field… Remove their conditions first…" |
+| Opened the condition of a field that other fields are shown for | "“Registration number of your car” depends on this field, so this field can't depend on another one." The control is off |
+| Chose a question that is not on the registration form for a field that is | "“Parking” is not on the registration form, so a question that depends on it can't be either. Put “Parking” on the form first, or choose another question." |
 | Chose an icon for a Single choice, a Long text or a Required Yes / No question | "A Single choice question shows no icon on the registration form. The icon stays saved." It names the kind of question ("A Long text question", "A required Yes / No question"), and **Save** stays on |
 | Chose a Single choice question and no answer | "Choose the answer that shows this question." |
 | The event has no Yes / No or Single choice question without a condition | "This event has no yes/no or single choice question without a condition yet. Add one first." The control is off |
-| Deleted a field that other fields are shown for | "“Parking” can't be deleted yet: “Registration number of your car” (for Yes) is shown only for an answer to it. Remove its condition first." **Delete** is off |
+| Deleted a field that other fields are shown for | "“Parking” can't be deleted, because “Registration number of your car” depends on it. Remove its condition first." **Delete** is off |
 | Typed a suggestion with a line break or an invisible character | "A suggestion has an invisible or control character. Use plain text on one line." With several: "2 suggestions have…" |
 | Typed a suggestion of more than 100 characters | "A suggestion is longer than 100 characters." With several: "2 suggestions are…" |
 | Listed the same suggestion twice, whatever its capital letters | "“Vegan” is there more than once. Capital letters do not make a suggestion different." |

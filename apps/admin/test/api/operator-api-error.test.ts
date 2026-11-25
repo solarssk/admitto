@@ -77,7 +77,7 @@ describe("operatorApiErrorMessage", () => {
     const err = new ApiError(409, "field_in_use", "field_in_use");
     const message = operatorApiErrorMessage(err, "Failed to delete field.");
     expect(message).toBe(
-      "An item on the Event items page still uses this field. Open the item and uncheck the field under Attendee data field first.",
+      "An item on the Event items page still uses this field. Remove the field from that item first.",
     );
     // The place is named by the page of the items, and the old pointer to "there" (a card that is not on that page) is gone.
     expect(message).not.toMatch(/Remove it there/);
