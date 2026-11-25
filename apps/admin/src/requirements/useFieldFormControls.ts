@@ -166,7 +166,8 @@ export function useFieldFormControls({ eventId, fields, onChanged, onUpdated, ro
     refocusRef.current = null;
     const place = fields.findIndex((row) => row.id === pressed.fieldId);
     const atEnd = pressed.direction === "up" ? place <= 0 : place === fields.length - 1;
-    const direction = atEnd ? (pressed.direction === "up" ? "down" : "up") : pressed.direction;
+    const otherArrow = pressed.direction === "up" ? "down" : "up";
+    const direction = atEnd ? otherArrow : pressed.direction;
     const arrows = Array.from(rootRef.current?.querySelectorAll<HTMLButtonElement>("[data-reorder]") ?? []);
     arrows.find((button) => button.dataset.reorder === moveKey(pressed.fieldId, direction))?.focus();
   }, [fields, rootRef]);
