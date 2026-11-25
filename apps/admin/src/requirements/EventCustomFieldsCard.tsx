@@ -5,6 +5,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { AddSuggestedFieldsResponse, EventCustomFieldDto, EventDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { useRowSlide } from "../hooks/useRowSlide.js";
 import { SuggestedQuestionsDialog } from "../registration/SuggestedQuestionsDialog.js";
 import { addedMessage } from "../registration/suggestedQuestions.js";
 import { isCompanionQuestion } from "../utils/questionRecipient.js";
@@ -47,8 +48,8 @@ interface RowFormControls {
   readonly switchBusy: boolean;
   readonly first: boolean;
   readonly last: boolean;
-  /** The arrow whose reorder is on its way (`moveKey`). */
-  readonly moving: string | null;
+  /** The arrows whose reorder is on its way (`moveKey`). */
+  readonly moving: ReadonlySet<string>;
   readonly onToggleOnForm: () => void;
   readonly onMove: (direction: MoveDirection) => void;
 }
@@ -97,7 +98,7 @@ function MoveButton({
   name: string;
   direction: MoveDirection;
   atEnd: boolean;
-  moving: string | null;
+  moving: ReadonlySet<string>;
   onMove: (direction: MoveDirection) => void;
 }>) {
   const key = moveKey(field.id, direction);
@@ -108,7 +109,7 @@ function MoveButton({
           label={`Move ${name} ${direction}`}
           size="sm"
           icon={<i className={`ti ti-arrow-${direction}`} aria-hidden="true" />}
-          loading={moving === key}
+          loading={moving.has(key)}
           data-reorder={key}
           onClick={() => onMove(direction)}
           {...guard}
@@ -142,7 +143,7 @@ function CustomFieldRow({
   const iconGlyph = guestFormIconGlyph(field.rules?.icon);
   const condition = conditionLine(field, fields);
   return (
-    <tr>
+    <tr data-row-id={field.id}>
       <td>
         <div className="requirements-item-cell">
           <Tooltip content={typeLabel}>
@@ -243,6 +244,11 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpd
   // the effect that follows the render puts the focus back on the button that opened it.
   const [suggestFocusBack, setSuggestFocusBack] = useState(0);
   const form = useFieldFormControls({ eventId, fields, onChanged, onUpdated, rootRef: sectionRef });
+  // A row that is moved slides to its new place instead of jumping.
+  useRowSlide(
+    sectionRef,
+    fields.map((field) => field.id),
+  );
 
   useEffect(() => {
     if (suggestFocusBack > 0) suggestButtonRef.current?.focus();
@@ -319,8 +325,8 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpd
                 event={event}
                 duplicateLabels={duplicateLabels}
                 formControls={{
-                  // Also while a move is on its way: a switch made then is ignored.
-                  switchBusy: form.switching.has(field.id) || form.moving !== null,
+                  // Its own request only: a switch made while a move is on its way waits for the move behind it.
+                  switchBusy: form.switching.has(field.id),
                   first: index === 0,
                   last: index === fields.length - 1,
                   moving: form.moving,

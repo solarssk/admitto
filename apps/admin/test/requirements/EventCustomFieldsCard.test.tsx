@@ -565,16 +565,20 @@ describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
       expect(off("Move Needs parking down")).toBe(true);
     });
 
-    it("send the ids of all the fields with the moved one a place further, and show the order the server answers", async () => {
+    it("send the ids of all the fields with the moved one a place further, show the new order at once, and then the order the server answers", async () => {
       const answer = [shirtField, dietaryField, parkingField];
       vi.mocked(reorderEventCustomFields).mockResolvedValueOnce(answer);
       const { onUpdated, onChanged } = renderCard([dietaryField, shirtField, parkingField]);
 
       fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
 
-      await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(1));
+      // At once, before the server has answered.
+      expect(onUpdated).toHaveBeenCalledTimes(1);
       expect(reorderEventCustomFields).toHaveBeenCalledWith("evt-1", ["field-shirt", "field-dietary", "field-parking"]);
-      expect((onUpdated.mock.calls[0]![0] as FieldsChange)([dietaryField, shirtField, parkingField])).toEqual(answer);
+      const atOnce = (onUpdated.mock.calls[0]![0] as FieldsChange)([dietaryField, shirtField, parkingField]);
+      expect(atOnce.map((row) => row.id)).toEqual(["field-shirt", "field-dietary", "field-parking"]);
+      await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(2));
+      expect((onUpdated.mock.calls[1]![0] as FieldsChange)([dietaryField, shirtField, parkingField])).toEqual(answer);
       // A move that lands says nothing: the rows moving is the answer.
       expect(addToast).not.toHaveBeenCalled();
       expect(onChanged).not.toHaveBeenCalled();
@@ -599,59 +603,76 @@ describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
       expect(reorderEventCustomFields).not.toHaveBeenCalled();
     });
 
-    it("keep the pressed arrow busy, with its focus, and let one move at a time through", async () => {
-      const request = deferred<EventCustomFieldDto[]>();
-      vi.mocked(reorderEventCustomFields).mockReturnValueOnce(request.promise);
-      renderCard([dietaryField, shirtField, parkingField]);
+    it("keep the pressed arrow busy, with its focus, let the same arrow through once and put a move of another arrow behind the first", async () => {
+      const first = deferred<EventCustomFieldDto[]>();
+      vi.mocked(reorderEventCustomFields).mockReturnValueOnce(first.promise).mockResolvedValueOnce([]);
+      renderWithToast(<Host initial={[dietaryField, shirtField, parkingField]} />);
       const pressed = screen.getByRole("button", { name: "Move Dietary requirements down" });
 
       pressed.focus();
       fireEvent.click(pressed);
 
+      // The rows are in their new places at once, and the pressed arrow went with its row.
+      expect(rowNames()).toEqual(["Shirt size", "Dietary requirements", "Needs parking"]);
       expect(pressed.getAttribute("aria-busy")).toBe("true");
       expect(pressed.getAttribute("aria-disabled")).toBe("true");
       expect((pressed as HTMLButtonElement).disabled).toBe(false);
       expect(document.activeElement).toBe(pressed);
-      // A second move made from the list as it is now would put the first one back.
-      fireEvent.click(screen.getByRole("button", { name: "Move Needs parking up" }));
+      // The same arrow again is swallowed. The arrow of another row goes through, behind the first move, made from the order that
+      // is on the screen now, and is busy itself.
       fireEvent.click(pressed);
+      const other = screen.getByRole("button", { name: "Move Needs parking up" });
+      fireEvent.click(other);
       expect(reorderEventCustomFields).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole("button", { name: "Move Needs parking up" }).hasAttribute("aria-busy")).toBe(false);
+      expect(other.getAttribute("aria-busy")).toBe("true");
+      expect(rowNames()).toEqual(["Shirt size", "Needs parking", "Dietary requirements"]);
 
-      await act(async () => request.resolve([shirtField, dietaryField, parkingField]));
+      await act(async () => first.resolve([shirtField, dietaryField, parkingField]));
 
+      expect(reorderEventCustomFields).toHaveBeenCalledTimes(2);
+      expect(reorderEventCustomFields).toHaveBeenLastCalledWith("evt-1", ["field-shirt", "field-parking", "field-dietary"]);
+      await waitFor(() => expect(other.hasAttribute("aria-busy")).toBe(false));
       expect(pressed.hasAttribute("aria-busy")).toBe(false);
+      expect(rowNames()).toEqual(["Shirt size", "Needs parking", "Dietary requirements"]);
     });
 
-    it("leave the switches busy while a move is on its way, and ignore a switch made then", async () => {
-      const request = deferred<EventCustomFieldDto[]>();
-      vi.mocked(reorderEventCustomFields).mockReturnValueOnce(request.promise);
-      renderCard([dietaryField, shirtField, parkingField]);
+    it("keep the switches usable during a move: one pressed then is busy on its own row, waits for the move and keeps the rows where they are", async () => {
+      const move = deferred<EventCustomFieldDto[]>();
+      vi.mocked(reorderEventCustomFields).mockReturnValueOnce(move.promise);
+      // The answer of the switch carries the place the row had before the move.
+      vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, show_on_form: true, display_order: 1 });
+      renderWithToast(<Host initial={[dietaryField, shirtField, parkingField]} />);
       fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
       const toggle = screen.getByRole("switch", { name: "Shirt size on the form" });
-      expect(toggle.getAttribute("aria-busy")).toBe("true");
-
-      // The answer of the move is the whole list: a switch flipped now could be put back by it.
-      fireEvent.click(toggle);
-      expect(updateEventCustomField).not.toHaveBeenCalled();
-
-      await act(async () => request.resolve([shirtField, dietaryField, parkingField]));
       expect(toggle.hasAttribute("aria-busy")).toBe(false);
+
+      fireEvent.click(toggle);
+
+      expect(toggle.getAttribute("aria-busy")).toBe("true");
+      expect(screen.getByRole("switch", { name: "Needs parking on the form" }).hasAttribute("aria-busy")).toBe(false);
+      expect(updateEventCustomField).not.toHaveBeenCalled();
+      await act(async () => move.resolve([shirtField, dietaryField, parkingField]));
+
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", { show_on_form: true });
+      await waitFor(() => expect(toggle.hasAttribute("aria-busy")).toBe(false));
+      expect((toggle as HTMLInputElement).checked).toBe(true);
+      expect(rowNames()).toEqual(["Shirt size", "Dietary requirements", "Needs parking"]);
     });
 
-    it("ignore a move made while a switch request is on its way, and move again once it has landed", async () => {
+    it("show a move made while a switch request is on its way at once, and send it when the switch has landed", async () => {
       const request = deferred<EventCustomFieldDto>();
       vi.mocked(updateEventCustomField).mockReturnValueOnce(request.promise);
       vi.mocked(reorderEventCustomFields).mockResolvedValueOnce([shirtField, dietaryField, parkingField]);
-      renderCard([dietaryField, shirtField, parkingField]);
+      renderWithToast(<Host initial={[dietaryField, shirtField, parkingField]} />);
       fireEvent.click(screen.getByRole("switch", { name: "Shirt size on the form" }));
 
       fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
-      expect(reorderEventCustomFields).not.toHaveBeenCalled();
 
+      expect(rowNames()).toEqual(["Shirt size", "Dietary requirements", "Needs parking"]);
+      expect(reorderEventCustomFields).not.toHaveBeenCalled();
       await act(async () => request.resolve({ ...shirtField, show_on_form: true }));
-      fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
       await waitFor(() => expect(reorderEventCustomFields).toHaveBeenCalledTimes(1));
+      expect(reorderEventCustomFields).toHaveBeenCalledWith("evt-1", ["field-shirt", "field-dietary", "field-parking"]);
     });
 
     it("give the focus back to the arrow that was pressed once its row has moved", async () => {
@@ -680,6 +701,35 @@ describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
       await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Move Dietary requirements up" })));
     });
 
+    it("slide the two rows that change places to their new places, and no other", async () => {
+      // jsdom has no layout and no Web Animations: rows are 40 px high and stack in the order they are drawn.
+      const animate = vi.fn();
+      const originalTop = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetTop");
+      Object.defineProperty(HTMLElement.prototype, "animate", { configurable: true, writable: true, value: animate });
+      Object.defineProperty(HTMLElement.prototype, "offsetTop", {
+        configurable: true,
+        get(this: HTMLElement) {
+          const row = this.closest("tr[data-row-id]");
+          return row?.parentElement ? [...row.parentElement.children].indexOf(row) * 40 : 0;
+        },
+      });
+      try {
+        vi.mocked(reorderEventCustomFields).mockResolvedValueOnce([]);
+        renderWithToast(<Host initial={[dietaryField, shirtField, parkingField]} />);
+
+        fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
+
+        expect(animate).toHaveBeenCalledTimes(2);
+        expect(animate.mock.contexts.map((row) => (row as HTMLElement).dataset.rowId).sort()).toEqual(["field-dietary", "field-shirt"]);
+        await waitFor(() => expect(screen.getByRole("button", { name: "Move Dietary requirements down" }).hasAttribute("aria-busy")).toBe(false));
+        // The answer that lands changes no place: nothing slides again.
+        expect(animate).toHaveBeenCalledTimes(2);
+      } finally {
+        delete (HTMLElement.prototype as { animate?: unknown }).animate;
+        if (originalTop) Object.defineProperty(HTMLElement.prototype, "offsetTop", originalTop);
+      }
+    });
+
     it("refresh the list when it is out of date, and say so", async () => {
       vi.mocked(reorderEventCustomFields).mockRejectedValueOnce(new ApiError(409, "stale_write", "stale_write"));
       const { onChanged, onUpdated } = renderCard([dietaryField, shirtField]);
@@ -688,18 +738,20 @@ describe("EventCustomFieldsCard: the form controls of the Fields tab", () => {
 
       await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
       expect(addToast).toHaveBeenCalledWith(expect.stringMatching(/so it was refreshed. Move the field again\./), "warning");
-      expect(onUpdated).not.toHaveBeenCalled();
+      // Only the move that was shown at once: no answer was shown.
+      expect(onUpdated).toHaveBeenCalledTimes(1);
     });
 
-    it("say that a move failed for any other reason, never the server's own words, and leave the list alone", async () => {
+    it("say that a move failed for any other reason, never the server's own words, and read the list again to put the rows back", async () => {
       vi.mocked(reorderEventCustomFields).mockRejectedValueOnce(new ApiError(500, "SELECT secret FROM x", ""));
       const { onChanged, onUpdated } = renderCard([dietaryField, shirtField]);
 
       fireEvent.click(screen.getByRole("button", { name: "Move Dietary requirements down" }));
 
       await waitFor(() => expect(addToast).toHaveBeenCalledWith("Failed to move the field.", "error"));
-      expect(onChanged).not.toHaveBeenCalled();
-      expect(onUpdated).not.toHaveBeenCalled();
+      // The rows moved at once (told to the host once); reading the list again puts them where the server has them.
+      expect(onUpdated).toHaveBeenCalledTimes(1);
+      expect(onChanged).toHaveBeenCalledTimes(1);
       // The arrow is free again.
       expect(screen.getByRole("button", { name: "Move Dietary requirements down" }).hasAttribute("aria-busy")).toBe(false);
     });
