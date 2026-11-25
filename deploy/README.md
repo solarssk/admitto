@@ -486,6 +486,7 @@ docker compose up -d
 
 - `docker-entrypoint.sh` fetches a fresh GeoLite2 City database directly from MaxMind into `./geoip-data` (a bind mount, initialised by `./scripts/init-host-dirs.sh` like `uploads`/`emergency-exports` above) and caches it there.
 - A later restart with the same key reuses that download instead of re-fetching it.
+- While it fetches, the container needs about 400 MB of free space for the files the download unpacks to. They are kept in the container's own storage, not in `./geoip-data`, and are deleted when the fetch ends, whether it worked or not.
 - After an upgrade that changes which fields the dataset keeps (0.8 adds the region), the first start fetches the database again once, even with an unchanged key, because the app only finds data of its own field list. Later restarts reuse the new download.
 - A failed fetch (bad key, network issue) falls back to the last good download rather than breaking startup. On a first-ever failed fetch, with no earlier download, it falls back to the built-in community-mirror dataset.
 - Remove `MAXMIND_LICENSE_KEY` and restart to go back to the default community-mirror dataset.
@@ -593,7 +594,7 @@ services:
 - It was reproduced by running the entrypoint's own function in a read-only container: `mkdir: can't create directory '/app/data/geoip-custom.staging': Read-only file system`, exit code 1.
 - Choose one:
   - Leave `read_only: true` out.
-  - Put the live and the staging directory under one writable mount. Replace the `./geoip-data:/app/data/geoip-custom` line of the `app` service with `./geoip-data:/app/geoip`, and set `MAXMIND_DATA_DIR=/app/geoip/live`. The staging directory is always `$MAXMIND_DATA_DIR.staging`, so it becomes `/app/geoip/live.staging`, inside the same mount. In the same test, `mkdir` then worked in a read-only container. A real download with a key was not tried.
+  - Put the live and the staging directory under one writable mount. Replace the `./geoip-data:/app/data/geoip-custom` line of the `app` service with `./geoip-data:/app/geoip`, and set `MAXMIND_DATA_DIR=/app/geoip/live`. The staging directory is always `$MAXMIND_DATA_DIR.staging`, so it becomes `/app/geoip/live.staging`, inside the same mount. The files the download unpacks to (`$MAXMIND_DATA_DIR.download`, about 400 MB while a fetch runs) sit there too, so keep that much room on the mount. In the same test, `mkdir` then worked in a read-only container. A real download with a key was not tried.
 
 Test it on a stack that is not in production first. After the first start, read `docker compose logs app`.
 

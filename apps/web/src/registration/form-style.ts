@@ -53,6 +53,12 @@ export const REGISTRATION_PAGE_CSS = `
 /* Mobile Safari lays a date input out by its own rules unless it is told to drop them: it does not take the product's border-box sizing, so the box is wider than its field and its right and bottom edges are cut off. It also centres the date it shows. */
 .reg-form .at-input[type="date"], .reg-form .at-input[type="datetime-local"] { -webkit-appearance: none; appearance: none; }
 .reg-form .at-input::-webkit-date-and-time-value { text-align: left; }
+/* A browser extension (a password manager, for one) adds its own control next to the input, and in the box with an icon that is one more item of the flex row: it takes a share of the row and squeezes the input. The box wraps instead, so the input keeps the whole row and anything added beside it lands on a row of its own below. The icon is placed by the height of the input, not by half of the box, so it stays on the input when the box grows. A touch screen keeps the product's one-row box, which is a fixed height that clips whatever does not fit; a box with an icon button (a date) is not touched. */
+.reg-form .at-inputgroup:not(:has(.at-inputgroup__icon--action)) { flex-wrap: wrap; }
+.reg-form .at-inputgroup:not(:has(.at-inputgroup__icon--action)) > .at-inputgroup__icon { top: calc(var(--control-h) / 2); }
+@media (pointer: coarse) {
+  .reg-form .at-inputgroup:not(:has(.at-inputgroup__icon--action)) { flex-wrap: nowrap; }
+}
 /* The note and the error sit in one grid cell, so the slot is as tall as the taller of the two and an error that takes the place of a note moves nothing below it, whether the note is one line or several. */
 .reg-slot { display: grid; min-height: 1rem; line-height: 1rem; }
 .reg-slot > * { grid-area: 1 / 1; }

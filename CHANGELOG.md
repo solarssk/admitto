@@ -96,6 +96,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Rename Requirements to Event items and move it just before Check-in in the event menu ([#1952](https://github.com/solarssk/admitto/pull/1952))
 - Move every registration setting into Event settings, Registration, open to every event administrator (a superadmin still sets how guests open the form), drop the Access tab of the Registration page, turn registration on and off, copy the guest link and see its state from the header of the Registration page, split the form settings into two cards (Form, Handling requests), and move the address for guests to Event settings, General ([#1953](https://github.com/solarssk/admitto/pull/1953))
 - Add the region to the built-in IP location data, and fetch a MaxMind download kept in `geoip-data` once more after the upgrade ([#1978](https://github.com/solarssk/admitto/pull/1978))
+- Make the Docker image about 400 MB smaller by leaving the GeoIP download files out of it, and delete them after a MaxMind fetch ([#1980](https://github.com/solarssk/admitto/pull/1980))
 
 ### Fixed
 
@@ -111,6 +112,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Fix the New event window, which lost the space between its fields, and turn off Export and Export personal data when there is nothing to export ([#1946](https://github.com/solarssk/admitto/pull/1946))
 - Keep the window in place when a suggestion is removed in Edit custom field, keep the public legal text card at the top on every tab, and show the last line of a Setup checklist row in the same grey ([#1947](https://github.com/solarssk/admitto/pull/1947))
 - Stop the page from jumping when a switch is clicked, and make the Legal and Check-in header buttons and the space under the Requests notice match the other pages ([#1948](https://github.com/solarssk/admitto/pull/1948))
+- Stop a browser extension's button beside a field on the guest form from squeezing the input; the button now goes below it ([#1981](https://github.com/solarssk/admitto/pull/1981))
 - Move a field on the Fields tab at once, with a short slide, and keep the On the form switches usable while it is saved ([#1982](https://github.com/solarssk/admitto/pull/1982))
 
 ### Security
