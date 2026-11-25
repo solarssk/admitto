@@ -57,14 +57,19 @@ describe("an icon on a question", () => {
 
   it("is drawn for exactly the questions that the rule in @admitto/shared names, which is what the field editor tells the organiser", () => {
     const types = ["text", "long_text", "date", "datetime", "phone", "select", "boolean"] as const;
-    for (const type of types) {
-      for (const required of [false, true]) {
-        const page = documentOf(
-          render(formModel({ questions: [question({ key: "q", label: "Q", type, required, icon: "pin", options: type === "select" ? ["One"] : [] })] })),
-        );
-        const drawn = hrefs(page.querySelector('[data-custom="q"]')).includes("#i-pin");
-        expect(drawn, `${type}${required ? ", required" : ""}`).toBe(guestFormDrawsIcon({ type, required }));
-      }
+    const cases = types.flatMap((type) => [false, true].map((required) => ({ type, required, key: `q_${type}_${required ? "required" : "optional"}` })));
+    // One page with every case, not one page per case: rendering the whole page is the slow part, and fourteen of them in one test
+    // ran past the 5 s limit on a loaded CI runner (coverage on, many files at once) although the test takes about 0.3 s alone.
+    const page = documentOf(
+      render(
+        formModel({
+          questions: cases.map(({ type, required, key }) => question({ key, label: key, type, required, icon: "pin", options: type === "select" ? ["One"] : [] })),
+        }),
+      ),
+    );
+    for (const { type, required, key } of cases) {
+      const drawn = hrefs(page.querySelector(`[data-custom="${key}"]`)).includes("#i-pin");
+      expect(drawn, `${type}${required ? ", required" : ""}`).toBe(guestFormDrawsIcon({ type, required }));
     }
   });
 
