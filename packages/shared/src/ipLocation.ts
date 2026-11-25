@@ -13,6 +13,9 @@ export interface IpLocation {
    * resolve to country only even in the City edition). Never present without `countryCode` also
    * being present. */
   city?: string;
+  /** First-level region name (a state, a voivodeship), when the dataset carries it (ILA_FIELDS has `region1_name`): the image's own
+   * country,city data does not, so it is usually absent. Never present without `countryCode`. */
+  region?: string;
 }
 
 /**
@@ -52,9 +55,9 @@ export function resolveIpLocation(ip: string | null): IpLocation {
       );
       return { kind: "unknown" };
     }
-    const resolved = result as { country?: string; city?: string } | null;
+    const resolved = result as { country?: string; city?: string; region1_name?: string } | null;
     if (!resolved?.country) return { kind: "unknown" };
-    return { kind: "resolved", countryCode: resolved.country, city: resolved.city || undefined };
+    return { kind: "resolved", countryCode: resolved.country, city: resolved.city || undefined, region: resolved.region1_name || undefined };
   } catch {
     return { kind: "unknown" };
   }

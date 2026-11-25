@@ -59,6 +59,7 @@ export function settings(overrides: Partial<RegistrationSettingsDto> = {}): Regi
     ask_department: false,
     consent_keys: [],
     bot_protection_enabled: true,
+    keep_origin: true,
     sso_claim_name: null,
     sso_claim_values: [],
     sso_provider_id: null,

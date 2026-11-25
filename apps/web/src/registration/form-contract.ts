@@ -68,6 +68,10 @@ export interface RegistrationSubmitBody {
    * page did not send (400), the answer to any key the contract does not have, so the answer does not tell a stranger the
    * setting; more of them than the event takes is a 422 under {@link ERROR_KEY_COMPANIONS}. The server judges every piece. */
   companions?: RegistrationSubmitCompanion[];
+  /** The IANA time zone of the guest's browser (`Europe/Warsaw`), only when the form carries `data-keep-origin`, that is for an event that keeps
+   * where a request came from. The server reads it for such an event only, judges it against the zones it knows, and ignores it without an
+   * error when it is not one (or when the event does not keep the origin), so a body that carries it is never refused for it. */
+  time_zone?: string;
   /** The Cloudflare Turnstile token. Single use. */
   challenge: string;
   /** The shared password of the event, typed on the page's password screen, for an event whose way in is the password

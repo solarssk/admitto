@@ -306,6 +306,7 @@ describe("reading the settings", () => {
       ask_department: body.ask_department,
       consent_keys: body.consent_keys,
       bot_protection_enabled: body.bot_protection_enabled,
+      keep_origin: body.keep_origin,
       sso_claim_name: body.sso_claim_name,
       sso_claim_values: body.sso_claim_values,
       sso_provider_id: body.sso_provider_id,
@@ -345,6 +346,7 @@ describe("reading the settings", () => {
       ask_department: true,
       consent_keys: ["photos"],
       bot_protection_enabled: true,
+      keep_origin: true,
       sso_claim_name: null,
       sso_claim_values: [],
       sso_provider_id: null,
@@ -383,6 +385,7 @@ describe("reading the settings", () => {
       "consent_keys",
       "guest_url",
       "instance_host",
+      "keep_origin",
       "max_companions",
       "mode",
       "own_address",
@@ -1857,5 +1860,46 @@ describe("the bot check of one event (bot_protection_enabled)", () => {
     const event = await addEvent("bp-org-off");
 
     expect(await dto(await get(event.id))).toMatchObject({ bot_protection: "not_used", bot_protection_enabled: true });
+  });
+});
+
+describe("keeping where a request came from (keep_origin)", () => {
+  it("is on for an event that exists, and for one with no settings row", async () => {
+    const event = await addEvent("ko-default");
+    const bare = await addEvent("ko-bare", { settings: null });
+
+    expect((await dto(await get(event.id))).keep_origin).toBe(true);
+    expect((await dto(await get(bare.id))).keep_origin).toBe(true);
+    expect((await settingsRow(event.id))?.keep_origin).toBe(true);
+  });
+
+  it("is turned off by the administrator of the event, says so in the answer, and is audited by name and value only", async () => {
+    const event = await addEvent("ko-off");
+
+    const res = await put(event.id, { keep_origin: false }, cookies.admin);
+
+    expect(res.status).toBe(200);
+    expect((await dto(res)).keep_origin).toBe(false);
+    expect((await settingsRow(event.id))?.keep_origin).toBe(false);
+    expect((await dto(await get(event.id))).keep_origin).toBe(false);
+    const audit = await auditOf(event.id);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.metadata).toMatchObject({ fields_changed: ["keep_origin"], keep_origin: false });
+  });
+
+  it("is turned on again, and a value sent as it is changes nothing and audits nothing", async () => {
+    const event = await addEvent("ko-on", { settings: { keep_origin: false } });
+
+    expect((await dto(await put(event.id, { keep_origin: false }))).keep_origin).toBe(false);
+    expect(await auditOf(event.id)).toHaveLength(0);
+    expect((await dto(await put(event.id, { keep_origin: true }))).keep_origin).toBe(true);
+    expect((await settingsRow(event.id))?.keep_origin).toBe(true);
+  });
+
+  it("refuses a value that is not a switch", async () => {
+    const event = await addEvent("ko-bad");
+
+    expect((await put(event.id, { keep_origin: "no" })).status).toBe(400);
+    expect((await settingsRow(event.id))?.keep_origin).toBe(true);
   });
 });

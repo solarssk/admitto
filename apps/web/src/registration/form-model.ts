@@ -120,6 +120,9 @@ export interface RegistrationFormModel {
   verifyEmail: boolean;
   askCompany: boolean;
   askDepartment: boolean;
+  /** Whether the event keeps where a request came from (`keep_origin`): the page then sends the time zone of the guest's browser, and the
+   * route saves it with the approximate place and the address of the client. */
+  keepOrigin: boolean;
   questions: FormQuestion[];
   /** Null: the event takes no companion, and the page and the route behave as they did before companions existed. */
   companion: CompanionSection | null;
@@ -202,6 +205,7 @@ const EVENT_SELECT = {
       consent_keys: true,
       max_companions: true,
       bot_protection_enabled: true,
+      keep_origin: true,
       sso_claim_name: true,
       sso_claim_values: true,
       sso_provider_id: true,
@@ -387,6 +391,7 @@ async function loadOpenForm(
       verifyEmail: settings.verify_email && access.method !== "sso",
       askCompany: settings.ask_company,
       askDepartment: settings.ask_department,
+      keepOrigin: settings.keep_origin,
       questions,
       companion: drawCompanion(fields, settings.max_companions),
       privacyPath: paths.privacy,

@@ -1658,6 +1658,8 @@ export interface RegistrationSettingsDto {
   /** The bot check of the link and password forms of this event, on by default; it counts only while `bot_protection` is `required`. Only a
    * superadmin changes it. */
   bot_protection_enabled: boolean;
+  /** A new request keeps where it came from: the guest's time zone, the approximate place of the IP address and the address itself. */
+  keep_origin: boolean;
   /** The company SSO only: the one claim of the identity provider's token that a guest must hold (for example `tid`), or
    * null for no restriction. Sent and saved together with `sso_claim_values`. */
   sso_claim_name: string | null;
@@ -1724,6 +1726,7 @@ export interface SaveRegistrationSettingsBody {
   consent_keys?: string[];
   /** A superadmin only (403 `bot_protection_superadmin_only`). */
   bot_protection_enabled?: boolean;
+  keep_origin?: boolean;
   /** Sent together with `sso_claim_values`: both set, or `null` and `[]` to remove the restriction. A restriction for an event
    * whose way in is not the company SSO is refused (422 `sso_claim_needs_sso`). Only a superadmin may change it (403
    * `sso_claim_superadmin_only`). */
@@ -1769,6 +1772,18 @@ export interface RegistrationCompanionDto {
   custom_data: Record<string, unknown> | null;
 }
 
+/** Where a request came from (`keep_origin` of the event). Personal data of the guest. */
+export interface RegistrationOriginDto {
+  /** The address the request came from. */
+  ip: string | null;
+  /** The IANA time zone of the guest's browser. */
+  time_zone: string | null;
+  /** The ISO country code of the address. */
+  country: string | null;
+  /** The region of the address, when the GeoIP data of the instance carries one. */
+  region: string | null;
+}
+
 /** GET /api/admin/events/:eventId/registrations/:id: one request in full. */
 export interface RegistrationDetailDto extends RegistrationHeadDto {
   /** The answers as they were stored, by the key of the field they answer. */
@@ -1785,6 +1800,8 @@ export interface RegistrationDetailDto extends RegistrationHeadDto {
   /** The staff member who decided; null for an automatic decision or none yet. */
   decided_by: { id: string; name: string } | null;
   locale: string | null;
+  /** Where the request came from, as far as the event kept it: every part is null when it was not kept or not known. */
+  origin: RegistrationOriginDto;
   /** The attendee this request was accepted as; null for any other state. */
   attendee_id: string | null;
   /** Oldest first. */

@@ -55,7 +55,23 @@ export type RegistrantSubmission = {
    */
   companions?: RegistrationCompanion[];
   locale?: string | null;
+  /** Where the request came from, for an event that keeps it (`keep_origin`); absent for one that does not. Personal data: erased with the row. */
+  origin?: RegistrationOrigin;
 };
+
+/** What a request keeps of where it came from (`Registration.submitted_*`): each part is null when the guest's browser did not say or the data is not there. */
+export type RegistrationOrigin = {
+  /** The client IP address the rate limits use. */
+  ip: string | null;
+  /** The IANA time zone of the guest's browser. */
+  time_zone: string | null;
+  /** The ISO country code of the address, from the GeoIP data. */
+  country: string | null;
+  /** The first-level region name of the address, when the GeoIP data carries it. Never a city. */
+  region: string | null;
+};
+
+const NO_ORIGIN: RegistrationOrigin = { ip: null, time_zone: null, country: null, region: null };
 
 /**
  * Who a guest is when they signed in with the company's identity provider (D-C4): the provider and the provider's stable id of
@@ -167,11 +183,12 @@ const EVENT_SELECT = {
   event_hours_start: true,
   event_hours_end: true,
   timezone: true,
-  registration_settings: { select: { mode: true, waitlist_enabled: true, verify_email: true, max_companions: true } },
+  registration_settings: { select: { mode: true, waitlist_enabled: true, verify_email: true, max_companions: true, keep_origin: true } },
 } satisfies Prisma.EventSelect;
 
 type OpenSettings = { mode: RegistrationMode; waitlist_enabled: boolean; verify_email: boolean; max_companions: number };
-type OpenEvent = { capacity: number | null; settings: OpenSettings };
+/** `keepOrigin`: the event's switch as it is now, read with the rest under the locks: the origin of a submission is stored only if it is on when the row is written. */
+type OpenEvent = { capacity: number | null; settings: OpenSettings; keepOrigin: boolean };
 
 function asMode(value: string | null | undefined): RegistrationMode | null {
   return REGISTRATION_MODE.find((mode) => mode === value) ?? null;
@@ -193,7 +210,7 @@ async function readOpenEvent(tx: Prisma.TransactionClient, eventId: string, now:
   });
   if (now.getTime() >= end.getTime()) return null;
   const { waitlist_enabled, verify_email, max_companions } = event.registration_settings;
-  return { capacity: event.capacity, settings: { mode, waitlist_enabled, verify_email, max_companions } };
+  return { capacity: event.capacity, settings: { mode, waitlist_enabled, verify_email, max_companions }, keepOrigin: event.registration_settings.keep_origin };
 }
 
 /** The registration queue of the event, without waiting for it (the place of step 5 in the order of locks). */
@@ -249,6 +266,7 @@ async function queueMailFor(context: SubmissionContext, registrationId: string, 
 }
 
 function registrationColumns({ eventId, now, registrant, companions, sso }: SubmissionContext) {
+  const origin = registrant.origin ?? NO_ORIGIN;
   return {
     sso_provider_id: sso?.providerId ?? null,
     sso_subject: sso?.subject ?? null,
@@ -264,6 +282,10 @@ function registrationColumns({ eventId, now, registrant, companions, sso }: Subm
     accepted_at: registrant.accepted_at ?? null,
     consents: registrant.consents ?? {},
     locale: registrant.locale ?? null,
+    submitted_ip: origin.ip,
+    submitted_timezone: origin.time_zone,
+    submitted_country: origin.country,
+    submitted_region: origin.region,
     created_at: now,
   };
 }
@@ -434,11 +456,14 @@ async function submitInTransaction(
     seatsNeeded(companions),
   );
   if (placement === "full") return { outcome: "full" };
+  // The switch is judged here, as the companion limit is: a submission that waited for its turn, while an administrator turned the
+  // switch off, stores no origin.
+  const stored = event.keepOrigin ? registrant : { ...registrant, origin: undefined };
   const context: SubmissionContext = {
     tx,
     eventId,
     now,
-    registrant,
+    registrant: stored,
     companions,
     verifiedByProvider: input.method === "sso",
     sso,

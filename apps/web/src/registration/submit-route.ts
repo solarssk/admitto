@@ -54,6 +54,9 @@
  * differ does not depend on the address: the form is closed (404), full (409), the challenge or a field is refused (400,
  * 422), the password is refused (403), a limit is spent (429), a lock is held (503).
  *
+ * For an event that keeps where a request came from (`keep_origin`, as the second look found it) the registration also keeps the client address
+ * the limits use, its approximate place and the time zone the page sent (./submission-origin.ts); the language of the browser is kept for every event.
+ *
  * Nothing that identifies a guest is written to a log, and no answer carries a word of an exception.
  */
 import type { Context } from "hono";
@@ -86,6 +89,7 @@ import {
 import { resolveRegistration, type GuestAccess, type ResolvedRegistration } from "./form-model.js";
 import { proofSatisfies } from "./sso-claim.js";
 import { clearGuestSsoSessionCookie, readGuestSsoSession, type GuestSsoIdentity } from "./sso-session.js";
+import { withOrigin } from "./submission-origin.js";
 import {
   SUBMIT_MESSAGES,
   checkSubmission,
@@ -426,7 +430,7 @@ async function submit(c: Context, deps: RegistrationSubmitDeps): Promise<Respons
 
   let placed: PlaceRegistrationResult;
   try {
-    placed = await placeSubmission(deps, open, checked.registrant, identity);
+    placed = await placeSubmission(deps, open, withOrigin(c, checked.registrant, open.form.keepOrigin, envelope.time_zone), identity);
   } catch (error) {
     if (prismaCode(error) !== "P2002") throw error;
     // The address (or the person) got a registration while this request ran: the guest is told what a known address is told, and

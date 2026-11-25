@@ -205,7 +205,7 @@ describe("RegistrationAccessTab: the two cards of the form", () => {
     expect(switchNames(card("Form"))).toEqual(["Ask for the company", "Ask for the department", "Guests can bring one person"]);
     expect(card("Form").querySelector(".attendees-section-label")).toBeNull();
     expect(card("Handling requests").querySelector(".settings-card-intro")?.textContent).toBe("Decide how new requests are checked and accepted.");
-    expect(switchNames(card("Handling requests"))).toEqual(["Confirm email addresses", "Approve requests by hand", "Waiting list"]);
+    expect(switchNames(card("Handling requests"))).toEqual(["Confirm email addresses", "Approve requests by hand", "Waiting list", "Keep where a request came from"]);
   });
 
   it("says each setting in one short line", async () => {
@@ -217,12 +217,15 @@ describe("RegistrationAccessTab: the two cards of the form", () => {
     expect(line("Guests can bring one person")).toBe("That person takes a place too.");
     expect(line("Ask for the company")).toBe("Adds a company question to the form.");
     expect(line("Ask for the department")).toBe("Adds a department question to the form.");
+    expect(line("Keep where a request came from")).toBe(
+      "Saves the guest's time zone, approximate location and IP address with the request, so staff can see them. Mention it in your privacy notice. Erased with the request.",
+    );
   });
 
   it("is changed by every administrator of the event, not by a superadmin alone", async () => {
     await renderLoaded(settings({ mode: "approval" }), { superadmin: false });
 
-    for (const name of ["Approve requests by hand", "Waiting list", "Confirm email addresses", "Guests can bring one person", "Ask for the company", "Ask for the department"]) {
+    for (const name of ["Approve requests by hand", "Waiting list", "Confirm email addresses", "Guests can bring one person", "Ask for the company", "Ask for the department", "Keep where a request came from"]) {
       expect(isOff(toggle(name)), name).toBe(false);
     }
   });

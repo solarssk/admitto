@@ -4,7 +4,7 @@ import type { AccessDraft } from "./accessSettings.js";
 import { registrationTabPath } from "./registrationTabs.js";
 import "./registration-access.css";
 
-type ToggleKey = "waitlist_enabled" | "verify_email" | "ask_company" | "ask_department" | "companion";
+type ToggleKey = "waitlist_enabled" | "verify_email" | "ask_company" | "ask_department" | "companion" | "keep_origin";
 
 const TOGGLES: Readonly<Record<ToggleKey, { title: string; text: string }>> = {
   waitlist_enabled: { title: "Waiting list", text: "When the event is full, new requests wait for a free place." },
@@ -12,6 +12,10 @@ const TOGGLES: Readonly<Record<ToggleKey, { title: string; text: string }>> = {
   ask_company: { title: "Ask for the company", text: "Adds a company question to the form." },
   ask_department: { title: "Ask for the department", text: "Adds a department question to the form." },
   companion: { title: "Guests can bring one person", text: "That person takes a place too." },
+  keep_origin: {
+    title: "Keep where a request came from",
+    text: "Saves the guest's time zone, approximate location and IP address with the request, so staff can see them. Mention it in your privacy notice. Erased with the request.",
+  },
 };
 
 /** What the confirmation switch says under the company SSO: the address comes from the identity provider, so no link is sent. */
@@ -108,6 +112,7 @@ export function AccessAfterFormCard({ draft, disabled, onChange }: CardProps) {
           <ToggleRow name="verify_email" draft={draft} disabled={disabled} onChange={onChange} />
           <ApprovalRow draft={draft} disabled={disabled} onChange={onChange} />
           <ToggleRow name="waitlist_enabled" draft={draft} disabled={disabled} onChange={onChange} />
+          <ToggleRow name="keep_origin" draft={draft} disabled={disabled} onChange={onChange} />
         </div>
       </div>
     </Card>

@@ -112,6 +112,8 @@ async function seed(client: PrismaClient): Promise<Record<keyof typeof cookies, 
   };
 }
 
+const ORIGIN = { ip: "203.0.113.7", timeZone: "Europe/Warsaw", country: "PL", region: "Mazovia" };
+
 type SeedRegistration = {
   id?: string;
   eventId?: string;
@@ -130,6 +132,7 @@ type SeedRegistration = {
   decidedAt?: Date | null;
   decidedBy?: string | null;
   locale?: string | null;
+  origin?: { ip: string; timeZone: string; country: string; region: string };
 };
 
 /** Writes one registration that satisfies the table's constraints: an accepted one gets its attendee, one
@@ -167,6 +170,10 @@ async function addRegistration(seedRow: SeedRegistration): Promise<string> {
       decided_at: seedRow.decidedAt ?? null,
       decided_by: seedRow.decidedBy ?? null,
       locale: seedRow.locale ?? null,
+      submitted_ip: seedRow.origin?.ip ?? null,
+      submitted_timezone: seedRow.origin?.timeZone ?? null,
+      submitted_country: seedRow.origin?.country ?? null,
+      submitted_region: seedRow.origin?.region ?? null,
       attendee_id: attendee?.id ?? null,
       created_at: createdAt,
     },
@@ -349,6 +356,7 @@ describe("the list", () => {
       consents: { newsletter: "2026-10-01T10:00:00.000Z" },
       acceptedAt: new Date("2026-10-01T10:00:00.000Z"),
       locale: "en",
+      origin: ORIGIN,
     });
     const body = await list();
     expect(body.items).toEqual([
@@ -366,7 +374,7 @@ describe("the list", () => {
       },
     ]);
     const raw = JSON.stringify(body);
-    for (const leaked of ["vegan", "Plus One", "newsletter", "locale", "consents", "custom_data", "decided"]) {
+    for (const leaked of ["vegan", "Plus One", "newsletter", "locale", "consents", "custom_data", "decided", ORIGIN.ip, ORIGIN.timeZone, ORIGIN.region, "origin"]) {
       expect(raw).not.toContain(leaked);
     }
   });
@@ -1007,6 +1015,7 @@ describe("one registration", () => {
       decidedAt: new Date("2026-10-02T08:00:00.000Z"),
       decidedBy: staff.decider,
       locale: "en",
+      origin: ORIGIN,
     });
     const attendee = await prisma.attendee.findFirstOrThrow({ where: { event_id: EVENT_A, email: "full@example.com" } });
     await addMail(id, "registration-received", { status: "sent", attempts: 1, queued_at: new Date("2026-10-01T09:00:10.000Z"), sent_at: new Date("2026-10-01T09:00:20.000Z"), attempted_at: new Date("2026-10-01T09:00:20.000Z") });
@@ -1030,6 +1039,7 @@ describe("one registration", () => {
       decided_at: "2026-10-02T08:00:00.000Z",
       decided_by: { id: staff.decider, name: "Dana Decider" },
       locale: "en",
+      origin: { ip: "203.0.113.7", time_zone: "Europe/Warsaw", country: "PL", region: "Mazovia" },
       attendee_id: attendee.id,
       mails: [
         {
@@ -1073,6 +1083,13 @@ describe("one registration", () => {
       "registration-received",
       "registration-waitlist",
     ]);
+  });
+
+  it("says every part of the origin is empty for a request that did not keep it, and refuses it to an operator of the event", async () => {
+    const id = await addRegistration({ email: "no-origin@example.com", status: "pending" });
+
+    expect((await detail(id)).origin).toEqual({ ip: null, time_zone: null, country: null, region: null });
+    expect((await get(regsUrl(EVENT_A, `/${id}`), cookies.operator)).status).toBe(403);
   });
 
   it("shows a registration that waits for the address with the time it expires", async () => {

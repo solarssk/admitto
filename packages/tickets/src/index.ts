@@ -413,6 +413,7 @@ export type {
   PlaceRegistrationResult,
   PlacementOptions,
   RegistrantSubmission,
+  RegistrationOrigin,
   SubmissionMailLimits,
 } from "./registration-placement.js";
 export { admitRegistrations, rejectRegistrations } from "./registration-decisions.js";

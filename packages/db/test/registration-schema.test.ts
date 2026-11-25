@@ -128,6 +128,7 @@ describe("EventRegistrationSettings", () => {
       ask_department: false,
       consent_keys: [],
       bot_protection_enabled: true,
+      keep_origin: true,
       custom_domain: null,
       custom_domain_status: "unchecked",
       custom_domain_verified_at: null,
@@ -308,6 +309,17 @@ describe("Registration constraints", () => {
       "23514",
       "Registration_email_not_erased_placeholder",
     );
+  });
+
+  it("has no origin until one is saved: the address, the zone and the place are empty by default", async () => {
+    const id = await insertRegistration({ email: "no-origin@example.com" });
+
+    expect(await prisma.registration.findUniqueOrThrow({ where: { id } })).toMatchObject({
+      submitted_ip: null,
+      submitted_timezone: null,
+      submitted_country: null,
+      submitted_region: null,
+    });
   });
 
   it("allows one registration per address and event, in any state", async () => {
