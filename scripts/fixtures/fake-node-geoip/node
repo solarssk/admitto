@@ -28,6 +28,9 @@ if [ "${1:-}" = "apps/web/scripts/prefetch-geo-db.mjs" ]; then
   else
     : >"$ILA_DATA_DIR/4-1.dat"
     printf '%s' "$ILA_LICENSE_KEY" >"$ILA_DATA_DIR/fake-dataset-key"
+    # Same idea for the field list: real ip-location-api keeps each list in its own directory, so
+    # the test needs to see which list a fetch asked for.
+    printf '%s' "${ILA_FIELDS:-unset}" >"$ILA_DATA_DIR/fake-dataset-fields"
     echo "fake prefetch: wrote fresh data for key $ILA_LICENSE_KEY" >&2
   fi
   echo "ip-location-api: database ready (fake)."

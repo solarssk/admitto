@@ -95,6 +95,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Show the Open-Meteo API key like the other secret keys: a locked box with Set, Change and Clear, and never its value ([#1932](https://github.com/solarssk/admitto/pull/1932))
 - Rename Requirements to Event items and move it just before Check-in in the event menu ([#1952](https://github.com/solarssk/admitto/pull/1952))
 - Move every registration setting into Event settings, Registration, open to every event administrator (a superadmin still sets how guests open the form), drop the Access tab of the Registration page, turn registration on and off, copy the guest link and see its state from the header of the Registration page, split the form settings into two cards (Form, Handling requests), and move the address for guests to Event settings, General ([#1953](https://github.com/solarssk/admitto/pull/1953))
+- Add the region to the built-in IP location data, and fetch a MaxMind download kept in `geoip-data` once more after the upgrade ([#1978](https://github.com/solarssk/admitto/pull/1978))
 
 ### Fixed
 

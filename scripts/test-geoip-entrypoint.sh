@@ -16,6 +16,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENTRYPOINT="$ROOT/deploy/docker-entrypoint.sh"
 FAKEBIN="$ROOT/scripts/fixtures/fake-node-geoip"
 PREFETCH_SCRIPT="prefetch-geo-db.mjs"
+# The ILA_FIELDS of the Dockerfile's production stage, read from the file so that a change there that
+# the entrypoint does not follow fails this test, instead of silently leaving the app without data.
+IMAGE_FIELDS="$(sed -n 's/^ENV ILA_FIELDS=//p' "$ROOT/Dockerfile" | sort -u)"
+if [[ -z "$IMAGE_FIELDS" || "$IMAGE_FIELDS" == *$'\n'* ]]; then
+  echo "FAIL: the Dockerfile must set exactly one ILA_FIELDS list in both stages, found [$IMAGE_FIELDS]" >&2
+  exit 1
+fi
 
 chmod +x "$ENTRYPOINT" "$FAKEBIN/node"
 
@@ -66,6 +73,8 @@ calls="$tmpdir/a-calls.log"
 run_serve "$data_dir" "key-a" 0 "$calls"
 assert_eq "$(cat "$data_dir/fake-dataset-key")" "key-a" "scenario A: dataset reflects key-a"
 assert_eq "$(cat "$data_dir/.maxmind-key-sha256")" "$(printf '%s' key-a | sha256sum | cut -d' ' -f1)" "scenario A: marker hash matches key-a"
+assert_eq "$(cat "$data_dir/fake-dataset-fields")" "$IMAGE_FIELDS" "scenario A: the fetch asks for the field list the image reads"
+assert_eq "$(cat "$data_dir/.maxmind-fields")" "$IMAGE_FIELDS" "scenario A: fields marker records that list"
 assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls")" "1" "scenario A: prefetch called once"
 assert_file_missing "$tmpdir/a.staging" "scenario A: staging dir cleaned up"
 
@@ -175,6 +184,55 @@ rm -f "$data_dir"/*
 run_serve "$data_dir" "key-a" 1 "$calls" >"$output" 2>&1
 assert_eq "$(grep -c 'ILA_DATA_DIR=unset' "$output" || true)" "1" "scenario I: falls back to the built-in dataset instead of an unusable directory"
 assert_file_missing "$data_dir/4-1.dat" "scenario I: no dataset file left behind by the failed refetch"
+
+echo ""
+echo "== Scenario J: a download made by an older image (no fields marker) is fetched again once =="
+# An image that read other fields (or none yet, as before this marker existed) left the key marker
+# and the data behind. The app of this image looks in another directory of the same ILA_DATA_DIR and
+# would find nothing, so an unchanged key is not enough to reuse the download.
+data_dir="$tmpdir/j"
+calls="$tmpdir/j-calls.log"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+rm -f "$data_dir/.maxmind-fields"
+printf '%s' "country,city" >"$data_dir/fake-dataset-fields"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls" || true)" "1" "scenario J: prefetch re-run for an unchanged key without a fields marker"
+assert_eq "$(cat "$data_dir/fake-dataset-fields")" "$IMAGE_FIELDS" "scenario J: dataset fetched again with the image's field list"
+assert_eq "$(cat "$data_dir/.maxmind-fields")" "$IMAGE_FIELDS" "scenario J: fields marker written"
+calls="$tmpdir/j2-calls.log"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls" || true)" "0" "scenario J: the next start reuses the new download"
+
+echo ""
+echo "== Scenario K: a download whose fields marker names another list is fetched again too =="
+data_dir="$tmpdir/k"
+calls="$tmpdir/k-calls.log"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+printf '%s' "country,city" >"$data_dir/.maxmind-fields"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls" || true)" "1" "scenario K: prefetch re-run when the marker names another list"
+assert_eq "$(cat "$data_dir/.maxmind-fields")" "$IMAGE_FIELDS" "scenario K: fields marker names the image's list again"
+
+echo ""
+echo "== Scenario L: a failed refetch does not fall back to a download made with other fields =="
+# Same trap as Scenario I from the other side: the key marker and 4-1.dat are fine, but the data
+# sits in the directory of another field list. Exporting ILA_DATA_DIR at it would make the app try
+# a blocking download at every start; the built-in dataset (baked with the right fields) is safe.
+data_dir="$tmpdir/l"
+calls="$tmpdir/l-calls.log"
+output="$tmpdir/l-output.log"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+rm -f "$data_dir/.maxmind-fields"
+: >"$calls"
+run_serve "$data_dir" "key-a" 1 "$calls" >"$output" 2>&1
+assert_eq "$(grep -c 'ILA_DATA_DIR=unset' "$output" || true)" "1" "scenario L: falls back to the built-in dataset, not to data of another field list"
+assert_file_exists "$data_dir/4-1.dat" "scenario L: the old download stays in place for a later successful fetch"
 
 echo ""
 echo "test-geoip-entrypoint.sh: all passed"
