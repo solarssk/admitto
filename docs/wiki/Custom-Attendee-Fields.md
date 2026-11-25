@@ -72,16 +72,16 @@ Text, long text and phone fields can limit what an answer looks like. Open **For
 
 ### Suggested questions
 
-**Add suggested questions** gives an event a ready set of questions about parking, travel, accommodation and accessibility needs. You press it yourself. Admitto never adds these questions on its own: a new event has no custom fields until you add them.
+**Add suggested questions** gives an event a ready set of questions about travel, parking, accommodation and accessibility needs. You press it yourself. Admitto never adds these questions on its own: a new event has no custom fields until you add them.
 
 The button is on the **Fields** tab of the event's **Registration** page, next to **Add field**. The page is in the event menu.
 
 | Question | The guest answers | Notes |
 |---|---|---|
-| Do you need a parking space? | Yes / No | |
-| Registration number | Text, up to 12 characters | Asked only when the answer to the parking question is Yes |
 | How will you get here? | Single choice: Car, Train, Plane, Other | |
 | Arrival (date and time) | Date and time | The description tells the guest that an estimate is fine |
+| Do you need a parking space? | Yes / No | |
+| Registration number | Text, up to 12 characters | Asked only when the answer to the parking question is Yes |
 | Do you need accommodation? | Yes / No | |
 | Do you have any accessibility needs we should know about? | Long text | Optional, and created **sensitive** (see below). The window warns that answers about accessibility can be health data |
 
