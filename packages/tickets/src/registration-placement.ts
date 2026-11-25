@@ -216,12 +216,13 @@ async function readOpenEvent(tx: Prisma.TransactionClient, eventId: string, now:
  * The event's switch `keep_origin`, read with a share lock on its settings row. The settings are saved without the placement locks, so
  * the lock is what keeps the switch from changing between this read and the insert: a save that comes meanwhile waits until this
  * transaction ends (the registration then counts as made while the switch was on), and one that came first has already committed and
- * is what is read here. The origin is stored only if the switch is on when the row is written.
+ * is what is read here. The origin is stored only if the switch is on when the row is written. A row that is not there (the placement
+ * has just read it, so this does not happen) counts as off: `some` says that without a branch of its own that no test can reach.
  */
 async function lockKeepOrigin(tx: Prisma.TransactionClient, eventId: string): Promise<boolean> {
-  const [row] = await tx.$queryRaw<{ keep_origin: boolean }[]>`
+  const rows = await tx.$queryRaw<{ keep_origin: boolean }[]>`
     SELECT "keep_origin" FROM "EventRegistrationSettings" WHERE "event_id" = ${eventId} FOR SHARE`;
-  return row?.keep_origin ?? false;
+  return rows.some((row) => row.keep_origin);
 }
 
 /** The registration queue of the event, without waiting for it (the place of step 5 in the order of locks). */
