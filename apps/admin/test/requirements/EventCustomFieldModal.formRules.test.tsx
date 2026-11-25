@@ -466,7 +466,7 @@ describe("EventCustomFieldModal: a field that others are shown for", { timeout: 
     await openEditor(parking);
     const question = screen.getByRole("button", { name: "Question, none selected" }) as HTMLButtonElement;
     expect(question.disabled).toBe(true);
-    const reason = "“Plate number” is shown only for an answer to this field, so it can't have a condition itself.";
+    const reason = "“Plate number” depends on this field, so this field can't depend on another one.";
     expect(screen.getByText(reason)).toBeTruthy();
     expect(document.getElementById(question.getAttribute("aria-describedby")!)?.textContent).toBe(reason);
     expect((screen.getByRole("button", { name: "Answer, none selected" }) as HTMLButtonElement).disabled).toBe(true);
@@ -476,7 +476,7 @@ describe("EventCustomFieldModal: a field that others are shown for", { timeout: 
     const second = answerField("second", "Second", "text", { rules: { show_when: WHEN_PARKING } });
     await openEditor(parking, { fields: [...EVENT, second] });
     expect(
-      screen.getByText("“Plate number” and “Second” are shown only for an answer to this field, so it can't have a condition itself."),
+      screen.getByText("“Plate number” and “Second” depend on this field, so this field can't depend on another one."),
     ).toBeTruthy();
   });
 
@@ -484,7 +484,7 @@ describe("EventCustomFieldModal: a field that others are shown for", { timeout: 
     const { onSaved } = await openEditor(parking);
     press("Text");
     const text =
-      "“Plate number” (for Yes) is shown only for an answer to this field, so this change can't be saved. Remove its condition first, or undo the change.";
+      "“Plate number” (for Yes) depends on this field, so this change can't be saved. Remove its condition first, or undo the change.";
     expect(noticeText()).toContain(text);
     expect(saveButton().disabled).toBe(true);
     fireEvent.submit(screen.getByLabelText("Display label").closest("form")!);
@@ -551,7 +551,7 @@ describe("EventCustomFieldModal: a field that others are shown for", { timeout: 
       const text = noticeText().find((item) => item.includes("can't be saved"))!;
       expect(text).toContain("“Halal note” (for “Standard”)");
       expect(text).toContain("“Vegan note” (for “Vegan”)");
-      expect(text).toContain("are shown only for an answer to this field");
+      expect(text).toContain("depend on this field");
       expect(text).toContain("Remove their conditions first");
     });
 
@@ -604,7 +604,7 @@ describe("EventCustomFieldModal: a condition on a question that is not on the re
     typeLabel("Plate");
     choose("Question, none selected", "Parking (not on the form)");
     expect(screen.getByRole("alert").textContent).toBe(
-      "“Parking” is not on the registration form. A question with a condition can be on the form only when the question it depends on is too. Put “Parking” on the form first, or choose another question.",
+      "“Parking” is not on the registration form, so a question that depends on it can't be either. Put “Parking” on the form first, or choose another question.",
     );
     expect(saveButton().disabled).toBe(true);
     fireEvent.submit(screen.getByLabelText("Display label").closest("form")!);

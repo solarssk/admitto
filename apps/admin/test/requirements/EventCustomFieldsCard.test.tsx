@@ -848,7 +848,7 @@ describe("EventCustomFieldsCard: the icon and the condition of a question", { ti
     renderCard([parking, plate, meal, veganNote]);
     fireEvent.click(within(rowOf("Needs parking")).getByRole("button", { name: "Delete field" }));
     const dialog = screen.getByRole("dialog", { name: "Delete custom field" });
-    expect(within(dialog).getByText("“Needs parking” can't be deleted yet: “Plate number” (for Yes) is shown only for an answer to it. Remove its condition first.")).toBeTruthy();
+    expect(within(dialog).getByText("“Needs parking” can't be deleted, because “Plate number” depends on it. Remove its condition first.")).toBeTruthy();
     expect(within(dialog).queryByText(/This cannot be undone/)).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(true);
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -885,7 +885,7 @@ describe("EventCustomFieldsCard: the icon and the condition of a question", { ti
     renderCard([parking, plate, second]);
     fireEvent.click(within(rowOf("Needs parking")).getByRole("button", { name: "Delete field" }));
     expect(
-      screen.getByText("“Needs parking” can't be deleted yet: “Plate number” (for Yes) and “Second” (for Yes) are shown only for an answer to it. Remove their conditions first."),
+      screen.getByText("“Needs parking” can't be deleted, because “Plate number” and “Second” depend on it. Remove their conditions first."),
     ).toBeTruthy();
   });
 });

@@ -266,20 +266,20 @@ describe("dependencyProblem: the condition of the field itself", () => {
 describe("dependencyMessage", () => {
   it("names a field that is shown for an answer, with that answer, and what to do", () => {
     expect(dependencyMessage({ kind: "controls_others", dependents: [plate] }, EVENT)).toBe(
-      "“Plate number” (for Yes) is shown only for an answer to this field, so this change can't be saved. Remove its condition first, or undo the change.",
+      "“Plate number” (for Yes) depends on this field, so this change can't be saved. Remove its condition first, or undo the change.",
     );
     expect(dependencyMessage({ kind: "controls_others", dependents: [veganNote] }, EVENT)).toBe(
-      "“Vegan note” (for “Vegan”) is shown only for an answer to this field, so this change can't be saved. Remove its condition first, or undo the change.",
+      "“Vegan note” (for “Vegan”) depends on this field, so this change can't be saved. Remove its condition first, or undo the change.",
     );
   });
 
   it("names two or more fields in a list, in the plural", () => {
     expect(dependencyMessage({ kind: "controls_others", dependents: [plate, veganNote] }, EVENT)).toBe(
-      "“Plate number” (for Yes) and “Vegan note” (for “Vegan”) are shown only for an answer to this field, so this change can't be saved. Remove their conditions first, or undo the change.",
+      "“Plate number” (for Yes) and “Vegan note” (for “Vegan”) depend on this field, so this change can't be saved. Remove their conditions first, or undo the change.",
     );
     const third = answerField("third", "Third", "text", { rules: whenParking });
     expect(dependencyMessage({ kind: "controls_others", dependents: [plate, veganNote, third] }, [...EVENT, third])).toContain(
-      "(for Yes), “Vegan note” (for “Vegan”) and “Third” (for Yes) are shown",
+      "(for Yes), “Vegan note” (for “Vegan”) and “Third” (for Yes) depend on this field",
     );
   });
 
@@ -292,7 +292,7 @@ describe("dependencyMessage", () => {
 
   it("says which question is not on the registration form and what to do", () => {
     expect(dependencyMessage({ kind: "controller_not_on_form", controller: parking }, EVENT)).toBe(
-      "“Parking” is not on the registration form. A question with a condition can be on the form only when the question it depends on is too. Put “Parking” on the form first, or choose another question.",
+      "“Parking” is not on the registration form, so a question that depends on it can't be either. Put “Parking” on the form first, or choose another question.",
     );
   });
 
@@ -315,9 +315,9 @@ describe("dependencyMessage", () => {
 
 describe("ownConditionBlockedMessage", () => {
   it("says why a field that others are shown for cannot have a condition itself, naming them", () => {
-    expect(ownConditionBlockedMessage([plate], EVENT)).toBe("“Plate number” is shown only for an answer to this field, so it can't have a condition itself.");
+    expect(ownConditionBlockedMessage([plate], EVENT)).toBe("“Plate number” depends on this field, so this field can't depend on another one.");
     expect(ownConditionBlockedMessage([plate, veganNote], EVENT)).toBe(
-      "“Plate number” and “Vegan note” are shown only for an answer to this field, so it can't have a condition itself.",
+      "“Plate number” and “Vegan note” depend on this field, so this field can't depend on another one.",
     );
   });
 
@@ -329,11 +329,11 @@ describe("ownConditionBlockedMessage", () => {
 describe("deleteBlockedMessage", () => {
   it("says that a field cannot be deleted yet, and which fields are shown for an answer to it", () => {
     expect(deleteBlockedMessage(parking, EVENT)).toBe(
-      "“Parking” can't be deleted yet: “Plate number” (for Yes) is shown only for an answer to it. Remove its condition first.",
+      "“Parking” can't be deleted, because “Plate number” depends on it. Remove its condition first.",
     );
     const second = answerField("second", "Second", "text", { rules: whenParking });
     expect(deleteBlockedMessage(parking, [...EVENT, second])).toBe(
-      "“Parking” can't be deleted yet: “Plate number” (for Yes) and “Second” (for Yes) are shown only for an answer to it. Remove their conditions first.",
+      "“Parking” can't be deleted, because “Plate number” and “Second” depend on it. Remove their conditions first.",
     );
   });
 

@@ -99,6 +99,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Make the Docker image about 400 MB smaller by leaving the GeoIP download files out of it, and delete them after a MaxMind fetch ([#1980](https://github.com/solarssk/admitto/pull/1980))
 - Offer the suggested travel and arrival questions before parking, so the form asks how a guest comes first ([#1983](https://github.com/solarssk/admitto/pull/1983))
 - Show the state of a secret key ("Not set", the mask) in the normal font and size, like the other fields ([#1984](https://github.com/solarssk/admitto/pull/1984))
+- Write the Attendee fields hint and the messages about a field that others depend on, or that an item still uses, in short, plain words ([#1985](https://github.com/solarssk/admitto/pull/1985))
 
 ### Fixed
 

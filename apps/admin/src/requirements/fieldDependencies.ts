@@ -86,16 +86,21 @@ function dependentsWithAnswers(dependents: readonly EventCustomFieldDto[], field
   );
 }
 
+/** The names of the fields that depend on this one: `“A”`, `“A” and “B”`. */
+function dependentNames(dependents: readonly EventCustomFieldDto[], fields: readonly EventCustomFieldDto[]): string {
+  return joinWithAnd(dependents.map((field) => quoted(fieldNameIn(field, fields))));
+}
+
 /** The sentence for a save that the other fields of the event hold back. */
 export function dependencyMessage(problem: FieldDependencyProblem, fields: readonly EventCustomFieldDto[]): string {
   switch (problem.kind) {
     case "controls_others": {
       const many = problem.dependents.length > 1;
-      return `${dependentsWithAnswers(problem.dependents, fields)} ${many ? "are" : "is"} shown only for an answer to this field, so this change can't be saved. Remove ${many ? "their conditions" : "its condition"} first, or undo the change.`;
+      return `${dependentsWithAnswers(problem.dependents, fields)} ${many ? "depend" : "depends"} on this field, so this change can't be saved. Remove ${many ? "their conditions" : "its condition"} first, or undo the change.`;
     }
     case "controller_not_on_form": {
       const name = quoted(fieldNameIn(problem.controller, fields));
-      return `${name} is not on the registration form. A question with a condition can be on the form only when the question it depends on is too. Put ${name} on the form first, or choose another question.`;
+      return `${name} is not on the registration form, so a question that depends on it can't be either. Put ${name} on the form first, or choose another question.`;
     }
     case "condition_cannot_be_kept":
       return "This condition can't be kept. Choose another question and answer, or remove the condition.";
@@ -105,8 +110,7 @@ export function dependencyMessage(problem: FieldDependencyProblem, fields: reado
 /** Why a field that other fields depend on cannot have a condition itself, in a sentence; empty when none depend on it. */
 export function ownConditionBlockedMessage(dependents: readonly EventCustomFieldDto[], fields: readonly EventCustomFieldDto[]): string {
   if (dependents.length === 0) return "";
-  const names = joinWithAnd(dependents.map((field) => quoted(fieldNameIn(field, fields))));
-  return `${names} ${dependents.length > 1 ? "are" : "is"} shown only for an answer to this field, so it can't have a condition itself.`;
+  return `${dependentNames(dependents, fields)} ${dependents.length > 1 ? "depend" : "depends"} on this field, so this field can't depend on another one.`;
 }
 
 /** The sentence for the delete of a field that other fields depend on; empty when none do. */
@@ -114,7 +118,7 @@ export function deleteBlockedMessage(field: EventCustomFieldDto, fields: readonl
   const dependents = dependentsIn(fields, field.source_field);
   if (dependents.length === 0) return "";
   const many = dependents.length > 1;
-  return `${quoted(fieldNameIn(field, fields))} can't be deleted yet: ${dependentsWithAnswers(dependents, fields)} ${many ? "are" : "is"} shown only for an answer to it. Remove ${many ? "their conditions" : "its condition"} first.`;
+  return `${quoted(fieldNameIn(field, fields))} can't be deleted, because ${dependentNames(dependents, fields)} ${many ? "depend" : "depends"} on it. Remove ${many ? "their conditions" : "its condition"} first.`;
 }
 
 /** The line under the name of a field that is shown only for an answer to another: "Shown only when “Parking” is Yes". Null for a field

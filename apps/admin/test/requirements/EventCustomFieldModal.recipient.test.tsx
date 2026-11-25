@@ -138,10 +138,10 @@ describe("EventCustomFieldModal: Applies to", { timeout: 30_000 }, () => {
   it("holds back a move of a question that others are shown for, says which, and turns Save off, as the server refuses it", async () => {
     await openEditor(parking);
     fireEvent.click(recipientButton("Companion"));
-    expect(noticeText().some((text) => text.includes("“Plate number” (for Yes) is shown only for an answer to this field, so this change can't be saved."))).toBe(true);
+    expect(noticeText().some((text) => text.includes("“Plate number” (for Yes) depends on this field, so this change can't be saved."))).toBe(true);
     expect(saveButton().disabled).toBe(true);
     fireEvent.click(recipientButton("Guest"));
-    expect(noticeText().some((text) => text.includes("shown only for an answer to this field"))).toBe(false);
+    expect(noticeText().some((text) => text.includes("depends on this field"))).toBe(false);
   });
 
   it("holds back a move of a question that waits for another to the other person, and says its condition cannot be kept", async () => {

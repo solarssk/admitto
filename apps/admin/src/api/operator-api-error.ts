@@ -79,9 +79,9 @@ export const CODE_MESSAGES: Record<string, string> = {
   event_full: "Event is at capacity.",
   export_too_large: "Export is too large. Narrow filters or export in parts.",
   field_controls_others:
-    "Other fields are shown only for an answer to this one. Change or remove their condition first.",
+    "Other fields depend on this one. Remove their condition first.",
   field_in_use:
-    "An item on the Event items page still uses this field. Open the item and uncheck the field under Attendee data field first.",
+    "An item on the Event items page still uses this field. Remove the field from that item first.",
   field_in_wallet_mapping:
     "This field is mapped onto the wallet pass. Remove it from the field mapping in Event Settings, Wallet, first.",
   field_limit_reached: "This event has reached its custom field limit.",
