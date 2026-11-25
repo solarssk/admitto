@@ -124,12 +124,13 @@ const STYLED_PHONE_MODELS: ReadonlyArray<readonly [string, () => RegistrationFor
  * Fingerprints of the text of the phone box and of the pages above (without their stylesheets) as they were at the end of PR 113g-1,
  * before the date and the time had a box of their own, less the marker `data-controls` of the form, which is gone. PR 113g-2 adds the
  * date and the time to the page of a form that asks them and to no other, so these do not change. If one of these
- * changes on purpose, the PR that does it records the new value, and the reviewer sees the page it changed.
+ * changes on purpose, the PR that does it records the new value, and the reviewer sees the page it changed. (The stylesheet changed on
+ * purpose once: the box of a field with an icon wraps, so a control that a browser extension adds beside the input goes below it.)
  */
 const STYLED_HASH = {
   script: "d6556eff1c516614-18667",
   css: "9036c763940f6130-1469",
-  styleSheet: "dbe3e69a979fcdd6-58879",
+  styleSheet: "fe1ab5ff6a4278a2-59815",
   phoneKit: "d72fe234ef011226-13580",
   phone: "fe278d678680a4c3-74225",
   phoneRequired: "7e3b8dc8877bbdfe-74297",

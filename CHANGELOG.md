@@ -112,6 +112,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Fix the New event window, which lost the space between its fields, and turn off Export and Export personal data when there is nothing to export ([#1946](https://github.com/solarssk/admitto/pull/1946))
 - Keep the window in place when a suggestion is removed in Edit custom field, keep the public legal text card at the top on every tab, and show the last line of a Setup checklist row in the same grey ([#1947](https://github.com/solarssk/admitto/pull/1947))
 - Stop the page from jumping when a switch is clicked, and make the Legal and Check-in header buttons and the space under the Requests notice match the other pages ([#1948](https://github.com/solarssk/admitto/pull/1948))
+- Stop a browser extension's button beside a field on the guest form from squeezing the input; the button now goes below it ([#1981](https://github.com/solarssk/admitto/pull/1981))
 
 ### Security
 
