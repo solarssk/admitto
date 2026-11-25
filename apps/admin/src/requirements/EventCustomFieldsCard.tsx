@@ -36,8 +36,9 @@ export interface EventCustomFieldsCardProps {
   readonly eventId: string;
   readonly event: EventDto;
   readonly fields: EventCustomFieldDto[];
-  /** A field was added, changed or deleted, or the list is out of date: the host reads it again. */
-  readonly onChanged: () => void;
+  /** A field was added, changed or deleted, or the list is out of date: the host reads it again. A host that returns the
+   * read lets the card wait for it after a refused move, before it sends what is queued behind that move. */
+  readonly onChanged: () => void | Promise<void>;
   /** Shows what the server answered to a switch or an arrow on the list the host has now, at once. Left out, the host reads
    * the list again (`onChanged`) instead. */
   readonly onUpdated?: (change: FieldsChange) => void;
@@ -271,7 +272,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpd
   function handleSuggestedAdded(outcome: AddSuggestedFieldsResponse) {
     closeSuggested();
     addToast(addedMessage(outcome.added.length), outcome.added.length > 0 ? "success" : "info");
-    onChanged();
+    void onChanged();
   }
 
   async function handleDelete() {
@@ -280,7 +281,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpd
     try {
       await deleteEventCustomField(eventId, deleteTarget.id);
       setDeleteTarget(null);
-      onChanged();
+      void onChanged();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "field_in_use")) {
         addToast(operatorApiErrorMessage(err, "Failed to delete field."), "warning");
@@ -391,7 +392,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpd
           onClose={closeModal}
           onSaved={() => {
             closeModal();
-            onChanged();
+            void onChanged();
           }}
         />
       )}

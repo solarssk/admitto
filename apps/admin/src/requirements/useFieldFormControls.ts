@@ -17,8 +17,10 @@ interface FieldFormControlsOptions {
   readonly eventId: string;
   /** The event's fields as the card shows them, in order: a move sends the ids of all of them. */
   readonly fields: readonly EventCustomFieldDto[];
-  /** Read the list again: after a move that was refused, which also puts the rows back where the server has them. */
-  readonly onChanged: () => void;
+  /** Read the list again: after a move that was refused, which also puts the rows back where the server has them. When it
+   * returns the read, the line of requests waits for it, so that a request queued behind the refused move does not land under it
+   * and is not put back by an answer that was read before it. */
+  readonly onChanged: () => void | Promise<void>;
   /** Shows a move at once, and what the server answers to a move or a switch, on the list the host has now; read again
    * (`onChanged`) after the answer when there is none. */
   readonly onUpdated?: (change: FieldsChange) => void;
@@ -88,7 +90,7 @@ export function useFieldFormControls({ eventId, fields, onChanged, onUpdated, ro
 
   function show(change: FieldsChange) {
     if (onUpdated) onUpdated(change);
-    else onChanged();
+    else void onChanged();
   }
 
   /** Runs `task` when everything asked before it has finished, and at once when nothing is out. A task catches its own
@@ -148,7 +150,7 @@ export function useFieldFormControls({ eventId, fields, onChanged, onUpdated, ro
           addToast(operatorApiErrorMessage(err, "Failed to move the field."), "error");
         }
         // The rows went to their new places before the server answered; reading the list puts them where it has them.
-        onChanged();
+        await onChanged();
       } finally {
         movesOutRef.current -= 1;
         finishMove(key);

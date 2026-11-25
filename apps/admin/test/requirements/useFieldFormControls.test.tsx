@@ -234,6 +234,32 @@ describe("useFieldFormControls: a move on the screen", () => {
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
+  it("waits for the list to be read again before it sends what is queued behind a refused move", async () => {
+    const first = deferred<EventCustomFieldDto[]>();
+    const read = deferred<void>();
+    reorderEventCustomFields.mockReturnValueOnce(first.promise);
+    updateEventCustomField.mockResolvedValueOnce({ ...a, show_on_form: true });
+    const onChanged = vi.fn(() => read.promise);
+    const { result } = renderHook(() => {
+      const [fields, setFields] = useState([a, b, c]);
+      return { fields, form: useFieldFormControls({ eventId: "evt-1", fields, onChanged, onUpdated: setFields, rootRef: { current: null } }) };
+    });
+    act(() => {
+      void result.current.form.move(0, "down");
+    });
+    act(() => {
+      void result.current.form.toggleOnForm(result.current.fields[1]!);
+    });
+
+    await act(async () => first.reject(new ApiError(500, "x", "")));
+
+    // The list is being read: the switch behind the refused move is not sent yet, or the read could put its answer back.
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(updateEventCustomField).not.toHaveBeenCalled();
+    await act(async () => read.resolve());
+    expect(updateEventCustomField).toHaveBeenCalledTimes(1);
+  });
+
   it("goes on with the request queued behind a move whose handling throws", async () => {
     const first = deferred<EventCustomFieldDto[]>();
     reorderEventCustomFields.mockReturnValueOnce(first.promise);

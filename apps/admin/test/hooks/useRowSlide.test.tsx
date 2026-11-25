@@ -63,7 +63,20 @@ describe("useRowSlide", () => {
 
     expect(slides()).toEqual({ a: "translateY(-40px)", b: "translateY(40px)" });
     expect(animate).toHaveBeenCalledTimes(2);
-    expect(animate).toHaveBeenCalledWith({ transform: ["translateY(-40px)", "translateY(0)"] }, { duration: 180, easing: "ease-out" });
+    expect(animate).toHaveBeenCalledWith({ transform: ["translateY(-40px)", "translateY(0)"] }, { duration: 180, easing: "ease-out", composite: "add" });
+  });
+
+  it("adds the slide of a row that is moved again to the one that is still running, so that it does not jump", () => {
+    const view = render(<List order={["a", "b", "c"]} />);
+    view.rerender(<List order={["b", "a", "c"]} />);
+    animate.mockClear();
+
+    // Moved back before the first slide has finished: the places are the layout's, and the slide that is running stays underneath.
+    view.rerender(<List order={["a", "b", "c"]} />);
+
+    expect(slides()).toEqual({ a: "translateY(40px)", b: "translateY(-40px)" });
+    expect(animate).toHaveBeenCalledTimes(2);
+    for (const [, options] of animate.mock.calls) expect(options).toMatchObject({ composite: "add" });
   });
 
   it("slides the rows under a row that is taken out, and a row that is added slides nothing itself", () => {

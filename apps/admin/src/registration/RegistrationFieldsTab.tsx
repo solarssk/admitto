@@ -72,8 +72,9 @@ function RegistrationFieldsBody({ eventId, onChecksStale }: Readonly<{ eventId: 
           event={event}
           fields={list.data}
           // A field that was added, changed or deleted is somewhere in the list that the tab cannot tell, so a read that fails
-          // replaces the card with the error (it may be wrong); the card stays, blocked and dimmed, while it runs.
-          onChanged={() => void list.reload({ keepRowsOnFailure: false })}
+          // replaces the card with the error (it may be wrong); the card stays, blocked and dimmed, while it runs. The read is
+          // returned: after a refused move the card waits for it before it sends what is queued behind that move.
+          onChanged={() => list.reload({ keepRowsOnFailure: false })}
           onUpdated={(change) => list.update(change)}
         />
       </RefetchRegion>
