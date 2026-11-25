@@ -80,10 +80,10 @@ describe("suggestedRows", () => {
     const rows = suggestedRows(planSuggestedFields(existing), existing);
 
     expect(rows.map((row) => [row.key, row.state])).toEqual([
-      ["parking", "add"],
-      ["parking_plate", "add"],
       ["travel", "present"],
       ["arrival", "add"],
+      ["parking", "add"],
+      ["parking_plate", "add"],
       ["accommodation", "add"],
       ["accessibility_needs", "add"],
     ]);
@@ -97,14 +97,15 @@ describe("suggestedRows", () => {
   it("names the question a conditional one waits for as the event calls it, or as the set does when it is still to be added", () => {
     const own = [field("parking", "Parking space", { type: "boolean" })];
 
-    expect(suggestedRows(planSuggestedFields(own), own)[1]!.meta).toBe("Text. Shown only when “Parking space” is Yes");
-    expect(suggestedRows(planSuggestedFields([]), [])[1]!.meta).toBe("Text. Shown only when “Do you need a parking space?” is Yes");
+    const plateOf = (rows: ReturnType<typeof suggestedRows>) => rows.find((row) => row.key === "parking_plate")!;
+    expect(plateOf(suggestedRows(planSuggestedFields(own), own)).meta).toBe("Text. Shown only when “Parking space” is Yes");
+    expect(plateOf(suggestedRows(planSuggestedFields([]), [])).meta).toBe("Text. Shown only when “Do you need a parking space?” is Yes");
   });
 
   it("explains a question that cannot be added", () => {
     const own = [field("parking", "Parking notes")];
 
-    const plate = suggestedRows(planSuggestedFields(own), own)[1]!;
+    const plate = suggestedRows(planSuggestedFields(own), own).find((row) => row.key === "parking_plate")!;
 
     expect(plate.state).toBe("blocked");
     expect(plate.note).toBe("It needs “Parking notes” to be a Yes / No question on the registration form.");

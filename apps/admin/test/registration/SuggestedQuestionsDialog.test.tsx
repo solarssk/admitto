@@ -144,7 +144,7 @@ describe("SuggestedQuestionsDialog: a short screen", () => {
 
 describe("SuggestedQuestionsDialog: an event that has some of them", () => {
   it("shows a question the event has as already in its list, and adds only the others", () => {
-    renderDialog([created(SUGGESTED_EVENT_FIELDS[2]!), ...own(1)]);
+    renderDialog([created(SUGGESTED_EVENT_FIELDS.find((suggested) => suggested.source_field === "travel")!), ...own(1)]);
 
     expect(badgeOf("How will you get here?")).toBe("Already in your list");
     for (const label of ["Do you need a parking space?", "Registration number", "Arrival (date and time)", "Do you need accommodation?", "Do you have any accessibility needs we should know about?"]) {

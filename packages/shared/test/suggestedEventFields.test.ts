@@ -19,11 +19,20 @@ function others(count: number): ConditionField[] {
 }
 
 const keys = (list: readonly SuggestedEventField[]) => list.map((suggested) => suggested.source_field);
-const ALL_KEYS = ["parking", "parking_plate", "travel", "arrival", "accommodation", "accessibility_needs"];
+const ALL_KEYS = ["travel", "arrival", "parking", "parking_plate", "accommodation", "accessibility_needs"];
 
 describe("SUGGESTED_EVENT_FIELDS", () => {
-  it("is parking, the registration number, travel, arrival, accommodation and accessibility needs, in that order", () => {
+  it("is travel, arrival, parking, the registration number, accommodation and accessibility needs, in that order", () => {
     expect(keys(SUGGESTED_EVENT_FIELDS)).toEqual(ALL_KEYS);
+  });
+
+  it("asks how a guest comes before it asks about parking, and keeps the registration number right after the parking question", () => {
+    const order = keys(SUGGESTED_EVENT_FIELDS);
+    expect(order.indexOf("travel")).toBeLessThan(order.indexOf("parking"));
+    expect(order.indexOf("arrival")).toBeLessThan(order.indexOf("parking"));
+    // It is shown only when the answer to parking is Yes, so it comes right after the question it depends on.
+    expect(order.indexOf("parking_plate")).toBe(order.indexOf("parking") + 1);
+    expect(order.at(-1)).toBe("accessibility_needs");
   });
 
   it("asks yes/no for parking and accommodation, a choice of four for travel, and a date and time for the arrival", () => {
@@ -117,7 +126,7 @@ describe("planSuggestedFields", () => {
 
     const plan = planSuggestedFields(changed);
 
-    expect(keys(plan.present)).toEqual(["parking", "travel"]);
+    expect(keys(plan.present)).toEqual(["travel", "parking"]);
     // The plate would be on the form while the question it depends on is not, so it is left out as well.
     expect(keys(plan.add)).toEqual(["arrival", "accommodation", "accessibility_needs"]);
     expect(keys(plan.blocked)).toEqual(["parking_plate"]);
@@ -126,7 +135,7 @@ describe("planSuggestedFields", () => {
   it("adds a question that depends on one it adds in the same go, and one that depends on a yes/no question the event has", () => {
     expect(keys(planSuggestedFields([]).add)).toContain("parking_plate");
     const own = planSuggestedFields([field("parking", "boolean")]);
-    expect(keys(own.add)).toEqual(["parking_plate", "travel", "arrival", "accommodation", "accessibility_needs"]);
+    expect(keys(own.add)).toEqual(["travel", "arrival", "parking_plate", "accommodation", "accessibility_needs"]);
     expect(own.blocked).toEqual([]);
   });
 
@@ -147,7 +156,7 @@ describe("planSuggestedFields", () => {
     const plan = planSuggestedFields([field("parking_plate", "text")]);
 
     expect(keys(plan.present)).toEqual(["parking_plate"]);
-    expect(keys(plan.add)).toEqual(["parking", "travel", "arrival", "accommodation", "accessibility_needs"]);
+    expect(keys(plan.add)).toEqual(["travel", "arrival", "parking", "accommodation", "accessibility_needs"]);
   });
 
   it("counts a key that is only a prefix of a suggested one as a different field", () => {
