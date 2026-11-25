@@ -1,0 +1,20 @@
+/* CopyField: a value to copy and not to edit, grey and in a fixed-width font. */
+.at-input.copy-field__input {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  background-color: var(--at-gray-100);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+}
+
+/* With the copy button, the frame is the group's: it is grey too, and it is as high as a box without a button beside it (the frame is inside
+ * that height, not on top of it), so that this box is as high as every other field wherever it stands. */
+.at-inputgroup:has(.at-input.copy-field__input) {
+  box-sizing: border-box;
+  height: var(--control-h);
+  background: var(--at-gray-100);
+}
+
+.at-inputgroup:has(.at-input.copy-field__input) .at-input {
+  height: 100%;
+}

@@ -211,30 +211,6 @@ span.access-check__remedy {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.at-input.access-readonly {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  background-color: var(--at-gray-100);
-  color: var(--text-secondary);
-  text-overflow: ellipsis;
-}
-
-/* With the copy button, the frame is the group's: it is grey too, and it is as high as the box without a button beside it (the frame is
- * inside that height, not on top of it). */
-.access-dns .at-inputgroup:has(.at-inputgroup__icon--action) {
-  box-sizing: border-box;
-  height: var(--control-h);
-}
-
-.access-dns .at-inputgroup .at-input {
-  height: 100%;
-}
-
-/* With the copy button, the frame is the group's: it is grey too. */
-.at-inputgroup:has(.at-input.access-readonly) {
-  background: var(--at-gray-100);
-}
-
 @media (max-width: 640px) {
   .access-dns {
     grid-template-columns: minmax(0, 1fr);

@@ -135,7 +135,7 @@ describe("the address card", () => {
     for (const label of ["Type", "Name", "Target"]) {
       const box = recordField(label);
       expect(box.readOnly).toBe(true);
-      expect(box.classList.contains("access-readonly")).toBe(true);
+      expect(box.classList.contains("copy-field__input")).toBe(true);
     }
     expect(within(addressCard()).getByText("Create a CNAME record (a DNS entry that makes one name an alias of another) that points the address to admitto.example.com.")).toBeTruthy();
   });
@@ -148,7 +148,7 @@ describe("the address card", () => {
       const group = recordField(label).closest(".at-inputgroup") as HTMLElement;
       expect(group.firstElementChild).toBe(within(group).getByRole("button", { name: copyName }));
       expect(group.firstElementChild?.classList.contains("at-inputgroup__icon--action")).toBe(true);
-      expect(recordField(label).classList.contains("access-readonly")).toBe(true);
+      expect(recordField(label).classList.contains("copy-field__input")).toBe(true);
     }
   });
 
@@ -290,15 +290,9 @@ describe("the address card", () => {
     expect(css().match(/\.access-it \{[^}]*\}/)?.[0]).not.toMatch(/max-width/);
   });
 
-  it("makes the record fields the height of every other field, grey and fixed width, in a grid that falls to one column on a narrow screen", () => {
+  it("lays the record fields in a grid that falls to one column on a narrow screen (their look and height are the CopyField's)", () => {
     expect(css()).toMatch(/\.access-dns \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(0, 7rem\) minmax\(0, 1fr\) minmax\(0, 1fr\);/);
     expect(css()).toMatch(/@media \(max-width: 640px\) \{\s*\.access-dns \{\s*grid-template-columns: minmax\(0, 1fr\);/);
-    expect(css()).toMatch(/\.at-input\.access-readonly \{[^}]*font-family: var\(--font-mono\);[^}]*background-color: var\(--at-gray-100\);/);
-    // No height of its own: the field is the standard one, so it is 36px high like Own address.
-    // A field with the copy button on its left is as high as one without (36px), the frame inside that height.
-    expect(css()).toMatch(/\.access-dns \.at-inputgroup:has\(\.at-inputgroup__icon--action\) \{\s*box-sizing: border-box;\s*height: var\(--control-h\);/);
-    expect(css().match(/\.at-input\.access-readonly \{[^}]*\}/)?.[0]).not.toMatch(/height/);
-    expect(css()).toMatch(/\.at-inputgroup:has\(\.at-input\.access-readonly\) \{\s*background: var\(--at-gray-100\);/);
   });
 
   it("keeps the end of the texts of the steps together, so that none wraps to a lone word", async () => {

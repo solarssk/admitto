@@ -565,20 +565,20 @@ describe("IdentityProviderEditor — coverage", () => {
 });
 
 describe("IdentityProviderEditor — Redirect URI", () => {
-  it("shows a disabled Redirect URI placeholder with a non-interactive Copy icon in create mode, same layout as edit", async () => {
+  it("shows a grey Redirect URI example in create mode, with Copy off until there is an address, same layout as edit", async () => {
     renderEditorAt("/admin/settings/identity/providers/new");
     const field = (await screen.findByLabelText("Redirect URI")) as HTMLInputElement;
-    expect(field.disabled).toBe(true);
-    expect(field.value).toMatch(/api\/auth\/oidc/);
+    expect(field.readOnly).toBe(true);
+    expect(field.value).toBe("");
+    expect(field.placeholder).toMatch(/api\/auth\/oidc/);
+    expect(field.classList.contains("copy-field__input")).toBe(true);
     expect(
       screen.getByText(/Available to copy once you save this provider for the first time/, {
         exact: false,
       }),
     ).toBeTruthy();
-    // Nothing to copy yet, so this renders as Input's plain decorative icon (no onIconClick),
-    // not a button - there's no click target to disable. Queried from the field itself (not
-    // container.querySelector) since the editor renders into a portal outside RTL's container.
-    expect(screen.queryByRole("button", { name: /Copy/i })).toBeNull();
+    // Nothing to copy yet: the button is there, as in edit, and it is off.
+    expect((screen.getByRole("button", { name: "Copy Redirect URI" }) as HTMLButtonElement).disabled).toBe(true);
     expect(field.closest(".at-inputgroup")?.querySelector(".ti-copy")).toBeTruthy();
   });
 
@@ -586,11 +586,14 @@ describe("IdentityProviderEditor — Redirect URI", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    const field = await screen.findByLabelText("Redirect URI");
-    expect((field as HTMLInputElement).value).toBe(
-      "https://tickets.example.com/api/auth/oidc/p1/callback",
-    );
-    expect(screen.getByRole("button", { name: /Copy/i })).toBeTruthy();
+    const field = (await screen.findByLabelText("Redirect URI")) as HTMLInputElement;
+    expect(field.value).toBe("https://tickets.example.com/api/auth/oidc/p1/callback");
+    // The same grey box as the return addresses: read only, not disabled, so its text can be selected by hand.
+    expect(field.readOnly).toBe(true);
+    expect(field.disabled).toBe(false);
+    expect(field.classList.contains("copy-field__input")).toBe(true);
+    expect((screen.getByRole("button", { name: "Copy Redirect URI" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/Register this exact URL at your identity provider/)).toBeTruthy();
   });
 
   it("warns when the API returns a null Redirect URI instead of inventing a host", async () => {
@@ -621,7 +624,7 @@ describe("IdentityProviderEditor — Redirect URI", () => {
         "https://tickets.example.com/api/auth/oidc/p1/callback",
       );
     });
-    expect(await screen.findByText("Redirect URI copied to clipboard")).toBeTruthy();
+    expect(await screen.findByText("Copied.")).toBeTruthy();
   });
 
   it("toasts an error when clipboard write fails", async () => {
@@ -635,6 +638,6 @@ describe("IdentityProviderEditor — Redirect URI", () => {
     await screen.findByLabelText("Redirect URI");
     fireEvent.click(screen.getByRole("button", { name: /Copy/i }));
 
-    expect(await screen.findByText("Could not copy Redirect URI.")).toBeTruthy();
+    expect(await screen.findByText("Could not copy. Select the text and copy it by hand.")).toBeTruthy();
   });
 });
