@@ -417,7 +417,7 @@ export function EventWalletPanel({
         actions={
           <Switch
             id="event-wallet-enabled"
-            label={form.walletEnabled ? "On" : "Off"}
+            aria-label="Wallet"
             checked={form.walletEnabled}
             disabled={isArchived || saving}
             onChange={(e) => setForm({ ...form, walletEnabled: e.target.checked })}

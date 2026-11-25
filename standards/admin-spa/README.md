@@ -21,6 +21,7 @@ The mechanical parts are tests, so a violation fails CI with a hint of what to u
 - `apps/admin/test/styles/loading-standard.test.ts`: no one-off spinner or shimmer keyframes, no `Loading…` text, no hand-made `Saving…` labels, no Retry button that is not busy while it works, no `disabled={busy}` on a raw button.
 - `apps/admin/test/styles/loading-label-length.test.ts`: a `loadingLabel` is never longer than the label at rest.
 - `apps/admin/test/styles/readable-text-css.test.ts`: the CSS that keeps text readable.
+- `apps/admin/test/styles/switch-standard.test.ts`: no On or Off text next to a switch, and every switch has a name for a screen reader.
 - `apps/admin/test/styles/token-fallback-coverage.test.ts`: a `var(--token, #hex)` fallback equals the token.
 - `apps/admin/test/api/operator-api-error.coverage.test.ts`: every known API error code has its UI string.
 - `apps/admin/test/locale/time-zone-standard.test.ts`: no new read of the viewer's own time zone, no time formatted without a zone, no fallback from an actor's zone to another zone.

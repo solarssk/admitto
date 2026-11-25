@@ -73,7 +73,7 @@ export function RegistrationTurnstileCard({
       actions={
         <Switch
           id="external-bot-protection-enabled"
-          label={required ? "On" : "Off"}
+          aria-label="Bot protection"
           checked={required}
           disabled={disabled}
           onChange={(e) => (e.target.checked ? turnOn() : askToTurnOff())}

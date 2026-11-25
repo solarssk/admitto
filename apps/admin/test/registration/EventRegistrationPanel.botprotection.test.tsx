@@ -48,7 +48,6 @@ describe("the bot protection card of an event, in Event settings", () => {
 
     expect(botSwitch().checked).toBe(false);
     expect(botSwitch().disabled).toBe(true);
-    expect(within(botArea()).getByText("Off")).toBeTruthy();
     expect(getTooltipText(botSwitch())).toBe("Bot protection is turned off for the whole organisation.");
     const note = document.getElementById(botSwitch().getAttribute("aria-describedby") ?? "none");
     expect(note?.textContent).toBe("Bot protection is turned off for the whole organisation.");
@@ -90,7 +89,6 @@ describe("the bot protection card of an event, in Event settings", () => {
     await renderPanel(settings());
 
     expect(botSwitch().checked).toBe(true);
-    expect(within(botArea()).getByText("On")).toBeTruthy();
     expect(within(botArea()).getByText("Asks a visitor to prove they are not a bot before the form is sent. Used on the link and password forms of this event.")).toBeTruthy();
     expect(botArea().querySelector(".at-notice")).toBeNull();
     expect(isOff(saveButton())).toBe(true);
@@ -100,7 +98,6 @@ describe("the bot protection card of an event, in Event settings", () => {
     await renderPanel(settings({ bot_protection_enabled: false }));
 
     expect(botSwitch().checked).toBe(false);
-    expect(within(botArea()).getByText("Off")).toBeTruthy();
     expect(botArea().querySelector(".at-notice--warning")?.textContent).toBe("Without the check, bots can fill in the form. The link and password forms of this event have no bot check.");
   });
 

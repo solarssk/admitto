@@ -103,6 +103,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Move the field ID in the field editor to a quiet line at the bottom, as the column name in an import file ([#1986](https://github.com/solarssk/admitto/pull/1986))
 - Shorten the Sensitive explanation in the field editor, with the full list of places on an info icon ([#1986](https://github.com/solarssk/admitto/pull/1986))
 - Make the field editor window wider on a desktop, and show text areas in the normal font, not monospace ([#1986](https://github.com/solarssk/admitto/pull/1986))
+- Remove the On or Off text next to the switches in settings rows and card headers: the switch shows the state ([#1988](https://github.com/solarssk/admitto/pull/1988))
 
 ### Fixed
 
