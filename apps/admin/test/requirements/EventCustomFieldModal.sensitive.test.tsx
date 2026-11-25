@@ -5,8 +5,8 @@ import { ApiError } from "../../src/api/client.js";
 import { CODE_MESSAGES } from "../../src/api/operator-api-error.js";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
 import { EventCustomFieldModal } from "../../src/requirements/EventCustomFieldModal.js";
-import { SENSITIVE_EFFECTS, SENSITIVE_OFF_VISIBLE, SENSITIVE_ON_EXPORTS } from "../../src/requirements/SensitiveFieldSwitch.js";
-import { renderWithToast } from "../test-utils.js";
+import { SENSITIVE_OFF_VISIBLE, SENSITIVE_ON_EXPORTS, SENSITIVE_PLACES, SENSITIVE_SUMMARY } from "../../src/requirements/SensitiveFieldSwitch.js";
+import { getTooltipText, renderWithToast } from "../test-utils.js";
 import { answerField } from "../attendees/answerTypeFixtures.js";
 
 const api = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), usage: vi.fn() }));
@@ -43,10 +43,10 @@ const save = () => fireEvent.click(screen.getByRole("button", { name: /^(Save|Cr
 const typeLabel = (label: string) => fireEvent.change(screen.getByLabelText("Display label"), { target: { value: label } });
 
 describe("the Sensitive switch of the field editor", { timeout: 30_000 }, () => {
-  it("is off for a new field and for an ordinary one, on for a sensitive one, with the effects written under it", async () => {
+  it("is off for a new field and for an ordinary one, on for a sensitive one, with a short line about it next to the switch", async () => {
     await openEditor(null);
     expect(toggle().checked).toBe(false);
-    expect(document.body.textContent).toContain(SENSITIVE_EFFECTS);
+    expect(document.body.textContent).toContain(SENSITIVE_SUMMARY);
     cleanup();
 
     await openEditor(ordinary);
@@ -57,10 +57,19 @@ describe("the Sensitive switch of the field editor", { timeout: 30_000 }, () => 
     expect(toggle().checked).toBe(true);
   });
 
-  it("says in plain words where the answers are hidden, who sees them, that each Show is recorded and that deleting the question deletes them", () => {
-    for (const phrase of ["lists", "search", "filters", "exports", "reports", "wallet", "emails", "operator card", "administrators", "Show", "audit log", "deletes its answers"]) {
-      expect(SENSITIVE_EFFECTS).toContain(phrase);
+  it("says in one short line what it hides the answers from, who can open them and that each opening is logged, and lists every place on the info hint of its label", async () => {
+    await openEditor(null);
+    for (const phrase of ["lists", "exports", "emails", "administrators", "open", "logged"]) {
+      expect(SENSITIVE_SUMMARY).toContain(phrase);
     }
+    expect(SENSITIVE_SUMMARY.split(/\s+/).length).toBeLessThanOrEqual(25);
+    for (const phrase of ["lists", "search", "filters", "exports", "reports", "wallet", "emails", "operator card"]) {
+      expect(SENSITIVE_PLACES).toContain(phrase);
+    }
+    expect(document.getElementById("cf-sensitive-effects")?.textContent).toBe(SENSITIVE_SUMMARY);
+    expect(toggle().getAttribute("aria-describedby")).toBe("cf-sensitive-effects");
+    expect(document.body.textContent).not.toContain(SENSITIVE_PLACES);
+    expect(getTooltipText(screen.getByText("Sensitive"))).toBe(SENSITIVE_PLACES);
   });
 
   it("creates the field sensitive when the switch is on, and says nothing about sensitivity when it is off", async () => {

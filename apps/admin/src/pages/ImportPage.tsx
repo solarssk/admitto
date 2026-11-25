@@ -864,9 +864,9 @@ function ImportPageBody({ eventId }: Readonly<{ eventId: string }>) {
                 </details>
                 {attributeFields.length > 0 ? (
                   <p className="import-hint">
-                    Event attribute columns use the <code>source_field</code> slug (included in the
-                    downloadable template). Export files may use human-readable labels; re-import accepts
-                    those too.
+                    The columns for this event&apos;s own questions are named as in the table above, and the
+                    downloadable template has them. An exported file may use the question labels instead;
+                    importing it again works too.
                   </p>
                 ) : null}
               </div>

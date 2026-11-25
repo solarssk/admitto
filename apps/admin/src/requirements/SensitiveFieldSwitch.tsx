@@ -1,9 +1,14 @@
-import { Notice, Switch } from "@admitto/ui";
+import { HintLabel, Notice, Switch } from "@admitto/ui";
 import "./requirements.css";
 
-/** What the switch says it does (D-E6), in plain words: where the answers are hidden, who sees them and how, and what deleting does. */
-export const SENSITIVE_EFFECTS =
-  "Answers are hidden in lists, search, filters, exports, reports, wallet passes, emails and on the operator card. Only administrators can see them, by clicking Show on the attendee or the request, and every click is recorded in the audit log. Deleting the question deletes its answers.";
+/** What the switch does (D-E6), in one line next to it: what it hides, who can open the answers, and that each opening is logged. */
+export const SENSITIVE_SUMMARY =
+  "Hide the answers from lists, exports and emails. Only administrators can open them, and each opening is logged.";
+
+/** The whole list of places where the answers are hidden (D-E6), on the info hint of the label so that the line next to the switch stays short.
+ * What deleting the question does is said in the dialog that confirms the delete. */
+export const SENSITIVE_PLACES =
+  "Answers are hidden in lists, search, filters, exports, reports, wallet passes, emails and on the operator card.";
 
 /** Said when an existing question becomes sensitive: the exports that are ready and hold its answers go away. */
 export const SENSITIVE_ON_EXPORTS = "When you save, exports that are ready and include this question are cancelled.";
@@ -30,10 +35,12 @@ export function SensitiveFieldSwitch({ checked, wasSensitive, isEdit, disabled, 
       <div className="custom-field-sensitive">
         <div className="custom-field-sensitive__text">
           <span className="at-label" id="cf-sensitive-label">
-            <i className="ti ti-lock" aria-hidden="true" /> Sensitive
+            <HintLabel hint={SENSITIVE_PLACES}>
+              <i className="ti ti-lock" aria-hidden="true" /> Sensitive
+            </HintLabel>
           </span>
           <span className="at-hint" id="cf-sensitive-effects">
-            {SENSITIVE_EFFECTS}
+            {SENSITIVE_SUMMARY}
           </span>
         </div>
         <Switch

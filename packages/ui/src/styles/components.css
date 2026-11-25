@@ -161,7 +161,7 @@
   transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .at-input[type="password"] { padding-right: 2.25rem; }
-.at-textarea { height: auto; padding: var(--space-2) var(--pad-control-x); line-height: var(--lh-normal); resize: vertical; font-family: var(--font-mono); font-size: var(--fs-mono); }
+.at-textarea { height: auto; padding: var(--space-2) var(--pad-control-x); line-height: var(--lh-normal); resize: vertical; }
 .at-input::placeholder, .at-textarea::placeholder { color: var(--text-disabled); }
 .at-input:hover, .at-select:hover, .at-textarea:hover { border-color: var(--at-gray-400); }
 .at-input:focus, .at-select:focus, .at-textarea:focus { outline: none; border-color: var(--border-focus); box-shadow: var(--ring); }

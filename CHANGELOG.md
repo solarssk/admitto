@@ -100,6 +100,9 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Offer the suggested travel and arrival questions before parking, so the form asks how a guest comes first ([#1983](https://github.com/solarssk/admitto/pull/1983))
 - Show the state of a secret key ("Not set", the mask) in the normal font and size, like the other fields ([#1984](https://github.com/solarssk/admitto/pull/1984))
 - Write the Attendee fields hint and the messages about a field that others depend on, or that an item still uses, in short, plain words ([#1985](https://github.com/solarssk/admitto/pull/1985))
+- Move the field ID in the field editor to a quiet line at the bottom, as the column name in an import file ([#1986](https://github.com/solarssk/admitto/pull/1986))
+- Shorten the Sensitive explanation in the field editor, with the full list of places on an info icon ([#1986](https://github.com/solarssk/admitto/pull/1986))
+- Make the field editor window wider on a desktop, and show text areas in the normal font, not monospace ([#1986](https://github.com/solarssk/admitto/pull/1986))
 
 ### Fixed
 

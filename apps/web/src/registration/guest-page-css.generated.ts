@@ -47,7 +47,7 @@ export const GUEST_PAGE_PRODUCT_CSS = [
   ".at-hint--error { color: var(--status-error); }",
   ".at-input, .at-select, .at-textarea { font-family: var(--font-sans); font-size: var(--fs-body); color: var(--text-primary); height: var(--control-h); padding: 0 var(--pad-control-x); background: var(--surface-card); border: var(--border-width) solid var(--border-strong); border-radius: var(--radius); width: 100%; transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }",
   ".at-input[type=\"password\"] { padding-right: 2.25rem; }",
-  ".at-textarea { height: auto; padding: var(--space-2) var(--pad-control-x); line-height: var(--lh-normal); resize: vertical; font-family: var(--font-mono); font-size: var(--fs-mono); }",
+  ".at-textarea { height: auto; padding: var(--space-2) var(--pad-control-x); line-height: var(--lh-normal); resize: vertical; }",
   ".at-input::placeholder, .at-textarea::placeholder { color: var(--text-disabled); }",
   ".at-input:hover, .at-select:hover, .at-textarea:hover { border-color: var(--at-gray-400); }",
   ".at-input:focus, .at-select:focus, .at-textarea:focus { outline: none; border-color: var(--border-focus); box-shadow: var(--ring); }",

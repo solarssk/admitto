@@ -651,6 +651,14 @@
   flex-direction: column;
 }
 
+/* The field editor holds a lot (type, who it is about, rules, icon, condition, suggestions), so on a desktop its window is wider than
+   the other windows of this shell. Below a desktop width it is as wide as they are. */
+@media (min-width: 1024px) {
+  .event-item-modal__panel--wide {
+    width: min(100%, 720px);
+  }
+}
+
 .event-item-modal__scroll {
   overflow: auto;
   /* No scrollbar-gutter: stable - matches .identity-modal__scroll / .add-attendee-modal__scroll:
@@ -747,6 +755,17 @@
   align-items: center;
   gap: var(--space-2);
   margin-left: auto;
+}
+
+/* The field editor says the column name of the field at the left of its footer, apart from the questions above it. In a window too
+   narrow for the note and the buttons in one row, the note takes a row of its own above the buttons. */
+.custom-field-modal__footer {
+  flex-wrap: wrap;
+}
+
+.custom-field-modal__footer-note {
+  flex: 1 1 16rem;
+  min-width: 0;
 }
 
 /* Requirements header: "Documentation" is a single short action - keep it beside the title on
