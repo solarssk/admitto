@@ -381,7 +381,6 @@ function RequirementsPageBody({ eventId }: Readonly<{ eventId: string }>) {
                   {(guard) => (
                     <Button
                       variant="secondary"
-                      size="sm"
                       icon={<i className="ti ti-plus" />}
                       {...guard}
                       onClick={() => {

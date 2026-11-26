@@ -704,7 +704,6 @@ export function IdentityProviderEditor({
             <Button
               type="button"
               variant="secondary"
-              size="sm"
               onClick={() => void handleDiscover()}
               loading={discovering}
               disabled={saving || testing}
@@ -816,7 +815,7 @@ export function IdentityProviderEditor({
       <Card
         title="Group → role mapping"
         actions={
-          <Button type="button" variant="secondary" size="sm" onClick={handleAddMapping}>
+          <Button type="button" variant="secondary" onClick={handleAddMapping}>
             Add mapping
           </Button>
         }

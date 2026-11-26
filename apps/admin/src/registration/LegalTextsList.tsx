@@ -38,7 +38,7 @@ export function LegalTextsList({ controls, rows, missingNames, limits, onAddCons
         actions={
           <ArchivedGuard event={event} reasonId="legal-copy-reason">
             {(guard) => (
-              <Button variant="secondary" size="sm" icon={<i className="ti ti-copy" aria-hidden="true" />} onClick={onCopy} {...guard}>
+              <Button variant="secondary" icon={<i className="ti ti-copy" aria-hidden="true" />} onClick={onCopy} {...guard}>
                 Copy from another event
               </Button>
             )}

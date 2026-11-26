@@ -147,14 +147,14 @@ export function CompanionCard({ event, companion, fields, fieldsLoaded, canRevea
           <>
             <ArchivedGuard event={event} reasonId="edit-companion-reason" disabled={!fieldsLoaded} tooltip={FIELDS_NOT_LOADED}>
               {(guard) => (
-                <Button ref={editButtonRef} variant="secondary" size="sm" icon={<i className="ti ti-pencil" aria-hidden="true" />} {...guard} onClick={actions.edit.show}>
+                <Button ref={editButtonRef} variant="secondary" icon={<i className="ti ti-pencil" aria-hidden="true" />} {...guard} onClick={actions.edit.show}>
                   Edit
                 </Button>
               )}
             </ArchivedGuard>
             <ArchivedGuard event={event} reasonId="remove-companion-reason">
               {(guard) => (
-                <Button ref={removeButtonRef} variant="secondary" size="sm" icon={<i className="ti ti-user-minus" aria-hidden="true" />} {...guard} onClick={actions.removal.show}>
+                <Button ref={removeButtonRef} variant="secondary" icon={<i className="ti ti-user-minus" aria-hidden="true" />} {...guard} onClick={actions.removal.show}>
                   Remove
                 </Button>
               )}

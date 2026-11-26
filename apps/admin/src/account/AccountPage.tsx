@@ -2311,7 +2311,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     return (
       <Card
         title="Active sessions"
-        actions={canRevokeOthers(sessionsGate.showContent, sessionsFailure.error, otherSessions.length) ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}
+        actions={canRevokeOthers(sessionsGate.showContent, sessionsFailure.error, otherSessions.length) ? <Button type="button" variant="danger" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}
         {...refetchCardProps(sessionsRefreshing, sessionsRefetch.showIndicator)}
       >
         <TopProgressBar active={sessionsRefetch.showIndicator} placement="container" label="Refreshing sessions" />

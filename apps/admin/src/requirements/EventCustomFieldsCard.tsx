@@ -355,7 +355,6 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpd
                 <Button
                   ref={suggestButtonRef}
                   variant="secondary"
-                  size="sm"
                   icon={<i className="ti ti-wand" />}
                   {...guard}
                   onClick={() => setSuggestOpen(true)}
@@ -368,7 +367,6 @@ export function EventCustomFieldsCard({ eventId, event, fields, onChanged, onUpd
               {(guard) => (
                 <Button
                   variant="secondary"
-                  size="sm"
                   icon={<i className="ti ti-plus" />}
                   {...guard}
                   onClick={() => setAddOpen(true)}
