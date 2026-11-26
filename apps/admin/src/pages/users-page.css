@@ -1002,3 +1002,216 @@
   font-weight: var(--text-card-title-weight);
   color: var(--text-primary);
 }
+
+/* The three lists of the Users page (staff users, role assignments, active sessions) are the shared boxed table (components/item-table.css)
+   from 1024px, with the widths of their own columns and a ladder of their own, and the cards below 1024px. After the columns that only a wide
+   screen has are folded, each of them would still need more than the 460 to 680px that a 768 to 1023px screen leaves its box, and a fixed
+   layout cuts every cell instead of wrapping it, so the cards that were always there take over. */
+.users-table__narrow-only {
+  display: none;
+}
+
+/* The exact complement of the query of `useIsDesktop(1024)`, not `max-width: 1023px`: between 1023px and 1024px (a fractional width under a browser zoom) neither
+   would match, and the list of Active sessions, which the code has already switched to its cards, would show nothing. */
+@media not all and (min-width: 1024px) {
+  .users-table {
+    display: none;
+  }
+
+  .users-page__cards--narrow {
+    display: flex;
+  }
+}
+
+/* A cell of a fixed layout cannot grow to fit a long word: an address or an identifier with no break in it wraps instead of painting across the next cell. */
+.item-table.users-table .table td {
+  overflow-wrap: anywhere;
+}
+
+.users-page__flag {
+  display: inline-flex;
+}
+
+/* A card names its user whole, wrapped, as on a phone: it is read where there is no hover, and the name and the address tell two people apart. */
+.users-page__cards--narrow .users-page__card .users-page__user-name,
+.users-page__cards--narrow .users-page__card .users-page__user-email {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* The name of a staff user and, on a screen with no room for the three columns, their marks (sign-in, two-factor, sessions) on one line:
+   the name gives way with an ellipsis, the marks do not. */
+.users-page__user-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.users-page__user-line > .users-page__user-name {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.users-page__flags {
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+
+/* What the Granted column of a wide screen says again under the role: one line of the same time, cut with an ellipsis, the whole in its tooltip. */
+.users-page__folded {
+  margin-top: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+/* Staff users: User takes what the others leave. From 1280px all eight columns (44.5rem, so the name keeps 14rem in a box of 936px); below it
+   the sign-in, the two-factor state and the sessions are three marks after the name, and five columns remain (23.5rem, so the name keeps
+   17rem in the 653px box of a 1024px screen). Texts of a cell wrap on two lines, so a column is as wide as its longest word and its icon. */
+.item-table.users-table--staff .table :is(th, td):first-child {
+  width: auto;
+}
+
+.item-table.users-table--staff .table :is(th, td):nth-child(2) {
+  width: 8rem;
+}
+
+.item-table.users-table--staff .table :is(th, td):nth-child(3) {
+  width: 7.5rem;
+}
+
+.item-table.users-table--staff .table :is(th, td):nth-child(4) {
+  width: 8.5rem;
+}
+
+.item-table.users-table--staff .table :is(th, td):nth-child(5) {
+  width: 6.5rem;
+}
+
+.item-table.users-table--staff .table :is(th, td):nth-child(6) {
+  width: 5rem;
+}
+
+.item-table.users-table--staff .table :is(th, td):nth-child(7) {
+  width: 5.5rem;
+}
+
+.item-table.users-table--staff .table :is(th, td):nth-child(8) {
+  width: 3.5rem;
+}
+
+@media (max-width: 1279px) {
+  .item-table.users-table--staff .table :is(th, td).users-table__wide-only {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+  }
+
+  .item-table.users-table--staff .table th.users-table__wide-only {
+    font-size: 0;
+  }
+
+  .item-table.users-table--staff .table :is(th, td).users-table__wide-only > * {
+    display: none;
+  }
+
+  .item-table.users-table--staff .users-table__narrow-only {
+    display: inline-flex;
+  }
+}
+
+/* Role assignments: the scope, the user, the role, when it was granted, the revoke action. From 1180px all five; below it the time of the grant
+   is one line under the role, which then has the room for it. */
+.item-table.users-table--roles .table :is(th, td):first-child {
+  width: 13rem;
+}
+
+.item-table.users-table--roles .table :is(th, td):nth-child(2) {
+  width: auto;
+}
+
+.item-table.users-table--roles .table :is(th, td):nth-child(3) {
+  width: 9rem;
+}
+
+.item-table.users-table--roles .table :is(th, td):nth-child(4) {
+  width: 14rem;
+}
+
+.item-table.users-table--roles .table :is(th, td):nth-child(5) {
+  width: 4rem;
+}
+
+@media (max-width: 1179px) {
+  .item-table.users-table--roles .table :is(th, td):nth-child(3) {
+    width: 12rem;
+  }
+}
+
+@media (max-width: 1179px) {
+  .item-table.users-table--roles .table :is(th, td).users-table__wide-only {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+  }
+
+  .item-table.users-table--roles .table th.users-table__wide-only {
+    font-size: 0;
+  }
+
+  .item-table.users-table--roles .table :is(th, td).users-table__wide-only > * {
+    display: none;
+  }
+
+  .item-table.users-table--roles .users-table__narrow-only {
+    display: block;
+  }
+}
+
+/* Active sessions: Device, IP address and Sign-in go below 1181px and Sign-in alone below 1500px (the ladder of the sessions table in staff.css,
+   which the Account page's own table shares). In this box Device goes below 1280px too: seven columns need 744px and the name still needs
+   room, and a fixed layout cuts what does not fit. The Logged in cell has a line of UTC and the signer's local time under it. */
+.item-table.users-table--sessions .table :is(th, td):first-child {
+  width: auto;
+}
+
+.item-table.users-table--sessions .table :is(th, td):nth-child(2) {
+  width: 6rem;
+}
+
+.item-table.users-table--sessions .table :is(th, td):nth-child(3) {
+  width: 7rem;
+}
+
+.item-table.users-table--sessions .table :is(th, td):nth-child(4) {
+  width: 8.5rem;
+}
+
+.item-table.users-table--sessions .table :is(th, td):nth-child(5) {
+  width: 12rem;
+}
+
+.item-table.users-table--sessions .table :is(th, td):nth-child(6) {
+  width: 7.25rem;
+}
+
+.item-table.users-table--sessions .table :is(th, td):nth-child(7) {
+  width: 7rem;
+}
+
+.item-table.users-table--sessions .table :is(th, td):nth-child(8) {
+  width: 6rem;
+}
+
+@media (max-width: 1279px) {
+  .item-table.users-table--sessions .table :is(th, td):nth-child(3) {
+    display: none;
+  }
+}

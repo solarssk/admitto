@@ -34,6 +34,7 @@ import { RoleAssignmentsTab } from "./users/RoleAssignmentsTab.js";
 import { ActiveSessionsTab } from "./users/ActiveSessionsTab.js";
 import { StaffUserCard, StaffUserTableRow } from "./users/StaffUserListItem.js";
 import { UsersListSkeleton, UsersStatsSkeleton, type SkeletonColumn } from "./users/UsersListSkeleton.js";
+import "../components/item-table.css";
 import "./users-page.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -41,17 +42,17 @@ const SEARCH_DEBOUNCE_MS = 300;
 // value here would silently request more than the server delivers, understating totalPages and
 // leaving the tail of the list unreachable.
 const PAGE_SIZE_OPTIONS = [25, 50] as const;
-// The placeholder of the staff list: five rows and three cards, each as tall as a real one (measured in Chrome: 61px
+// The placeholder of the staff list: five rows and three cards, each as tall as a real one (measured in Chrome: 64px
 // and 238px).
 const SKELETON_ROWS = 5;
 const NO_USERS: UserListItemDto[] = [];
 const STAFF_COLUMNS: ReadonlyArray<SkeletonColumn> = [
   { id: "user", label: "User" },
   { id: "roles", label: "Roles" },
-  { id: "sign-in", label: "Sign-in" },
-  { id: "two-factor", label: "Two-factor" },
+  { id: "sign-in", label: "Sign-in", className: "users-table__wide-only" },
+  { id: "two-factor", label: "Two-factor", className: "users-table__wide-only" },
   { id: "last-login", label: "Last login" },
-  { id: "sessions", label: "Sessions" },
+  { id: "sessions", label: "Sessions", className: "users-table__wide-only" },
   { id: "status", label: "Status" },
   { id: "actions", label: <span className="sr-only">Actions</span> },
 ];
@@ -360,6 +361,7 @@ export function UsersPage() {
               held={!gate.showIndicator}
               slow={slow}
               columns={STAFF_COLUMNS}
+              tableClass="users-table--staff"
               rows={SKELETON_ROWS}
               rowHeight={40}
               cards={3}
@@ -409,29 +411,31 @@ export function UsersPage() {
 
               {users.length > 0 && (
                 <>
-                  <div className="users-page__table-wrap users-page__table-wrap--desktop">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>User</th>
-                          <th>Roles</th>
-                          <th>Sign-in</th>
-                          <th>Two-factor</th>
-                          <th>Last login</th>
-                          <th>Sessions</th>
-                          <th>Status</th>
-                          <th><span className="sr-only">Actions</span></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {users.map((user) => (
-                          <StaffUserTableRow key={user.id} user={user} onEdit={setEditUser} />
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="item-table users-table users-table--staff users-page__table-wrap--desktop">
+                    <div className="attendees-table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>User</th>
+                            <th>Roles</th>
+                            <th className="users-table__wide-only">Sign-in</th>
+                            <th className="users-table__wide-only">Two-factor</th>
+                            <th>Last login</th>
+                            <th className="users-table__wide-only">Sessions</th>
+                            <th>Status</th>
+                            <th><span className="sr-only">Actions</span></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {users.map((user) => (
+                            <StaffUserTableRow key={user.id} user={user} onEdit={setEditUser} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
 
-                  <div className="users-page__cards users-page__cards--mobile">
+                  <div className="users-page__cards users-page__cards--narrow">
                     {users.map((user) => (
                       <StaffUserCard key={user.id} user={user} onEdit={setEditUser} />
                     ))}

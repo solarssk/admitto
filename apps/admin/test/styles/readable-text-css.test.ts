@@ -527,3 +527,59 @@ describe("the spacing of the Import page", () => {
     expect(sets(body, "padding", "0")).toBe(true);
   });
 });
+
+describe("the tables of the Users page", () => {
+  const usersPage = parse(read("apps/admin/src/pages/users-page.css"));
+  const rem = (css: string, name: string) => Number(new RegExp(String.raw`(?:^|[;\s])${name}\s*:\s*(\d+(?:\.\d+)?)rem`).exec(css)?.[1]);
+  const width = (table: string, column: number, media: string | null = null) =>
+    rem(bodyOf(usersPage, `.item-table.users-table--${table} .table :is(th, td):nth-child(${column})`, media), "width");
+  const sum = (table: string, columns: number[]) => columns.reduce((total, column) => total + width(table, column), 0);
+
+  // The box of a table is the screen less the sidebar (256px), the page padding (2 x 24px) and the padding and border of the card: 371px
+  // (measured in Chrome: 653px at 1024px, 909px at 1280px). A name needs avatar, gap and a short name: 9rem. An address is cut with an ellipsis.
+  const boxRem = (viewport: number) => (viewport - 371) / 16;
+  const MIN_NAME = 9;
+  const nameRoom = (viewport: number, fixedRem: number) => boxRem(viewport) - fixedRem;
+
+  it("draws the boxed table from 1024px and the cards below it, and keeps what a column folded away out of sight above its ladder", () => {
+    // The complement of the query of `useIsDesktop(1024)` (`(min-width: 1024px)`, pinned in the test of the sessions tab): with `max-width: 1023px` a
+    // fractional width between 1023px and 1024px matches neither, and a list the code has switched to its cards shows nothing.
+    const narrow = "@media not all and (min-width: 1024px)";
+    expect(sets(bodyOf(usersPage, ".users-table", narrow), "display", "none")).toBe(true);
+    expect(sets(bodyOf(usersPage, ".users-page__cards--narrow", narrow), "display", "flex")).toBe(true);
+    expect(sets(bodyOf(usersPage, ".users-table__narrow-only"), "display", "none")).toBe(true);
+  });
+
+  it("wraps a long word in any cell of the three tables, where a fixed layout would let an address as a name paint across the next cell", () => {
+    expect(sets(bodyOf(usersPage, ".item-table.users-table .table td"), "overflow-wrap", "anywhere")).toBe(true);
+  });
+
+  it("folds the sign-in, the two-factor state and the sessions of the staff list below 1280px, and leaves the name room in both forms", () => {
+    const fold = bodyOf(usersPage, ".item-table.users-table--staff .table :is(th, td).users-table__wide-only", "@media (max-width: 1279px)");
+    expect(sets(fold, "width", "0")).toBe(true);
+    expect(sets(bodyOf(usersPage, ".item-table.users-table--staff .users-table__narrow-only", "@media (max-width: 1279px)"), "display", "inline-flex")).toBe(true);
+    // All eight columns from 1280px (the name is the first column and takes what is left), five below it, down to 1024px.
+    expect(nameRoom(1280, sum("staff", [2, 3, 4, 5, 6, 7, 8]))).toBeGreaterThanOrEqual(MIN_NAME);
+    expect(nameRoom(1024, sum("staff", [2, 5, 7, 8]))).toBeGreaterThanOrEqual(MIN_NAME);
+  });
+
+  it("folds the grant time of the role assignments below 1180px, and leaves the name room in both forms", () => {
+    const fold = bodyOf(usersPage, ".item-table.users-table--roles .table :is(th, td).users-table__wide-only", "@media (max-width: 1179px)");
+    expect(sets(fold, "width", "0")).toBe(true);
+    // The scope is the first column and the user the second, which takes what is left. From 1180px the role (3), the time (4) and the revoke (5) have their widths.
+    const scope = rem(bodyOf(usersPage, ".item-table.users-table--roles .table :is(th, td):first-child"), "width");
+    expect(nameRoom(1180, scope + sum("roles", [3, 4, 5]))).toBeGreaterThanOrEqual(MIN_NAME);
+    // Below it the role is wider, as it carries the time as a line of its own, and the time has no column.
+    expect(nameRoom(1024, scope + width("roles", 3, "@media (max-width: 1179px)") + width("roles", 5))).toBeGreaterThanOrEqual(MIN_NAME);
+  });
+
+  it("leaves the name of an active session room at every step of its ladder: eight columns from 1500px, seven from 1280px, six from 1181px, five below", () => {
+    const columns = (...except: number[]) => [2, 3, 4, 5, 6, 7, 8].filter((column) => !except.includes(column));
+    expect(nameRoom(1500, sum("sessions", columns()))).toBeGreaterThanOrEqual(MIN_NAME);
+    expect(nameRoom(1280, sum("sessions", columns(7)))).toBeGreaterThanOrEqual(MIN_NAME);
+    expect(nameRoom(1181, sum("sessions", columns(3, 7)))).toBeGreaterThanOrEqual(MIN_NAME);
+    expect(nameRoom(1024, sum("sessions", columns(3, 4, 7)))).toBeGreaterThanOrEqual(MIN_NAME);
+    // Device goes below 1280px on top of the ladder of staff.css (Device, IP address and Sign-in below 1181px, Sign-in below 1500px).
+    expect(sets(bodyOf(usersPage, ".item-table.users-table--sessions .table :is(th, td):nth-child(3)", "@media (max-width: 1279px)"), "display", "none")).toBe(true);
+  });
+});
