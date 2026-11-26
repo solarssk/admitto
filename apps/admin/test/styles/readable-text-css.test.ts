@@ -542,10 +542,16 @@ describe("the tables of the Users page", () => {
   const nameRoom = (viewport: number, fixedRem: number) => boxRem(viewport) - fixedRem;
 
   it("draws the boxed table from 1024px and the cards below it, and keeps what a column folded away out of sight above its ladder", () => {
-    const narrow = "@media (max-width: 1023px)";
+    // The complement of the query of `useIsDesktop(1024)` (`(min-width: 1024px)`, pinned in the test of the sessions tab): with `max-width: 1023px` a
+    // fractional width between 1023px and 1024px matches neither, and a list the code has switched to its cards shows nothing.
+    const narrow = "@media not all and (min-width: 1024px)";
     expect(sets(bodyOf(usersPage, ".users-table", narrow), "display", "none")).toBe(true);
     expect(sets(bodyOf(usersPage, ".users-page__cards--narrow", narrow), "display", "flex")).toBe(true);
     expect(sets(bodyOf(usersPage, ".users-table__narrow-only"), "display", "none")).toBe(true);
+  });
+
+  it("wraps a long word in any cell of the three tables, where a fixed layout would let an address as a name paint across the next cell", () => {
+    expect(sets(bodyOf(usersPage, ".item-table.users-table .table td"), "overflow-wrap", "anywhere")).toBe(true);
   });
 
   it("folds the sign-in, the two-factor state and the sessions of the staff list below 1280px, and leaves the name room in both forms", () => {

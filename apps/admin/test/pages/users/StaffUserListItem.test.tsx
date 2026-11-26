@@ -145,9 +145,16 @@ describe("StaffUserTableRow", () => {
 
     const marks = row.querySelector(".users-table__narrow-only") as HTMLElement;
     expect(marks.closest(".users-page__user-line")).toBeTruthy();
-    expect(within(marks).getByRole("img", { name: "Signs in with an identity provider" }).getAttribute("title")).toBe("Signs in with an identity provider");
-    expect(within(marks).getByRole("img", { name: "Two-factor is on (authenticator app)" }).getAttribute("title")).toBe("Two-factor is on (authenticator app)");
-    expect(within(marks).getByText("3").getAttribute("title")).toBe("3 active sessions");
+    // Each mark is an icon (hidden from assistive technology) with its words in a text for it, and the same words as the tooltip.
+    for (const words of ["Signs in with an identity provider", "Two-factor is on (authenticator app)"]) {
+      const flag = within(marks).getByText(words).closest(".users-page__flag");
+      expect(flag?.getAttribute("title")).toBe(words);
+      expect(flag?.querySelector("i")?.getAttribute("aria-hidden")).toBe("true");
+    }
+    expect(marks.querySelector('[role="img"]')).toBeNull();
+    const count = within(marks).getByText("3");
+    expect(count.getAttribute("title")).toBe("3 active sessions");
+    expect(count.textContent).toBe("3 active sessions");
   });
 
   it("names a local password and a missing two-factor in the marks, and draws no count for a person with no session", () => {
@@ -160,8 +167,8 @@ describe("StaffUserTableRow", () => {
     );
 
     const marks = screen.getByRole("row").querySelector(".users-table__narrow-only") as HTMLElement;
-    expect(within(marks).getByRole("img", { name: "Signs in with a local password" })).toBeTruthy();
-    expect(within(marks).getByRole("img", { name: "Two-factor is not set up" })).toBeTruthy();
+    expect(within(marks).getByText("Signs in with a local password").closest(".users-page__flag")?.getAttribute("title")).toBe("Signs in with a local password");
+    expect(within(marks).getByText("Two-factor is not set up").closest(".users-page__flag")?.getAttribute("title")).toBe("Two-factor is not set up");
     expect(marks.querySelector(".at-badge")).toBeNull();
   });
 
@@ -174,7 +181,9 @@ describe("StaffUserTableRow", () => {
       </table>,
     );
 
-    expect(screen.getByRole("row").querySelector(".users-table__narrow-only .at-badge")?.getAttribute("title")).toBe("1 active session");
+    const badge = screen.getByRole("row").querySelector(".users-table__narrow-only .at-badge");
+    expect(badge?.getAttribute("title")).toBe("1 active session");
+    expect(badge?.textContent).toBe("1 active session");
   });
 
   it("calls onEdit from the row's own action button", () => {
