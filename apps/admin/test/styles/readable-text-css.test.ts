@@ -487,14 +487,30 @@ describe("the spacing of the Import page", () => {
   });
 
   it("scrolls the wide tables (the preview, the history) sideways inside their box, and the long lists (invalid and skipped rows) up and down", () => {
-    for (const table of ["sample", "history"]) {
-      expect(sets(bodyOf(importPage, `.item-table.import-table--sample .attendees-table-wrap, .item-table.import-table--history .attendees-table-wrap`), "overflow-x", "auto"), table).toBe(true);
-      // The selector is one class longer than the shared `.item-table .attendees-table-wrap .table` (min-width: 0), so the order of the stylesheets does not decide.
-      expect(sets(bodyOf(importPage, `.item-table.import-table--${table} .attendees-table-wrap .table`), "min-width", String.raw`4\d(?:\.\d+)?rem`), table).toBe(true);
-    }
+    expect(sets(bodyOf(importPage, `.item-table.import-table--sample .attendees-table-wrap, .item-table.import-table--history .attendees-table-wrap`), "overflow-x", "auto")).toBe(true);
     const lists = bodyOf(importPage, ".item-table.import-table--invalid .attendees-table-wrap, .item-table.import-table--skipped .attendees-table-wrap");
     expect(sets(lists, "max-height", "280px")).toBe(true);
     expect(sets(lists, "overflow-y", "auto")).toBe(true);
+  });
+
+  it("keeps every column of a wide table readable when it scrolls: the file name of the history has 14rem, each column of the preview after the email 8rem", () => {
+    const rem = (css: string, name: string) => Number(new RegExp(String.raw`(?:^|[;\s])${name}\s*:\s*(\d+(?:\.\d+)?)rem`).exec(css)?.[1]);
+    const width = (table: string, nth: string) =>
+      rem(bodyOf(importPage, `.item-table.import-table--${table} .table th${nth}, .item-table.import-table--${table} .table td${nth}`), "width");
+    // The selector of a minimum is one class longer than the shared `.item-table .attendees-table-wrap .table` (min-width: 0), so the order of the stylesheets does not decide.
+    const minimum = (table: string) => bodyOf(importPage, `.item-table.import-table--${table} .attendees-table-wrap .table`);
+
+    // The history: the date, the status and the counts have a width of their own, and the file name (the second column) takes what is left of the minimum.
+    const counts = (read("apps/admin/src/import/ImportHistoryCard.tsx").match(/<th>/g) ?? []).length - 3;
+    const fixed = width("history", ":first-child") + width("history", ":nth-child(3)") + counts * width("history", ":nth-child(n + 4)");
+    expect(counts).toBe(3);
+    expect(rem(minimum("history"), "min-width") - fixed).toBeGreaterThanOrEqual(14);
+
+    // The preview: the row number, the name and the email have a width of their own, and each column after them (ImportPage.tsx counts them) has 8rem at least.
+    const named = width("sample", ":first-child") + width("sample", ":nth-child(2)") + width("sample", ":nth-child(3)");
+    const sample = /min-width:\s*calc\(([\d.]+)rem \+ var\(--import-sample-extra, 0\) \* ([\d.]+)rem\)/.exec(minimum("sample"));
+    expect(Number(sample?.[1])).toBe(named);
+    expect(Number(sample?.[2])).toBeGreaterThanOrEqual(8);
   });
 
   it("has no margin around the fold of the columns: the gap of the card stack is the space around it", () => {

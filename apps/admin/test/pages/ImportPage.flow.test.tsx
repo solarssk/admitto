@@ -599,6 +599,39 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(within(previewTable as HTMLElement).getAllByText("-")).toHaveLength(6);
   });
 
+  it("tells the stylesheet how many columns the preview has after the email, so that its minimum width keeps each of them readable", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        sampleRows: [
+          {
+            rowIndex: 1,
+            name: "Sam",
+            email: "sam@example.com",
+            ticket_type: "vip",
+            company: "Admitto",
+            department: "Events",
+            external_uuid: "external-2",
+            custom_data: { dietary: "Vegetarian" },
+          },
+        ],
+        attributeFieldLabels: [{ source_field: "dietary", label: "Dietary requirements" }],
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    await screen.findByText("Dietary requirements");
+    const box = document.querySelector<HTMLElement>(".import-table--sample");
+    expect(box).not.toBeNull();
+    const headings = box!.querySelectorAll("th").length;
+    expect(headings).toBe(8);
+    expect(box!.style.getPropertyValue("--import-sample-extra")).toBe(String(headings - 3));
+  });
+
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());

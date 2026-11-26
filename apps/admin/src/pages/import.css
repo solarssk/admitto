@@ -417,17 +417,32 @@ fieldset:disabled .import-dropzone {
   overflow-x: auto;
 }
 
+/* The preview has the columns the file has, and the fixed layout would share the width of the box among them. The row number, the name and the
+   email have the width of a whole name and a whole address (3.5 + 12 + 17 = 32.5rem), and each column after them (the ticket type, the custom
+   fields; ImportPage.tsx counts them) is at least 8rem, so the table scrolls sideways before it squeezes one. */
 .item-table.import-table--sample .attendees-table-wrap .table {
-  min-width: 44rem;
+  min-width: calc(32.5rem + var(--import-sample-extra, 0) * 8rem);
 }
 
+/* The date, the status and the three counts have 13 + 12 + 3 × 5.5 = 41.5rem of their own, so the minimum adds 14rem for the file name:
+   it keeps a column wide enough to tell two files apart (a longer name is cut with an ellipsis) when the table scrolls. */
 .item-table.import-table--history .attendees-table-wrap .table {
-  min-width: 42rem;
+  min-width: 55.5rem;
 }
 
 .item-table.import-table--sample .table th:first-child,
 .item-table.import-table--sample .table td:first-child {
   width: 3.5rem;
+}
+
+.item-table.import-table--sample .table th:nth-child(2),
+.item-table.import-table--sample .table td:nth-child(2) {
+  width: 12rem;
+}
+
+.item-table.import-table--sample .table th:nth-child(3),
+.item-table.import-table--sample .table td:nth-child(3) {
+  width: 17rem;
 }
 
 .item-table.import-table--sample .table th,

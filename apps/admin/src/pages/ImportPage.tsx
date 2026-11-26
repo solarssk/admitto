@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type DragEvent,
   type KeyboardEvent,
   type RefObject,
@@ -69,9 +70,11 @@ function ImportSampleTable({ rows, attributeFieldLabels }: Readonly<ImportSample
   const hasDepartment = rows.some((r) => r.department);
   const hasExtUuid = rows.some((r) => r.external_uuid);
   const hasCustom = attributeFieldLabels.length > 0;
+  // The columns after the email: import.css keeps each of them at least 8rem wide, so the table scrolls sideways before it squeezes one.
+  const extraColumns = [hasTicketType, hasCompany, hasDepartment, hasExtUuid].filter(Boolean).length + attributeFieldLabels.length;
 
   return (
-    <div className="item-table import-table import-table--sample">
+    <div className="item-table import-table import-table--sample" style={{ "--import-sample-extra": extraColumns } as CSSProperties}>
       <div className="attendees-table-wrap">
         <table className="table">
           <thead>
