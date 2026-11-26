@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Card } from "@admitto/ui";
+import { Card, EmptyState } from "@admitto/ui";
 import type { ImportHistoryEntry } from "../api/client.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { RefreshWarning } from "../components/RefreshWarning.js";
@@ -81,7 +81,12 @@ export function ImportHistoryCard({ list }: Readonly<{ list: ListLoad<ImportHist
     body = (
       <RefetchRegion refreshing={list.refreshing} label="Refreshing import history">
         {entries.length === 0 ? (
-          <p className="import-hint">No imports yet for this event.</p>
+          <EmptyState
+            className="import-history__empty"
+            icon={<i className="ti ti-history" aria-hidden="true" />}
+            title="No imports yet"
+            description="The imports of this event are listed here."
+          />
         ) : (
           <ImportHistoryTable entries={entries} />
         )}

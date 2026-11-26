@@ -69,6 +69,7 @@ const requests = parse(read("apps/admin/src/registration/registration-requests.c
 const requestDetail = parse(read("apps/admin/src/registration/request-detail.css"));
 const notifications = parse(read("apps/admin/src/settings/notifications-panel.css"));
 const requirements = parse(read("apps/admin/src/requirements/requirements.css"));
+const importPage = parse(read("apps/admin/src/pages/import.css"));
 
 describe("the baseline: running text runs to the edge of its column, short standalone texts are balanced", () => {
   it("is pretty on the body, so that every description, hint and paragraph inherits it and none is a narrow block with an empty strip beside it", () => {
@@ -455,5 +456,27 @@ describe("the window of the field editor", () => {
     const note = bodyOf(requirements, ".custom-field-modal__footer-note");
     expect(sets(note, "flex", "1 1 16rem")).toBe(true);
     expect(sets(note, "min-width", "0")).toBe(true);
+  });
+});
+
+describe("the spacing of the Import page", () => {
+  it("has one gap between its cards, the gap of the stack: a card carries no margin of its own, which doubled it to 32px", () => {
+    expect(sets(bodyOf(importPage, ".import-stack"), "gap", String.raw`var\(--space-4\)`)).toBe(true);
+    expect(declares(bodyOf(importPage, ".import-card"), "margin-bottom")).toBe(false);
+    expect(declares(bodyOf(importPage, ".import-card"), "margin")).toBe(false);
+  });
+
+  it("has no margin around the fold of the columns: the gap of the card stack is the space around it", () => {
+    expect(sets(bodyOf(importPage, ".import-columns-info"), "margin", "0")).toBe(true);
+  });
+
+  it("keeps the empty state of the history in the padding of its card, with less room of its own, as on the Legal tab", () => {
+    expect(sets(bodyOf(importPage, ".import-history__empty"), "padding-block", String.raw`var\(--space-4\)`)).toBe(true);
+  });
+
+  it("gives the fieldset of the options no gap and no padding of its own: the rows bring their own", () => {
+    const body = bodyOf(importPage, ".import-options");
+    expect(declares(body, "gap")).toBe(false);
+    expect(sets(body, "padding", "0")).toBe(true);
   });
 });

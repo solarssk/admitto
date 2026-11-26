@@ -116,13 +116,6 @@ fieldset:disabled .import-dropzone {
   color: var(--text-primary);
 }
 
-.import-option {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--fs-sm);
-}
-
 .import-stat--ok .import-stat__value {
   color: var(--status-ok, #2fb344);
 }
@@ -200,6 +193,11 @@ fieldset:disabled .import-dropzone {
   margin-top: var(--space-2);
 }
 
+/* The empty state sits in the padding of the card body, so it keeps less room of its own (as on the Legal tab). */
+.import-history__empty {
+  padding-block: var(--space-4);
+}
+
 .import-history__date {
   font-size: var(--fs-xs);
   color: var(--text-muted);
@@ -229,13 +227,6 @@ fieldset:disabled .import-dropzone {
 
 .import-card {
   position: relative;
-  margin-bottom: var(--space-4);
-}
-
-.import-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
 }
 
 .import-hint {
@@ -246,7 +237,7 @@ fieldset:disabled .import-dropzone {
 }
 
 .import-columns-info {
-  margin: 0.75rem 0;
+  margin: 0;
   font-size: var(--fs-sm);
 }
 
@@ -295,6 +286,13 @@ fieldset:disabled .import-dropzone {
 
 /* Tooltip's trigger wrapper defaults to inline-flex (shrink-to-fit) - override to block/full
    width so wrapping the fieldset in <Tooltip> doesn't change its layout in this stacked form. */
+.import-options {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
 .import-upload-fieldset-wrapper {
   display: block;
   width: 100%;
@@ -311,13 +309,6 @@ fieldset:disabled .import-dropzone {
   gap: var(--space-2);
   font-size: var(--fs-sm);
   cursor: pointer;
-}
-
-.import-checkbox__hint {
-  display: block;
-  color: var(--text-muted);
-  font-weight: 400;
-  margin-top: var(--space-1);
 }
 
 .import-actions {

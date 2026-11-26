@@ -346,6 +346,10 @@ function UploadFileControl({
   );
 }
 
+/** The Dry run row says what the switch does and, while it cannot be turned off yet, why: it unlocks once a validation summary is on screen. */
+const DRY_RUN_TEXT_BEFORE_VALIDATION = "Only checks the file, nothing is saved. You can turn it off once the file is validated.";
+const DRY_RUN_TEXT_AFTER_VALIDATION = "Only checks the file, nothing is saved. Turn it off after you have read the summary, to import.";
+
 /** Describes the type-specific note appended to a custom field's description in the "Required
  * CSV columns" table (select options, the boolean Yes/No hint, the format of a date or a phone
  * number, a field's format rules) - a plain lookup instead of a nested ternary (Sonar S3776: kept
@@ -788,7 +792,7 @@ function ImportPageBody({ eventId }: Readonly<{ eventId: string }>) {
               <TopProgressBar active={loading} placement="container" label={workLabel} />
               {/* Said once for assistive tech: the bar itself is only a name. */}
               <output className="sr-only">{loading ? `${workLabel}. Actions are paused until it finishes.` : ""}</output>
-              <div className="import-form">
+              <div className="settings-card-stack">
                 <Tooltip
                   content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
                   className="import-upload-fieldset-wrapper"
@@ -817,7 +821,7 @@ function ImportPageBody({ eventId }: Readonly<{ eventId: string }>) {
                   <table className="import-columns-table">
                     <thead>
                       <tr>
-                        <th>Column</th>
+                        <th>Column name in the file</th>
                         <th>Required</th>
                         <th>Description</th>
                       </tr>
@@ -918,10 +922,14 @@ function ImportPageBody({ eventId }: Readonly<{ eventId: string }>) {
                 content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
                 className="import-upload-fieldset-wrapper"
               >
-                <fieldset className="import-upload-fieldset" disabled={isEventArchived(event)}>
-                  <div className="import-option">
+                <fieldset className="import-options" disabled={isEventArchived(event)}>
+                  <div className="settings-row settings-row--switch">
+                    <div className="settings-row__text">
+                      <strong>Dry run</strong>
+                      <p>{step === "preview" ? DRY_RUN_TEXT_AFTER_VALIDATION : DRY_RUN_TEXT_BEFORE_VALIDATION}</p>
+                    </div>
                     <Switch
-                      label="Dry run (validate only, no writes)"
+                      aria-label="Dry run"
                       checked={dryRun}
                       // Only togglable once a validation summary is actually on screen — otherwise
                       // an operator could turn it off during the upload step, before ever seeing
@@ -930,14 +938,14 @@ function ImportPageBody({ eventId }: Readonly<{ eventId: string }>) {
                       disabled={loading || step !== "preview"}
                       onChange={(e) => setDryRun(e.target.checked)}
                     />
-                    <span className="import-checkbox__hint">
-                      Validation never writes anything. Turn this off after reviewing the summary to
-                      enable committing.
-                    </span>
                   </div>
-                  <div className="import-option">
+                  <div className="settings-row settings-row--switch">
+                    <div className="settings-row__text">
+                      <strong>Overwrite existing attendees</strong>
+                      <p>When off, attendees that already exist (matched by email) are skipped.</p>
+                    </div>
                     <Switch
-                      label="Overwrite existing attendees"
+                      aria-label="Overwrite existing attendees"
                       checked={overwrite}
                       // Togglable at any step, including preview — flip it after seeing an existing
                       // attendee skipped in the Validation summary, then Re-validate (PO feedback:
@@ -946,9 +954,6 @@ function ImportPageBody({ eventId }: Readonly<{ eventId: string }>) {
                       disabled={loading}
                       onChange={(e) => setOverwrite(e.target.checked)}
                     />
-                    <span className="import-checkbox__hint">
-                      When off, existing attendees matched by email are skipped.
-                    </span>
                   </div>
                 </fieldset>
               </Tooltip>

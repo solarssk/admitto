@@ -150,7 +150,7 @@ describe("ImportPage on the loading standard: the import history", () => {
     renderPage();
     await advanceTimers(0);
     expect(placeholder()).toBeNull();
-    expect(screen.getByText("No imports yet for this event.")).toBeTruthy();
+    expect(screen.getByText("No imports yet")).toBeTruthy();
     await advanceTimers(500);
     expect(placeholder()).toBeNull();
   });
@@ -192,7 +192,7 @@ describe("ImportPage on the loading standard: the import history", () => {
     const card = () => screen.getByText("Import history").closest(".at-card") as HTMLElement;
     renderPage();
     await advanceTimers(0);
-    expect(screen.getByText("No imports yet for this event.")).toBeTruthy();
+    expect(screen.getByText("No imports yet")).toBeTruthy();
     expect(card().querySelector(".at-card__body")).not.toBeNull();
     cleanup();
 

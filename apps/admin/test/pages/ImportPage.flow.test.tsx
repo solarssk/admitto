@@ -190,6 +190,30 @@ describe("ImportPage upload → preview → commit flow", () => {
     });
   });
 
+  it("shows the two options as the settings rows of the rest of the admin: a title, a description and a switch with no On or Off text", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    for (const [title, description] of [
+      ["Dry run", "Only checks the file, nothing is saved. You can turn it off once the file is validated."],
+      ["Overwrite existing attendees", "When off, attendees that already exist (matched by email) are skipped."],
+    ]) {
+      const row = screen.getByText(title, { selector: "strong" }).closest(".settings-row") as HTMLElement;
+      expect(row.classList.contains("settings-row--switch")).toBe(true);
+      expect(within(row).getByText(description)).toBeTruthy();
+      expect(within(row).getByRole("switch", { name: title })).toBeTruthy();
+      expect(row.querySelector(".at-switch__label")).toBeNull();
+    }
+  });
+
+  it("names the first column of the table of columns for what it is: the column name in the file", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Column name in the file" })).toBeTruthy();
+  });
+
   it("keeps Dry run locked on until a validation summary is showing, so it can't be turned off on reflex before ever validating (Codex review)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
@@ -200,11 +224,14 @@ describe("ImportPage upload → preview → commit flow", () => {
     const dryRunSwitch = screen.getByLabelText(/Dry run/) as HTMLInputElement;
     expect(dryRunSwitch.disabled).toBe(true);
     expect(dryRunSwitch.checked).toBe(true);
+    // The row says why it is locked: a pale switch with no reason is not an answer.
+    expect(screen.getByText("Only checks the file, nothing is saved. You can turn it off once the file is validated.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
     expect(await screen.findByText("To create")).toBeTruthy();
 
-    // Only now, with the summary on screen, can it be toggled.
+    // Only now, with the summary on screen, can it be toggled, and the row says when to do it.
+    expect(screen.getByText("Only checks the file, nothing is saved. Turn it off after you have read the summary, to import.")).toBeTruthy();
     expect(dryRunSwitch.disabled).toBe(false);
     const commitBtn = screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }) as HTMLButtonElement;
     expect(commitBtn.disabled).toBe(true);
@@ -991,7 +1018,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
   it("shows an empty state when there are no imports yet", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     renderPage();
-    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+    expect(await screen.findByText("No imports yet")).toBeTruthy();
   });
 
   it("shows an inline error with Retry when history fails to load, and retries", async () => {
@@ -1002,7 +1029,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(await screen.findByText("Could not load import history.")).toBeTruthy();
     expect(screen.getByText("Could not load import history.").closest("[role='alert']")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+    expect(await screen.findByText("No imports yet")).toBeTruthy();
   });
 
   it("keeps the error on screen with a busy Retry until the answer is in, instead of replacing it with a loading line", async () => {
@@ -1025,7 +1052,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     await act(async () => {
       resolveRetry([]);
     });
-    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+    expect(await screen.findByText("No imports yet")).toBeTruthy();
     expect(screen.queryByText("Could not load import history.")).toBeNull();
   });
 
