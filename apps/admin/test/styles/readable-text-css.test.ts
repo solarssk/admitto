@@ -593,6 +593,30 @@ describe("the tables of the Users page", () => {
   });
 });
 
+describe("the sessions of the Account page", () => {
+  const account = parse(read("apps/admin/src/account/account-page.css"));
+  const width = (column: number) => rem(bodyOf(account, `.item-table.account-sessions-table .table :is(th, td):nth-child(${column})`), "width");
+
+  it("leaves the device room beside its other columns: five from 1024px, six from 1181px, where Sign-in joins", () => {
+    // The device is the first column and takes what is left. Sign-in (5) is hidden from 768px to 1180px by staff.css (pinned above), so five columns remain down to 1024px.
+    expect(nameRoom(1024, width(2) + width(3) + width(4) + width(6))).toBeGreaterThanOrEqual(MIN_NAME);
+    expect(nameRoom(1181, width(2) + width(3) + width(4) + width(5) + width(6))).toBeGreaterThanOrEqual(MIN_NAME);
+    expect(sets(bodyOf(account, ".item-table.account-sessions-table .table :is(th, td):first-child"), "width", "auto")).toBe(true);
+  });
+
+  it("wraps a long word in any cell of the table and in a card, where a fixed layout and a narrow card would let it paint past its edge", () => {
+    expect(sets(bodyOf(account, ".item-table.account-sessions-table .table td"), "overflow-wrap", "anywhere")).toBe(true);
+    // A device label of 120 characters pushed a 390px page to 1064px; an IPv6 address has no break in it either.
+    expect(sets(bodyOf(account, ".account-sessions-card__head > :first-child, .account-sessions-card__meta dd"), "overflow-wrap", "anywhere")).toBe(true);
+  });
+
+  it("has no scroll region or sticky header of its own: a page of the list is as tall as its rows, as in Active sessions on the Users page", () => {
+    expect(account.some((r) => r.selector.includes("account-sessions-table-wrap"))).toBe(false);
+    expect(account.some((r) => r.selector.includes("account-sessions-table") && declares(r.body, "position"))).toBe(false);
+    expect(account.some((r) => r.selector.includes("account-sessions-table") && declares(r.body, "max-height"))).toBe(false);
+  });
+});
+
 describe("the tables of Organisation settings", () => {
   const archiving = parse(read("apps/admin/src/settings/archiving-table.css"));
   const archivingWidth = (column: number | "last", view = "") =>

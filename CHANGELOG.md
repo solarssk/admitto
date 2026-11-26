@@ -108,6 +108,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Make the Import page match the rest of the admin: full-width cards, the standard table, option rows that say why Dry run is locked, and a standard empty history ([#1990](https://github.com/solarssk/admitto/pull/1990))
 - Show Staff users, Role assignments and Active sessions in the standard boxed table, with cards below 1024 px instead of 768 px ([#1991](https://github.com/solarssk/admitto/pull/1991))
 - Show Event archiving and Notifications in the standard boxed table, with attendees aligned to the right and the notification matrix stacked below 1024 px ([#1992](https://github.com/solarssk/admitto/pull/1992))
+- Show the sessions on the Account page in the standard boxed table, with cards below 1024 px instead of 768 px and long device names wrapped in the cards
 
 ### Fixed
 
