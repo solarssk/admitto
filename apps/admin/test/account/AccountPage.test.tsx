@@ -4240,6 +4240,32 @@ describe("AccountPage: Notifications", () => {
     expect(notApplicableForSecond?.getAttribute("data-label")).toBe("Email");
   });
 
+  it("draws the info icon for a severity it does not know, and a channel the preferences do not mention as on", async () => {
+    mockLoadedAccount();
+    mockFetchNotificationPreferences.mockResolvedValue({
+      notification_types: [{ ...TYPE_A, default_severity: "some-future-severity", channels: {} }],
+    });
+
+    renderWithToast(<AccountPage activeTab="notifications" />);
+
+    const emailSwitch = (await screen.findByRole("switch", { name: `${TYPE_A.label} - Email` })) as HTMLInputElement;
+    expect(emailSwitch.checked).toBe(true);
+    expect((screen.getByRole("switch", { name: `${TYPE_A.label} - In-app` }) as HTMLInputElement).checked).toBe(true);
+    expect(emailSwitch.closest("tr")?.querySelector(".status-circle i")?.className).toContain("ti-info-circle");
+  });
+
+  it("draws the notification matrix in the shared box of a padded card", async () => {
+    mockLoadedAccount();
+    mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });
+
+    renderWithToast(<AccountPage activeTab="notifications" />);
+
+    await screen.findByRole("switch", { name: `${TYPE_A.label} - Email` });
+    const box = document.querySelector(".item-table.notifications-matrix");
+    expect(box?.querySelector(":scope > .attendees-table-wrap > table.table.notifications-type-matrix")).toBeTruthy();
+    expect(box?.closest(".at-card__body")).toBeTruthy();
+  });
+
   it("falls back to a generic description for a type not in the known description map", async () => {
     const TYPE_UNMAPPED = { ...TYPE_A, id: "some.future.type", label: "Some future alert type" };
     mockLoadedAccount();

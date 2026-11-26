@@ -3185,6 +3185,74 @@ describe("EventArchivingPanel rendering", () => {
     expect(screen.getByText("by Alice Admin")).toBeTruthy();
   });
 
+  it("draws the table in the shared box of a padded card, with the attendees and the creation as the columns a narrower screen loses", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([makeEvent({ title: "Spring Summit", attendee_count: 42 })]);
+    renderWithToastAndRouter(<EventArchivingPanel />);
+
+    await screen.findByRole("link", { name: "Spring Summit" });
+    const box = document.querySelector(".item-table.archiving-table.archiving-table--active") as HTMLElement;
+    expect(box.querySelector(":scope > .attendees-table-wrap > table.table")).toBeTruthy();
+    expect(box.closest(".at-card__body")).toBeTruthy();
+    expect([...box.querySelectorAll("th.archiving-table__wide-only")].map((th) => th.textContent)).toEqual(["Attendees", "Created"]);
+    expect(document.querySelector(".archiving-table-wrap")).toBeNull();
+  });
+
+  it("keeps the Archived column of the Archived view at every width, where the attendees and the creation fold under the name", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValue([makeEvent({ title: "Old Gala", archived_at: "2026-02-01T10:00:00.000Z" })]);
+    renderWithToastAndRouter(<EventArchivingPanel />);
+
+    await screen.findByText("No active events");
+    fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
+    await screen.findByRole("link", { name: "Old Gala" });
+
+    const headings = [...document.querySelectorAll(".archiving-table--archived th")].map((th) => [th.textContent?.trim(), th.className]);
+    expect(headings).toEqual([
+      ["Event", ""],
+      ["Event date", ""],
+      ["Attendees", "archiving-table__wide-only"],
+      ["Created", "archiving-table__wide-only"],
+      ["Archived", ""],
+      ["Action", ""],
+    ]);
+  });
+
+  it("says the attendees and the creation of an event as one line under its name, with its author as the tooltip", async () => {
+    setPreferredLocale("en-US");
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
+      makeEvent({ id: "evt-a", title: "Event A", attendee_count: 42, created_at: "2026-06-21T10:00:00.000Z", created_by_timezone: "UTC", created_by_display_name: "Alice Admin" }),
+      makeEvent({ id: "evt-b", title: "Event B", slug: "event-b", attendee_count: 1, created_at: "2026-06-21T10:00:00.000Z", created_by_timezone: "UTC", created_by_email: "bob@example.com" }),
+      makeEvent({ id: "evt-c", title: "Event C", slug: "event-c", attendee_count: undefined, created_at: "2026-06-21T10:00:00.000Z", created_by_timezone: "UTC" }),
+    ]);
+    renderWithToastAndRouter(<EventArchivingPanel />);
+
+    await screen.findByRole("link", { name: "Event A" });
+    const lines = [...document.querySelectorAll<HTMLElement>(".archiving-table__folded")];
+    expect(lines.map((line) => line.textContent)).toEqual([
+      expect.stringMatching(/^42 attendees · created Jun 21, 2026/),
+      expect.stringMatching(/^1 attendee · created Jun 21, 2026/),
+      expect.stringMatching(/^created Jun 21, 2026/),
+    ]);
+    expect(lines.map((line) => line.title)).toEqual([
+      expect.stringMatching(/by Alice Admin$/),
+      expect.stringMatching(/by bob@example\.com$/),
+      expect.stringMatching(/by -$/),
+    ]);
+  });
+
+  it("asks for the 1024px breakpoint, not 768px: the cards stay until the boxed table fits", async () => {
+    const queries: string[] = [];
+    vi.stubGlobal("matchMedia", (query: string) => {
+      queries.push(query);
+      return { matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined };
+    });
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([makeEvent({ title: "Spring Summit" })]);
+    renderWithToastAndRouter(<EventArchivingPanel />);
+
+    await screen.findByRole("link", { name: "Spring Summit" });
+    expect(queries).toContain("(min-width: 1024px)");
+    expect(queries).not.toContain("(min-width: 768px)");
+  });
+
   it("shows the Created date in the creator's own timezone rather than UTC, when known", async () => {
     // 11:30 PM UTC on the 21st is already the 22nd in Kolkata (UTC+5:30) - an unambiguous way to
     // tell the two apart without depending on exact formatted-string equality.
@@ -3200,7 +3268,8 @@ describe("EventArchivingPanel rendering", () => {
     renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("Diwali Meetup");
-    expect(screen.getByText(/Jun 22, 2026/)).toBeTruthy();
+    // In the Created column of a wide screen, and in the line under the event name of a narrower one.
+    expect(screen.getAllByText(/Jun 22, 2026/)).toHaveLength(2);
     expect(screen.queryByText(/Jun 21, 2026/)).toBeNull();
     expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
   });

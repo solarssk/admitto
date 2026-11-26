@@ -50,6 +50,7 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { NOTIFICATION_SEVERITY_ICON, NOTIFICATION_TYPE_DESCRIPTIONS } from "../components/notificationSeverity.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import "../components/item-table.css";
 import "../settings/notifications-panel.css";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
 import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
@@ -2249,57 +2250,59 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             />
           )}
           {notifPrefsGate.showContent && !notifPrefsFailure.error && (
-            <div className="notifications-type-matrix-wrap">
-              <table className="table notifications-type-matrix">
-                <thead>
-                  <tr>
-                    <th scope="col">Type</th>
-                    <th scope="col">Email</th>
-                    <th scope="col">In-app</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {notifPrefs.map((type) => (
-                    <tr key={type.id}>
-                      <td>
-                        <div className="notifications-type-matrix__label-row">
-                          <span
-                            className={`status-circle status-circle--sm status-circle--${type.default_severity}`}
-                            aria-hidden="true"
-                          >
-                            <i
-                              className={`ti ${NOTIFICATION_SEVERITY_ICON[type.default_severity] ?? "ti-info-circle"}`}
-                              aria-hidden="true"
-                            />
-                          </span>
-                          <div className="notifications-type-matrix__label-text">
-                            <strong>{type.label}</strong>
-                            <p>{NOTIFICATION_TYPE_DESCRIPTIONS[type.id] ?? "Alerts admin staff when this event occurs."}</p>
-                          </div>
-                        </div>
-                      </td>
-                      {(["email", "in_app"] as const).map((channel) =>
-                        type.available_channels.includes(channel) ? (
-                          <td key={channel} data-label={channel === "email" ? "Email" : "In-app"}>
-                            <Switch
-                              id={`account-notif-${type.id}-${channel}`}
-                              aria-label={`${type.label} - ${channel === "email" ? "Email" : "In-app"}`}
-                              checked={type.channels[channel] ?? true}
-                              disabled={notifPrefSaving.has(`${type.id}:${channel}`)}
-                              onChange={(e) => void toggleNotificationPreference(type.id, channel, e.target.checked)}
-                            />
-                          </td>
-                        ) : (
-                          <td key={channel} className="notifications-type-matrix__na" data-label={channel === "email" ? "Email" : "In-app"}>
-                            <span aria-hidden="true">-</span>
-                            <span className="sr-only">Not applicable</span>
-                          </td>
-                        ),
-                      )}
+            <div className="item-table notifications-matrix">
+              <div className="attendees-table-wrap">
+                <table className="table notifications-type-matrix">
+                  <thead>
+                    <tr>
+                      <th scope="col">Type</th>
+                      <th scope="col">Email</th>
+                      <th scope="col">In-app</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {notifPrefs.map((type) => (
+                      <tr key={type.id}>
+                        <td>
+                          <div className="notifications-type-matrix__label-row">
+                            <span
+                              className={`status-circle status-circle--sm status-circle--${type.default_severity}`}
+                              aria-hidden="true"
+                            >
+                              <i
+                                className={`ti ${NOTIFICATION_SEVERITY_ICON[type.default_severity] ?? "ti-info-circle"}`}
+                                aria-hidden="true"
+                              />
+                            </span>
+                            <div className="notifications-type-matrix__label-text">
+                              <strong>{type.label}</strong>
+                              <p>{NOTIFICATION_TYPE_DESCRIPTIONS[type.id] ?? "Alerts admin staff when this event occurs."}</p>
+                            </div>
+                          </div>
+                        </td>
+                        {(["email", "in_app"] as const).map((channel) =>
+                          type.available_channels.includes(channel) ? (
+                            <td key={channel} data-label={channel === "email" ? "Email" : "In-app"}>
+                              <Switch
+                                id={`account-notif-${type.id}-${channel}`}
+                                aria-label={`${type.label} - ${channel === "email" ? "Email" : "In-app"}`}
+                                checked={type.channels[channel] ?? true}
+                                disabled={notifPrefSaving.has(`${type.id}:${channel}`)}
+                                onChange={(e) => void toggleNotificationPreference(type.id, channel, e.target.checked)}
+                              />
+                            </td>
+                          ) : (
+                            <td key={channel} className="notifications-type-matrix__na" data-label={channel === "email" ? "Email" : "In-app"}>
+                              <span aria-hidden="true">-</span>
+                              <span className="sr-only">Not applicable</span>
+                            </td>
+                          ),
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

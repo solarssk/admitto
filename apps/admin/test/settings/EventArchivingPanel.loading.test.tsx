@@ -42,6 +42,42 @@ async function archiveFirstEvent() {
   fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Archive" }));
 }
 
+describe("EventArchivingPanel placeholder", () => {
+  it("draws the placeholder in the box of the open view: the Archived view has its Archived column, the Active one has not", async () => {
+    vi.mocked(fetchAdminEvents).mockReturnValue(new Promise(() => undefined));
+    renderWithToastAndRouter(<EventArchivingPanel />);
+
+    const headings = () => [...screen.getByLabelText("Loading events").querySelectorAll("th")].map((th) => th.textContent?.trim());
+    expect(headings()).toEqual(["Event", "Event date", "Attendees", "Created", "Action"]);
+    // Both classes: the widths and the fold of the real table are written for `.item-table.archiving-table`, so a placeholder without the base class would not get them.
+    expect(screen.getByLabelText("Loading events").querySelector(".item-table.archiving-table.archiving-table--active")).toBeTruthy();
+
+    // The view can be changed while the first read is on its way.
+    fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
+    expect(headings()).toEqual(["Event", "Event date", "Attendees", "Created", "Archived", "Action"]);
+    expect(screen.getByLabelText("Loading events").querySelector(".item-table.archiving-table.archiving-table--archived")).toBeTruthy();
+  });
+});
+
+describe("EventArchivingPanel placeholder and table", () => {
+  it("wears the classes of the real table and of its headings, so that the widths and the fold written for the table are the placeholder's too", async () => {
+    const first = deferred<EventDto[]>();
+    vi.mocked(fetchAdminEvents).mockReturnValue(first.promise);
+    renderWithToastAndRouter(<EventArchivingPanel />);
+
+    const placeholder = screen.getByLabelText("Loading events").querySelector(".item-table") as HTMLElement;
+    const placeholderClasses = [...placeholder.classList];
+    const placeholderHeadings = [...placeholder.querySelectorAll("th")].map((th) => th.className);
+
+    first.resolve([event("evt-1", "Summer Summit")]);
+    await screen.findByRole("link", { name: "Summer Summit" });
+    const real = document.querySelector(".item-table") as HTMLElement;
+    expect(real.classList.length).toBeGreaterThan(0);
+    for (const className of real.classList) expect(placeholderClasses).toContain(className);
+    expect([...real.querySelectorAll("th")].map((th) => th.className)).toEqual(placeholderHeadings);
+  });
+});
+
 describe("EventArchivingPanel after an action", () => {
   it("moves the archived event to the other view at once, keeps the rows while the refresh is on its way, and refreshes", async () => {
     const refresh = deferred<EventDto[]>();

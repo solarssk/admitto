@@ -16,6 +16,8 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
 import { formatActorTime, formatEventDateTime } from "../utils/event-dates.js";
 import { UsersListSkeleton, type SkeletonColumn } from "../pages/users/UsersListSkeleton.js";
+import "../components/item-table.css";
+import "./archiving-table.css";
 
 type ConfirmAction = { type: "archive" | "unarchive"; event: EventDto };
 type View = "active" | "archived";
@@ -30,12 +32,14 @@ const VIEW_OPTIONS = [
   { value: "archived" as const, label: "Archived" },
 ];
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
-/** The columns of the table, for its placeholder (the Archived column only exists in the Archived view). */
-const ARCHIVING_COLUMNS: ReadonlyArray<SkeletonColumn> = [
+/** The columns of the table, for its placeholder (the Archived column only exists in the Archived view; the attendees and the creation are
+ * columns only on a wide screen, see archiving-table.css). */
+const archivingColumns = (view: View): ReadonlyArray<SkeletonColumn> => [
   { id: "event", label: "Event" },
   { id: "date", label: "Event date" },
-  { id: "attendees", label: "Attendees" },
-  { id: "created", label: "Created" },
+  { id: "attendees", label: "Attendees", className: "archiving-table__wide-only" },
+  { id: "created", label: "Created", className: "archiving-table__wide-only" },
+  ...(view === "archived" ? [{ id: "archived", label: "Archived" }] : []),
   { id: "action", label: <span className="sr-only">Action</span> },
 ];
 const NO_EVENTS: EventDto[] = [];
@@ -66,11 +70,26 @@ function actorCell(
   );
 }
 
+/** The attendees and the creation of an event as one line under its name, for a screen that has no room for their columns, and the same with the
+ * author as its tooltip. */
+function foldedSummary(event: EventDto): { text: string; title: string } {
+  const count = event.attendee_count;
+  const noun = count === 1 ? "attendee" : "attendees";
+  const attendees = typeof count === "number" ? `${count} ${noun}` : null;
+  const created = `created ${actorDateTime(event.created_at, event.created_by_timezone)}`;
+  const author = `by ${actorLabel(event.created_by_display_name, event.created_by_email)}`;
+  return {
+    text: [attendees, created].filter(Boolean).join(" · "),
+    title: [attendees, `${created} ${author}`].filter(Boolean).join(" · "),
+  };
+}
+
 /** Settings panel — archive/unarchive events (superadmin-only section). */
 export function EventArchivingPanel() {
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
-  const isDesktop = useIsDesktop();
+  // The table needs 28.5rem for its columns and a name: below 1024px the box (653px at 1024px) is too narrow, and the cards take over.
+  const isDesktop = useIsDesktop(1024);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -183,55 +202,67 @@ export function EventArchivingPanel() {
     );
   } else if (isDesktop) {
     content = (
-      <div className="archiving-table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th scope="col">
-                Event
-              </th>
-              <th scope="col">
-                <HintLabel hint={EVENT_DATE_HINT}>Event date</HintLabel>
-              </th>
-              <th scope="col">Attendees</th>
-              <th scope="col">Created</th>
-              {view === "archived" && <th scope="col">Archived</th>}
-              <th scope="col">
-                <span className="sr-only">Action</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {displayedRows.map((event) => (
-              <tr key={event.id}>
-                <td>
-                  <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
-                </td>
-                <td>{formatEventDateTime(event.date, event.timezone)}</td>
-                <td>{event.attendee_count ?? "-"}</td>
-                <td>
-                  {actorCell(
-                    event.created_at,
-                    event.created_by_timezone,
-                    event.created_by_display_name,
-                    event.created_by_email,
-                  )}
-                </td>
-                {view === "archived" && (
-                  <td>
-                    {actorCell(
-                      event.archived_at,
-                      event.archived_by_timezone,
-                      event.archived_by_display_name,
-                      event.archived_by_email,
-                    )}
-                  </td>
-                )}
-                <td>{renderAction(event)}</td>
+      <div className={`item-table archiving-table archiving-table--${view}`}>
+        <div className="attendees-table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">
+                  Event
+                </th>
+                <th scope="col">
+                  <HintLabel hint={EVENT_DATE_HINT}>Event date</HintLabel>
+                </th>
+                <th scope="col" className="archiving-table__wide-only">Attendees</th>
+                <th scope="col" className="archiving-table__wide-only">Created</th>
+                {view === "archived" && <th scope="col">Archived</th>}
+                <th scope="col">
+                  <span className="sr-only">Action</span>
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {displayedRows.map((event) => {
+                const folded = foldedSummary(event);
+                return (
+                  <tr key={event.id}>
+                    <td>
+                      <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
+                      <div className="archiving-table__narrow-only archiving-table__folded" title={folded.title}>
+                        {folded.text}
+                      </div>
+                    </td>
+                    <td>{formatEventDateTime(event.date, event.timezone)}</td>
+                    <td className="archiving-table__wide-only">
+                      <span>{event.attendee_count ?? "-"}</span>
+                    </td>
+                    <td className="archiving-table__wide-only">
+                      <div>
+                        {actorCell(
+                          event.created_at,
+                          event.created_by_timezone,
+                          event.created_by_display_name,
+                          event.created_by_email,
+                        )}
+                      </div>
+                    </td>
+                    {view === "archived" && (
+                      <td>
+                        {actorCell(
+                          event.archived_at,
+                          event.archived_by_timezone,
+                          event.archived_by_display_name,
+                          event.archived_by_email,
+                        )}
+                      </td>
+                    )}
+                    <td>{renderAction(event)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   } else {
@@ -307,9 +338,10 @@ export function EventArchivingPanel() {
             label="Loading events"
             held={!gate.showIndicator}
             slow={slow}
-            columns={ARCHIVING_COLUMNS}
+            columns={archivingColumns(view)}
+            tableClass={`archiving-table archiving-table--${view}`}
             rows={5}
-            rowHeight={62}
+            rowHeight={40}
             cards={3}
             cardHeight={170}
           />

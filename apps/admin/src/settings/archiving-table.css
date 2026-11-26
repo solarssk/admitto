@@ -1,0 +1,72 @@
+/* The table of Event archiving: the shared boxed table (components/item-table.css) from 1024px, with the widths of its own columns and a ladder of
+   its own; below 1024px the cards of EventArchivingPanel take over (the narrowest table, five columns, would not fit the 653px box of a 1024px
+   screen with a readable name). From 1440px all of its columns; below it the attendees and the creation of an event are one line under its name
+   (`archiving-table__narrow-only`), and the Archived column of the Archived view stays, as it is what that view is for. The first column takes
+   what the others leave: 13rem for a date and its author, 10.5rem for the event date, 6.5rem for the button. */
+.archiving-table__narrow-only {
+  display: none;
+}
+
+.archiving-table__folded {
+  margin-top: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+/* A cell of a fixed layout cannot grow to fit a long word: an event title or an author with no break in it wraps instead of painting across the next cell
+   (a title may be 200 characters). */
+.item-table.archiving-table .table td {
+  overflow-wrap: anywhere;
+}
+
+.item-table.archiving-table .table :is(th, td):first-child {
+  width: auto;
+}
+
+.item-table.archiving-table .table :is(th, td):nth-child(2) {
+  width: 10.5rem;
+}
+
+/* A number is aligned to the right, the heading with it, and its digits are of one width. */
+.item-table.archiving-table .table :is(th, td):nth-child(3) {
+  width: 6rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.item-table.archiving-table .table :is(th, td):nth-child(4) {
+  width: 13rem;
+}
+
+.item-table.archiving-table--archived .table :is(th, td):nth-child(5) {
+  width: 13rem;
+}
+
+.item-table.archiving-table .table :is(th, td):last-child {
+  width: 6.5rem;
+  text-align: right;
+}
+
+@media (max-width: 1439px) {
+  .item-table.archiving-table .table :is(th, td).archiving-table__wide-only {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+  }
+
+  .item-table.archiving-table .table th.archiving-table__wide-only {
+    font-size: 0;
+  }
+
+  .item-table.archiving-table .table :is(th, td).archiving-table__wide-only > * {
+    display: none;
+  }
+
+  .item-table.archiving-table .archiving-table__narrow-only {
+    display: block;
+  }
+}
