@@ -592,7 +592,6 @@ export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: bool
               <Button
                 type="button"
                 variant="secondary"
-                size="sm"
                 icon={<i className="ti ti-refresh" aria-hidden="true" />}
                 onClick={() => void handleLive()}
                 loading={liveLoading}

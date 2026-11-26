@@ -260,7 +260,7 @@ describe("RegistrationLegalTab: the list", () => {
     expect(screen.queryByText(/Registration cannot be turned on/)).toBeNull();
   });
 
-  it("puts Copy from another event in the first card and Add consent in the second, both small and secondary, as on the Fields tab (#1883)", async () => {
+  it("puts Copy from another event in the first card and Add consent in the second, both small (by the slot of the card) and secondary, as on the Fields tab (#1883)", async () => {
     renderTab();
     await listLoaded();
 
@@ -268,10 +268,19 @@ describe("RegistrationLegalTab: the list", () => {
     expect(within(requiredCard!).getByRole("button", { name: "Copy from another event" })).toBeTruthy();
     // No consents yet: the empty state has its own button, and the header keeps its own.
     expect(within(consentsCard!).getAllByRole("button", { name: "Add consent" })).toHaveLength(2);
-    for (const control of [screen.getByRole("button", { name: "Copy from another event" }), ...screen.getAllByRole("button", { name: "Add consent" })]) {
-      expect(control.className).toContain("at-btn--sm");
+    const copy = screen.getByRole("button", { name: "Copy from another event" });
+    const [addInHeader, addInEmptyState] = screen.getAllByRole("button", { name: "Add consent" });
+    // Both header buttons stand in the actions of a card, where the slot makes a button small.
+    for (const control of [copy, addInHeader!]) {
+      expect(control.closest(".at-card__actions")).not.toBeNull();
       expect(control.className).toContain("at-btn--secondary");
+      expect(control.className).not.toContain("at-btn--lg");
     }
+    // The copy button has no size of its own: the slot sets it. The empty state is no header: its button has its own size, and the same
+    // builder gives it to the one in the header.
+    expect(copy.className).not.toContain("at-btn--sm");
+    expect(addInEmptyState!.closest(".at-card__actions")).toBeNull();
+    expect(addInEmptyState!.className).toContain("at-btn--sm");
   });
 
   it("says in the second card that there is no consent yet, with an Add consent inside the card, and no table", async () => {

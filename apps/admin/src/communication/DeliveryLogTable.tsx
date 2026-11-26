@@ -464,16 +464,15 @@ export function DeliveryLogTab({
       title={<HintLabel hint={DELIVERY_LOG_HINT}>Delivery log</HintLabel>}
       actions={
         <>
-          <Button type="button" variant="secondary" size="sm" aria-disabled={!hasActiveFilters} onClick={clearFilters}>
+          <Button type="button" variant="secondary" aria-disabled={!hasActiveFilters} onClick={clearFilters}>
             Clear filters
           </Button>
-          <Button type="button" variant="secondary" size="sm" loading={exporting} loadingLabel="Exporting…" onClick={() => void handleExport()}>
+          <Button type="button" variant="secondary" loading={exporting} loadingLabel="Exporting…" onClick={() => void handleExport()}>
             Export log
           </Button>
           <Button
             type="button"
             variant={live ? "success" : "secondary"}
-            size="sm"
             onClick={() => setLive(!live)}
           >
             {live ? "Live" : "Paused"}

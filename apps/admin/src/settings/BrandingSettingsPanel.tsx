@@ -920,7 +920,7 @@ export function BrandingSettingsPanel() {
       <Card
         title={<HintLabel hint={THEME_HINT}>Theme</HintLabel>}
         actions={
-          <Button variant="ghost" size="sm" disabled={formDisabled} onClick={handleRestoreThemeDefaults}>
+          <Button variant="ghost" disabled={formDisabled} onClick={handleRestoreThemeDefaults}>
             Restore defaults
           </Button>
         }

@@ -22,6 +22,7 @@ The mechanical parts are tests, so a violation fails CI with a hint of what to u
 - `apps/admin/test/styles/loading-label-length.test.ts`: a `loadingLabel` is never longer than the label at rest.
 - `apps/admin/test/styles/readable-text-css.test.ts`: the CSS that keeps text readable.
 - `apps/admin/test/styles/switch-standard.test.ts`: no On or Off text next to a switch, and every switch has a name for a screen reader.
+- `apps/admin/test/styles/card-actions-standard.test.ts`: no `size="sm"` on a button in the actions of a `Card` (the slot makes it small). The two guards read the JSX with `test/styles/jsxScan.ts`.
 - `apps/admin/test/styles/token-fallback-coverage.test.ts`: a `var(--token, #hex)` fallback equals the token.
 - `apps/admin/test/api/operator-api-error.coverage.test.ts`: every known API error code has its UI string.
 - `apps/admin/test/locale/time-zone-standard.test.ts`: no new read of the viewer's own time zone, no time formatted without a zone, no fallback from an actor's zone to another zone.

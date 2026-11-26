@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { openingTags, tsxFiles, withoutComments } from "./jsxScan.js";
 
 /**
  * Drift guard for the switches of the staff app (standards/admin-spa/ui-gotchas.md): a switch in a settings row or in a card header has no
@@ -11,49 +12,12 @@ import { describe, expect, it } from "vitest";
  */
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "../../src");
 
-function sourceFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(path);
-    return entry.name.endsWith(".tsx") ? [path] : [];
-  });
-}
-
-/** The comments of a file blanked out (same length), so that a `<Switch` in a sentence is not read as a tag. */
-function withoutComments(source: string): string {
-  return source
-    .replaceAll(/\/\*[\s\S]*?\*\//g, (comment) => comment.replaceAll(/[^\n]/g, " "))
-    .replaceAll(/(^|[^:'"`])\/\/[^\n]*/g, (line, before: string) => before + " ".repeat(line.length - before.length));
-}
-
-/** The opening tags of the `<Switch` elements of a source, with the line they start on. */
-export function switchTags(source: string): { line: number; tag: string }[] {
-  const text = withoutComments(source);
-  const tags: { line: number; tag: string }[] = [];
-  for (const match of text.matchAll(/<Switch\b/g)) {
-    let depth = 0;
-    let quote = "";
-    let end = match.index + match[0].length;
-    for (; end < text.length; end++) {
-      const char = text[end];
-      if (quote) {
-        if (char === quote && text[end - 1] !== "\\") quote = "";
-      } else if (char === '"' || char === "'" || char === "`") quote = char;
-      else if (char === "{") depth++;
-      else if (char === "}") depth--;
-      else if (char === ">" && depth === 0) break;
-    }
-    tags.push({ line: text.slice(0, match.index).split("\n").length, tag: text.slice(match.index, end + 1) });
-  }
-  return tags;
-}
-
 /** A `label` prop (not `aria-label`) whose text is a state: `label={on ? "On" : "Off"}`. */
 const STATE_LABEL = /(?<![\w-])label=\{[^}]*"(?:On|Off|Enabled|Disabled)"/;
 /** What gives a switch its name. */
 const NAMED = /(?<![\w-])label=|aria-label=|aria-labelledby=/;
 
-const allSwitches = sourceFiles(SRC).flatMap((file) => switchTags(readFileSync(file, "utf8")).map((entry) => ({ ...entry, where: `${relative(SRC, file)}:${entry.line}` })));
+const allSwitches = tsxFiles(SRC).flatMap((file) => openingTags(withoutComments(readFileSync(file, "utf8")), "Switch").map((entry) => ({ ...entry, where: `${relative(SRC, file)}:${entry.line}` })));
 
 describe("the switches of the staff app (apps/admin/src)", () => {
   it("finds the switches it is meant to check", () => {
@@ -74,17 +38,7 @@ describe("the switches of the staff app (apps/admin/src)", () => {
   });
 });
 
-describe("the scan of the switches", () => {
-  it("reads a tag to its end, past the arrow functions and the quotes of its props", () => {
-    const [entry] = switchTags('<Switch id="a" aria-label="Is a > b" onChange={(e) => set(e.target.checked)} checked={x ? "On" : "Off"} />\n<p>after</p>');
-    expect(entry?.tag).toBe('<Switch id="a" aria-label="Is a > b" onChange={(e) => set(e.target.checked)} checked={x ? "On" : "Off"} />');
-    expect(entry?.line).toBe(1);
-  });
-
-  it("does not read a comment as a switch", () => {
-    expect(switchTags("/** The `<Switch>` of the form. */\n// a <Switch label={x ? \"On\" : \"Off\"} /> in a line comment\nconst a = 1;")).toEqual([]);
-  });
-
+describe("what the guard counts as a state text and as a name", () => {
   it("flags a state text, whatever the variable, and not a name or an aria-label", () => {
     expect(STATE_LABEL.test('<Switch id="x" label={draft.enabled ? "On" : "Off"} checked />')).toBe(true);
     expect(STATE_LABEL.test('<Switch id="x" label={form.walletEnabled ? "Enabled" : "Disabled"} checked />')).toBe(true);

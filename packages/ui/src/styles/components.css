@@ -64,6 +64,9 @@
 
 .at-btn--sm { height: var(--control-h-sm); font-size: var(--fs-sm); padding: 0 var(--space-2); }
 .at-btn--lg { height: var(--control-h-lg); font-size: var(--fs-h3); padding: 0 var(--space-5); }
+/* A button in the header of a card is small: the slot sets it, so that a call site does not repeat size="sm" and the next screen cannot forget it.
+   The look (primary, secondary) is still the call site's. A header that needs the large button passes size="lg". */
+.at-card__actions .at-btn:not(.at-btn--lg) { height: var(--control-h-sm); font-size: var(--fs-sm); padding: 0 var(--space-2); }
 .at-btn--block { display: flex; width: 100%; }
 
 .at-btn--primary { background: var(--primary); color: var(--text-on-primary); }

@@ -723,7 +723,7 @@ export const EventBounceIngestPanel = forwardRef<
           runBlocked ? (
             <Tooltip content={runBlockedReason}>
               <span>
-                <Button type="button" variant="secondary" size="sm" disabled>
+                <Button type="button" variant="secondary" disabled>
                   Run check now
                 </Button>
               </span>
@@ -733,7 +733,6 @@ export const EventBounceIngestPanel = forwardRef<
               <Button
                 type="button"
                 variant="secondary"
-                size="sm"
                 icon={<i className="ti ti-refresh" aria-hidden="true" />}
                 onClick={() => void handleRunCheck()}
                 loading={runningCheck}
