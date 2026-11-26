@@ -110,12 +110,20 @@
   white-space: nowrap;
 }
 
+/* The lines are the only place where a narrow screen, which has no tooltip, can read the description and who added a recipient: they wrap and the
+   row grows (standards/admin-spa/readability.md), and a word with no break in it breaks only where it must. */
+/* The email is the name of a recipient, and an address is never cut to "finance.team.n...": where the shared name of an item has an ellipsis, it wraps. */
+.item-table.notifications-recipients .requirements-item-name {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .notifications-recipients__line {
   display: none;
   margin-top: var(--space-1);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-size: var(--fs-xs);
   color: var(--text-secondary);
 }

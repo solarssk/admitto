@@ -634,6 +634,19 @@ describe("the tables of Organisation settings", () => {
     expect(nameRoom(768, actions)).toBeGreaterThanOrEqual(MIN_NAME);
   });
 
+  it("lets the email of a recipient and the lines under it wrap and the row grow: a narrow screen has no tooltip to read a cut address with", () => {
+    const body = bodyOf(notifications, ".notifications-recipients__line");
+    expect(declares(body, "text-overflow")).toBe(false);
+    expect(declares(body, "white-space")).toBe(false);
+    expect(declares(body, "overflow")).toBe(false);
+    expect(sets(body, "overflow-wrap", "anywhere")).toBe(true);
+    // The shared name of an item (requirements.css) is cut with an ellipsis: the email, which is the name here, is not.
+    const email = bodyOf(notifications, ".item-table.notifications-recipients .requirements-item-name");
+    expect(sets(email, "white-space", "normal")).toBe(true);
+    expect(sets(email, "text-overflow", "clip")).toBe(true);
+    expect(sets(email, "overflow-wrap", "anywhere")).toBe(true);
+  });
+
   it("leaves the type of a notification room beside its three channels from 1024px, where the matrix is still a table", () => {
     const channel = rem(bodyOf(notifications, ".item-table.notifications-matrix .table :is(th, td):not(:first-child)"), "width");
     expect(nameRoom(1024, 3 * channel)).toBeGreaterThanOrEqual(MIN_NAME);
