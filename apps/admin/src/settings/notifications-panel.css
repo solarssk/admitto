@@ -92,6 +92,13 @@
 /* Extra-recipients table (Send test / Edit / Remove per row): the shared boxed table (components/item-table.css), the email taking what the others leave.
    From 1280px all four columns; below it the description, and below 1024px the time it was added too, are a muted line under the email (a column
    of its own would leave the email less than 9rem in the 653px box of a 1024px screen). The three icon buttons need 8.5rem. */
+/* A cell of a fixed layout cannot grow to fit a long word: a description, or the name of whoever added a recipient, with no break in it wraps instead of
+   painting across the next cell. */
+.item-table.notifications-recipients .table td,
+.item-table.notifications-matrix .table td {
+  overflow-wrap: anywhere;
+}
+
 .item-table.notifications-recipients .table :is(th, td):first-child {
   width: auto;
 }

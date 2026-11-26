@@ -615,6 +615,11 @@ describe("the tables of Organisation settings", () => {
     expect(nameRoom(1024, date + archived + action)).toBeGreaterThanOrEqual(MIN_NAME);
   });
 
+  it("wraps a long word in any cell of the archiving, recipients and matrix tables, where a fixed layout would paint it across the next cell", () => {
+    expect(sets(bodyOf(archiving, ".item-table.archiving-table .table td"), "overflow-wrap", "anywhere")).toBe(true);
+    expect(sets(bodyOf(notifications, ".item-table.notifications-recipients .table td, .item-table.notifications-matrix .table td"), "overflow-wrap", "anywhere")).toBe(true);
+  });
+
   it("aligns the number of attendees to the right, with its heading, in digits of one width", () => {
     const body = bodyOf(archiving, ".item-table.archiving-table .table :is(th, td):nth-child(3)");
     expect(sets(body, "text-align", "right")).toBe(true);

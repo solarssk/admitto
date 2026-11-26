@@ -16,6 +16,12 @@
   color: var(--text-secondary);
 }
 
+/* A cell of a fixed layout cannot grow to fit a long word: an event title or an author with no break in it wraps instead of painting across the next cell
+   (a title may be 200 characters). */
+.item-table.archiving-table .table td {
+  overflow-wrap: anywhere;
+}
+
 .item-table.archiving-table .table :is(th, td):first-child {
   width: auto;
 }
