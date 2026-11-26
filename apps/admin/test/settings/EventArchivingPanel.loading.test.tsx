@@ -42,6 +42,22 @@ async function archiveFirstEvent() {
   fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Archive" }));
 }
 
+describe("EventArchivingPanel placeholder", () => {
+  it("draws the placeholder in the box of the open view: the Archived view has its Archived column, the Active one has not", async () => {
+    vi.mocked(fetchAdminEvents).mockReturnValue(new Promise(() => undefined));
+    renderWithToastAndRouter(<EventArchivingPanel />);
+
+    const headings = () => [...screen.getByLabelText("Loading events").querySelectorAll("th")].map((th) => th.textContent?.trim());
+    expect(headings()).toEqual(["Event", "Event date", "Attendees", "Created", "Action"]);
+    expect(screen.getByLabelText("Loading events").querySelector(".item-table.archiving-table--active")).toBeTruthy();
+
+    // The view can be changed while the first read is on its way.
+    fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
+    expect(headings()).toEqual(["Event", "Event date", "Attendees", "Created", "Archived", "Action"]);
+    expect(screen.getByLabelText("Loading events").querySelector(".item-table.archiving-table--archived")).toBeTruthy();
+  });
+});
+
 describe("EventArchivingPanel after an action", () => {
   it("moves the archived event to the other view at once, keeps the rows while the refresh is on its way, and refreshes", async () => {
     const refresh = deferred<EventDto[]>();
