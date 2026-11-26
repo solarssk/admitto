@@ -339,7 +339,7 @@ export function EventArchivingPanel() {
             held={!gate.showIndicator}
             slow={slow}
             columns={archivingColumns(view)}
-            tableClass={`archiving-table--${view}`}
+            tableClass={`archiving-table archiving-table--${view}`}
             rows={5}
             rowHeight={40}
             cards={3}

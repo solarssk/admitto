@@ -49,12 +49,32 @@ describe("EventArchivingPanel placeholder", () => {
 
     const headings = () => [...screen.getByLabelText("Loading events").querySelectorAll("th")].map((th) => th.textContent?.trim());
     expect(headings()).toEqual(["Event", "Event date", "Attendees", "Created", "Action"]);
-    expect(screen.getByLabelText("Loading events").querySelector(".item-table.archiving-table--active")).toBeTruthy();
+    // Both classes: the widths and the fold of the real table are written for `.item-table.archiving-table`, so a placeholder without the base class would not get them.
+    expect(screen.getByLabelText("Loading events").querySelector(".item-table.archiving-table.archiving-table--active")).toBeTruthy();
 
     // The view can be changed while the first read is on its way.
     fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
     expect(headings()).toEqual(["Event", "Event date", "Attendees", "Created", "Archived", "Action"]);
-    expect(screen.getByLabelText("Loading events").querySelector(".item-table.archiving-table--archived")).toBeTruthy();
+    expect(screen.getByLabelText("Loading events").querySelector(".item-table.archiving-table.archiving-table--archived")).toBeTruthy();
+  });
+});
+
+describe("EventArchivingPanel placeholder and table", () => {
+  it("wears the classes of the real table and of its headings, so that the widths and the fold written for the table are the placeholder's too", async () => {
+    const first = deferred<EventDto[]>();
+    vi.mocked(fetchAdminEvents).mockReturnValue(first.promise);
+    renderWithToastAndRouter(<EventArchivingPanel />);
+
+    const placeholder = screen.getByLabelText("Loading events").querySelector(".item-table") as HTMLElement;
+    const placeholderClasses = [...placeholder.classList];
+    const placeholderHeadings = [...placeholder.querySelectorAll("th")].map((th) => th.className);
+
+    first.resolve([event("evt-1", "Summer Summit")]);
+    await screen.findByRole("link", { name: "Summer Summit" });
+    const real = document.querySelector(".item-table") as HTMLElement;
+    expect(real.classList.length).toBeGreaterThan(0);
+    for (const className of real.classList) expect(placeholderClasses).toContain(className);
+    expect([...real.querySelectorAll("th")].map((th) => th.className)).toEqual(placeholderHeadings);
   });
 });
 
