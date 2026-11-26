@@ -6874,20 +6874,6 @@ output.mail-field-hint {
   margin: var(--space-2) 0;
 }
 
-/* Negative margin only, no matching padding - see .audit-log-table-wrap's own comment
-   (staff.css) for why a same-size padding here would silently cancel the bleed back to a
-   plain unbled child's width (PO report: this still read narrower than Staff users' table
-   after the first attempt at this fix). */
-.archiving-table-wrap {
-  overflow-x: auto;
-  margin: 0 calc(-1 * var(--pad-card)) var(--space-2);
-}
-
-.archiving-table-wrap th:last-child,
-.archiving-table-wrap td:last-child {
-  text-align: right;
-}
-
 .archiving-subdued {
   font-size: var(--fs-sm);
   color: var(--text-muted);
@@ -6917,7 +6903,7 @@ output.mail-field-hint {
   z-index: 100;
 }
 
-/* Mobile/tablet (<768px, matching useIsDesktop's default breakpoint) one-card-per-event list -
+/* Narrow screens (<1024px, the breakpoint EventArchivingPanel gives useIsDesktop) one-card-per-event list -
    the table below this width has too many columns to shrink into without wrapping cell text
    into unreadable fragments, so it's replaced outright rather than left to scroll horizontally. */
 .archiving-cards {

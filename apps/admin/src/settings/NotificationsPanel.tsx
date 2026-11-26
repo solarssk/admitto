@@ -41,6 +41,7 @@ import {
 import { PanelLoadError } from "./PanelLoadError.js";
 import { SettingsPanelSkeleton, type SettingsSkeletonCard } from "./SettingsPanelSkeleton.js";
 import "../requirements/requirements.css";
+import "../components/item-table.css";
 import "./notifications-panel.css";
 
 const WEBHOOK_CARD_HINT = "Security alerts for admin staff - not attendee-facing email.";
@@ -692,91 +693,101 @@ export function NotificationsPanel() {
           </div>
           {draft.extraEmailRecipients.length > 0 && (
             <>
-              <div className="notifications-recipients-table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Email</th>
-                      <th scope="col">Description</th>
-                      <th scope="col">Added</th>
-                      <th scope="col">
-                        <span className="sr-only">Actions</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recipientsPageSlice.map((recipient) => {
-                      const meta = data.extra_email_recipients.find((r) => r.email === recipient.email);
-                      const addedByLabel = meta?.added_by_display_name ?? meta?.added_by_email;
-                      return (
-                        <tr key={recipient.email}>
-                          <td>
-                            <div className="requirements-item-cell">
-                              <i className="ti ti-mail" aria-hidden="true" />
-                              <div className="requirements-item-info">
-                                <div className="requirements-item-name">{recipient.email}</div>
+              <div className="item-table notifications-recipients">
+                <div className="attendees-table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Email</th>
+                        <th scope="col" className="notifications-recipients__from-1280">Description</th>
+                        <th scope="col" className="notifications-recipients__from-1024">Added</th>
+                        <th scope="col">
+                          <span className="sr-only">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipientsPageSlice.map((recipient) => {
+                        const meta = data.extra_email_recipients.find((r) => r.email === recipient.email);
+                        const addedByLabel = meta?.added_by_display_name ?? meta?.added_by_email;
+                        const addedAt = meta?.added_at ? `${formatUtcDateTime(meta.added_at)}${addedByLabel ? ` by ${addedByLabel}` : ""}` : null;
+                        return (
+                          <tr key={recipient.email}>
+                            <td>
+                              <div className="requirements-item-cell">
+                                <i className="ti ti-mail" aria-hidden="true" />
+                                <div className="requirements-item-info">
+                                  <div className="requirements-item-name">{recipient.email}</div>
+                                  <div className="notifications-recipients__line notifications-recipients__below-1280">
+                                    {recipient.description || "No description"}
+                                  </div>
+                                  <div className="notifications-recipients__line notifications-recipients__below-1024">
+                                    {addedAt ? `Added ${addedAt}` : "Not saved yet"}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                          <td>
-                            {recipient.description || (
-                              <span className="notifications-recipients-table__muted">No description</span>
-                            )}
-                          </td>
-                          <td>
-                            {meta?.added_at ? (
-                              <>
-                                <span className="notifications-recipients-table__muted">
-                                  {formatUtcDateTime(meta.added_at)}
-                                  {addedByLabel ? ` by ${addedByLabel}` : ""}
-                                </span>
-                                <ActorOrViewerLocalTimeLine
-                                  iso={meta.added_at}
-                                  actorTimezone={meta.added_by_timezone}
-                                />
-                              </>
-                            ) : (
-                              <span className="notifications-recipients-table__muted">Not saved yet</span>
-                            )}
-                          </td>
-                          <td>
-                            <div className="requirements-item-actions__wrap">
-                              <Tooltip content="Send test">
-                                <IconButton
-                                  label={`Send test to ${recipient.email}`}
-                                  size="sm"
-                                  icon={<i className="ti ti-send" aria-hidden="true" />}
-                                  disabled={hasUnsavedChanges}
-                                  loading={testingTarget === recipient.email}
-                                  loadingLabel={`Sending test to ${recipient.email}`}
-                                  onClick={() => void handleTest(recipient.email)}
-                                />
-                              </Tooltip>
-                              <Tooltip content="Edit">
-                                <IconButton
-                                  label={`Edit ${recipient.email}`}
-                                  size="sm"
-                                  icon={<i className="ti ti-pencil" aria-hidden="true" />}
-                                  disabled={saving}
-                                  onClick={() => startEditRecipient(recipient)}
-                                />
-                              </Tooltip>
-                              <Tooltip content="Remove">
-                                <IconButton
-                                  label={`Remove ${recipient.email}`}
-                                  size="sm"
-                                  icon={<i className="ti ti-trash" aria-hidden="true" />}
-                                  disabled={saving}
-                                  onClick={() => setRemoveTarget(recipient.email)}
-                                />
-                              </Tooltip>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </td>
+                            <td className="notifications-recipients__from-1280">
+                              <span>
+                                {recipient.description || (
+                                  <span className="notifications-recipients-table__muted">No description</span>
+                                )}
+                              </span>
+                            </td>
+                            <td className="notifications-recipients__from-1024">
+                              <div>
+                                {meta?.added_at ? (
+                                  <>
+                                    <span className="notifications-recipients-table__muted">{addedAt}</span>
+                                    <ActorOrViewerLocalTimeLine
+                                      iso={meta.added_at}
+                                      actorTimezone={meta.added_by_timezone}
+                                    />
+                                  </>
+                                ) : (
+                                  <span className="notifications-recipients-table__muted">Not saved yet</span>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              <div className="requirements-item-actions__wrap">
+                                <Tooltip content="Send test">
+                                  <IconButton
+                                    label={`Send test to ${recipient.email}`}
+                                    size="sm"
+                                    icon={<i className="ti ti-send" aria-hidden="true" />}
+                                    disabled={hasUnsavedChanges}
+                                    loading={testingTarget === recipient.email}
+                                    loadingLabel={`Sending test to ${recipient.email}`}
+                                    onClick={() => void handleTest(recipient.email)}
+                                  />
+                                </Tooltip>
+                                <Tooltip content="Edit">
+                                  <IconButton
+                                    label={`Edit ${recipient.email}`}
+                                    size="sm"
+                                    icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                                    disabled={saving}
+                                    onClick={() => startEditRecipient(recipient)}
+                                  />
+                                </Tooltip>
+                                <Tooltip content="Remove">
+                                  <IconButton
+                                    label={`Remove ${recipient.email}`}
+                                    size="sm"
+                                    icon={<i className="ti ti-trash" aria-hidden="true" />}
+                                    disabled={saving}
+                                    onClick={() => setRemoveTarget(recipient.email)}
+                                  />
+                                </Tooltip>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
               <PaginationFooter
                 idPrefix="notifications-recipients"
@@ -832,57 +843,59 @@ export function NotificationsPanel() {
       <Card title="Notification types" className="event-settings-card">
         <div className="settings-card-stack">
           <p className="settings-card-intro">{TYPES_CARD_INTRO}</p>
-          <div className="notifications-type-matrix-wrap">
-            <table className="table notifications-type-matrix">
-              <thead>
-                <tr>
-                  <th scope="col">Type</th>
-                  {CHANNEL_COLUMNS.map((col) => (
-                    <th scope="col" key={col.key}>
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.notification_types.map((type) => (
-                  <tr key={type.id}>
-                    <td>
-                      <div className="notifications-type-matrix__label-row">
-                        <span
-                          className={`status-circle status-circle--sm status-circle--${type.default_severity}`}
-                          aria-hidden="true"
-                        >
-                          <i className={`ti ${NOTIFICATION_SEVERITY_ICON[type.default_severity] ?? "ti-info-circle"}`} aria-hidden="true" />
-                        </span>
-                        <div className="notifications-type-matrix__label-text">
-                          <strong>{type.label}</strong>
-                          <p>{NOTIFICATION_TYPE_DESCRIPTIONS[type.id] ?? "Alerts admin staff when this event occurs."}</p>
-                        </div>
-                      </div>
-                    </td>
-                    {CHANNEL_COLUMNS.map((col) =>
-                      type.available_channels.includes(col.key) ? (
-                        <td key={col.key} data-label={col.label}>
-                          <Switch
-                            id={`notifications-type-${type.id}-${col.key}`}
-                            aria-label={`${type.label} - ${col.label}`}
-                            checked={!draft.disabledChannels[type.id]?.includes(col.key)}
-                            disabled={saving}
-                            onChange={(e) => toggleTypeChannel(type.id, col.key, e.target.checked)}
-                          />
-                        </td>
-                      ) : (
-                        <td key={col.key} className="notifications-type-matrix__na" data-label={col.label}>
-                          <span aria-hidden="true">-</span>
-                          <span className="sr-only">Not applicable</span>
-                        </td>
-                      ),
-                    )}
+          <div className="item-table notifications-matrix">
+            <div className="attendees-table-wrap">
+              <table className="table notifications-type-matrix">
+                <thead>
+                  <tr>
+                    <th scope="col">Type</th>
+                    {CHANNEL_COLUMNS.map((col) => (
+                      <th scope="col" key={col.key}>
+                        {col.label}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.notification_types.map((type) => (
+                    <tr key={type.id}>
+                      <td>
+                        <div className="notifications-type-matrix__label-row">
+                          <span
+                            className={`status-circle status-circle--sm status-circle--${type.default_severity}`}
+                            aria-hidden="true"
+                          >
+                            <i className={`ti ${NOTIFICATION_SEVERITY_ICON[type.default_severity] ?? "ti-info-circle"}`} aria-hidden="true" />
+                          </span>
+                          <div className="notifications-type-matrix__label-text">
+                            <strong>{type.label}</strong>
+                            <p>{NOTIFICATION_TYPE_DESCRIPTIONS[type.id] ?? "Alerts admin staff when this event occurs."}</p>
+                          </div>
+                        </div>
+                      </td>
+                      {CHANNEL_COLUMNS.map((col) =>
+                        type.available_channels.includes(col.key) ? (
+                          <td key={col.key} data-label={col.label}>
+                            <Switch
+                              id={`notifications-type-${type.id}-${col.key}`}
+                              aria-label={`${type.label} - ${col.label}`}
+                              checked={!draft.disabledChannels[type.id]?.includes(col.key)}
+                              disabled={saving}
+                              onChange={(e) => toggleTypeChannel(type.id, col.key, e.target.checked)}
+                            />
+                          </td>
+                        ) : (
+                          <td key={col.key} className="notifications-type-matrix__na" data-label={col.label}>
+                            <span aria-hidden="true">-</span>
+                            <span className="sr-only">Not applicable</span>
+                          </td>
+                        ),
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </Card>

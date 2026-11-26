@@ -201,15 +201,23 @@ describe("the attendee page's Notes", () => {
   });
 });
 
-describe("the notification settings, on a phone", () => {
-  const media = "@media (max-width: 640px)";
+describe("the notification settings, on a phone and on a tablet", () => {
+  // Below 1024px: the 460px box of a 768px screen would give the type 84px of a fixed layout, and the description ran to 13 lines.
+  const media = "@media (max-width: 1023px)";
+  const row = ".item-table .table.notifications-type-matrix tbody";
 
   it("shows the type x channel matrix as a block for each type: the text across the width and the toggles under it, each named", () => {
-    expect(sets(bodyOf(notifications, ".table.notifications-type-matrix tbody tr", media), "display", "grid")).toBe(true);
-    expect(sets(bodyOf(notifications, ".table.notifications-type-matrix tbody td:first-child", media), "grid-column", "1 / -1")).toBe(true);
-    expect(sets(bodyOf(notifications, ".table.notifications-type-matrix tbody td:not(:first-child)::before", media), "content", "attr\\(data-label\\)")).toBe(true);
+    expect(sets(bodyOf(notifications, `${row} tr`, media), "display", "grid")).toBe(true);
+    expect(sets(bodyOf(notifications, `${row} td:first-child`, media), "grid-column", "1 / -1")).toBe(true);
+    expect(sets(bodyOf(notifications, `${row} td:not(:first-child)::before`, media), "content", "attr\\(data-label\\)")).toBe(true);
     // The header row stays for assistive tech and is out of sight.
     expect(sets(bodyOf(notifications, ".notifications-type-matrix thead", media), "position", "absolute")).toBe(true);
+  });
+
+  it("takes the height and the padding of the shared row back for a block of a type, which holds a name, a description and its toggles", () => {
+    expect(sets(bodyOf(notifications, `${row} tr`, media), "height", "auto")).toBe(true);
+    expect(sets(bodyOf(notifications, `${row} td`, media), "padding", "0")).toBe(true);
+    expect(sets(bodyOf(notifications, `${row} td`, media), "width", "auto")).toBe(true);
   });
 
   it("puts the webhook's fields one under the other, where side by side the format's select cut 'Generic JSON'", () => {
@@ -528,18 +536,19 @@ describe("the spacing of the Import page", () => {
   });
 });
 
+// The box of a table is the screen less the sidebar (256px), the page padding (2 x 24px) and the padding and border of the card: 371px
+// (measured in Chrome: 653px at 1024px, 909px at 1280px, 1069px at 1440px). A name needs avatar, gap and a short name: 9rem. An address is cut with
+// an ellipsis. `nameRoom` is what a name keeps at a screen width when the other columns of a table have `fixedRem` between them.
+const rem = (css: string, name: string) => Number(new RegExp(String.raw`(?:^|[;\s])${name}\s*:\s*(\d+(?:\.\d+)?)rem`).exec(css)?.[1]);
+const boxRem = (viewport: number) => (viewport - 371) / 16;
+const MIN_NAME = 9;
+const nameRoom = (viewport: number, fixedRem: number) => boxRem(viewport) - fixedRem;
+
 describe("the tables of the Users page", () => {
   const usersPage = parse(read("apps/admin/src/pages/users-page.css"));
-  const rem = (css: string, name: string) => Number(new RegExp(String.raw`(?:^|[;\s])${name}\s*:\s*(\d+(?:\.\d+)?)rem`).exec(css)?.[1]);
   const width = (table: string, column: number, media: string | null = null) =>
     rem(bodyOf(usersPage, `.item-table.users-table--${table} .table :is(th, td):nth-child(${column})`, media), "width");
   const sum = (table: string, columns: number[]) => columns.reduce((total, column) => total + width(table, column), 0);
-
-  // The box of a table is the screen less the sidebar (256px), the page padding (2 x 24px) and the padding and border of the card: 371px
-  // (measured in Chrome: 653px at 1024px, 909px at 1280px). A name needs avatar, gap and a short name: 9rem. An address is cut with an ellipsis.
-  const boxRem = (viewport: number) => (viewport - 371) / 16;
-  const MIN_NAME = 9;
-  const nameRoom = (viewport: number, fixedRem: number) => boxRem(viewport) - fixedRem;
 
   it("draws the boxed table from 1024px and the cards below it, and keeps what a column folded away out of sight above its ladder", () => {
     const narrow = "@media (max-width: 1023px)";
@@ -577,3 +586,51 @@ describe("the tables of the Users page", () => {
     expect(sets(bodyOf(usersPage, ".item-table.users-table--sessions .table :is(th, td):nth-child(3)", "@media (max-width: 1279px)"), "display", "none")).toBe(true);
   });
 });
+
+describe("the tables of Organisation settings", () => {
+  const archiving = parse(read("apps/admin/src/settings/archiving-table.css"));
+  const archivingWidth = (column: number | "last", view = "") =>
+    rem(bodyOf(archiving, `.item-table.archiving-table${view} .table :is(th, td):${column === "last" ? "last-child" : `nth-child(${column})`}`), "width");
+  const recipientWidth = (column: number | "last") =>
+    rem(bodyOf(notifications, `.item-table.notifications-recipients .table :is(th, td):${column === "last" ? "last-child" : `nth-child(${column})`}`), "width");
+
+  it("folds the attendees and the creation of an event below 1440px, and leaves the name room with every column and with the folded ones", () => {
+    const fold = "@media (max-width: 1439px)";
+    expect(sets(bodyOf(archiving, ".item-table.archiving-table .table :is(th, td).archiving-table__wide-only", fold), "width", "0")).toBe(true);
+    expect(sets(bodyOf(archiving, ".item-table.archiving-table .archiving-table__narrow-only", fold), "display", "block")).toBe(true);
+    expect(sets(bodyOf(archiving, ".archiving-table__narrow-only"), "display", "none")).toBe(true);
+    const date = archivingWidth(2);
+    const attendees = archivingWidth(3);
+    const created = archivingWidth(4);
+    const archived = archivingWidth(5, "--archived");
+    const action = archivingWidth("last");
+    // From 1440px: every column of the Archived view, which has the most. Below it, down to 1024px: the date, the archiving and the button.
+    expect(nameRoom(1440, date + attendees + created + archived + action)).toBeGreaterThanOrEqual(MIN_NAME);
+    expect(nameRoom(1024, date + archived + action)).toBeGreaterThanOrEqual(MIN_NAME);
+  });
+
+  it("aligns the number of attendees to the right, with its heading, in digits of one width", () => {
+    const body = bodyOf(archiving, ".item-table.archiving-table .table :is(th, td):nth-child(3)");
+    expect(sets(body, "text-align", "right")).toBe(true);
+    expect(sets(body, "font-variant-numeric", "tabular-nums")).toBe(true);
+  });
+
+  it("folds the description of a recipient below 1280px and the time it was added below 1024px, and leaves the email room at each step", () => {
+    for (const [media, column] of [["@media (max-width: 1279px)", "from-1280"], ["@media (max-width: 1023px)", "from-1024"]] as const) {
+      expect(sets(bodyOf(notifications, `.item-table.notifications-recipients .table :is(th, td).notifications-recipients__${column}`, media), "width", "0")).toBe(true);
+    }
+    expect(sets(bodyOf(notifications, ".notifications-recipients__line"), "display", "none")).toBe(true);
+    const description = recipientWidth(2);
+    const added = recipientWidth(3);
+    const actions = recipientWidth("last");
+    expect(nameRoom(1280, description + added + actions)).toBeGreaterThanOrEqual(MIN_NAME);
+    expect(nameRoom(1024, added + actions)).toBeGreaterThanOrEqual(MIN_NAME);
+    expect(nameRoom(768, actions)).toBeGreaterThanOrEqual(MIN_NAME);
+  });
+
+  it("leaves the type of a notification room beside its three channels from 1024px, where the matrix is still a table", () => {
+    const channel = rem(bodyOf(notifications, ".item-table.notifications-matrix .table :is(th, td):not(:first-child)"), "width");
+    expect(nameRoom(1024, 3 * channel)).toBeGreaterThanOrEqual(MIN_NAME);
+  });
+});
+
