@@ -103,6 +103,31 @@ function UserSessionsBadge({ count }: Readonly<{ count: number }>) {
   );
 }
 
+/** The sign-in, the two-factor state and the sessions as three small marks after the name, for a screen that has no room for their columns
+ * (`users-table__narrow-only`, shown below 1280px by users-page.css). Each mark says what it is to assistive technology and as a tooltip. */
+function UserFlags({ user }: Readonly<{ user: UserListItemDto }>) {
+  const signIn = user.has_sso ? "Signs in with an identity provider" : "Signs in with a local password";
+  const mfa = user.has_mfa ? "Two-factor is on (authenticator app)" : "Two-factor is not set up";
+  const sessions = user.active_sessions_count === 1 ? "1 active session" : `${user.active_sessions_count} active sessions`;
+  return (
+    <span className="users-table__narrow-only users-page__flags">
+      <i className={user.has_sso ? "ti ti-cloud-lock" : "ti ti-key"} role="img" aria-label={signIn} title={signIn} />
+      <i
+        className={user.has_mfa ? "ti ti-shield-check" : "ti ti-shield-off"}
+        style={{ color: user.has_mfa ? "var(--status-ok)" : "var(--text-disabled)" }}
+        role="img"
+        aria-label={mfa}
+        title={mfa}
+      />
+      {user.active_sessions_count > 0 && (
+        <Badge variant="info" title={sessions}>
+          {user.active_sessions_count}
+        </Badge>
+      )}
+    </span>
+  );
+}
+
 /** Compact icon-only edit action, shared by the desktop table row and the mobile card. Revoking
  * sessions lives one click further in, on Edit's own "More actions" menu, rather than as a
  * second icon here - a bare reset/refresh glyph read as easy to mistake for "revoke all
@@ -123,7 +148,8 @@ function UserActionsRow({ user, onEdit }: Readonly<StaffUserListItemProps>) {
   );
 }
 
-/** Desktop table row for a staff user. */
+/** Desktop table row for a staff user. The sign-in, the two-factor state and the sessions are columns only on a wide screen
+ * (`users-table__wide-only`); below 1280px they are three small marks after the name (`UserFlags`, see users-page.css). */
 export function StaffUserTableRow({ user, onEdit }: Readonly<StaffUserListItemProps>) {
   return (
     <tr>
@@ -131,7 +157,10 @@ export function StaffUserTableRow({ user, onEdit }: Readonly<StaffUserListItemPr
         <div className="users-page__user-cell">
           <Avatar name={user.display_name ?? user.email} size="sm" />
           <div className="users-page__user-meta">
-            <div className="users-page__user-name">{user.display_name ?? user.email}</div>
+            <div className="users-page__user-line">
+              <div className="users-page__user-name">{user.display_name ?? user.email}</div>
+              <UserFlags user={user} />
+            </div>
             <div className="users-page__user-email">{user.email}</div>
           </div>
         </div>
@@ -139,14 +168,14 @@ export function StaffUserTableRow({ user, onEdit }: Readonly<StaffUserListItemPr
       <td>
         <UserRoles user={user} />
       </td>
-      <td>
+      <td className="users-table__wide-only">
         <UserAuthMethod hasSso={user.has_sso} />
       </td>
-      <td>
+      <td className="users-table__wide-only">
         <UserMfa hasMfa={user.has_mfa} />
       </td>
       <td>{formatRelativeTime(user.last_login_at)}</td>
-      <td>
+      <td className="users-table__wide-only">
         <UserSessionsBadge count={user.active_sessions_count} />
       </td>
       <td>

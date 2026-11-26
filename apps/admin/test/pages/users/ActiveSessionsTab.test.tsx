@@ -648,6 +648,22 @@ describe("ActiveSessionsTab rendering", () => {
 });
 
 describe("ActiveSessionsTab responsive layout", () => {
+  it("draws the table in the shared box of a padded card and asks for the 1024px breakpoint, not 768px", async () => {
+    const queries: string[] = [];
+    vi.stubGlobal("matchMedia", (query: string) => {
+      queries.push(query);
+      return { matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined };
+    });
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [makeSession()] });
+
+    const { container } = renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+
+    expect(container.querySelector(".item-table.users-table--sessions > .attendees-table-wrap > table.table")).toBeTruthy();
+    expect(queries).toContain("(min-width: 1024px)");
+    expect(queries).not.toContain("(min-width: 768px)");
+  });
+
   it("renders stacked cards instead of a table below the desktop breakpoint, with every field populated", async () => {
     mockMatchMedia(false);
     vi.mocked(fetchSessions).mockResolvedValue({
@@ -668,6 +684,7 @@ describe("ActiveSessionsTab responsive layout", () => {
     expect(screen.queryByRole("table")).toBeNull();
     const card = document.querySelector(".users-page__card") as HTMLElement;
     expect(card).toBeTruthy();
+    expect(card.closest(".users-page__cards--narrow")).toBeTruthy();
     // Exercises the branches only this (mobile) rendering path has: a display name present
     // (shows the email as a secondary line), a device label present (skips the user-agent
     // parse), and a missing IP (falls back to "-") - all already covered for the desktop table

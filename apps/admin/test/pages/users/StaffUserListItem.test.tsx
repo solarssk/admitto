@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UserListItemDto } from "../../../src/api/types.js";
 import { StaffUserCard, StaffUserTableRow } from "../../../src/pages/users/StaffUserListItem.js";
@@ -125,6 +125,56 @@ describe("StaffUserTableRow", () => {
     );
 
     expect(screen.getByTitle("Event scope · managed by identity provider")).toBeTruthy();
+  });
+
+  it("says the sign-in, the two-factor state and the sessions twice: in words in the columns of a wide screen, and as named marks after the name", () => {
+    render(
+      <table>
+        <tbody>
+          <StaffUserTableRow user={{ ...user, has_sso: true, has_mfa: true, active_sessions_count: 3 }} onEdit={vi.fn()} />
+        </tbody>
+      </table>,
+    );
+
+    const row = screen.getByRole("row");
+    const wide = [...row.querySelectorAll<HTMLElement>("td.users-table__wide-only")];
+    expect(wide).toHaveLength(3);
+    expect(within(wide[0]!).getByText(/Identity provider/)).toBeTruthy();
+    expect(within(wide[1]!).getByText(/Authenticator app/)).toBeTruthy();
+    expect(wide[2]?.textContent).toBe("3");
+
+    const marks = row.querySelector(".users-table__narrow-only") as HTMLElement;
+    expect(marks.closest(".users-page__user-line")).toBeTruthy();
+    expect(within(marks).getByRole("img", { name: "Signs in with an identity provider" }).getAttribute("title")).toBe("Signs in with an identity provider");
+    expect(within(marks).getByRole("img", { name: "Two-factor is on (authenticator app)" }).getAttribute("title")).toBe("Two-factor is on (authenticator app)");
+    expect(within(marks).getByText("3").getAttribute("title")).toBe("3 active sessions");
+  });
+
+  it("names a local password and a missing two-factor in the marks, and draws no count for a person with no session", () => {
+    render(
+      <table>
+        <tbody>
+          <StaffUserTableRow user={{ ...user, has_sso: false, has_mfa: false, active_sessions_count: 0 }} onEdit={vi.fn()} />
+        </tbody>
+      </table>,
+    );
+
+    const marks = screen.getByRole("row").querySelector(".users-table__narrow-only") as HTMLElement;
+    expect(within(marks).getByRole("img", { name: "Signs in with a local password" })).toBeTruthy();
+    expect(within(marks).getByRole("img", { name: "Two-factor is not set up" })).toBeTruthy();
+    expect(marks.querySelector(".at-badge")).toBeNull();
+  });
+
+  it("says one session in the singular", () => {
+    render(
+      <table>
+        <tbody>
+          <StaffUserTableRow user={{ ...user, active_sessions_count: 1 }} onEdit={vi.fn()} />
+        </tbody>
+      </table>,
+    );
+
+    expect(screen.getByRole("row").querySelector(".users-table__narrow-only .at-badge")?.getAttribute("title")).toBe("1 active session");
   });
 
   it("calls onEdit from the row's own action button", () => {

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Card, Skeleton } from "@admitto/ui";
 import { SLOW_NOTICE_TEXT } from "../../utils/loading-timing.js";
+import "../../components/item-table.css";
 import "../users-page.css";
 
 export interface SkeletonColumn {
@@ -18,6 +19,8 @@ interface UsersListSkeletonProps {
   slow: boolean;
   /** The real column headings, so they do not flicker when the rows arrive. */
   columns: ReadonlyArray<SkeletonColumn>;
+  /** The table of the real list (`users-table--staff`): the placeholder is then drawn in the same box and with the same column widths. */
+  tableClass?: string;
   rows: number;
   /** The height of the bar in a row, so a row is about as tall as a real one. */
   rowHeight: number;
@@ -27,36 +30,46 @@ interface UsersListSkeletonProps {
 
 /**
  * A list of the Users page while it loads: the table (with the real column headings) and the stacked cards, one
- * of them shown by the same media query as the real list (`users-page__table-wrap--desktop` and
- * `users-page__cards--mobile`), in a status region named after what is loading. The heights are those of a real
+ * of them shown by the same media query as the real list (`users-page__table-wrap--desktop` and `users-page__cards--mobile`
+ * from 769px, or the boxed table `users-table` and `users-page__cards--narrow` from 1024px when the list has a `tableClass`),
+ * in a status region named after what is loading. The heights are those of a real
  * row and a real card, so the list that replaces it does not move what is below it.
  */
-export function UsersListSkeleton({ label, held, slow, columns, rows, rowHeight, cards, cardHeight }: Readonly<UsersListSkeletonProps>) {
+export function UsersListSkeleton({ label, held, slow, columns, tableClass, rows, rowHeight, cards, cardHeight }: Readonly<UsersListSkeletonProps>) {
+  const table = (
+    <table className="table">
+      <thead>
+        <tr>
+          {columns.map((column) => (
+            <th key={column.id} className={column.className}>
+              {column.label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {Array.from({ length: rows }, (_, i) => (
+          <tr key={i}>
+            <td colSpan={columns.length}>
+              <Skeleton variant="rect" height={rowHeight} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
   return (
     <output aria-label={label} className={held ? "users-page__skeleton at-loading-hold" : "users-page__skeleton"}>
-      <div className="users-page__table-wrap users-page__table-wrap--desktop" aria-hidden="true">
-        <table className="table">
-          <thead>
-            <tr>
-              {columns.map((column) => (
-                <th key={column.id} className={column.className}>
-                  {column.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: rows }, (_, i) => (
-              <tr key={i}>
-                <td colSpan={columns.length}>
-                  <Skeleton variant="rect" height={rowHeight} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="users-page__cards users-page__cards--mobile" aria-hidden="true">
+      {tableClass ? (
+        <div className={`item-table users-table ${tableClass} users-page__table-wrap--desktop`} aria-hidden="true">
+          <div className="attendees-table-wrap">{table}</div>
+        </div>
+      ) : (
+        <div className="users-page__table-wrap users-page__table-wrap--desktop" aria-hidden="true">
+          {table}
+        </div>
+      )}
+      <div className={`users-page__cards ${tableClass ? "users-page__cards--narrow" : "users-page__cards--mobile"}`} aria-hidden="true">
         {Array.from({ length: cards }, (_, i) => (
           <Skeleton key={i} variant="rect" height={cardHeight} className="users-page__card-skeleton" />
         ))}

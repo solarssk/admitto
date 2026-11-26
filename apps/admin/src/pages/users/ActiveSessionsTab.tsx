@@ -20,6 +20,7 @@ import { useListLoad } from "../../hooks/useListLoad.js";
 import { formatRelativeTime } from "../../utils/event-dates.js";
 import { withSessionLabel, withSessionRemoved } from "./list-changes.js";
 import { UsersListSkeleton, type SkeletonColumn } from "./UsersListSkeleton.js";
+import "../../components/item-table.css";
 
 type FilterValue = "all" | "admin" | "operator";
 type SignInFilterValue = "all" | "local" | "oidc";
@@ -167,7 +168,8 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
 
   // Desktop table vs. stacked mobile cards, same breakpoint-driven switch as AuditLogPanel -
   // only one ever renders (not both-with-CSS-hiding), so a row's content never appears twice.
-  const isDesktop = useIsDesktop();
+  // The sessions table has 5 to 8 columns: below 1024px even its narrowest form would not fit the box, so the cards take its place.
+  const isDesktop = useIsDesktop(1024);
 
   return (
     <>
@@ -255,8 +257,9 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
             held={!gate.showIndicator}
             slow={slow}
             columns={SESSION_COLUMNS}
+            tableClass="users-table--sessions"
             rows={5}
-            rowHeight={52}
+            rowHeight={57}
             cards={3}
             cardHeight={300}
           />
@@ -308,31 +311,33 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
             {total > 0 && (
               <>
                 {isDesktop ? (
-                  <div className="users-page__table-wrap">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>User</th>
-                          <th>Role</th>
-                          <th className="sessions-col-tablet-hide">Device</th>
-                          <th className="sessions-col-tablet-hide">IP address</th>
-                          <th>
-                            <HintLabel hint={LOGGED_IN_HINT}>Logged in</HintLabel>
-                          </th>
-                          <th>Last active</th>
-                          <th className="sessions-col-tablet-hide sessions-col-laptop-hide">Sign-in</th>
-                          <th className="sessions-action-col"><span className="sr-only">Action</span></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pageSlice.map((s) => (
-                          <SessionTableRow key={s.id} session={s} onEdit={setEditTarget} onRevoke={setConfirmTarget} />
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="item-table users-table users-table--sessions">
+                    <div className="attendees-table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>User</th>
+                            <th>Role</th>
+                            <th className="sessions-col-tablet-hide">Device</th>
+                            <th className="sessions-col-tablet-hide">IP address</th>
+                            <th>
+                              <HintLabel hint={LOGGED_IN_HINT}>Logged in</HintLabel>
+                            </th>
+                            <th>Last active</th>
+                            <th className="sessions-col-tablet-hide sessions-col-laptop-hide">Sign-in</th>
+                            <th className="sessions-action-col"><span className="sr-only">Action</span></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pageSlice.map((s) => (
+                            <SessionTableRow key={s.id} session={s} onEdit={setEditTarget} onRevoke={setConfirmTarget} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 ) : (
-                  <div className="users-page__cards users-page__cards--mobile">
+                  <div className="users-page__cards users-page__cards--narrow">
                     {pageSlice.map((s) => (
                       <SessionCard key={s.id} session={s} onEdit={setEditTarget} onRevoke={setConfirmTarget} />
                     ))}
