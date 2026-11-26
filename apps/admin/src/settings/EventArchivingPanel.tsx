@@ -74,7 +74,8 @@ function actorCell(
  * author as its tooltip. */
 function foldedSummary(event: EventDto): { text: string; title: string } {
   const count = event.attendee_count;
-  const attendees = typeof count === "number" ? `${count} ${count === 1 ? "attendee" : "attendees"}` : null;
+  const noun = count === 1 ? "attendee" : "attendees";
+  const attendees = typeof count === "number" ? `${count} ${noun}` : null;
   const created = `created ${actorDateTime(event.created_at, event.created_by_timezone)}`;
   const author = `by ${actorLabel(event.created_by_display_name, event.created_by_email)}`;
   return {

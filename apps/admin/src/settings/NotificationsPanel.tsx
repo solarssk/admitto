@@ -710,7 +710,8 @@ export function NotificationsPanel() {
                       {recipientsPageSlice.map((recipient) => {
                         const meta = data.extra_email_recipients.find((r) => r.email === recipient.email);
                         const addedByLabel = meta?.added_by_display_name ?? meta?.added_by_email;
-                        const addedAt = meta?.added_at ? `${formatUtcDateTime(meta.added_at)}${addedByLabel ? ` by ${addedByLabel}` : ""}` : null;
+                        const addedBy = addedByLabel ? ` by ${addedByLabel}` : "";
+                        const addedAt = meta?.added_at ? formatUtcDateTime(meta.added_at) + addedBy : null;
                         return (
                           <tr key={recipient.email}>
                             <td>
