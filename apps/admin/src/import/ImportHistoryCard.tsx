@@ -9,43 +9,46 @@ import type { ListLoad } from "../hooks/useListLoad.js";
 import { formatActorTime } from "../utils/event-dates.js";
 import { ImportHistorySkeleton } from "./ImportHistorySkeleton.js";
 import "../attendees/attendees.css";
+import "../components/item-table.css";
 import "../pages/import.css";
 
 const NO_ENTRIES: ImportHistoryEntry[] = [];
 
 function ImportHistoryTable({ entries }: Readonly<{ entries: readonly ImportHistoryEntry[] }>) {
   return (
-    <div className="attendees-table-wrap">
-      <table className="table import-history-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>File</th>
-            <th>Status</th>
-            <th>Created</th>
-            <th>Updated</th>
-            <th>Skipped</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry) => (
-            <tr key={entry.id}>
-              <td className="import-history__date">{formatActorTime(entry.created_at, entry.client_timezone)}</td>
-              <td className="import-history__file">{entry.filename ?? <span className="import-sample__empty">-</span>}</td>
-              <td
-                className={
-                  entry.status === "failed" ? "import-history__num import-history__num--warn" : "import-history__num import-history__num--ok"
-                }
-              >
-                {entry.status === "failed" ? (entry.error ?? "Failed") : "Succeeded"}
-              </td>
-              <td className="import-history__num import-history__num--ok">{entry.created}</td>
-              <td className="import-history__num import-history__num--warn">{entry.updated}</td>
-              <td className="import-history__num">{entry.skipped}</td>
+    <div className="item-table import-table import-table--history">
+      <div className="attendees-table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>File</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Updated</th>
+              <th>Skipped</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {entries.map((entry) => (
+              <tr key={entry.id}>
+                <td className="import-history__date">{formatActorTime(entry.created_at, entry.client_timezone)}</td>
+                <td className="import-history__file">{entry.filename ?? <span className="import-sample__empty">-</span>}</td>
+                <td
+                  className={
+                    entry.status === "failed" ? "import-history__num import-history__num--warn" : "import-history__num import-history__num--ok"
+                  }
+                >
+                  {entry.status === "failed" ? (entry.error ?? "Failed") : "Succeeded"}
+                </td>
+                <td className="import-history__num import-history__num--ok">{entry.created}</td>
+                <td className="import-history__num import-history__num--warn">{entry.updated}</td>
+                <td className="import-history__num">{entry.skipped}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -61,12 +64,8 @@ export function ImportHistoryCard({ list }: Readonly<{ list: ListLoad<ImportHist
   const card = useCardLoad(list);
   const entries = list.data ?? NO_ENTRIES;
   let body: ReactNode;
-  // Unpadded only when the table (or its placeholder) renders: it brings its own scroll wrapper, and every text state keeps
-  // the normal card padding.
-  let padded = true;
   if (!card.gate.showContent) {
     body = <ImportHistorySkeleton held={!card.gate.showIndicator} slow={card.slow} />;
-    padded = false;
   } else if (card.failure.error) {
     body = (
       <RetryEmptyState
@@ -77,7 +76,6 @@ export function ImportHistoryCard({ list }: Readonly<{ list: ListLoad<ImportHist
       />
     );
   } else {
-    padded = entries.length === 0;
     body = (
       <RefetchRegion refreshing={list.refreshing} label="Refreshing import history">
         {entries.length === 0 ? (
@@ -94,7 +92,7 @@ export function ImportHistoryCard({ list }: Readonly<{ list: ListLoad<ImportHist
     );
   }
   return (
-    <Card title="Import history" className="import-card" padded={padded}>
+    <Card title="Import history" className="import-card">
       {list.refreshError ? (
         <div className="import-history__warning">
           <RefreshWarning message={list.refreshError} onRetry={list.reload} />

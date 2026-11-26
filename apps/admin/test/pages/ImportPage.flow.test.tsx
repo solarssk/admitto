@@ -207,6 +207,40 @@ describe("ImportPage upload → preview → commit flow", () => {
     }
   });
 
+  it("is one column of cards in the order of the work, and draws every table in the shared box of the admin", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    fetchImportHistory.mockResolvedValue([
+      { id: "h1", created_at: "2026-11-20T09:12:00.000Z", client_timezone: "UTC", filename: "guests.csv", status: "succeeded", error: null, created: 1, updated: 0, skipped: 0 },
+    ]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        parse: { validCount: 1, invalidRows: [{ rowIndex: 3, reason: "Email is missing" }], invalidCount: 1, warnings: [] },
+        summary: { toCreate: 1, toUpdate: 0, toSkip: 1, skipped: [{ email: "old@example.com", reason: "Attendee already exists" }] },
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    await screen.findByText("To create");
+    await screen.findByText("guests.csv");
+
+    // One column: the cards are children of one stack, in the order of the work.
+    const titles = Array.from(document.querySelectorAll(".at-card__title")).map((title) => title.textContent);
+    expect(titles).toEqual(["1 · Upload file", "2 · Options", "Validation summary", "Row preview", "Import history"]);
+    const stack = document.querySelector(".settings-sections");
+    expect(stack?.querySelectorAll(":scope > .at-card")).toHaveLength(5);
+    expect(document.querySelector(".import-two-col")).toBeNull();
+
+    // The columns of a file, the rows that are not imported, the preview and the history: each table is the shared box.
+    const tables = Array.from(document.querySelectorAll("table"));
+    expect(tables.map((table) => table.closest(".item-table")?.className.match(/import-table--(\w+)/)?.[1])).toEqual(["columns", "invalid", "skipped", "sample", "history"]);
+    for (const table of tables) {
+      expect(table.closest(".item-table .attendees-table-wrap")).not.toBeNull();
+      expect(table.classList.contains("table")).toBe(true);
+    }
+  });
+
   it("names the first column of the table of columns for what it is: the column name in the file", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     renderPage();
@@ -560,7 +594,7 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
 
     await screen.findByText("Dietary requirements");
-    const previewTable = document.querySelector(".import-sample-table");
+    const previewTable = document.querySelector(".import-table--sample table");
     expect(previewTable).not.toBeNull();
     expect(within(previewTable as HTMLElement).getAllByText("-")).toHaveLength(6);
   });

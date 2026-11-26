@@ -1,26 +1,3 @@
-/* Two-column layout from the design mockup's Import screen (`two-col import`): upload +
- * row preview on the left, options + validation summary on the right; stacks below 768px
- * (same breakpoint the account page's 2-col grid uses). */
-.import-two-col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
-  align-items: start;
-}
-
-@media (max-width: 768px) {
-  .import-two-col {
-    grid-template-columns: 1fr;
-  }
-}
-
-.import-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
 /* A <button>, not a div with role="button" (Sonar S6819 — real keyboard/AT semantics for
    free instead of hand-rolled ones) — the extra properties below undo the browser's default
    button chrome (background, font, width) that a div never had to begin with. */
@@ -170,9 +147,9 @@ fieldset:disabled .import-dropzone {
 }
 
 /* Import history card */
-/* A refresh of the history that failed keeps the rows and says so above them; the table is unpadded, so the warning has its own. */
+/* A refresh of the history that failed keeps the rows and says so above them. */
 .import-history__warning {
-  padding: var(--space-3) var(--pad-card) 0;
+  margin-bottom: var(--space-3);
 }
 
 /* The history's placeholder (ImportHistorySkeleton.tsx): the table's own shape, in a status region. */
@@ -202,6 +179,8 @@ fieldset:disabled .import-dropzone {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .import-history__file {
@@ -245,27 +224,6 @@ fieldset:disabled .import-dropzone {
   cursor: pointer;
   font-weight: 600;
   color: var(--text-primary);
-}
-
-.import-columns-table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-top: var(--space-2);
-  font-size: var(--fs-sm);
-}
-
-.import-columns-table th,
-.import-columns-table td {
-  text-align: left;
-  padding: var(--space-1) var(--space-2);
-  border-bottom: 1px solid var(--border);
-}
-
-.import-columns-table code {
-  font-family: ui-monospace, monospace;
-  background: var(--surface-muted);
-  padding: 0.1rem 0.3rem;
-  border-radius: var(--radius-sm, 3px);
 }
 
 .import-field {
@@ -386,59 +344,6 @@ fieldset:disabled .import-dropzone {
   margin-bottom: var(--space-4);
 }
 
-/* Invalid/skipped rows can span the whole uploaded file (up to 50 000 rows) — cap the table's
- * height and let it scroll instead of the page growing without bound (PO feedback). */
-.import-invalid .attendees-table-wrap {
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-/* Import sample rows preview */
-.import-sample {
-  margin: var(--space-4) 0;
-}
-
-.import-sample__note {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-regular, 400);
-  color: var(--text-muted);
-}
-
-.import-sample-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-.import-sample-table {
-  table-layout: fixed;
-  min-width: 480px;
-  width: 100%;
-}
-
-.import-sample-table th:nth-child(1),
-.import-sample-table td:nth-child(1) {
-  width: 2.5rem;
-}
-
-.import-sample-table th:nth-child(2),
-.import-sample-table td:nth-child(2) {
-  width: 22%;
-}
-
-.import-sample-table th:nth-child(3),
-.import-sample-table td:nth-child(3) {
-  width: 28%;
-  max-width: 240px;
-}
-
-.import-sample-table th,
-.import-sample-table td {
-  white-space: nowrap;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 .import-sample__row-num {
   color: var(--text-muted);
@@ -457,3 +362,131 @@ fieldset:disabled .import-dropzone {
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
+
+/* The tables of the page are the shared boxed table (components/item-table.css). Each sets only the widths of its own columns, with a
+   selector that names its table, so that the order of the stylesheets does not decide. */
+.import-columns-info .import-table {
+  margin-top: var(--space-2);
+}
+
+.item-table.import-table .table code {
+  font-family: ui-monospace, monospace;
+  background: var(--surface-muted);
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-sm, 3px);
+}
+
+/* The columns of a file: the name, whether it is required, what it holds. */
+.item-table.import-table--columns .table th:first-child,
+.item-table.import-table--columns .table td:first-child {
+  width: 12rem;
+}
+
+.item-table.import-table--columns .table th:nth-child(2),
+.item-table.import-table--columns .table td:nth-child(2) {
+  width: 6rem;
+}
+
+/* The heading "Column name in the file" is longer than the column on a phone: it wraps instead of being cut. */
+.item-table.import-table--columns .table th {
+  white-space: normal;
+}
+
+/* The rows that are not imported: the row number or the email, then the reason. They can span the whole uploaded file (up to 50 000 rows),
+   so the box has a height of its own and scrolls instead of the page growing without bound. */
+.item-table.import-table--invalid .table th:first-child,
+.item-table.import-table--invalid .table td:first-child {
+  width: 5rem;
+}
+
+.item-table.import-table--skipped .table th:first-child,
+.item-table.import-table--skipped .table td:first-child {
+  width: 16rem;
+}
+
+.item-table.import-table--invalid .attendees-table-wrap,
+.item-table.import-table--skipped .attendees-table-wrap {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* The preview of the rows and the history are wide: from a narrow screen they scroll sideways inside their box, never squeezing a cell to
+   a word. */
+.item-table.import-table--sample .attendees-table-wrap,
+.item-table.import-table--history .attendees-table-wrap {
+  overflow-x: auto;
+}
+
+.item-table.import-table--sample .attendees-table-wrap .table {
+  min-width: 44rem;
+}
+
+.item-table.import-table--history .attendees-table-wrap .table {
+  min-width: 42rem;
+}
+
+.item-table.import-table--sample .table th:first-child,
+.item-table.import-table--sample .table td:first-child {
+  width: 3.5rem;
+}
+
+.item-table.import-table--sample .table th,
+.item-table.import-table--sample .table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-table.import-table--history .table th:first-child,
+.item-table.import-table--history .table td:first-child {
+  width: 13rem;
+}
+
+.item-table.import-table--history .table th:nth-child(3),
+.item-table.import-table--history .table td:nth-child(3) {
+  width: 12rem;
+}
+
+.item-table.import-table--history .table th:nth-child(n + 4),
+.item-table.import-table--history .table td:nth-child(n + 4) {
+  width: 5.5rem;
+}
+
+/* The reasons wrap inside their cell: an address or a long word never pushes the table out of its box. */
+.item-table.import-table--invalid .table td,
+.item-table.import-table--skipped .table td,
+.item-table.import-table--columns .table td {
+  overflow-wrap: anywhere;
+}
+
+/* The ladder of the shared table: from a narrow screen the first column gives up its width, so that the reason keeps a line to read. */
+@media (max-width: 820px) {
+  .item-table.import-table--columns .table th:first-child,
+  .item-table.import-table--columns .table td:first-child {
+    width: 8rem;
+  }
+
+  .item-table.import-table--columns .table th:nth-child(2),
+  .item-table.import-table--columns .table td:nth-child(2) {
+    width: 5rem;
+  }
+
+  .item-table.import-table--invalid .table th:first-child,
+  .item-table.import-table--invalid .table td:first-child {
+    width: 3.5rem;
+  }
+
+  .item-table.import-table--skipped .table th:first-child,
+  .item-table.import-table--skipped .table td:first-child {
+    width: 46%;
+  }
+}
+
+/* On a phone the name column gives up a little more, so that the heading of the last column is not cut. */
+@media (max-width: 480px) {
+  .item-table.import-table--columns .table th:first-child,
+  .item-table.import-table--columns .table td:first-child {
+    width: 6.5rem;
+  }
+}
+

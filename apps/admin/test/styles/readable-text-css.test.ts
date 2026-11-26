@@ -460,10 +460,41 @@ describe("the window of the field editor", () => {
 });
 
 describe("the spacing of the Import page", () => {
-  it("has one gap between its cards, the gap of the stack: a card carries no margin of its own, which doubled it to 32px", () => {
-    expect(sets(bodyOf(importPage, ".import-stack"), "gap", String.raw`var\(--space-4\)`)).toBe(true);
+  it("has one gap between its cards, the gap of the page's stack (.settings-sections): a card carries no margin of its own, which doubled it to 32px", () => {
+    expect(sets(bodyOf(staff, ".settings-sections"), "gap", String.raw`var\(--space-4\)`)).toBe(true);
     expect(declares(bodyOf(importPage, ".import-card"), "margin-bottom")).toBe(false);
     expect(declares(bodyOf(importPage, ".import-card"), "margin")).toBe(false);
+  });
+
+  it("is one column of full-width cards: no grid of two halves, and no table style of its own", () => {
+    const selectors = importPage.map((rule) => rule.selector);
+    expect(selectors.filter((selector) => /^\.import-(?:two-col|stack)\b/.test(selector))).toEqual([]);
+    expect(selectors.filter((selector) => /^\.import-(?:columns|sample|history)-table\b/.test(selector))).toEqual([]);
+  });
+
+  it("sets only the widths of the columns of its tables, on the shared box: the columns, the rows that are not imported, the preview and the history", () => {
+    const widthOf = (selector: string) => sets(bodyOf(importPage, selector), "width", String.raw`\d+(?:\.\d+)?rem`);
+    for (const table of ["columns", "invalid", "skipped", "sample", "history"]) {
+      expect(widthOf(`.item-table.import-table--${table} .table th:first-child, .item-table.import-table--${table} .table td:first-child`), table).toBe(true);
+    }
+  });
+
+  it("gives the date of the history the room of a whole date with its zone, so that it is not cut or run into the file name", () => {
+    const body = bodyOf(importPage, ".item-table.import-table--history .table th:first-child, .item-table.import-table--history .table td:first-child");
+    expect(sets(body, "width", String.raw`1[2-9](?:\.\d+)?rem`)).toBe(true);
+    expect(sets(bodyOf(importPage, ".import-history__date"), "overflow", "hidden")).toBe(true);
+    expect(sets(bodyOf(importPage, ".import-history__date"), "text-overflow", "ellipsis")).toBe(true);
+  });
+
+  it("scrolls the wide tables (the preview, the history) sideways inside their box, and the long lists (invalid and skipped rows) up and down", () => {
+    for (const table of ["sample", "history"]) {
+      expect(sets(bodyOf(importPage, `.item-table.import-table--sample .attendees-table-wrap, .item-table.import-table--history .attendees-table-wrap`), "overflow-x", "auto"), table).toBe(true);
+      // The selector is one class longer than the shared `.item-table .attendees-table-wrap .table` (min-width: 0), so the order of the stylesheets does not decide.
+      expect(sets(bodyOf(importPage, `.item-table.import-table--${table} .attendees-table-wrap .table`), "min-width", String.raw`4\d(?:\.\d+)?rem`), table).toBe(true);
+    }
+    const lists = bodyOf(importPage, ".item-table.import-table--invalid .attendees-table-wrap, .item-table.import-table--skipped .attendees-table-wrap");
+    expect(sets(lists, "max-height", "280px")).toBe(true);
+    expect(sets(lists, "overflow-y", "auto")).toBe(true);
   });
 
   it("has no margin around the fold of the columns: the gap of the card stack is the space around it", () => {
