@@ -105,6 +105,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Make the field editor window wider on a desktop, and show text areas in the normal font, not monospace ([#1986](https://github.com/solarssk/admitto/pull/1986))
 - Show the Redirect URI of an identity provider in the same grey copy box as the return addresses, with one "Copied." message ([#1987](https://github.com/solarssk/admitto/pull/1987))
 - Remove the On or Off text next to the switches in settings rows and card headers: the switch shows the state ([#1988](https://github.com/solarssk/admitto/pull/1988))
+- Make the Import page match the rest of the admin: full-width cards, the standard table, option rows that say why Dry run is locked, and a standard empty history ([#1990](https://github.com/solarssk/admitto/pull/1990))
 
 ### Fixed
 

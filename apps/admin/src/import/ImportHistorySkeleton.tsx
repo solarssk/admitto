@@ -1,6 +1,7 @@
 import { Skeleton } from "@admitto/ui";
 import { SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
 import "../attendees/attendees.css";
+import "../components/item-table.css";
 import "../pages/import.css";
 
 /** The real column headings of the table, so they do not flicker when the rows arrive. */
@@ -17,25 +18,27 @@ const ROW_HEIGHT = 21;
 export function ImportHistorySkeleton({ held, slow }: Readonly<{ held: boolean; slow: boolean }>) {
   return (
     <output aria-label="Loading import history" className={held ? "import-history-skeleton at-loading-hold" : "import-history-skeleton"}>
-      <div className="attendees-table-wrap" aria-hidden="true">
-        <table className="table import-history-table">
-          <thead>
-            <tr>
-              {COLUMNS.map((column) => (
-                <th key={column}>{column}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: ROWS }, (_, row) => (
-              <tr key={row}>
-                <td colSpan={COLUMNS.length}>
-                  <Skeleton variant="rect" height={ROW_HEIGHT} />
-                </td>
+      <div className="item-table import-table import-table--history" aria-hidden="true">
+        <div className="attendees-table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                {COLUMNS.map((column) => (
+                  <th key={column}>{column}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {Array.from({ length: ROWS }, (_, row) => (
+                <tr key={row}>
+                  <td colSpan={COLUMNS.length}>
+                    <Skeleton variant="rect" height={ROW_HEIGHT} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
       {slow ? <span className="at-hint import-history-skeleton__note">{SLOW_NOTICE_TEXT}</span> : null}
     </output>

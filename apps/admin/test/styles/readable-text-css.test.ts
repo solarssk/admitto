@@ -69,6 +69,7 @@ const requests = parse(read("apps/admin/src/registration/registration-requests.c
 const requestDetail = parse(read("apps/admin/src/registration/request-detail.css"));
 const notifications = parse(read("apps/admin/src/settings/notifications-panel.css"));
 const requirements = parse(read("apps/admin/src/requirements/requirements.css"));
+const importPage = parse(read("apps/admin/src/pages/import.css"));
 
 describe("the baseline: running text runs to the edge of its column, short standalone texts are balanced", () => {
   it("is pretty on the body, so that every description, hint and paragraph inherits it and none is a narrow block with an empty strip beside it", () => {
@@ -455,5 +456,74 @@ describe("the window of the field editor", () => {
     const note = bodyOf(requirements, ".custom-field-modal__footer-note");
     expect(sets(note, "flex", "1 1 16rem")).toBe(true);
     expect(sets(note, "min-width", "0")).toBe(true);
+  });
+});
+
+describe("the spacing of the Import page", () => {
+  it("has one gap between its cards, the gap of the page's stack (.settings-sections): a card carries no margin of its own, which doubled it to 32px", () => {
+    expect(sets(bodyOf(staff, ".settings-sections"), "gap", String.raw`var\(--space-4\)`)).toBe(true);
+    expect(declares(bodyOf(importPage, ".import-card"), "margin-bottom")).toBe(false);
+    expect(declares(bodyOf(importPage, ".import-card"), "margin")).toBe(false);
+  });
+
+  it("is one column of full-width cards: no grid of two halves, and no table style of its own", () => {
+    const selectors = importPage.map((rule) => rule.selector);
+    expect(selectors.filter((selector) => /^\.import-(?:two-col|stack)\b/.test(selector))).toEqual([]);
+    expect(selectors.filter((selector) => /^\.import-(?:columns|sample|history)-table\b/.test(selector))).toEqual([]);
+  });
+
+  it("sets only the widths of the columns of its tables, on the shared box: the columns, the rows that are not imported, the preview and the history", () => {
+    const widthOf = (selector: string) => sets(bodyOf(importPage, selector), "width", String.raw`\d+(?:\.\d+)?rem`);
+    for (const table of ["columns", "invalid", "skipped", "sample", "history"]) {
+      expect(widthOf(`.item-table.import-table--${table} .table th:first-child, .item-table.import-table--${table} .table td:first-child`), table).toBe(true);
+    }
+  });
+
+  it("gives the date of the history the room of a whole date with its zone, so that it is not cut or run into the file name", () => {
+    const body = bodyOf(importPage, ".item-table.import-table--history .table th:first-child, .item-table.import-table--history .table td:first-child");
+    expect(sets(body, "width", String.raw`1[2-9](?:\.\d+)?rem`)).toBe(true);
+    expect(sets(bodyOf(importPage, ".import-history__date"), "overflow", "hidden")).toBe(true);
+    expect(sets(bodyOf(importPage, ".import-history__date"), "text-overflow", "ellipsis")).toBe(true);
+  });
+
+  it("scrolls the wide tables (the preview, the history) sideways inside their box, and the long lists (invalid and skipped rows) up and down", () => {
+    expect(sets(bodyOf(importPage, `.item-table.import-table--sample .attendees-table-wrap, .item-table.import-table--history .attendees-table-wrap`), "overflow-x", "auto")).toBe(true);
+    const lists = bodyOf(importPage, ".item-table.import-table--invalid .attendees-table-wrap, .item-table.import-table--skipped .attendees-table-wrap");
+    expect(sets(lists, "max-height", "280px")).toBe(true);
+    expect(sets(lists, "overflow-y", "auto")).toBe(true);
+  });
+
+  it("keeps every column of a wide table readable when it scrolls: the file name of the history has 14rem, each column of the preview after the email 8rem", () => {
+    const rem = (css: string, name: string) => Number(new RegExp(String.raw`(?:^|[;\s])${name}\s*:\s*(\d+(?:\.\d+)?)rem`).exec(css)?.[1]);
+    const width = (table: string, nth: string) =>
+      rem(bodyOf(importPage, `.item-table.import-table--${table} .table th${nth}, .item-table.import-table--${table} .table td${nth}`), "width");
+    // The selector of a minimum is one class longer than the shared `.item-table .attendees-table-wrap .table` (min-width: 0), so the order of the stylesheets does not decide.
+    const minimum = (table: string) => bodyOf(importPage, `.item-table.import-table--${table} .attendees-table-wrap .table`);
+
+    // The history: the date, the status and the counts have a width of their own, and the file name (the second column) takes what is left of the minimum.
+    const counts = (read("apps/admin/src/import/ImportHistoryCard.tsx").match(/<th>/g) ?? []).length - 3;
+    const fixed = width("history", ":first-child") + width("history", ":nth-child(3)") + counts * width("history", ":nth-child(n + 4)");
+    expect(counts).toBe(3);
+    expect(rem(minimum("history"), "min-width") - fixed).toBeGreaterThanOrEqual(14);
+
+    // The preview: the row number, the name and the email have a width of their own, and each column after them (ImportPage.tsx counts them) has 8rem at least.
+    const named = width("sample", ":first-child") + width("sample", ":nth-child(2)") + width("sample", ":nth-child(3)");
+    const sample = /min-width:\s*calc\(([\d.]+)rem \+ var\(--import-sample-extra, 0\) \* ([\d.]+)rem\)/.exec(minimum("sample"));
+    expect(Number(sample?.[1])).toBe(named);
+    expect(Number(sample?.[2])).toBeGreaterThanOrEqual(8);
+  });
+
+  it("has no margin around the fold of the columns: the gap of the card stack is the space around it", () => {
+    expect(sets(bodyOf(importPage, ".import-columns-info"), "margin", "0")).toBe(true);
+  });
+
+  it("keeps the empty state of the history in the padding of its card, with less room of its own, as on the Legal tab", () => {
+    expect(sets(bodyOf(importPage, ".import-history__empty"), "padding-block", String.raw`var\(--space-4\)`)).toBe(true);
+  });
+
+  it("gives the fieldset of the options no gap and no padding of its own: the rows bring their own", () => {
+    const body = bodyOf(importPage, ".import-options");
+    expect(declares(body, "gap")).toBe(false);
+    expect(sets(body, "padding", "0")).toBe(true);
   });
 });
