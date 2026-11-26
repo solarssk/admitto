@@ -1011,7 +1011,9 @@
   display: none;
 }
 
-@media (max-width: 1023px) {
+/* The exact complement of the query of `useIsDesktop(1024)`, not `max-width: 1023px`: between 1023px and 1024px (a fractional width under a browser zoom) neither
+   would match, and the list of Active sessions, which the code has already switched to its cards, would show nothing. */
+@media not all and (min-width: 1024px) {
   .users-table {
     display: none;
   }
@@ -1019,6 +1021,15 @@
   .users-page__cards--narrow {
     display: flex;
   }
+}
+
+/* A cell of a fixed layout cannot grow to fit a long word: an address or an identifier with no break in it wraps instead of painting across the next cell. */
+.item-table.users-table .table td {
+  overflow-wrap: anywhere;
+}
+
+.users-page__flag {
+  display: inline-flex;
 }
 
 /* A card names its user whole, wrapped, as on a phone: it is read where there is no hover, and the name and the address tell two people apart. */

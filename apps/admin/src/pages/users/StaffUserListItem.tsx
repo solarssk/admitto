@@ -104,24 +104,32 @@ function UserSessionsBadge({ count }: Readonly<{ count: number }>) {
 }
 
 /** The sign-in, the two-factor state and the sessions as three small marks after the name, for a screen that has no room for their columns
- * (`users-table__narrow-only`, shown below 1280px by users-page.css). Each mark says what it is to assistive technology and as a tooltip. */
+ * (`users-table__narrow-only`, shown below 1280px by users-page.css). Each mark says what it is in a text for assistive technology and as a tooltip. */
+function UserFlag({ icon, label, color }: Readonly<{ icon: string; label: string; color?: string }>) {
+  return (
+    <span className="users-page__flag" title={label}>
+      <i className={`ti ${icon}`} style={color ? { color } : undefined} aria-hidden="true" />
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
 function UserFlags({ user }: Readonly<{ user: UserListItemDto }>) {
   const signIn = user.has_sso ? "Signs in with an identity provider" : "Signs in with a local password";
   const mfa = user.has_mfa ? "Two-factor is on (authenticator app)" : "Two-factor is not set up";
   const sessions = user.active_sessions_count === 1 ? "1 active session" : `${user.active_sessions_count} active sessions`;
   return (
     <span className="users-table__narrow-only users-page__flags">
-      <i className={user.has_sso ? "ti ti-cloud-lock" : "ti ti-key"} role="img" aria-label={signIn} title={signIn} />
-      <i
-        className={user.has_mfa ? "ti ti-shield-check" : "ti ti-shield-off"}
-        style={{ color: user.has_mfa ? "var(--status-ok)" : "var(--text-disabled)" }}
-        role="img"
-        aria-label={mfa}
-        title={mfa}
+      <UserFlag icon={user.has_sso ? "ti-cloud-lock" : "ti-key"} label={signIn} />
+      <UserFlag
+        icon={user.has_mfa ? "ti-shield-check" : "ti-shield-off"}
+        label={mfa}
+        color={user.has_mfa ? "var(--status-ok)" : "var(--text-disabled)"}
       />
       {user.active_sessions_count > 0 && (
         <Badge variant="info" title={sessions}>
           {user.active_sessions_count}
+          <span className="sr-only"> {user.active_sessions_count === 1 ? "active session" : "active sessions"}</span>
         </Badge>
       )}
     </span>
