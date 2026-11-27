@@ -1183,13 +1183,15 @@ describe("EventSettingsPage tabs", () => {
     // Always UTC first, regardless of the event's own timezone - this is when the job actually
     // ran on the server, not an event-schedule fact (Event settings for this fixture is IST).
     // Locale-independent: check for "UTC" and the digits, not a full formatted string (see
-    // event-dates.test.ts for why - Intl output shape varies by locale). Filtered to the primary
-    // line of a time (`time-stack__utc`) since the column header's own HintLabel hint text also
-    // contains the word "UTC".
+    // event-dates.test.ts for why - Intl output shape varies by locale). Taken from the primary
+    // line of a time (`time-stack__utc`), as the column header's own HintLabel hint text also
+    // contains the word "UTC"; each one has the zone (`time-stack__zone`) at its end.
     const utcCells = [...document.querySelectorAll(".time-stack__utc")];
     expect(utcCells).toHaveLength(2);
-    expect(utcCells[0]!.textContent).toMatch(/10:00/);
-    expect(utcCells[1]!.textContent).toMatch(/10:00/);
+    for (const cell of utcCells) {
+      expect(cell.textContent).toMatch(/10:00.* UTC$/);
+      expect(cell.querySelector(".time-stack__zone")?.textContent).toBe(" UTC");
+    }
 
     // job-1 has a stored client_timezone - gets a second, subdued local-time line; job-2 (no
     // client_timezone) doesn't, and nothing throws for its absence.
