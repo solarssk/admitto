@@ -596,12 +596,19 @@ describe("the tables of the Users page", () => {
 describe("the sessions of the Account page", () => {
   const account = parse(read("apps/admin/src/account/account-page.css"));
   const width = (column: number) => rem(bodyOf(account, `.item-table.account-sessions-table .table :is(th, td):nth-child(${column})`), "width");
+  const sum = (...columns: number[]) => columns.reduce((total, column) => total + width(column), 0);
 
-  it("leaves the device room beside its other columns: five from 1024px, six from 1181px, where Sign-in joins", () => {
-    // The device is the first column and takes what is left. Sign-in (5) is hidden from 768px to 1180px by staff.css (pinned above), so five columns remain down to 1024px.
-    expect(nameRoom(1024, width(2) + width(3) + width(4) + width(6))).toBeGreaterThanOrEqual(MIN_NAME);
-    expect(nameRoom(1181, width(2) + width(3) + width(4) + width(5) + width(6))).toBeGreaterThanOrEqual(MIN_NAME);
-    expect(sets(bodyOf(account, ".item-table.account-sessions-table .table :is(th, td):first-child"), "width", "auto")).toBe(true);
+  it("fits its columns in the box at the floor of each step and keeps the device 9rem: five columns from 1024px, six from 1181px, where Sign-in joins", () => {
+    // Sign-in (5) is hidden from 768px to 1180px by staff.css (pinned above), so five columns remain down to 1024px. In a fixed layout a sum over the box paints past it.
+    expect(sum(1, 2, 3, 4, 6)).toBeLessThanOrEqual(boxRem(1024));
+    expect(sum(1, 2, 3, 4, 5, 6)).toBeLessThanOrEqual(boxRem(1181));
+    expect(width(1)).toBeGreaterThanOrEqual(MIN_NAME);
+  });
+
+  it("gives every column a width, the device too, so that a wider box is shared in proportion and a wide screen does not hand all of it to the device", () => {
+    // With a device of `auto` the 1310px box of a wide screen gave it 692px and left the address 128px, the login time 192px and Sign-in 112px: lines wrapped for no reason.
+    for (const column of [1, 2, 3, 4, 5, 6]) expect(Number.isFinite(width(column)), `column ${column}`).toBe(true);
+    expect(account.some((r) => r.selector.includes("account-sessions-table") && /width\s*:\s*auto/.test(r.body))).toBe(false);
   });
 
   it("wraps a long word in any cell of the table and in a card, where a fixed layout and a narrow card would let it paint past its edge", () => {

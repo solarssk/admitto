@@ -99,15 +99,17 @@
 }
 
 /* The sessions of the Account page: the shared boxed table (components/item-table.css) from 1024px, the cards below it (`useIsDesktop(1024)` in
-   AccountPage.tsx). The device takes what the other columns leave. Sign-in is in the table from 1181px only (.sessions-col-tablet-hide, staff.css), so
-   from 1024px to 1180px the device keeps 9.3rem beside the address, the login time, the last activity and the button. A page of the list (10 to 50 rows,
-   with a pager of its own) is as tall as its rows: no inner scroll and no sticky header, as in Active sessions on the Users page. */
-.item-table.account-sessions-table .table :is(th, td):first-child {
-  width: auto;
+   AccountPage.tsx). Every column has a width, the device too: a box wider than their sum is shared among the columns in proportion to them, so on a wide
+   screen the address (an IPv6 one is 39 characters), the login time with the signer's local time and Sign-in get room, where a device that was `auto`
+   took all of it (700px of 1300px for "Chrome / macOS"). Sign-in is in the table from 1181px only (.sessions-col-tablet-hide, staff.css), so the five columns
+   of 1024px to 1180px sum to 39.25rem in a 40.8rem box (a classic scrollbar included), and the six columns from 1181px to 46.25rem in a 50.6rem one. A page
+   of the list (10 to 50 rows, with a pager of its own) is as tall as its rows: no inner scroll and no sticky header, as in Active sessions on the Users page. */
+.item-table.account-sessions-table .table :is(th, td):nth-child(1) {
+  width: 9.5rem;
 }
 
 .item-table.account-sessions-table .table :is(th, td):nth-child(2) {
-  width: 8rem;
+  width: 7.5rem;
 }
 
 .item-table.account-sessions-table .table :is(th, td):nth-child(3) {
@@ -115,7 +117,7 @@
 }
 
 .item-table.account-sessions-table .table :is(th, td):nth-child(4) {
-  width: 7.25rem;
+  width: 6.5rem;
 }
 
 .item-table.account-sessions-table .table :is(th, td):nth-child(5) {
@@ -123,7 +125,7 @@
 }
 
 .item-table.account-sessions-table .table :is(th, td):nth-child(6) {
-  width: 4.25rem;
+  width: 3.75rem;
 }
 
 /* A cell of a fixed layout cannot grow to fit a long word: a device label with no break in it wraps instead of painting across the next cell. */
