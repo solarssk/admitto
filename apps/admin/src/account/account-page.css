@@ -133,6 +133,13 @@
   overflow-wrap: anywhere;
 }
 
+/* The badge of the session this browser is using sits on a line of its own under the device, in the table and in a card: beside the name the two touched. */
+.at-badge.sessions-current-badge {
+  display: flex;
+  width: fit-content;
+  margin-top: var(--space-1);
+}
+
 /* Session cards (below 1024px, `useIsDesktop(1024)`) - same fields as the desktop table, laid out as a
  * stacked card so a row never needs horizontal scrolling, mirroring Users & roles' own
  * .users-page__card/-meta without the User/Role columns that only apply to viewing someone

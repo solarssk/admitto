@@ -617,6 +617,14 @@ describe("the sessions of the Account page", () => {
     expect(sets(bodyOf(account, ".account-sessions-card__head > :first-child, .account-sessions-card__meta dd"), "overflow-wrap", "anywhere")).toBe(true);
   });
 
+  it("puts the badge of the current session on a line of its own under the device, where beside the name the two touched", () => {
+    // `.at-badge` is `inline-flex` with no margin, so the rule needs both classes to win.
+    const body = bodyOf(account, ".at-badge.sessions-current-badge");
+    expect(sets(body, "display", "flex")).toBe(true);
+    expect(sets(body, "width", "fit-content")).toBe(true);
+    expect(declares(body, "margin-top")).toBe(true);
+  });
+
   it("has no scroll region or sticky header of its own: a page of the list is as tall as its rows, as in Active sessions on the Users page", () => {
     expect(account.some((r) => r.selector.includes("account-sessions-table-wrap"))).toBe(false);
     expect(account.some((r) => r.selector.includes("account-sessions-table") && declares(r.body, "position"))).toBe(false);
