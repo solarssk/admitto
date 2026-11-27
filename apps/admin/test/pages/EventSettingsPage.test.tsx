@@ -1186,7 +1186,7 @@ describe("EventSettingsPage tabs", () => {
     // event-dates.test.ts for why - Intl output shape varies by locale). Filtered to the primary
     // line of a time (`time-stack__utc`) since the column header's own HintLabel hint text also
     // contains the word "UTC".
-    const utcCells = screen.getAllByText(/UTC/).filter((el) => el.classList.contains("time-stack__utc"));
+    const utcCells = [...document.querySelectorAll(".time-stack__utc")];
     expect(utcCells).toHaveLength(2);
     expect(utcCells[0]!.textContent).toMatch(/10:00/);
     expect(utcCells[1]!.textContent).toMatch(/10:00/);

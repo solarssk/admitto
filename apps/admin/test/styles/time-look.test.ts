@@ -52,6 +52,13 @@ describe("the look of a time", () => {
     expect(/font-family/.test(strip(timeStack))).toBe(false);
   });
 
+  it("keeps the zone of a time quiet: smaller and grey, where the digits are dark", () => {
+    const zone = RULES.find((r) => r.file.endsWith("components/time-stack.css") && r.selector === ".time-stack__zone");
+    expect(zone, "no rule for the quiet zone").toBeDefined();
+    expect(zone!.body).toMatch(/font-size\s*:\s*var\(--fs-xs\)/);
+    expect(zone!.body).toMatch(/color\s*:\s*var\(--text-muted\)/);
+  });
+
   it("has no private copy of the log time look left in the stylesheets of the screens", () => {
     const leftovers = RULES.filter((r) => /audit-log-time/.test(r.selector)).map((r) => `${r.file}: ${r.selector}`);
     expect(leftovers).toEqual([]);

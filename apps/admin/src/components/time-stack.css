@@ -14,6 +14,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The zone at the end of a time ("UTC", "UTC+5:30") is the quiet part: smaller and grey, where the digits are dark. It says which clock the digits are on and
+   nothing a reader looks for first; as loud as the digits, three capital letters were what caught the eye in a row of a log. */
+.time-stack__zone {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
 /* The secondary line is a flex line, not inline: otherwise it sits beside the primary time. Its size, line-height and muted colour match the email and the
    location lines of the neighbouring columns. */
 .time-stack__local {

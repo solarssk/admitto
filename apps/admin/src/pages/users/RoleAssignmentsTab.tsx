@@ -15,7 +15,7 @@ import { RefetchRegion } from "../../components/RefetchRegion.js";
 import { ListFailure } from "../../components/ListFailure.js";
 import { RetryHint } from "../../components/RetryHint.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
-import { TimeStack } from "../../components/TimeStack.js";
+import { TimeStack, TimeWithZone } from "../../components/TimeStack.js";
 import { isPastTheEnd, withAssignmentRemoved, type RoleAssignmentsAnswer } from "./list-changes.js";
 import { UsersListSkeleton, type SkeletonColumn } from "./UsersListSkeleton.js";
 import { useAuth } from "../../auth/AuthProvider.js";
@@ -96,7 +96,7 @@ function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRow
           </span>
         )}
         <div className="users-table__narrow-only users-page__folded" title={`Granted ${formatUtcDateTime(row.granted_at)}`}>
-          {formatUtcDateTime(row.granted_at)}
+          <TimeWithZone text={formatUtcDateTime(row.granted_at)} />
         </div>
       </td>
       <td className="users-table__wide-only">

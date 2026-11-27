@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RoleAssignmentsTab } from "../../../src/pages/users/RoleAssignmentsTab.js";
 import { formatUtcDateTime } from "../../../src/utils/event-dates.js";
-import { advanceTimers, deferred, mockMatchMedia, renderWithToast } from "../../test-utils.js";
+import { advanceTimers, deferred, mockMatchMedia, renderWithToast, timeText } from "../../test-utils.js";
 
 const fetchRoleAssignments = vi.fn();
 const fetchAdminEvents = vi.fn();
@@ -320,7 +320,7 @@ describe("RoleAssignmentsTab", () => {
 
     const table = await screen.findByRole("table");
     // The Granted column of a wide screen and the line under the role of a narrower one say the same time.
-    const times = within(table).getAllByText(formatUtcDateTime(grantedAt));
+    const times = within(table).getAllByText(timeText(formatUtcDateTime(grantedAt)));
     expect(times).toHaveLength(2);
     expect(times.filter((time) => time.closest("td.users-table__wide-only"))).toHaveLength(1);
     expect(times.filter((time) => time.closest(".users-table__narrow-only"))).toHaveLength(1);

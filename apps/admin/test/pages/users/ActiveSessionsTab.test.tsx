@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../../src/api/client.js";
 import { ActiveSessionsTab } from "../../../src/pages/users/ActiveSessionsTab.js";
 import type { EventDto, SessionListDto } from "../../../src/api/types.js";
-import { advanceTimers, deferred, mockMatchMedia, renderWithToast } from "../../test-utils.js";
+import { advanceTimers, deferred, mockMatchMedia, renderWithToast, timeText } from "../../test-utils.js";
 
 const EDIT_NAME = /^Edit device label for/;
 const REVOKE_NAME = /^Revoke session for/;
@@ -615,7 +615,7 @@ describe("ActiveSessionsTab rendering", () => {
       expect(within(table).getByRole("columnheader", { name: "IP address" })).toBeTruthy();
       expect(within(table).getByText("-")).toBeTruthy();
       expect(within(table).getByText("30 min ago")).toBeTruthy();
-      expect(within(table).getByText("2026-01-01 12:00:00 UTC")).toBeTruthy();
+      expect(within(table).getByText(timeText("2026-01-01 12:00:00 UTC"))).toBeTruthy();
       expect(within(table).getByTitle("Your local time")).toBeTruthy();
 
       const headerTrigger = within(table).getByText("Logged in").closest(".at-tooltip-trigger");
