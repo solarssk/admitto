@@ -1718,6 +1718,65 @@ describe("AccountPage: Sessions pagination and responsive layout", () => {
     expect(screen.getByText("Page 1 of 2")).toBeTruthy();
   });
 
+  it("draws the sessions in the shared box of a padded card and asks for the 1024px breakpoint, not 768px", async () => {
+    const queries: string[] = [];
+    vi.stubGlobal("matchMedia", (query: string) => {
+      queries.push(query);
+      return { matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined };
+    });
+    mockLoadedAccount();
+    const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+    mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
+
+    const { container } = renderWithToast(<AccountPage activeTab="sessions" />);
+    await screen.findByRole("table");
+
+    // A box inside the padded body of the card, not the table bled to the card's edges, and no scroll region of its own around it.
+    const box = container.querySelector(".item-table.account-sessions-table > .attendees-table-wrap > table.table");
+    expect(box).toBeTruthy();
+    expect(box!.closest(".at-card")?.querySelector(".at-card__body")?.contains(box)).toBe(true);
+    expect(container.querySelector(".account-sessions-table-wrap")).toBeNull();
+    expect(queries).toContain("(min-width: 1024px)");
+    expect(queries).not.toContain("(min-width: 768px)");
+  });
+
+  it("keeps the columns in the order their widths are written for, with Sign-in the only one a laptop-width box drops", async () => {
+    mockLoadedAccount();
+    const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+    mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
+
+    const { container } = renderWithToast(<AccountPage activeTab="sessions" />);
+    await screen.findByRole("table");
+
+    // The widths in account-page.css are `:nth-child` rules, so a column moved here would take another column's width.
+    const headings = [...container.querySelectorAll(".account-sessions-table thead th")];
+    expect(headings.map((th) => th.textContent?.trim())).toEqual(["Device", "IP address", "Logged in", "Last active", "Sign-in", "Actions"]);
+    expect(headings.filter((th) => th.classList.contains("sessions-col-tablet-hide")).map((th) => th.textContent)).toEqual(["Sign-in"]);
+    for (const row of container.querySelectorAll(".account-sessions-table tbody tr")) {
+      expect(row.children).toHaveLength(6);
+      expect(row.children[4]?.classList.contains("sessions-col-tablet-hide")).toBe(true);
+    }
+  });
+
+  it("keeps the device and the Current badge of this browser's session in one wrapper, in the table and in a card", async () => {
+    mockLoadedAccount();
+    const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+    mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
+
+    const desktop = renderWithToast(<AccountPage activeTab="sessions" />);
+    await screen.findByRole("table");
+    // The wrapper lays the two out on one line while they fit (CSS); only the current session has a badge.
+    let devices = [...desktop.container.querySelectorAll(".account-sessions-table .sessions-device")];
+    expect(devices.map((d) => d.textContent)).toEqual(["This deviceCurrent", "Other"]);
+    cleanup();
+
+    mockMatchMedia(false);
+    const mobile = renderWithToast(<AccountPage activeTab="sessions" />);
+    await screen.findByText("Other");
+    devices = [...mobile.container.querySelectorAll(".account-sessions-card__head .sessions-device")];
+    expect(devices.map((d) => d.textContent)).toEqual(["This deviceCurrent", "Other"]);
+  });
+
   it("shows a stacked card layout instead of a table below the desktop breakpoint", async () => {
     mockMatchMedia(false);
     mockLoadedAccount();

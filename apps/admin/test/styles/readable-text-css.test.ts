@@ -593,6 +593,46 @@ describe("the tables of the Users page", () => {
   });
 });
 
+describe("the sessions of the Account page", () => {
+  const account = parse(read("apps/admin/src/account/account-page.css"));
+  const width = (column: number) => rem(bodyOf(account, `.item-table.account-sessions-table .table :is(th, td):nth-child(${column})`), "width");
+  const sum = (...columns: number[]) => columns.reduce((total, column) => total + width(column), 0);
+
+  it("fits its columns in the box at the floor of each step and keeps the device 9rem: five columns from 1024px, six from 1181px, where Sign-in joins", () => {
+    // Sign-in (5) is hidden from 768px to 1180px by staff.css (pinned above), so five columns remain down to 1024px. In a fixed layout a sum over the box paints past it.
+    expect(sum(1, 2, 3, 4, 6)).toBeLessThanOrEqual(boxRem(1024));
+    expect(sum(1, 2, 3, 4, 5, 6)).toBeLessThanOrEqual(boxRem(1181));
+    expect(width(1)).toBeGreaterThanOrEqual(MIN_NAME);
+  });
+
+  it("gives every column a width, the device too, so that a wider box is shared in proportion and a wide screen does not hand all of it to the device", () => {
+    // With a device of `auto` the 1310px box of a wide screen gave it 692px and left the address 128px, the login time 192px and Sign-in 112px: lines wrapped for no reason.
+    for (const column of [1, 2, 3, 4, 5, 6]) expect(Number.isFinite(width(column)), `column ${column}`).toBe(true);
+    expect(account.some((r) => r.selector.includes("account-sessions-table") && /width\s*:\s*auto/.test(r.body))).toBe(false);
+  });
+
+  it("wraps a long word in any cell of the table and in a card, where a fixed layout and a narrow card would let it paint past its edge", () => {
+    expect(sets(bodyOf(account, ".item-table.account-sessions-table .table td"), "overflow-wrap", "anywhere")).toBe(true);
+    // A device label of 120 characters pushed a 390px page to 1064px; an IPv6 address has no break in it either.
+    expect(sets(bodyOf(account, ".account-sessions-card__head > :first-child, .account-sessions-card__meta dd"), "overflow-wrap", "anywhere")).toBe(true);
+  });
+
+  it("keeps the device and the badge of the current session on one line while they fit and puts the badge under the name when they do not", () => {
+    // The badge had no margin and touched the name; under the name always, it made the row of the current session taller than the others.
+    const body = bodyOf(account, ".sessions-device");
+    expect(sets(body, "display", "flex")).toBe(true);
+    expect(sets(body, "flex-wrap", "wrap")).toBe(true);
+    expect(declares(body, "column-gap")).toBe(true);
+    expect(declares(body, "row-gap")).toBe(true);
+  });
+
+  it("has no scroll region or sticky header of its own: a page of the list is as tall as its rows, as in Active sessions on the Users page", () => {
+    expect(account.some((r) => r.selector.includes("account-sessions-table-wrap"))).toBe(false);
+    expect(account.some((r) => r.selector.includes("account-sessions-table") && declares(r.body, "position"))).toBe(false);
+    expect(account.some((r) => r.selector.includes("account-sessions-table") && declares(r.body, "max-height"))).toBe(false);
+  });
+});
+
 describe("the tables of Organisation settings", () => {
   const archiving = parse(read("apps/admin/src/settings/archiving-table.css"));
   const archivingWidth = (column: number | "last", view = "") =>

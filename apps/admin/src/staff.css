@@ -5831,9 +5831,7 @@ output.mail-field-hint {
   padding: var(--space-4) 0;
 }
 
-/* Audit/Security logs deliberately grow with their rows. Account sessions use their own
-   .account-sessions-table-wrap scroll region, so lazy-loading the Account page can never cap
-   this table's height. */
+/* Audit/Security logs deliberately grow with their rows: a lazy-loaded page can never cap this table's height. */
 .audit-log-table-wrap {
   overflow-x: auto;
 }
