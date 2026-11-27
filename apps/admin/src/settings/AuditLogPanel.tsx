@@ -597,6 +597,16 @@ function IpFoldLine({ ip, country }: Readonly<{ ip: string | null; country: IpLo
   );
 }
 
+/** The IP address of a row in the foot of a card, with where it is from as the IP column of the table has it, or a dash when the row has none. */
+function IpFoot({ ip, country }: Readonly<{ ip: string | null; country: IpLocationDto }>): ReactNode {
+  if (!ip) return "-";
+  return (
+    <>
+      {ip} <GeoCell location={country} />
+    </>
+  );
+}
+
 interface LogTableProps<T> {
   /** Which of the two tables this is: their columns sit at the same x (audit-log-table.css). */
   variant: "audit" | "security";
@@ -2079,7 +2089,7 @@ export function AuditLogPanel() {
           rowKey={(entry) => entry.id}
           renderTop={renderAuditCardTop}
           renderMeta={(entry) => renderAuditCardMeta(entry, eventTitleById)}
-          renderFootLeft={(entry) => entry.ip ?? "-"}
+          renderFootLeft={(entry) => <IpFoot ip={entry.ip} country={entry.country} />}
           metadataOf={(entry) => entry.metadata}
           metadataHiddenKeys={AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopyRow}
@@ -2140,7 +2150,7 @@ export function AuditLogPanel() {
           rowKey={(entry) => entry.id}
           renderTop={renderSecurityCardTop}
           renderMeta={renderSecurityCardMeta}
-          renderFootLeft={(entry) => entry.ip ?? "-"}
+          renderFootLeft={(entry) => <IpFoot ip={entry.ip} country={entry.country} />}
           metadataOf={(entry) => entry.metadata}
           metadataHiddenKeys={SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopySecurityRow}

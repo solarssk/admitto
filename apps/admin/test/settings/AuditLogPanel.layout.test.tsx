@@ -121,6 +121,38 @@ describe("the tables of the Logs tab", () => {
     expect(container.querySelector("table")).toBeNull();
   });
 
+  it("shows where an IP address is from in the foot of a card of either log, as the table does, and a dash when a row has none", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(min-width: 768px)",
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [auditEntry, { ...auditEntry, id: "a2", ip: null, country: { kind: "unknown" } }],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValue({
+      entries: [{ ...securityEntry, country: { kind: "resolved", countryCode: "PL" } }],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const { container } = renderPanel("?tab=logs&log=audit");
+    // Both views stay mounted: the two Audit cards come first, then the Security card.
+    await waitFor(() => expect(container.querySelectorAll(".audit-log-card")).toHaveLength(3));
+
+    const foot = (index: number) => container.querySelectorAll(".audit-log-card__foot > span:first-child")[index]!;
+    expect(foot(0).textContent).toContain("192.0.2.10");
+    expect(foot(0).querySelector(".geo-cell")?.textContent).toContain("Internal network");
+    expect(foot(1).textContent).toBe("-");
+    expect(foot(1).querySelector(".geo-cell")).toBeNull();
+    expect(foot(2).textContent).toContain("198.51.100.7");
+    expect(foot(2).querySelector(".geo-cell")?.textContent).toContain("Poland");
+  });
+
   it("keeps the columns of Audit in the order their widths are written for, with Scope and the IP address the ones a narrower screen folds", async () => {
     const { container } = renderPanel("?tab=logs&log=audit");
     await waitFor(() => expect(container.querySelector(".audit-log-box--audit tbody tr")).toBeTruthy());
