@@ -807,8 +807,8 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Bounce detection connection tested")).toBeTruthy();
-    expect(within(table).getByText("Bounce detection settings updated")).toBeTruthy();
+    expect(within(table).getByText("Bounce connection tested")).toBeTruthy();
+    expect(within(table).getByText("Bounce settings updated")).toBeTruthy();
     expect(within(table).queryByText("bounce_ingest_settings_tested")).toBeNull();
   });
 
@@ -830,10 +830,10 @@ describe("AuditLogPanel rendering", () => {
     expect(within(table).getByText("Role changed")).toBeTruthy();
     expect(within(table).queryByText("user_profile_updated")).toBeNull();
     expect(within(table).queryByText("role_changed")).toBeNull();
-    expect(within(table).getByText("Role changed").className).toContain("at-badge--info");
+    expect(within(table).getByText("Role changed").className).toContain("audit-log-action--info");
   });
 
-  it("wraps long mobile audit action badges so the timestamp stays visible", async () => {
+  it("wraps long mobile audit action names so the timestamp stays visible", async () => {
     mockMatchMedia(false);
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [
@@ -849,10 +849,10 @@ describe("AuditLogPanel rendering", () => {
 
     renderAuditPanel();
 
-    const label = await screen.findByText("Bounce detection check run manually");
+    const label = await screen.findByText("Bounce check run manually");
     const actionWrap = label.closest(".audit-log-card__action");
     expect(actionWrap).toBeTruthy();
-    expect(actionWrap?.getAttribute("title")).toBe("Bounce detection check run manually");
+    expect(actionWrap?.getAttribute("title")).toBe("Bounce check run manually");
     const card = label.closest(".audit-log-card") as HTMLElement;
     expect(within(card).getByText(/UTC/)).toBeTruthy();
   });
@@ -1117,9 +1117,9 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Attendee erased (GDPR)").className).toContain("at-badge--error");
-    expect(within(table).getByText("Role granted").className).toContain("at-badge--info");
-    expect(within(table).getByText("Event created").className).toContain("at-badge--neutral");
+    expect(within(table).getByText("Attendee erased (GDPR)").className).toContain("audit-log-action--error");
+    expect(within(table).getByText("Role granted").className).toContain("audit-log-action--info");
+    expect(within(table).getByText("Event created").className).toContain("audit-log-action--neutral");
   });
 
   it("tells an erasure from a removal by the method in the entry, and an entry from before the split is an erasure", async () => {
@@ -1139,9 +1139,9 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Attendee removed (mistake)").className).toContain("at-badge--error");
-    expect(within(table).getByText("Attendees bulk removed (mistake)").className).toContain("at-badge--error");
-    expect(within(table).getByText("Attendees bulk erased (GDPR)").className).toContain("at-badge--error");
+    expect(within(table).getByText("Attendee removed (mistake)").className).toContain("audit-log-action--error");
+    expect(within(table).getByText("Attendees bulk removed (mistake)").className).toContain("audit-log-action--error");
+    expect(within(table).getByText("Attendees bulk erased (GDPR)").className).toContain("audit-log-action--error");
     // The method-less entry and the explicit erasure read the same.
     expect(within(table).getAllByText("Attendee erased (GDPR)")).toHaveLength(2);
   });
@@ -1173,8 +1173,8 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Companion updated").className).toContain("at-badge--neutral");
-    expect(within(table).getByText("Companion removed").className).toContain("at-badge--error");
+    expect(within(table).getByText("Companion updated").className).toContain("audit-log-action--neutral");
+    expect(within(table).getByText("Companion removed").className).toContain("audit-log-action--error");
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
     for (const label of ["Companion updated", "Companion removed"]) {
@@ -1199,7 +1199,7 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Sensitive answers shown").className).toContain("at-badge--neutral");
+    expect(within(table).getByText("Sensitive answers shown").className).toContain("audit-log-action--neutral");
     // Details names the person, how many values were shown and the keys of their questions; the event is in the Scope column.
     fireEvent.click(within(table).getByText("View"));
     const valueOf = (label: string) => within(table).getByText(label).nextElementSibling?.textContent;
@@ -1227,9 +1227,9 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Guest registration accepted").className).toContain("at-badge--neutral");
-    expect(within(table).getByText("Guest registration rejected").className).toContain("at-badge--neutral");
-    expect(within(table).getByText("Guest registrations deleted").className).toContain("at-badge--error");
+    expect(within(table).getByText("Guest registration accepted").className).toContain("audit-log-action--neutral");
+    expect(within(table).getByText("Guest registration rejected").className).toContain("audit-log-action--neutral");
+    expect(within(table).getByText("Guest registrations deleted").className).toContain("audit-log-action--error");
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
     for (const label of ["Guest registration accepted", "Guest registration rejected", "Guest registrations deleted"]) {
@@ -1254,10 +1254,10 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Guest registration password changed").className).toContain("at-badge--neutral");
+    expect(within(table).getByText("Registration password changed").className).toContain("audit-log-action--neutral");
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
-    expect(screen.getByRole("button", { name: "Guest registration password changed" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Registration password changed" })).toBeTruthy();
   });
 
   it("names a change to the ways in of the whole instance, lists the ways that are on in Details (or None), and offers it in the Action filter", async () => {
@@ -1274,9 +1274,9 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    const labels = within(table).getAllByText("Guest registration access methods updated");
+    const labels = within(table).getAllByText("Registration access updated");
     expect(labels).toHaveLength(2);
-    expect(labels[0]!.className).toContain("at-badge--neutral");
+    expect(labels[0]!.className).toContain("audit-log-action--neutral");
     const [onRow, offRow] = within(table).getAllByRole("row").slice(1);
     fireEvent.click(within(onRow!).getByText("View"));
     expect(within(onRow!).getByText("Methods")).toBeTruthy();
@@ -1285,7 +1285,7 @@ describe("AuditLogPanel rendering", () => {
     expect(within(offRow!).getByText("None")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
-    expect(screen.getByRole("button", { name: "Guest registration access methods updated" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Registration access updated" })).toBeTruthy();
   });
 
   it("names a change to bot protection, shows the two modes in Details, and offers it in the Action filter", async () => {
@@ -1305,15 +1305,15 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    const label = within(table).getByText("Guest registration bot protection updated");
-    expect(label.className).toContain("at-badge--neutral");
+    const label = within(table).getByText("Bot protection updated");
+    expect(label.className).toContain("audit-log-action--neutral");
     const row = within(table).getAllByRole("row")[1]!;
     fireEvent.click(within(row).getByText("View"));
     expect(within(row).getByText("not_used")).toBeTruthy();
     expect(within(row).getByText("required")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
-    expect(screen.getByRole("button", { name: "Guest registration bot protection updated" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Bot protection updated" })).toBeTruthy();
   });
 
   it("names a change of the identity provider of Company SSO with the name Company SSO, not company sign-in", async () => {
@@ -1327,7 +1327,7 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Guest registration Company SSO provider updated")).toBeTruthy();
+    expect(within(table).getByText("Company SSO provider updated")).toBeTruthy();
     expect(within(table).queryByText(/company sign-in/)).toBeNull();
   });
 
@@ -1356,14 +1356,14 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Guest registration settings changed").className).toContain("at-badge--neutral");
+    expect(within(table).getByText("Registration settings changed").className).toContain("audit-log-action--neutral");
     fireEvent.click(within(table).getByText("View"));
     expect(within(table).getByText("Mode, Waitlist enabled, Access methods")).toBeTruthy();
     expect(within(table).getByText("automatic")).toBeTruthy();
     expect(within(table).getByText("Password cleared")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
-    expect(screen.getByRole("button", { name: "Guest registration settings changed" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Registration settings changed" })).toBeTruthy();
   });
 
   it("shows the reason of a removal in words, in Details and in the copied row", async () => {
@@ -1824,7 +1824,7 @@ describe("AuditLogPanel Security view rendering", () => {
 
     const table = await screen.findByRole("table");
     const badge = within(table).getByText("Login from new country");
-    expect(badge.className).toContain("at-badge--warn");
+    expect(badge.className).toContain("audit-log-action--warn");
     expect(within(table).queryByText("auth.login.new_country")).toBeNull();
   });
 
@@ -1843,9 +1843,9 @@ describe("AuditLogPanel Security view rendering", () => {
 
     const table = await screen.findByRole("table");
     const sentBadge = within(table).getByText("Notification sent");
-    expect(sentBadge.className).toContain("at-badge--ok");
+    expect(sentBadge.className).toContain("audit-log-action--ok");
     const failedBadge = within(table).getByText("Notification delivery failed");
-    expect(failedBadge.className).toContain("at-badge--error");
+    expect(failedBadge.className).toContain("audit-log-action--error");
     expect(within(table).queryByText("notification.dispatch.sent")).toBeNull();
     expect(within(table).queryByText("notification.dispatch.failed")).toBeNull();
   });

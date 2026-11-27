@@ -159,14 +159,14 @@ When a check fails, the card names the reason:
 
 | Action | Result |
 |---|---|
-| **Save** | Only the settings you changed are saved. Each save is recorded in the audit log as "Guest registration settings changed", with the names and the new values of what changed, and never a password |
+| **Save** | Only the settings you changed are saved. Each save is recorded in the audit log as "Registration settings changed", with the names and the new values of what changed, and never a password |
 | Turn registration on (the button in the header or the one on the **Checklist** tab) | The form opens at once. It is refused while a row of the checklist is not done |
 | Change the access method of an event that is on, or switch **Asked** for a consent on the **Legal** tab | Only while registration is on: refused when a step the server checks is not done. Complete the blocking steps first |
 | Switch **Approve requests by hand** | The new mode applies to new requests. **Save** it in **Event settings → Registration** |
 | Turn registration off | The form answers "not found" at once |
-| Save, change or remove the address for guests | Saved at once, apart from the **Save** button of the page. Found on **Event settings → General**. The check starts again from "not checked yet", and the audit log records "Guest registration own address updated" |
+| Save, change or remove the address for guests | Saved at once, apart from the **Save** button of the page. Found on **Event settings → General**. The check starts again from "not checked yet", and the audit log records "Registration address updated" |
 | Check now | Asks the address and shows what it found. The first success switches the links to the address. At most five checks a minute |
-| Save a restriction to one company | The form accepts only guests whose sign-in matches. The change is recorded in the audit log as "Guest registration settings changed", with the claim and its values. They are settings, not guests' data |
+| Save a restriction to one company | The form accepts only guests whose sign-in matches. The change is recorded in the audit log as "Registration settings changed", with the claim and its values. They are settings, not guests' data |
 | Set, change or remove the password | The password is saved or removed at once. Removing it closes the form until you set a new one |
 
 When you turn registration off, guests can no longer open the form, and confirmation links stop working until you turn registration on again. The requests you already have stay on the **Requests** tab, where you can still accept, reject and delete them. Emails that are already queued are still sent.

@@ -156,6 +156,95 @@ describe("the tables of the Logs tab", () => {
   });
 });
 
+describe("the action of a row", () => {
+  const tableOf = (container: HTMLElement, variant: "audit" | "security") => container.querySelectorAll(`.audit-log-box--${variant} tbody tr`);
+  const optionNames = () => [...document.querySelectorAll(".searchable-select__name")].map((name) => name.textContent ?? "");
+  const openActionFilter = () => {
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+  };
+
+  it("is plain text led by the dot of its tone in an Audit cell, and not a badge", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [auditEntry, { ...auditEntry, id: "a2", action_type: "event_deleted" }, { ...auditEntry, id: "a3", action_type: "role_granted" }],
+      total: 3,
+      page: 1,
+      pageSize: 25,
+    });
+    const { container } = renderPanel("?tab=logs&log=audit");
+    await waitFor(() => expect(tableOf(container, "audit")).toHaveLength(3));
+
+    expect(screen.getByText("Event created").className).toBe("audit-log-action audit-log-action--neutral");
+    expect(screen.getByText("Event deleted").className).toBe("audit-log-action audit-log-action--error");
+    expect(screen.getByText("Role granted").className).toBe("audit-log-action audit-log-action--info");
+    expect(container.querySelector(".at-badge")).toBeNull();
+    // The scope that a narrow screen folds under it follows it in the same cell, which the indent of audit-log-table.css counts on.
+    expect(screen.getByText("Event created").nextElementSibling?.classList.contains("audit-log-table__below-1280")).toBe(true);
+  });
+
+  it("is the same in a Security cell, with the tones of its events", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValue({
+      entries: [
+        securityEntry,
+        { ...securityEntry, id: "s2", event_type: "auth.login.fail" },
+        { ...securityEntry, id: "s3", event_type: "auth.login.new_country" },
+        { ...securityEntry, id: "s4", event_type: "auth.logout" },
+      ],
+      total: 4,
+      page: 1,
+      pageSize: 25,
+    });
+    const { container } = renderPanel("?tab=logs&log=security");
+    await waitFor(() => expect(tableOf(container, "security")).toHaveLength(4));
+
+    expect(screen.getByText("Login succeeded").className).toBe("audit-log-action audit-log-action--ok");
+    expect(screen.getByText("Login failed").className).toBe("audit-log-action audit-log-action--error");
+    expect(screen.getByText("Login from new country").className).toBe("audit-log-action audit-log-action--warn");
+    expect(screen.getByText("Logged out").className).toBe("audit-log-action audit-log-action--neutral");
+    expect(container.querySelector(".at-badge")).toBeNull();
+  });
+
+  it("is the same in the cards of both logs, with the whole name as the tooltip of the card's action", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(min-width: 768px)",
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    const { container } = renderPanel("?tab=logs&log=audit");
+    await waitFor(() => expect(container.querySelectorAll(".audit-log-card").length).toBeGreaterThan(0));
+
+    const audit = container.querySelector(".audit-log-card__action")!;
+    expect(audit.getAttribute("title")).toBe("Event created");
+    expect(audit.querySelector(".audit-log-action--neutral")?.textContent).toBe("Event created");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Security" }));
+    await waitFor(() => expect(container.querySelector(".audit-log-card__action[title='Login succeeded']")).toBeTruthy());
+    expect(container.querySelector(".audit-log-card__action[title='Login succeeded'] .audit-log-action--ok")?.textContent).toBe("Login succeeded");
+    expect(container.querySelector(".at-badge")).toBeNull();
+  });
+
+  it("keeps the names of the Audit actions short, so that they stay on two lines in a column of 10rem: none is longer than 32 characters", async () => {
+    const { container } = renderPanel("?tab=logs&log=audit");
+    await waitFor(() => expect(tableOf(container, "audit")).toHaveLength(1));
+    openActionFilter();
+
+    const names = optionNames();
+    expect(names.length).toBeGreaterThan(80);
+    expect(names.filter((name) => name.length > 32)).toEqual([]);
+  });
+
+  it("keeps the names of the Security actions short too: none is longer than 36 characters", async () => {
+    const { container } = renderPanel("?tab=logs&log=security");
+    await waitFor(() => expect(tableOf(container, "security")).toHaveLength(1));
+    openActionFilter();
+
+    const names = optionNames();
+    expect(names.length).toBeGreaterThan(15);
+    expect(names.filter((name) => name.length > 36)).toEqual([]);
+  });
+});
+
 describe("the view of the Logs tab in the URL", () => {
   it.each([
     ["?tab=logs", "System"],

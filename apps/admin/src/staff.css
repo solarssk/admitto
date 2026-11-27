@@ -6346,19 +6346,8 @@ output.mail-field-hint {
   width: 100%;
 }
 
-.audit-log-card__action .at-badge {
-  white-space: normal;
-  text-align: left;
-  display: inline-block;
-  max-width: 100%;
-  line-height: 1.35;
-  padding-block: 4px;
-  box-sizing: border-box;
-  vertical-align: top;
-}
-
 .audit-log-card__time {
-  /* Stacked under the action badge on cards so long labels never squeeze beside UTC /
+  /* Stacked under the action on cards so long labels never squeeze beside UTC /
      user-local time (and the ti-user icon in UserLocalTimeLine). */
   flex: none;
   min-width: 0;

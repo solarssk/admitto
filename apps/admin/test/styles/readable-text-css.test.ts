@@ -640,16 +640,43 @@ describe("the Audit and Security tables of the Logs tab", () => {
     expect(sets(bodyOf(logs, ".audit-log-table__below-1280, .audit-log-table__below-1180"), "display", "none")).toBe(true);
   });
 
-  it("wraps a long word in a card, where an IPv6 address in its foot pushed the details out of it and a 390px page to 478px", () => {
+  it("wraps a long word in a card, where an IPv6 address in its foot pushed the details out of it", () => {
     expect(sets(bodyOf(logs, ".audit-log-card"), "overflow-wrap", "anywhere")).toBe(true);
     expect(sets(bodyOf(logs, ".audit-log-card__foot > span"), "min-width", "0")).toBe(true);
   });
 
-  it("wraps a long word in any cell, and lets the badge of a long action wrap inside its cell instead of painting out of it", () => {
+  it("wraps a long word in any cell, where a fixed layout would let it paint across the next one", () => {
     expect(sets(bodyOf(logs, ".item-table.audit-log-box .table td"), "overflow-wrap", "anywhere")).toBe(true);
-    const badge = bodyOf(logs, ".item-table.audit-log-box .table .at-badge");
-    expect(sets(badge, "white-space", "normal")).toBe(true);
-    expect(sets(badge, "max-width", "100%")).toBe(true);
+  });
+
+  it("draws the action as plain text that wraps like any other, with a dot on its first line, and not as a box", () => {
+    const action = bodyOf(logs, ".audit-log-action");
+    expect(sets(action, "display", "flex")).toBe(true);
+    // A grey box was a heavy rectangle around a long name and said nothing about the many neutral actions: nothing on the element paints, rounds, cuts or keeps its text on one line.
+    for (const property of ["background", "border", "border-radius", "white-space", "overflow", "text-overflow"]) {
+      expect(declares(action, property), property).toBe(false);
+    }
+    const dot = bodyOf(logs, ".audit-log-action::before");
+    expect(sets(dot, "flex", "none")).toBe(true);
+    expect(declares(dot, "margin-top")).toBe(true);
+  });
+
+  it("colours the dot by tone with the status colours of the badges, and leaves a neutral one grey", () => {
+    expect(sets(bodyOf(logs, ".audit-log-action::before"), "background", String.raw`var\(--text-muted\)`)).toBe(true);
+    for (const tone of ["ok", "warn", "error", "info"]) {
+      expect(sets(bodyOf(logs, `.audit-log-action--${tone}::before`), "background", String.raw`var\(--status-${tone}\)`), tone).toBe(true);
+    }
+  });
+
+  it("indents the scope that Scope folds under the action to start under its name and not under its dot, by the dot and its gap", () => {
+    expect(sets(bodyOf(logs, ".audit-log-action + .audit-log-table__below-1280"), "padding-left", "1rem")).toBe(true);
+    // In rem, so that the dot and the line below it stay level whatever the size of the text beside them.
+    expect(rem(bodyOf(logs, ".audit-log-action"), "gap") + rem(bodyOf(logs, ".audit-log-action::before"), "width")).toBe(1);
+  });
+
+  it("keeps no rule for a badge in the Logs tab or in the cards of its list: the action is not one any more", () => {
+    expect(logs.some((r) => r.selector.includes(".at-badge"))).toBe(false);
+    expect(staff.some((r) => r.selector.includes(".audit-log-card__action") && r.selector.includes(".at-badge"))).toBe(false);
   });
 });
 

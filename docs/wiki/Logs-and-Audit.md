@@ -15,7 +15,7 @@ Define the event, user, action, and approximate time you are investigating. Use 
 1. Open **Organisation settings**, then **Logs**.
 2. Switch between **System**, **Audit**, and **Security** with the shared view toggle (one panel, not three separate cards). The page address keeps the view (`?tab=logs&log=audit`), so a refresh, a bookmark or a link you send opens the same one.
 3. Use **System logs** for a near-real-time feed of recent application and subsystem messages (API, database, cache, mail, admin actions, background worker, wallet, external services). This view keeps a bounded recent window and resets when the app restarts.
-4. Use **Audit logs** for administration actions across settings and events. Rows can show severity badges, actor local time, event-scope filtering, and offline country (and city, when the dataset resolves one) for IP addresses.
+4. Use **Audit logs** for administration actions across settings and events. Rows can show a dot coloured by severity, actor local time, event-scope filtering, and offline country (and city, when the dataset resolves one) for IP addresses.
 5. Use **Security logs** for durable sign-in, MFA, OIDC, logout, access-denied, and notification-delivery entries retained in the database (default **30 days**, `SECURITY_AUDIT_LOG_RETENTION_DAYS`).
    - Each row keeps the staff member's email and display name from the moment of the event, even if the account is later deleted.
    - For a notification-delivery row, the User column shows who the alert was for when it had exactly one recipient. When an alert reached several administrators, each one's name and email is listed in that row's Details instead.

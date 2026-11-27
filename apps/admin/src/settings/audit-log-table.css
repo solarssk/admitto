@@ -57,14 +57,46 @@
   overflow-wrap: anywhere;
 }
 
-/* The badge of an action is one word of a long label ("Guest registration own address updated") in a cell that is narrower than the label: it wraps, as a rounded
-   box and not a pill, and never paints out of its cell. */
-.item-table.audit-log-box .table .at-badge {
-  max-width: 100%;
-  white-space: normal;
-  line-height: 1.25;
-  text-align: left;
-  border-radius: var(--radius-md);
+/* The action of a row, in a table cell and in a card: its name as plain text that wraps like any other, led by a dot in the colour of its tone. A grey box around a
+   long name read as a heavy rectangle and told nothing, since most actions are neutral, so the dot is all the tone needs. The dot and the gap are in rem and not em,
+   so that the line of a folded Scope can be indented by the same 1rem and start under the name. */
+.audit-log-action {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-weight: var(--fw-medium);
+  line-height: 1.35;
+}
+
+.audit-log-action::before {
+  content: "";
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  /* Centred on the first line, whatever the size of the text: half of what the line has beyond the dot. */
+  margin-top: calc((1.35em - 0.5rem) / 2);
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.audit-log-action--ok::before {
+  background: var(--status-ok);
+}
+
+.audit-log-action--warn::before {
+  background: var(--status-warn);
+}
+
+.audit-log-action--error::before {
+  background: var(--status-error);
+}
+
+.audit-log-action--info::before {
+  background: var(--status-info);
+}
+
+.audit-log-action + .audit-log-table__below-1280 {
+  padding-left: 1rem;
 }
 
 /* The lines that a folded column leaves in the cell of another one: nothing on a screen with room for the column. */
@@ -131,7 +163,7 @@
 }
 
 /* A card is read where there is no hover, and a word with no break in it (an IPv6 address in its foot, a long address in its lines) wraps inside the card instead of
-   pushing its details out of it: at 390px it made the page 478px wide. */
+   pushing its details out of it: at 390px six of them painted past the edge of their card. */
 .audit-log-card {
   overflow-wrap: anywhere;
 }

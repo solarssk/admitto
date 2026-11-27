@@ -11,7 +11,7 @@ import {
   type SetStateAction,
 } from "react";
 import { useSearchParams } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, Input, Skeleton, useToast, type BadgeVariant } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, Input, Skeleton, useToast, type BadgeVariant } from "@admitto/ui";
 import { ATTENDEE_REMOVAL_REASON_LABELS, type AttendeeRemovalReason } from "@admitto/shared";
 import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -55,11 +55,11 @@ import "./audit-log-table.css";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
-  account_mfa_enrolled: "2FA enrolled (self-service)",
-  account_mfa_reset: "2FA reset (self-service)",
-  account_password_changed: "Password changed (self-service)",
-  account_session_revoked: "Session revoked (self-service)",
-  account_sso_unlinked: "SSO unlinked (self-service)",
+  account_mfa_enrolled: "Own 2FA enrolled",
+  account_mfa_reset: "Own 2FA reset",
+  account_password_changed: "Own password changed",
+  account_session_revoked: "Own session revoked",
+  account_sso_unlinked: "Own SSO unlinked",
   attendee_companion_removed: "Companion removed",
   attendee_companion_updated: "Companion updated",
   attendee_created_manual: "Attendee created manually",
@@ -68,9 +68,9 @@ const ACTION_LABELS: Record<string, string> = {
   attendee_erased: "Attendee erased or removed",
   attendees_bulk_erased: "Attendees bulk erased or removed",
   audit_log_exported: "Audit log exported",
-  bounce_ingest_settings_tested: "Bounce detection connection tested",
-  bounce_ingest_manual_run: "Bounce detection check run manually",
-  bounce_ingest_settings_updated: "Bounce detection settings updated",
+  bounce_ingest_settings_tested: "Bounce connection tested",
+  bounce_ingest_manual_run: "Bounce check run manually",
+  bounce_ingest_settings_updated: "Bounce settings updated",
   branding_font_uploaded: "Branding font uploaded",
   emergency_session_purge: "Emergency session purge",
   event_archived: "Event archived",
@@ -83,7 +83,7 @@ const ACTION_LABELS: Record<string, string> = {
   event_deleted: "Event deleted",
   event_items_bulk_revoked: "Event items bulk revoked",
   event_location_updated: "Event location updated",
-  event_mail_bounce_probed: "Event bounce verification probed",
+  event_mail_bounce_probed: "Event bounce check probed",
   event_mail_settings_cleared: "Event mail settings cleared",
   event_mail_settings_updated: "Event mail settings updated",
   event_mail_smtp_probed: "Event SMTP connection probed",
@@ -96,9 +96,9 @@ const ACTION_LABELS: Record<string, string> = {
   event_resource_updated: "Event resource updated",
   event_unarchived: "Event restored",
   event_updated: "Event updated",
-  identity_cf_access_updated: "Cloudflare Access settings updated",
+  identity_cf_access_updated: "Cloudflare Access updated",
   identity_provider_created: "SSO provider created",
-  identity_provider_discovered: "SSO provider endpoints rediscovered",
+  identity_provider_discovered: "SSO endpoints rediscovered",
   identity_provider_toggled: "SSO provider enabled/disabled",
   identity_provider_updated: "SSO provider updated",
   instance_setup_completed: "Instance setup completed",
@@ -113,17 +113,17 @@ const ACTION_LABELS: Record<string, string> = {
   notification_settings_tested: "Notification settings tested",
   notification_settings_updated: "Notification settings updated",
   operator_sessions_bulk_revoked: "Operator sessions revoked",
-  org_branding_logo_uploaded: "Organization branding logo uploaded",
+  org_branding_logo_uploaded: "Branding logo uploaded",
   registration_accepted: "Guest registration accepted",
-  registration_access_methods_updated: "Guest registration access methods updated",
-  registration_bot_protection_updated: "Guest registration bot protection updated",
-  registration_custom_domain_updated: "Guest registration own address updated",
-  registration_password_changed: "Guest registration password changed",
-  registration_sso_provider_updated: "Guest registration Company SSO provider updated",
+  registration_access_methods_updated: "Registration access updated",
+  registration_bot_protection_updated: "Bot protection updated",
+  registration_custom_domain_updated: "Registration address updated",
+  registration_password_changed: "Registration password changed",
+  registration_sso_provider_updated: "Company SSO provider updated",
   registration_rejected: "Guest registration rejected",
-  registration_settings_changed: "Guest registration settings changed",
-  registration_turnstile_cleared: "Guest registration Turnstile keys removed",
-  registration_turnstile_updated: "Guest registration Turnstile keys updated",
+  registration_settings_changed: "Registration settings changed",
+  registration_turnstile_cleared: "Turnstile keys removed",
+  registration_turnstile_updated: "Turnstile keys updated",
   registrations_deleted: "Guest registrations deleted",
   retention_run: "Retention job run",
   role_granted: "Role granted",
@@ -222,8 +222,8 @@ const SECURITY_EVENT_LABELS: Record<string, string> = {
   "auth.trusted_device.used": "2FA skipped (trusted device)",
   "notification.dispatch.sent": "Notification sent",
   "notification.dispatch.failed": "Notification delivery failed",
-  "notification.dispatch.skipped_throttled": "Notification throttled (duplicate)",
-  "notification.dispatch.skipped_org_disabled": "Notification skipped (disabled by organization)",
+  "notification.dispatch.skipped_throttled": "Notification skipped (duplicate)",
+  "notification.dispatch.skipped_org_disabled": "Notification skipped (disabled)",
   "notification.dispatch.skipped_no_recipients": "Notification skipped (no recipients)",
 };
 
@@ -253,6 +253,13 @@ const TONE_BY_SECURITY_EVENT: Record<string, BadgeVariant> = {
 
 function securityEventTone(type: string): BadgeVariant {
   return TONE_BY_SECURITY_EVENT[type] ?? "neutral";
+}
+
+/** The action of a row of either log, in a table cell and in a card: its name as plain text that wraps like any other,
+ * led by a dot in the colour of its tone (audit-log-table.css). A grey box around a long name read as a heavy rectangle
+ * and told nothing, since most actions are neutral. */
+function ActionLabel({ tone, children }: Readonly<{ tone: BadgeVariant; children: ReactNode }>): ReactNode {
+  return <span className={`audit-log-action audit-log-action--${tone}`}>{children}</span>;
 }
 
 const SECURITY_EVENT_TYPE_OPTIONS = Object.keys(SECURITY_EVENT_LABELS).sort((a, b) =>
@@ -803,7 +810,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     header: "Action",
     cell: (entry) => (
       <>
-        <Badge variant={actionTone(entry.action_type)}>{entryActionLabel(entry)}</Badge>
+        <ActionLabel tone={actionTone(entry.action_type)}>{entryActionLabel(entry)}</ActionLabel>
         <div className="audit-log-secondary audit-log-table__below-1280">
           <span className="audit-log-scope" title={scopeLabel(entry, eventTitleById)}>
             {scopeLabel(entry, eventTitleById)}
@@ -855,7 +862,7 @@ function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
   return (
     <>
       <div className="audit-log-card__action" title={label}>
-        <Badge variant={actionTone(entry.action_type)}>{label}</Badge>
+        <ActionLabel tone={actionTone(entry.action_type)}>{label}</ActionLabel>
       </div>
       <div className="audit-log-card__time">
         <TimeStack primary={formatUtcPrimaryTime(entry.created_at)}>
@@ -977,7 +984,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     key: "action",
     header: "Action",
     cell: (entry) => (
-      <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
+      <ActionLabel tone={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</ActionLabel>
     ),
   },
   {
@@ -1010,7 +1017,9 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
 function renderSecurityCardTop(entry: SecurityAuditLogEntryDto): ReactNode {
   return (
     <>
-      <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
+      <div className="audit-log-card__action" title={securityEventLabel(entry.event_type)}>
+        <ActionLabel tone={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</ActionLabel>
+      </div>
       <div className="audit-log-card__time">
         <TimeStack primary={formatUtcPrimaryTime(entry.created_at)}>
           <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
