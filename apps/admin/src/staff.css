@@ -1789,10 +1789,10 @@ html:not(.icons-ready) .ti {
 }
 
 .ck-recent__right time {
-  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--text-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .ck-recent__ticket {
@@ -6297,37 +6297,6 @@ output.mail-field-hint {
 
 .audit-log-details__row dd {
   margin: 0;
-}
-
-/* --fs-mono (13px) matches the table's own 13px body text numerically, but a monospace
-   typeface's glyphs read visually larger than a proportional one at the same size - --fs-xs
-   (12px, the same size already used for badges/table captions) is what actually looks the
-   same size as the rest of the row. */
-.audit-log-time {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  /* Stack UTC + local (td white-space / inline children must not keep them on one row). */
-  white-space: normal;
-}
-
-/* Secondary local-time line under UTC (block flex, not inline - otherwise it sits beside UTC). */
-.audit-log-time__local {
-  display: flex;
-  align-items: baseline;
-  gap: 0.3rem;
-  max-width: 100%;
-  /* The timestamp remains monospace via .audit-log-time. Its size, line-height, and muted
-     treatment deliberately match email and IP-location sublines in the neighbouring columns. */
-  font-size: var(--fs-xs);
-  line-height: var(--lh-normal);
-  color: var(--text-muted);
-}
-
-.audit-log-time__local .ti {
-  flex-shrink: 0;
-  font-size: 0.95em;
-  opacity: 0.85;
-  line-height: 1;
 }
 
 /* Long event titles clamp to 2 lines (Time and User already routinely render 2 lines in this

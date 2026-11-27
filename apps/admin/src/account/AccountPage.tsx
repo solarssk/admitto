@@ -53,6 +53,7 @@ import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "../components/item-table.css";
 import "../settings/notifications-panel.css";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
+import { TimeStack } from "../components/TimeStack.js";
 import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useFocusAfterPageRetry } from "../hooks/useFocusAfterPageRetry.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
@@ -2371,12 +2372,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
                         {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
                       </td>
                       <td>
-                        {formatUtcPrimaryTime(s.loginAt)}
-                        <ActorOrViewerLocalTimeLine
-                          iso={s.loginAt}
-                          actorTimezone={s.timezone}
-                          actorTitle="Signer's local time"
-                        />
+                        <TimeStack primary={formatUtcPrimaryTime(s.loginAt)}>
+                          <ActorOrViewerLocalTimeLine iso={s.loginAt} actorTimezone={s.timezone} actorTitle="Signer's local time" />
+                        </TimeStack>
                       </td>
                       <td>{formatRelativeTime(s.lastSeenAt)}</td>
                       <td className="sessions-col-tablet-hide">
@@ -2430,12 +2428,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
                   <div>
                     <dt>Logged in</dt>
                     <dd>
-                      {formatUtcPrimaryTime(s.loginAt)}
-                      <ActorOrViewerLocalTimeLine
-                        iso={s.loginAt}
-                        actorTimezone={s.timezone}
-                        actorTitle="Signer's local time"
-                      />
+                      <TimeStack primary={formatUtcPrimaryTime(s.loginAt)}>
+                        <ActorOrViewerLocalTimeLine iso={s.loginAt} actorTimezone={s.timezone} actorTitle="Signer's local time" />
+                      </TimeStack>
                     </dd>
                   </div>
                   <div>

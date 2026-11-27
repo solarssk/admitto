@@ -1632,10 +1632,10 @@
 }
 
 .at-tl-time {
-  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   font-size: 0.75rem;
   color: var(--text-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Who performed the row's action, moved here next to the time instead of mixed into the diff
@@ -1798,10 +1798,10 @@
 }
 
 .at-notes-list__time {
-  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   font-size: 0.75rem;
   color: var(--text-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .at-notes-list__text {

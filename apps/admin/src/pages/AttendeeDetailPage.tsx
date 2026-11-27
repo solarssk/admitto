@@ -140,6 +140,7 @@ import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
 import { ACTIVITY_PAGE_SIZE_OPTIONS, useActivityLog } from "../attendees/useActivityLog.js";
 import "../attendees/attendees.css";
 import "../attendees/attendee-fields-grid.css";
+import "../components/time-stack.css";
 
 const TAB_IDS = ["overview", "activity", "notes"] as const;
 type TabId = (typeof TAB_IDS)[number];
@@ -1080,7 +1081,7 @@ function AttendeeOverviewTab({
             )}
             <div className="attendee-detail-row">
               <span>Registered on</span>
-              <span className="mono">
+              <span className="time-text">
                 {formatActorTime(detail.created_at, detail.client_timezone)}
               </span>
             </div>
@@ -1180,7 +1181,7 @@ function AttendeeOverviewTab({
                 {detail.wallet_pass.first_downloaded_at && (
                   <div className="attendee-detail-row">
                     <span>First downloaded</span>
-                    <span className="mono">
+                    <span className="time-text">
                       {formatFirstDownloadedAt(detail.wallet_pass.first_downloaded_at)}
                     </span>
                   </div>
@@ -1206,7 +1207,7 @@ function AttendeeOverviewTab({
                 {detail.wallet_pass.issued_at && (
                   <div className="attendee-detail-row">
                     <span>Pass created</span>
-                    <span className="mono">
+                    <span className="time-text">
                       {formatUtcDateTime(detail.wallet_pass.issued_at)}
                     </span>
                   </div>
@@ -1214,7 +1215,7 @@ function AttendeeOverviewTab({
                 {detail.wallet_pass.voided_at && (
                   <div className="attendee-detail-row">
                     <span>Voided</span>
-                    <span className="mono">
+                    <span className="time-text">
                       {formatUtcDateTime(detail.wallet_pass.voided_at)}
                     </span>
                   </div>
@@ -1224,7 +1225,7 @@ function AttendeeOverviewTab({
                 {detail.wallet_pass.provider_removed_at && (
                   <div className="attendee-detail-row">
                     <span>Removed from provider</span>
-                    <span className="mono">
+                    <span className="time-text">
                       {formatUtcDateTime(detail.wallet_pass.provider_removed_at)}
                     </span>
                   </div>
@@ -1232,7 +1233,7 @@ function AttendeeOverviewTab({
                 {detail.wallet_pass.last_synced_at && (
                   <div className="attendee-detail-row">
                     <span>Last updated</span>
-                    <span className="mono">
+                    <span className="time-text">
                       {formatUtcDateTime(detail.wallet_pass.last_synced_at)}
                     </span>
                   </div>
@@ -1240,7 +1241,7 @@ function AttendeeOverviewTab({
                 {detail.wallet_pass.registration_checked_at && (
                   <div className="attendee-detail-row">
                     <span>Last system status update</span>
-                    <span className="mono">
+                    <span className="time-text">
                       {formatUtcDateTime(detail.wallet_pass.registration_checked_at)}
                     </span>
                   </div>
@@ -1341,7 +1342,7 @@ function AttendeeOverviewTab({
                           </div>
                         )}
                       </div>
-                      <span className="attendee-delivery__time mono">
+                      <span className="attendee-delivery__time time-text">
                         {timeParts ? (
                           <>
                             <span className="attendee-delivery__time-date">{timeParts.date}</span>

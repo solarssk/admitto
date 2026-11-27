@@ -7,6 +7,7 @@ import { useListLoad } from "../../hooks/useListLoad.js";
 import { fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { RoleAssignmentListItemDto } from "../../api/types.js";
+import { ActorOrViewerLocalTimeLine } from "../../components/ActorOrViewerLocalTimeLine.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { FiltersMenu } from "../../components/FiltersMenu.js";
 import { paginationHandlers, PaginationFooter } from "../../components/PaginationFooter.js";
@@ -14,12 +15,13 @@ import { RefetchRegion } from "../../components/RefetchRegion.js";
 import { ListFailure } from "../../components/ListFailure.js";
 import { RetryHint } from "../../components/RetryHint.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
+import { TimeStack } from "../../components/TimeStack.js";
 import { isPastTheEnd, withAssignmentRemoved, type RoleAssignmentsAnswer } from "./list-changes.js";
 import { UsersListSkeleton, type SkeletonColumn } from "./UsersListSkeleton.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
-import { formatUtcDateTime, viewerLocalTime } from "../../utils/event-dates.js";
+import { formatUtcDateTime } from "../../utils/event-dates.js";
 import "../../components/item-table.css";
 
 // The placeholder of the list: four rows and three cards, each as tall as a real one.
@@ -70,10 +72,9 @@ type AssignmentRowProps = {
 
 function GrantedTimes({ row }: Readonly<{ row: RoleAssignmentListItemDto }>) {
   return (
-    <div>
-      {formatUtcDateTime(row.granted_at)}
-      <div className="sessions-subdued">{viewerLocalTime(row.granted_at)}</div>
-    </div>
+    <TimeStack primary={formatUtcDateTime(row.granted_at)}>
+      <ActorOrViewerLocalTimeLine iso={row.granted_at} actorTimezone={null} />
+    </TimeStack>
   );
 }
 
@@ -153,8 +154,9 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
         <div className="users-page__card-meta-wide">
           <dt>Granted</dt>
           <dd>
-            {formatUtcDateTime(row.granted_at)}
-            <div className="sessions-subdued">{viewerLocalTime(row.granted_at)}</div>
+            <TimeStack primary={formatUtcDateTime(row.granted_at)}>
+              <ActorOrViewerLocalTimeLine iso={row.granted_at} actorTimezone={null} />
+            </TimeStack>
           </dd>
         </div>
         {row.is_oidc && (

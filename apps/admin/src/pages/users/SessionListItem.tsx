@@ -2,6 +2,7 @@ import { Avatar, Badge, IconButton, Tooltip } from "@admitto/ui";
 import type { SessionListDto } from "../../api/types.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 import { ActorOrViewerLocalTimeLine } from "../../components/ActorOrViewerLocalTimeLine.js";
+import { TimeStack } from "../../components/TimeStack.js";
 import { formatRelativeTime, formatUtcPrimaryTime } from "../../utils/event-dates.js";
 import { parseUserAgent } from "../../utils/parseUserAgent.js";
 import { GeoCell } from "../../components/GeoCell.js";
@@ -69,12 +70,9 @@ export function SessionTableRow({ session: s, onEdit, onRevoke }: Readonly<Sessi
         {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
       </td>
       <td>
-        {formatUtcPrimaryTime(s.loginAt)}
-        <ActorOrViewerLocalTimeLine
-          iso={s.loginAt}
-          actorTimezone={s.timezone}
-          actorTitle="Signer's local time"
-        />
+        <TimeStack primary={formatUtcPrimaryTime(s.loginAt)}>
+          <ActorOrViewerLocalTimeLine iso={s.loginAt} actorTimezone={s.timezone} actorTitle="Signer's local time" />
+        </TimeStack>
       </td>
       <td>{formatRelativeTime(s.lastSeenAt)}</td>
       <td className="sessions-col-tablet-hide sessions-col-laptop-hide">
@@ -136,12 +134,9 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
         <div className="users-page__card-meta-wide">
           <dt>Logged in</dt>
           <dd>
-            {formatUtcPrimaryTime(s.loginAt)}
-            <ActorOrViewerLocalTimeLine
-              iso={s.loginAt}
-              actorTimezone={s.timezone}
-              actorTitle="Signer's local time"
-            />
+            <TimeStack primary={formatUtcPrimaryTime(s.loginAt)}>
+              <ActorOrViewerLocalTimeLine iso={s.loginAt} actorTimezone={s.timezone} actorTitle="Signer's local time" />
+            </TimeStack>
           </dd>
         </div>
         <div>

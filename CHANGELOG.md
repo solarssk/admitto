@@ -109,6 +109,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Show Staff users, Role assignments and Active sessions in the standard boxed table, with cards below 1024 px instead of 768 px ([#1991](https://github.com/solarssk/admitto/pull/1991))
 - Show Event archiving and Notifications in the standard boxed table, with attendees aligned to the right and the notification matrix stacked below 1024 px ([#1992](https://github.com/solarssk/admitto/pull/1992))
 - Show the sessions on the Account page in the standard boxed table, with cards below 1024 px instead of 768 px and long device names wrapped in the cards ([#1993](https://github.com/solarssk/admitto/pull/1993))
+- Show every time in one look: the body font with aligned digits and the local time under it in one style, in the logs, the attendee page, Reports, the delivery log and the sessions, with no more monospace times
 
 ### Fixed
 

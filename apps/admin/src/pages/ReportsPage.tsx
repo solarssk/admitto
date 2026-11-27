@@ -36,6 +36,7 @@ import { calendarDateInZone, formatEventDateTime, formatEventTime } from "../uti
 import { peopleOnSiteBreakdown } from "../utils/peopleOnSite.js";
 import { handleExportRequestError } from "./handleExportRequestError.js";
 import "./reports-page.css";
+import "../components/time-stack.css";
 
 const LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const LOG_PAGE_SIZE_DEFAULT = 50;
@@ -601,7 +602,7 @@ function AdmissionLog({
                     <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
                   )}
                 </td>
-                <td className="reports-mono">
+                <td className="time-text">
                   {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
                 </td>
                 <td>
@@ -689,7 +690,7 @@ function AdmissionLog({
               >
                 <div className="reports-log-card__top">
                   <span className="reports-log-card__name">{row.name}</span>
-                  <span className="reports-log-card__time reports-mono">
+                  <span className="reports-log-card__time time-text">
                     {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
                   </span>
                 </div>
