@@ -3,7 +3,7 @@ import "./time-stack.css";
 
 /** True for the part of a zone after "UTC": "+5", "-3", "+5:30", "+02:00". Plain string work: a regular expression over free text is a lint error here. */
 function isOffset(text: string): boolean {
-  if (text[0] !== "+" && text[0] !== "-") return false;
+  if (!text.startsWith("+") && !text.startsWith("-")) return false;
   const [hours, minutes, extra] = text.slice(1).split(":");
   const digits = (value: string | undefined, min: number, max: number) =>
     value !== undefined && value.length >= min && value.length <= max && [...value].every((ch) => ch >= "0" && ch <= "9");
