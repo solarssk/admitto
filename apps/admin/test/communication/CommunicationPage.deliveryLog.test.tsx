@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { formatUtcDateTime } from "../../src/utils/event-dates.js";
-import { advanceTimers, isOff, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { advanceTimers, isOff, mockMatchMedia, renderWithToast, timeText } from "../test-utils.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 import { communicationApiMocks } from "./communicationApiMock.js";
 import type { DeliveryDetailDto, DeliveryDto } from "../../src/api/types.js";
@@ -259,10 +259,10 @@ describe("CommunicationPage delivery log - table", () => {
     expect(table.getByText("Initial")).toBeTruthy();
     // Accepted row: green "Sent" badge (ADR 0007), timestamp falls back to accepted_at.
     expect(table.getByText("Sent")).toBeTruthy();
-    expect(table.getByText(formatUtcDateTime(acceptedRow.accepted_at!))).toBeTruthy();
+    expect(table.getByText(timeText(formatUtcDateTime(acceptedRow.accepted_at!)))).toBeTruthy();
     // Failed row keeps failed_at and the raw error code shows only in the details modal, not the table.
     expect(table.getByText("Failed")).toBeTruthy();
-    expect(table.getByText(formatUtcDateTime(failedRow.failed_at!))).toBeTruthy();
+    expect(table.getByText(timeText(formatUtcDateTime(failedRow.failed_at!)))).toBeTruthy();
   });
 
   it("keeps its placeholder, held for the first 200ms, until delivery data resolves", async () => {

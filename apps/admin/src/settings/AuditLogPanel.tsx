@@ -23,6 +23,7 @@ import { PaginationFooter } from "../components/PaginationFooter.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
+import { LocalTimeLine, TimeStack } from "../components/TimeStack.js";
 import { useClickOutside } from "../components/useClickOutside.js";
 import { useFloatingPlacement } from "../components/useFloatingPlacement.js";
 import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
@@ -299,13 +300,7 @@ function viewerLocalTimeText(iso: string): string {
 function UserLocalTimeLine({ entry }: Readonly<{ entry: AuditLogEntryDto }>): ReactNode {
   const text = userLocalTimeText(entry);
   if (!text) return null;
-  return (
-    <div className="sessions-subdued audit-log-time__local">
-      <i className="ti ti-user" aria-hidden="true" title="User's local time" />
-      <span className="sr-only">User's local time: </span>
-      {text}
-    </div>
-  );
+  return <LocalTimeLine title="User's local time">{text}</LocalTimeLine>;
 }
 
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
@@ -773,12 +768,10 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     {
       key: "time",
       header: <HintLabel hint={TIME_HINT}>Time</HintLabel>,
-      className: "audit-log-time",
     cell: (entry) => (
-      <>
-        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
+      <TimeStack primary={formatUtcPrimaryTime(entry.created_at)}>
         <UserLocalTimeLine entry={entry} />
-      </>
+      </TimeStack>
     ),
   },
   {
@@ -828,9 +821,10 @@ function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
       <div className="audit-log-card__action" title={label}>
         <Badge variant={actionTone(entry.action_type)}>{label}</Badge>
       </div>
-      <div className="audit-log-time audit-log-card__time">
-        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
-        <UserLocalTimeLine entry={entry} />
+      <div className="audit-log-card__time">
+        <TimeStack primary={formatUtcPrimaryTime(entry.created_at)}>
+          <UserLocalTimeLine entry={entry} />
+        </TimeStack>
       </div>
     </>
   );
@@ -937,12 +931,10 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   {
     key: "time",
     header: <HintLabel hint={SECURITY_TIME_HINT}>Time</HintLabel>,
-    className: "audit-log-time",
     cell: (entry) => (
-      <>
-        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
+      <TimeStack primary={formatUtcPrimaryTime(entry.created_at)}>
         <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
-      </>
+      </TimeStack>
     ),
   },
   {
@@ -981,9 +973,10 @@ function renderSecurityCardTop(entry: SecurityAuditLogEntryDto): ReactNode {
   return (
     <>
       <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
-      <div className="audit-log-time audit-log-card__time">
-        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
-        <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
+      <div className="audit-log-card__time">
+        <TimeStack primary={formatUtcPrimaryTime(entry.created_at)}>
+          <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
+        </TimeStack>
       </div>
     </>
   );

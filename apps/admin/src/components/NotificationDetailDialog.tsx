@@ -3,6 +3,7 @@ import { Button, ModalBackdrop, Notice } from "@admitto/ui";
 import type { NotificationDto } from "../api/types.js";
 import { formatUtcPrimaryTime } from "../utils/event-dates.js";
 import { ActorOrViewerLocalTimeLine } from "./ActorOrViewerLocalTimeLine.js";
+import { TimeStack } from "./TimeStack.js";
 import { NOTIFICATION_SEVERITY_ICON } from "./notificationSeverity.js";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import "./confirm-dialog.css";
@@ -72,8 +73,9 @@ export function NotificationDetailDialog({
             )}
             <dt>Received</dt>
             <dd>
-              {formatUtcPrimaryTime(notification.created_at)}
-              <ActorOrViewerLocalTimeLine iso={notification.created_at} actorTimezone={null} />
+              <TimeStack primary={formatUtcPrimaryTime(notification.created_at)}>
+                <ActorOrViewerLocalTimeLine iso={notification.created_at} actorTimezone={null} />
+              </TimeStack>
             </dd>
           </dl>
         </div>

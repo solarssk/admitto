@@ -15,6 +15,7 @@ import { formatEventHoursRange } from "@admitto/shared/region-date-format";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import type { WalletPushHistoryScope } from "../api/client.js";
 import type { EventCustomFieldDto, EventLocationDto, EventSettingsDto } from "../api/types.js";
+import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { RetryEmptyState } from "../components/RetryEmptyState.js";
@@ -23,13 +24,13 @@ import { useCardLoad } from "../hooks/useCardLoad.js";
 import type { WalletPushHistoryState } from "../hooks/useEventSettingsWalletTab.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
+import { TimeStack } from "../components/TimeStack.js";
 import type { EventSettingsFormPanelProps, SettingsForm } from "../pages/EventSettingsPage.js";
 import { walletTestFingerprint, type WalletExpirationTest } from "./walletExpirationTest.js";
 import {
   formatUtcDateTime,
   formatWalletDatePreview,
   formatWalletDatePreviewShort,
-  formatZonedClockTime,
 } from "../utils/event-dates.js";
 import { EVENT_TYPE_LABELS } from "./eventTypeOptions.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow, SettingsFooter } from "./mailTransportFormParts.js";
@@ -308,12 +309,11 @@ function WalletPushHistoryCard({ history }: WalletPushHistoryCardProps) {
                 {rows.map((entry) => (
                   <tr key={entry.id}>
                     <td>
-                      {formatUtcDateTime(entry.created_at)}
-                      {entry.client_timezone && (
-                        <div className="sessions-subdued">
-                          {formatZonedClockTime(entry.created_at, entry.client_timezone)}
-                        </div>
-                      )}
+                      <TimeStack primary={formatUtcDateTime(entry.created_at)}>
+                        {entry.client_timezone && (
+                          <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.client_timezone} />
+                        )}
+                      </TimeStack>
                     </td>
                     <td>
                       <StatusBadge status={entry.status} />

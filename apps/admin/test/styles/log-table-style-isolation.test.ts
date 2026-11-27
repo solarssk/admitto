@@ -8,6 +8,7 @@ const auditLogPanel = readFileSync(join(ADMIN_SRC, "settings/AuditLogPanel.tsx")
 const staffCss = readFileSync(join(ADMIN_SRC, "staff.css"), "utf8");
 const accountPage = readFileSync(join(ADMIN_SRC, "account/AccountPage.tsx"), "utf8");
 const accountCss = readFileSync(join(ADMIN_SRC, "account/account-page.css"), "utf8");
+const timeStackCss = readFileSync(join(ADMIN_SRC, "components/time-stack.css"), "utf8");
 
 describe("log table style isolation", () => {
   it("keeps Audit and Security logs growing with their rows: the Account sessions are the shared boxed table now, with no scroll region of their own", () => {
@@ -23,6 +24,7 @@ describe("log table style isolation", () => {
   it("uses one dedicated secondary-text treatment for log emails and IP locations", () => {
     expect(auditLogPanel).toContain("audit-log-secondary");
     expect(staffCss).toContain(".audit-log-secondary {");
-    expect(staffCss).toMatch(/\.audit-log-time__local\s*\{[\s\S]*font-size: var\(--fs-xs\);/);
+    // The local time line under a log time is the shared one (components/time-stack.css), the same size as those sublines.
+    expect(timeStackCss).toMatch(/\.time-stack__local\s*\{[\s\S]*font-size: var\(--fs-xs\);/);
   });
 });

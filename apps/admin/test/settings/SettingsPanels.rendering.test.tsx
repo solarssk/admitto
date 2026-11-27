@@ -27,7 +27,7 @@ import {
   resetPollIntervalMsForTests,
   setPollIntervalMsForTests,
 } from "../../src/settings/SystemLogsPanel.js";
-import { mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast, renderWithToastAndRouter, timeText } from "../test-utils.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -388,9 +388,11 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("2026-06-15 12:00:00 UTC")).toBeTruthy();
+    expect(within(table).getByText(timeText("2026-06-15 12:00:00 UTC"))).toBeTruthy();
     expect(within(table).getByText(/Europe\/Warsaw, UTC\+2/)).toBeTruthy();
     expect(within(table).getByTitle("User's local time")).toBeTruthy();
+    // The one look of a time (components/time-stack.css): the UTC line, and the local one right under it.
+    expect(table.querySelector(".time-stack > .time-stack__utc + .time-stack__local")).toBeTruthy();
   });
 
   it("humanizes the mail provider metadata value instead of showing the raw enum", async () => {
@@ -942,7 +944,7 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
     const table = await screen.findByRole("table");
     expect(within(table).getByText("Time")).toBeTruthy();
-    expect(within(table).getByText("2026-01-01 12:00:00 UTC")).toBeTruthy();
+    expect(within(table).getByText(timeText("2026-01-01 12:00:00 UTC"))).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Local" })).toBeNull();
   });
 
@@ -1924,7 +1926,7 @@ describe("AuditLogPanel Security view rendering", () => {
       renderSecurityPanel();
 
       const table = await screen.findByRole("table");
-      expect(within(table).getByText("2026-01-01 12:00:00 UTC")).toBeTruthy();
+      expect(within(table).getByText(timeText("2026-01-01 12:00:00 UTC"))).toBeTruthy();
       expect(within(table).getByText(/Europe\/Warsaw, UTC\+1/)).toBeTruthy();
       expect(within(table).getByTitle("Your local time")).toBeTruthy();
     } finally {
@@ -1945,6 +1947,7 @@ describe("AuditLogPanel Security view rendering", () => {
     const table = await screen.findByRole("table");
     expect(within(table).getByText(/Asia\/Tokyo/)).toBeTruthy();
     expect(within(table).getByTitle("User's local time")).toBeTruthy();
+    expect(table.querySelector(".time-stack > .time-stack__utc + .time-stack__local")).toBeTruthy();
   });
 
   it("shows the attempted email under Unknown for a failed login, mirroring Audit's actor email subline", async () => {

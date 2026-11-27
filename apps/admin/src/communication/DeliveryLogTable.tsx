@@ -9,6 +9,7 @@ import { PaginationFooter } from "../components/PaginationFooter.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { RetryEmptyState } from "../components/RetryEmptyState.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
+import { LocalTimeLine, TimeStack } from "../components/TimeStack.js";
 import { useCardLoad } from "../hooks/useCardLoad.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { deliveryLocalTime, deliveryStatusBadgeKey, formatDateTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
@@ -20,6 +21,17 @@ import { DELIVERY_PAGE_SIZE_OPTIONS, type DeliveryLog } from "./useDeliveryLog.j
 import "./communication.css";
 
 const NO_ROWS: DeliveryDto[] = [];
+
+/** The time of a delivery, in the look of every other time: when it was sent or queued and, when the client that triggered it stored its zone, the time there. */
+function DeliveryTime({ row }: Readonly<{ row: DeliveryDto }>) {
+  const timestamp = rowTimestamp(row);
+  const local = deliveryLocalTime(row, timestamp);
+  return (
+    <TimeStack primary={formatDateTime(timestamp)}>
+      {local && <LocalTimeLine title="Sender's local time">{local}</LocalTimeLine>}
+    </TimeStack>
+  );
+}
 
 const SENT_QUEUED_TIME_HINT =
   "Top: when this happened, in UTC. Below: the same moment in the local time of whoever's browser triggered the send, when known.";
@@ -223,12 +235,7 @@ function DeliveryListContent({
               </span>
               <span className="communication-card__meta-item">
                 <i className="ti ti-clock" aria-hidden="true" />
-                <span>
-                  {formatDateTime(rowTimestamp(row))}
-                  {deliveryLocalTime(row, rowTimestamp(row)) && (
-                    <div className="sessions-subdued">{deliveryLocalTime(row, rowTimestamp(row))}</div>
-                  )}
-                </span>
+                <DeliveryTime row={row} />
               </span>
               <span className="communication-card__meta-item">
                 <i className="ti ti-file-text" aria-hidden="true" />
@@ -279,11 +286,8 @@ function DeliveryListContent({
               <td>
                 <StatusBadge status={deliveryStatusBadgeKey(row.status)} />
               </td>
-              <td className="mono muted">
-                {formatDateTime(rowTimestamp(row))}
-                {deliveryLocalTime(row, rowTimestamp(row)) && (
-                  <div className="sessions-subdued">{deliveryLocalTime(row, rowTimestamp(row))}</div>
-                )}
+              <td className="muted">
+                <DeliveryTime row={row} />
               </td>
               <td className="communication-row-menu-cell">
                 <DeliveryRowMenu

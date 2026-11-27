@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotificationBell, resetNotificationBellCache } from "../../src/components/NotificationBell.js";
 import type { NotificationDto } from "../../src/api/types.js";
-import { renderWithToast } from "../test-utils.js";
+import { renderWithToast, timeText } from "../test-utils.js";
 
 const fetchAccountNotifications = vi.fn();
 const fetchAccountNotificationsUnreadCount = vi.fn();
@@ -932,7 +932,7 @@ describe("Notification detail dialog", () => {
     expect(within(dialog).getByText("Demo Org")).toBeTruthy();
     expect(within(dialog).getByText("Received")).toBeTruthy();
     // Same standard as Sessions and the Audit log: UTC on top, the viewer's local time beneath.
-    expect(within(dialog).getByText("2026-09-10 10:00:00 UTC")).toBeTruthy();
+    expect(within(dialog).getByText(timeText("2026-09-10 10:00:00 UTC"))).toBeTruthy();
     expect(within(dialog).getByText(/Your local time:/)).toBeTruthy();
   });
 

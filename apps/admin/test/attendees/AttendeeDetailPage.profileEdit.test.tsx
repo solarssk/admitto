@@ -739,7 +739,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
       await screen.findByRole("heading", { name: "Anna" });
 
       const row = screen.getByText("Registered on").closest(".attendee-detail-row");
-      expect(row?.querySelector(".mono")?.textContent).toBe(expected);
+      expect(row?.querySelector(".time-text")?.textContent).toBe(expected);
     } finally {
       setPreferredLocale(null);
     }
