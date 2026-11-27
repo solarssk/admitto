@@ -133,11 +133,14 @@
   overflow-wrap: anywhere;
 }
 
-/* The badge of the session this browser is using sits on a line of its own under the device, in the table and in a card: beside the name the two touched. */
-.at-badge.sessions-current-badge {
+/* The device and, for the session this browser is using, its "Current" badge: on one line while they fit, with a gap between them, and the badge under the
+   name, flush with it, when they do not (a row of one line stays as tall as the others). In the table and in a card. */
+.sessions-device {
   display: flex;
-  width: fit-content;
-  margin-top: var(--space-1);
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
 }
 
 /* Session cards (below 1024px, `useIsDesktop(1024)`) - same fields as the desktop table, laid out as a

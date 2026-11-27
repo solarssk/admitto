@@ -2361,8 +2361,10 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
                   {sessionsPageSlice.map((s) => (
                     <tr key={s.id}>
                       <td title={s.userAgent ?? undefined}>
-                        {s.deviceLabel || parseUserAgent(s.userAgent)}
-                        {s.isCurrent && <Badge variant="neutral" className="sessions-current-badge">Current</Badge>}
+                        <div className="sessions-device">
+                          <span>{s.deviceLabel || parseUserAgent(s.userAgent)}</span>
+                          {s.isCurrent && <Badge variant="neutral">Current</Badge>}
+                        </div>
                       </td>
                       <td className="sessions-ip-cell">
                         {s.ip ?? "-"}
@@ -2403,9 +2405,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             {sessionsPageSlice.map((s) => (
               <article key={s.id} className="account-sessions-card">
                 <div className="account-sessions-card__head">
-                  <div title={s.userAgent ?? undefined}>
+                  <div className="sessions-device" title={s.userAgent ?? undefined}>
                     <strong>{s.deviceLabel || parseUserAgent(s.userAgent)}</strong>
-                    {s.isCurrent && <Badge variant="neutral" className="sessions-current-badge">Current</Badge>}
+                    {s.isCurrent && <Badge variant="neutral">Current</Badge>}
                   </div>
                   <div className="sessions-row-actions">
                     <SessionRevokeAction

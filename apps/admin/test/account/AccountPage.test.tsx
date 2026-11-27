@@ -1758,6 +1758,25 @@ describe("AccountPage: Sessions pagination and responsive layout", () => {
     }
   });
 
+  it("keeps the device and the Current badge of this browser's session in one wrapper, in the table and in a card", async () => {
+    mockLoadedAccount();
+    const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+    mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
+
+    const desktop = renderWithToast(<AccountPage activeTab="sessions" />);
+    await screen.findByRole("table");
+    // The wrapper lays the two out on one line while they fit (CSS); only the current session has a badge.
+    let devices = [...desktop.container.querySelectorAll(".account-sessions-table .sessions-device")];
+    expect(devices.map((d) => d.textContent)).toEqual(["This deviceCurrent", "Other"]);
+    cleanup();
+
+    mockMatchMedia(false);
+    const mobile = renderWithToast(<AccountPage activeTab="sessions" />);
+    await screen.findByText("Other");
+    devices = [...mobile.container.querySelectorAll(".account-sessions-card__head .sessions-device")];
+    expect(devices.map((d) => d.textContent)).toEqual(["This deviceCurrent", "Other"]);
+  });
+
   it("shows a stacked card layout instead of a table below the desktop breakpoint", async () => {
     mockMatchMedia(false);
     mockLoadedAccount();
