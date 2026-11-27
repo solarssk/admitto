@@ -110,6 +110,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Show Event archiving and Notifications in the standard boxed table, with attendees aligned to the right and the notification matrix stacked below 1024 px ([#1992](https://github.com/solarssk/admitto/pull/1992))
 - Show the sessions on the Account page in the standard boxed table, with cards below 1024 px instead of 768 px and long device names wrapped in the cards ([#1993](https://github.com/solarssk/admitto/pull/1993))
 - Show every time in one look: the normal font with aligned digits, a quiet grey zone and the local time under it, in the logs, the attendee page, Reports, the delivery log and the sessions ([#1994](https://github.com/solarssk/admitto/pull/1994))
+- Show the Audit and Security logs in the standard boxed table, call the Security Event column Action, and keep the open log view in the page address ([#1995](https://github.com/solarssk/admitto/pull/1995))
 
 ### Fixed
 

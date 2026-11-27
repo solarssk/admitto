@@ -10,11 +10,12 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
+import { useSearchParams } from "react-router";
 import { Badge, Button, Card, EmptyState, HintLabel, Input, Skeleton, useToast, type BadgeVariant } from "@admitto/ui";
 import { ATTENDEE_REMOVAL_REASON_LABELS, type AttendeeRemovalReason } from "@admitto/shared";
 import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
+import type { AuditLogEntryDto, EventDto, IpLocationDto, SecurityAuditLogEntryDto } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
@@ -49,6 +50,8 @@ import {
   SystemLogsPanel,
   type SystemLogsPanelHandle,
 } from "./SystemLogsPanel.js";
+import "../components/item-table.css";
+import "./audit-log-table.css";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
@@ -506,6 +509,8 @@ interface LogColumn<T> {
   key: string;
   header: ReactNode;
   className?: string;
+  /** The column is a column from this width of the screen, and a line of another cell below it (audit-log-table.css). */
+  hideBelow?: 1280 | 1180;
   title?: (entry: T) => string | undefined;
   cell: (entry: T) => ReactNode;
 }
@@ -570,7 +575,24 @@ function LogError({
   );
 }
 
+/** The class that hides a column below its width, with the width it keeps for its heading and its cells (audit-log-table.css). */
+function columnFoldClass(col: Readonly<{ hideBelow?: 1280 | 1180 }>): string | undefined {
+  return col.hideBelow ? `audit-log-table__from-${col.hideBelow}` : undefined;
+}
+
+/** The IP address of a row as a line under its user, for a screen with no room for the column of it (audit-log-table.css). */
+function IpFoldLine({ ip, country }: Readonly<{ ip: string | null; country: IpLocationDto }>): ReactNode {
+  if (!ip) return null;
+  return (
+    <div className="audit-log-secondary audit-log-table__below-1180">
+      {ip} <GeoCell location={country} />
+    </div>
+  );
+}
+
 interface LogTableProps<T> {
+  /** Which of the two tables this is: their columns sit at the same x (audit-log-table.css). */
+  variant: "audit" | "security";
   entries: T[];
   columns: LogColumn<T>[];
   rowKey: (entry: T) => string;
@@ -584,6 +606,7 @@ interface LogTableProps<T> {
  * supplies its own column list, but the table/row/details-cell scaffolding itself no longer
  * exists twice. */
 function LogTable<T>({
+  variant,
   entries,
   columns,
   rowKey,
@@ -592,37 +615,39 @@ function LogTable<T>({
   onCopyRow,
 }: Readonly<LogTableProps<T>>) {
   return (
-    <div className="audit-log-table-wrap">
-      <table className="table audit-log-table">
-        <thead>
-          <tr>
-            {columns.map((col) => (
-              <th key={col.key} scope="col">
-                {col.header}
-              </th>
-            ))}
-            <th scope="col">Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry) => (
-            <tr key={rowKey(entry)}>
+    <div className={`item-table audit-log-box audit-log-box--${variant}`}>
+      <div className="attendees-table-wrap">
+        <table className="table audit-log-table">
+          <thead>
+            <tr>
               {columns.map((col) => (
-                <td key={col.key} className={col.className} title={col.title?.(entry)}>
-                  {col.cell(entry)}
-                </td>
+                <th key={col.key} scope="col" className={columnFoldClass(col)}>
+                  {col.header}
+                </th>
               ))}
-              <td>
-                <LogDetailsAction
-                  metadata={metadataOf(entry)}
-                  hiddenKeys={metadataHiddenKeys}
-                  onCopy={() => void onCopyRow(entry)}
-                />
-              </td>
+              <th scope="col">Details</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {entries.map((entry) => (
+              <tr key={rowKey(entry)}>
+                {columns.map((col) => (
+                  <td key={col.key} className={[col.className, columnFoldClass(col)].filter(Boolean).join(" ") || undefined} title={col.title?.(entry)}>
+                    {col.cell(entry)}
+                  </td>
+                ))}
+                <td>
+                  <LogDetailsAction
+                    metadata={metadataOf(entry)}
+                    hiddenKeys={metadataHiddenKeys}
+                    onCopy={() => void onCopyRow(entry)}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -690,7 +715,8 @@ interface LogListContentProps {
   emptyIcon: ReactNode;
   emptyTitle: string;
   emptyDescription: string;
-  isDesktop: boolean;
+  /** The boxed table (from 1024px), or the cards below it. */
+  showTable: boolean;
   renderTable: () => ReactNode;
   renderCards: () => ReactNode;
 }
@@ -744,19 +770,17 @@ function LogListContent({
   emptyIcon,
   emptyTitle,
   emptyDescription,
-  isDesktop,
+  showTable,
   renderTable,
   renderCards,
 }: Readonly<LogListContentProps>) {
   if (skeleton) return skeleton;
   if (error) return <LogError title={errorTitle} message={error} retrying={retrying} onRetry={onRetry} />;
   const empty = emptyLogState({ entriesCount, total, hasActiveFilters, emptyIcon, emptyTitle, emptyDescription });
-  // Mobile: one card per entry instead of a horizontally-scrolling table, mirroring
-  // AttendeesTable's/ReportsPage's own desktop-table/mobile-card split at the same
-  // useIsDesktop() breakpoint.
+  // Below 1024px: one card per entry instead of a table whose columns would not fit its box (audit-log-table.css).
   return (
     <RefetchRegion refreshing={refreshing} label={refreshLabel}>
-      {empty ?? (isDesktop ? renderTable() : renderCards())}
+      {empty ?? (showTable ? renderTable() : renderCards())}
     </RefetchRegion>
   );
 }
@@ -777,10 +801,20 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
   {
     key: "action",
     header: "Action",
-    cell: (entry) => <Badge variant={actionTone(entry.action_type)}>{entryActionLabel(entry)}</Badge>,
+    cell: (entry) => (
+      <>
+        <Badge variant={actionTone(entry.action_type)}>{entryActionLabel(entry)}</Badge>
+        <div className="audit-log-secondary audit-log-table__below-1280">
+          <span className="audit-log-scope" title={scopeLabel(entry, eventTitleById)}>
+            {scopeLabel(entry, eventTitleById)}
+          </span>
+        </div>
+      </>
+    ),
   },
   {
     key: "scope",
+    hideBelow: 1280,
     header: <HintLabel hint={SCOPE_HINT}>Scope</HintLabel>,
     title: (entry) => scopeLabel(entry, eventTitleById),
     cell: (entry) => <span className="audit-log-scope">{scopeLabel(entry, eventTitleById)}</span>,
@@ -795,6 +829,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
         {entry.actor_display_name && entry.actor_email && (
           <div className="audit-log-secondary">{entry.actor_email}</div>
         )}
+        <IpFoldLine ip={entry.ip} country={entry.country} />
       </>
     ),
   },
@@ -802,6 +837,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     key: "ip",
     header: "IP address",
     className: "audit-log-ip",
+    hideBelow: 1180,
     cell: (entry) => (
       <>
         {entry.ip ?? "-"}
@@ -910,7 +946,7 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
     : `Your local time · ${viewerLocalTimeText(entry.created_at)}`;
   const lines = [
     `Time: ${formatUtcPrimaryTime(entry.created_at)} (${localLine})`,
-    `Event: ${securityEventLabel(entry.event_type)}`,
+    `Action: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
     `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
   ];
@@ -938,8 +974,8 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     ),
   },
   {
-    key: "event",
-    header: "Event",
+    key: "action",
+    header: "Action",
     cell: (entry) => (
       <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
     ),
@@ -952,6 +988,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
       <>
         {securityUserDisplay(entry)}
         {securityUserEmail(entry) && <div className="audit-log-secondary">{securityUserEmail(entry)}</div>}
+        <IpFoldLine ip={entry.ip} country={entry.country} />
       </>
     ),
   },
@@ -959,6 +996,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     key: "ip",
     header: "IP address",
     className: "audit-log-ip",
+    hideBelow: 1180,
     cell: (entry) => (
       <>
         {entry.ip ?? "-"}
@@ -1124,23 +1162,23 @@ interface SecurityFilterFieldsProps {
   setPage: Dispatch<SetStateAction<number>>;
 }
 
-/** Security's own Event-type select - mirrors AuditFilterFields above. */
+/** Security's own Action select - mirrors AuditFilterFields above. An event is a gathering of people, so the select says Action. */
 function SecurityFilterFields({ filters, setFilters, setPage }: Readonly<SecurityFilterFieldsProps>) {
   return (
     <div className="audit-log-filters-menu__field">
-      <label className="audit-log-filter__label" htmlFor="security-audit-log-filter-event">
-        Event
+      <label className="audit-log-filter__label" htmlFor="security-audit-log-filter-action">
+        Action
       </label>
       <SearchableSelect
-        id="security-audit-log-filter-event"
-        label="Event"
-        placeholder="All event types"
-        searchPlaceholder="Search event types…"
-        emptyLabel="No event types found"
+        id="security-audit-log-filter-action"
+        label="Action"
+        placeholder="All actions"
+        searchPlaceholder="Search actions…"
+        emptyLabel="No actions found"
         showLabel={false}
         value={filters.eventType || "all"}
         options={[
-          { id: "all", label: "All event types" },
+          { id: "all", label: "All actions" },
           ...SECURITY_EVENT_TYPE_OPTIONS.map((type) => ({ id: type, label: securityEventLabel(type) })),
         ]}
         onChange={(value) => {
@@ -1649,6 +1687,13 @@ function LogView({
 
 type LogsView = "system" | "audit" | "security";
 
+/** The query parameter that holds the open view of the Logs tab, as in `?tab=logs&log=audit`: a refresh or a shared link opens the same view. */
+const LOGS_VIEW_PARAM = "log";
+
+function logsViewFromParam(value: string | null): LogsView {
+  return value === "audit" || value === "security" ? value : "system";
+}
+
 const LOGS_VIEW_OPTIONS: ReadonlyArray<SegmentedOption<LogsView>> = [
   { value: "system", label: "System" },
   { value: "audit", label: "Audit" },
@@ -1742,7 +1787,22 @@ function isFirstLogLoad(query: Readonly<{ loading: boolean; hasLoadedOnce: boole
 
 /** Superadmin audit log viewer — read-only paginated table with action and date filters. */
 export function AuditLogPanel() {
-  const [view, setView] = useState<LogsView>("system");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = logsViewFromParam(searchParams.get(LOGS_VIEW_PARAM));
+  const setView = useCallback(
+    (next: LogsView) => {
+      // Replace, as the tabs of the page do (SettingsLayout): a click on a view is not a step to go back to.
+      setSearchParams(
+        (previous) => {
+          const params = new URLSearchParams(previous);
+          params.set(LOGS_VIEW_PARAM, next);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
   // Mirrored up from SystemLogsPanel purely so the header's Live/Download buttons (which live
   // here, next to the System/Audit toggle, rather than being duplicated inside the panel) can
   // reflect its state - SystemLogsPanel itself remains the source of truth for both.
@@ -1750,6 +1810,8 @@ export function AuditLogPanel() {
   const [systemHasEntries, setSystemHasEntries] = useState(false);
   const systemLogsRef = useRef<SystemLogsPanelHandle>(null);
   const isDesktop = useIsDesktop();
+  // The boxed tables fit from 1024px: their columns, folded as far as they go, need more than the 460 to 680px a screen of 768 to 1023px leaves their box.
+  const showTable = useIsDesktop(1024);
   const { addToast } = useToast();
 
   const {
@@ -1990,9 +2052,10 @@ export function AuditLogPanel() {
       emptyIcon={<i className="ti ti-history" aria-hidden="true" />}
       emptyTitle="No audit log entries yet"
       emptyDescription="Actions taken across Settings will appear here."
-      isDesktop={isDesktop}
+      showTable={showTable}
       renderTable={() => (
         <LogTable
+          variant="audit"
           entries={entries}
           columns={auditColumns}
           rowKey={(entry) => entry.id}
@@ -2048,11 +2111,12 @@ export function AuditLogPanel() {
       total={security.total}
       hasActiveFilters={security.answeredWithFilters}
       emptyIcon={<i className="ti ti-shield-lock" aria-hidden="true" />}
-      emptyTitle="No security events yet"
-      emptyDescription="Logins, 2FA checks, logout, OIDC, and access-denied events will appear here."
-      isDesktop={isDesktop}
+      emptyTitle="No security log entries yet"
+      emptyDescription="Logins, 2FA checks, logouts, OIDC sign-ins and denied access will appear here."
+      showTable={showTable}
       renderTable={() => (
         <LogTable
+          variant="security"
           entries={security.entries}
           columns={SECURITY_COLUMNS}
           rowKey={(entry) => entry.id}

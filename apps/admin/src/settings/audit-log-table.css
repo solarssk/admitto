@@ -1,0 +1,141 @@
+/* The Audit and Security tables of the Logs tab: the shared boxed table (components/item-table.css) from 1024px, the cards below it (`useIsDesktop(1024)` in
+   AuditLogPanel.tsx). The two tables put Time, the action, the user, the IP address and the details at the same x at every width, so that switching between them
+   does not make the headings jump: Security has no Scope column, so its Action column is as wide as Audit's Action and Scope together. A column that does not fit
+   folds into a line of another one instead of being cut or scrolled: Scope under the action below 1280px, the IP address under the user below 1180px. Every column
+   has a width, so a box wider than their sum is shared among them in proportion (as in the sessions of the Account page). At the floor of each step the widths sum
+   to less than the box of that screen, with its classic scrollbar: 55.5rem in 56.8rem at 1280px, 47rem in 50.6rem at 1180px and 39rem in 40.8rem at 1024px. The Time column
+   is 13rem because the UTC line of a time ("2026-11-25 20:40:14 UTC", 10.9rem in tabular figures) and the padding of the cell need 12.7rem to stay on one line. */
+
+/* Audit: Time, Action, Scope, User, IP address, Details. */
+.item-table.audit-log-box--audit .table :is(th, td):nth-child(1) {
+  width: 13rem;
+}
+
+.item-table.audit-log-box--audit .table :is(th, td):nth-child(2) {
+  width: 10rem;
+}
+
+.item-table.audit-log-box--audit .table :is(th, td):nth-child(3) {
+  width: 8.5rem;
+}
+
+.item-table.audit-log-box--audit .table :is(th, td):nth-child(4) {
+  width: 10rem;
+}
+
+.item-table.audit-log-box--audit .table :is(th, td):nth-child(5) {
+  width: 8rem;
+}
+
+.item-table.audit-log-box--audit .table :is(th, td):nth-child(6) {
+  width: 6rem;
+}
+
+/* Security: Time, Action, User, IP address, Details. The Action column takes the width of Audit's Action and Scope. */
+.item-table.audit-log-box--security .table :is(th, td):nth-child(1) {
+  width: 13rem;
+}
+
+.item-table.audit-log-box--security .table :is(th, td):nth-child(2) {
+  width: 18.5rem;
+}
+
+.item-table.audit-log-box--security .table :is(th, td):nth-child(3) {
+  width: 10rem;
+}
+
+.item-table.audit-log-box--security .table :is(th, td):nth-child(4) {
+  width: 8rem;
+}
+
+.item-table.audit-log-box--security .table :is(th, td):nth-child(5) {
+  width: 6rem;
+}
+
+/* A cell of a fixed layout cannot grow to fit a long word: an address or a title with no break in it wraps instead of painting across the next cell. */
+.item-table.audit-log-box .table td {
+  overflow-wrap: anywhere;
+}
+
+/* The badge of an action is one word of a long label ("Guest registration own address updated") in a cell that is narrower than the label: it wraps, as a rounded
+   box and not a pill, and never paints out of its cell. */
+.item-table.audit-log-box .table .at-badge {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.25;
+  text-align: left;
+  border-radius: var(--radius-md);
+}
+
+/* The lines that a folded column leaves in the cell of another one: nothing on a screen with room for the column. */
+.audit-log-table__below-1280,
+.audit-log-table__below-1180 {
+  display: none;
+  margin-top: var(--space-1);
+}
+
+/* Scope has a column from 1280px and a line under the action below it. */
+@media (max-width: 1279px) {
+  /* No size for the text either: the address of a row is a text node, which `> *` below cannot hide, and in a cell of no width it would wrap letter by letter. */
+  .item-table.audit-log-box .table :is(th, td).audit-log-table__from-1280 {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+    white-space: nowrap;
+  }
+
+  .item-table.audit-log-box .table th.audit-log-table__from-1280 {
+    font-size: 0;
+  }
+
+  .item-table.audit-log-box .table :is(th, td).audit-log-table__from-1280 > * {
+    display: none;
+  }
+
+  .item-table.audit-log-box .audit-log-table__below-1280 {
+    display: block;
+  }
+
+  /* Without Scope the two tables have the same columns: the action of Security is as wide as that of Audit. */
+  .item-table.audit-log-box--security .table :is(th, td):nth-child(2) {
+    width: 10rem;
+  }
+}
+
+/* The IP address has a column from 1180px and a line under the user below it. */
+@media (max-width: 1179px) {
+  .item-table.audit-log-box .table :is(th, td).audit-log-table__from-1180 {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+    white-space: nowrap;
+  }
+
+  .item-table.audit-log-box .table th.audit-log-table__from-1180 {
+    font-size: 0;
+  }
+
+  .item-table.audit-log-box .table :is(th, td).audit-log-table__from-1180 > * {
+    display: none;
+  }
+
+  .item-table.audit-log-box .audit-log-table__below-1180 {
+    display: block;
+  }
+}
+
+/* A card is read where there is no hover, and a word with no break in it (an IPv6 address in its foot, a long address in its lines) wraps inside the card instead of
+   pushing its details out of it: at 390px it made the page 478px wide. */
+.audit-log-card {
+  overflow-wrap: anywhere;
+}
+
+.audit-log-card__foot > span {
+  min-width: 0;
+}

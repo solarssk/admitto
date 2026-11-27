@@ -138,7 +138,7 @@ describe("AuditLogPanel operator errors", () => {
   it("shows operator-safe load failure", async () => {
     vi.mocked(fetchAuditLog).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
-    renderWithToast(<AuditLogPanel />);
+    renderWithToastAndRouter(<AuditLogPanel />);
     // AuditLogPanel now opens on the System view by default - switch to Audit to see this.
     fireEvent.click(screen.getByRole("radio", { name: "Audit" }));
     await waitFor(() => {
