@@ -18,7 +18,9 @@ import { DeliveryLogSkeleton } from "./DeliveryLogSkeleton.js";
 import { DeliveryRowMenu } from "./DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "./SentMessagePreviewModal.js";
 import { DELIVERY_PAGE_SIZE_OPTIONS, type DeliveryLog } from "./useDeliveryLog.js";
+import "../components/item-table.css";
 import "./communication.css";
+import "./delivery-log-table.css";
 
 const NO_ROWS: DeliveryDto[] = [];
 
@@ -31,6 +33,11 @@ function DeliveryTime({ row }: Readonly<{ row: DeliveryDto }>) {
       {local && <LocalTimeLine title="Sender's local time">{local}</LocalTimeLine>}
     </TimeStack>
   );
+}
+
+/** The template and the purpose of a delivery as one line, for the screen that has no room for their two columns. */
+function templateAndPurpose(row: DeliveryDto): string {
+  return `${templateLabel(row)} · ${purposeLabel(row.purpose)}`;
 }
 
 const SENT_QUEUED_TIME_HINT =
@@ -158,7 +165,8 @@ interface DeliveryListContentProps {
   deliveries: DeliveryDto[];
   /** Whether the answer on screen was asked with a filter or a search: it says which empty state is true. */
   filtersActive: boolean;
-  isDesktop: boolean;
+  /** The boxed table (from 1024px), or the stacked cards below it. */
+  showTable: boolean;
   onViewSentMessage: (row: DeliveryDto) => void;
   onViewDetails: (row: DeliveryDto) => void;
   onResend: (row: DeliveryDto) => void;
@@ -180,7 +188,7 @@ function DeliveryListContent({
   eventId,
   deliveries,
   filtersActive,
-  isDesktop,
+  showTable,
   onViewSentMessage,
   onViewDetails,
   onResend,
@@ -205,7 +213,7 @@ function DeliveryListContent({
     );
   }
 
-  if (!isDesktop) {
+  if (!showTable) {
     return (
       <div className="communication-cards">
         {deliveries.map((row) => (
@@ -251,60 +259,66 @@ function DeliveryListContent({
   }
 
   return (
-    <div className="communication-table-wrap">
-      <table className="table communication-table">
-        <thead>
-          <tr>
-            <th>Recipient</th>
-            <th>Template</th>
-            <th>Purpose</th>
-            <th>Status</th>
-            <th>
-              <HintLabel hint={SENT_QUEUED_TIME_HINT}>Sent / Queued</HintLabel>
-            </th>
-            <th className="communication-row-menu-cell" aria-label="Actions">
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {deliveries.map((row) => (
-            <tr key={row.id}>
-              <td>
-                <Link
-                  className="communication-user"
-                  to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
-                >
-                  <strong>{row.attendee_name}</strong>
-                  <span className="mono muted">{row.recipient_email ?? "-"}</span>
-                </Link>
-              </td>
-              <td title={templateLabel(row)}>
-                <span className="communication-template-cell">{templateLabel(row)}</span>
-              </td>
-              <td>{purposeLabel(row.purpose)}</td>
-              <td>
-                <StatusBadge status={deliveryStatusBadgeKey(row.status)} />
-              </td>
-              <td className="muted">
-                <DeliveryTime row={row} />
-              </td>
-              <td className="communication-row-menu-cell">
-                <DeliveryRowMenu
-                row={row}
-                onViewSentMessage={onViewSentMessage}
-                onViewDetails={onViewDetails}
-                onResend={onResend}
-                onDismiss={onDismiss}
-                bounceResolved={resolvedBounceRowIds.has(row.id)}
-                bouncePending={pendingBounceRowIds.has(row.id)}
-                archived={archived}
-              />
-              </td>
+    <div className="item-table delivery-log-box">
+      <div className="attendees-table-wrap">
+        <table className="table communication-table">
+          <thead>
+            <tr>
+              <th>Recipient</th>
+              <th className="delivery-log-table__from-1280">Template</th>
+              <th className="delivery-log-table__from-1280">Purpose</th>
+              <th>Status</th>
+              <th>
+                <HintLabel hint={SENT_QUEUED_TIME_HINT}>Sent / Queued</HintLabel>
+              </th>
+              <th className="communication-row-menu-cell" aria-label="Actions">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {deliveries.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  <Link
+                    className="communication-user"
+                    to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
+                  >
+                    <strong>{row.attendee_name}</strong>
+                    <span className="mono muted">{row.recipient_email ?? "-"}</span>
+                  </Link>
+                  {/* What a screen with no room for the two columns beside it keeps of them: one line, so that no text is in the page twice. */}
+                  <div className="delivery-log-table__below-1280" title={templateAndPurpose(row)}>
+                    <span className="communication-template-cell">{templateAndPurpose(row)}</span>
+                  </div>
+                </td>
+                <td className="delivery-log-table__from-1280" title={templateLabel(row)}>
+                  <span className="communication-template-cell">{templateLabel(row)}</span>
+                </td>
+                <td className="delivery-log-table__from-1280">{purposeLabel(row.purpose)}</td>
+                <td>
+                  <StatusBadge status={deliveryStatusBadgeKey(row.status)} />
+                </td>
+                <td className="muted">
+                  <DeliveryTime row={row} />
+                </td>
+                <td className="communication-row-menu-cell">
+                  <DeliveryRowMenu
+                    row={row}
+                    onViewSentMessage={onViewSentMessage}
+                    onViewDetails={onViewDetails}
+                    onResend={onResend}
+                    onDismiss={onDismiss}
+                    bounceResolved={resolvedBounceRowIds.has(row.id)}
+                    bouncePending={pendingBounceRowIds.has(row.id)}
+                    archived={archived}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -372,7 +386,8 @@ export function DeliveryLogTab({
     hasActiveFilters,
     clearFilters,
   } = log;
-  const isDesktop = useIsDesktop();
+  // The boxed table fits from 1024px: its columns, folded as far as they go, need more than the 400 to 650px that a screen of 768 to 1023px leaves its box.
+  const showTable = useIsDesktop(1024);
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -431,7 +446,7 @@ export function DeliveryLogTab({
 
   let body: ReactNode;
   if (!card.gate.showContent) {
-    body = <DeliveryLogSkeleton held={!card.gate.showIndicator} slow={card.slow} desktop={isDesktop} />;
+    body = <DeliveryLogSkeleton held={!card.gate.showIndicator} slow={card.slow} desktop={showTable} />;
   } else if (card.failure.error) {
     body = (
       <RetryEmptyState
@@ -448,7 +463,7 @@ export function DeliveryLogTab({
           eventId={eventId}
           deliveries={rows}
           filtersActive={Boolean(answer?.filtersActive)}
-          isDesktop={isDesktop}
+          showTable={showTable}
           onViewSentMessage={setSentMessageRow}
           onViewDetails={setDetailsRow}
           onResend={(row) => void handleResend(row)}
@@ -463,7 +478,6 @@ export function DeliveryLogTab({
 
   return (
     <Card
-      padded={false}
       className="communication-delivery-header"
       title={<HintLabel hint={DELIVERY_LOG_HINT}>Delivery log</HintLabel>}
       actions={
@@ -510,23 +524,21 @@ export function DeliveryLogTab({
       {/* Outside the ladder above: a page that fails to load replaces the rows with the error, and the pager that was pressed
           keeps its focus, with Previous as a way back. It is busy (and keeps the focus, aria-disabled) while a page is on its way. */}
       {total > 0 && (
-        <div className="communication-log-footer">
-          <PaginationFooter
-            idPrefix="communication-log"
-            busy={list.refreshing || list.loading}
-            page={safePage}
-            pageSize={pageSize}
-            totalPages={totalPages}
-            totalRows={total}
-            pageSizeOptions={DELIVERY_PAGE_SIZE_OPTIONS}
-            onPageSizeChange={(size) => {
-              setPageSize(size);
-              setPage(1);
-            }}
-            onPrevious={() => setPage(Math.max(1, safePage - 1))}
-            onNext={() => setPage(safePage + 1)}
-          />
-        </div>
+        <PaginationFooter
+          idPrefix="communication-log"
+          busy={list.refreshing || list.loading}
+          page={safePage}
+          pageSize={pageSize}
+          totalPages={totalPages}
+          totalRows={total}
+          pageSizeOptions={DELIVERY_PAGE_SIZE_OPTIONS}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+          onPrevious={() => setPage(Math.max(1, safePage - 1))}
+          onNext={() => setPage(safePage + 1)}
+        />
       )}
       {sentMessageRow && (
         <SentMessagePreviewModal

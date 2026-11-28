@@ -690,6 +690,53 @@ describe("the Audit and Security tables of the Logs tab", () => {
   });
 });
 
+describe("the Delivery log table", () => {
+  const delivery = parse(read("apps/admin/src/communication/delivery-log-table.css"));
+  const width = (column: number) => rem(bodyOf(delivery, `.item-table.delivery-log-box .table :is(th, td):nth-child(${column})`), "width");
+  const sum = (...columns: number[]) => columns.reduce((total, column) => total + width(column), 0);
+  const fold = ".item-table.delivery-log-box .table :is(th, td).delivery-log-table__from-1280";
+
+  it("fits its six columns in the box at 1280px and the four that stay below it in the box at 1024px, since a fixed layout paints past its box when they add up to more", () => {
+    expect(sum(1, 2, 3, 4, 5, 6)).toBeLessThanOrEqual(boxRem(1280));
+    expect(sum(1, 4, 5, 6)).toBeLessThanOrEqual(boxRem(1024));
+  });
+
+  it("gives every column a width, so that a wider box is shared in proportion and no column is handed all of it", () => {
+    for (const column of [1, 2, 3, 4, 5, 6]) expect(Number.isFinite(width(column)), `column ${column}`).toBe(true);
+  });
+
+  it("leaves the recipient room for a name, and the time the width that its local-time line needs to stay on one line", () => {
+    // The first column pads 1rem and 0.75rem; the second line of a recipient is an e-mail address, which wraps.
+    expect(width(1) - 1.75).toBeGreaterThanOrEqual(MIN_NAME);
+    // "03:05 PM (Europe/Warsaw, UTC+2)" is 222px with its icon, and the cell pads 12px on both sides of it: 14.6rem. (Longer zone names wrap, as data does.)
+    expect(width(5)).toBeGreaterThanOrEqual(14.6);
+  });
+
+  it("folds Template and Purpose below 1280px into a line under the recipient, and shows that line only there", () => {
+    const folded = bodyOf(delivery, fold, "@media (max-width: 1279px)");
+    expect(sets(folded, "width", "0")).toBe(true);
+    // A hidden cell that kept the size of its text would still be as tall as it, and a second size after the first would win over it.
+    expect(sets(folded, "font-size", "0")).toBe(true);
+    expect(folded.match(/(?:^|[;\s])font-size\s*:/g)).toHaveLength(1);
+    expect(sets(folded, "white-space", "nowrap")).toBe(true);
+    expect(sets(bodyOf(delivery, ".item-table.delivery-log-box .delivery-log-table__below-1280", "@media (max-width: 1279px)"), "display", "block")).toBe(true);
+    expect(sets(bodyOf(delivery, ".delivery-log-table__below-1280"), "display", "none")).toBe(true);
+  });
+
+  it("wraps a long word in any cell, where a fixed layout would let an address with no break in it paint across the next one", () => {
+    expect(sets(bodyOf(delivery, ".item-table.delivery-log-box .table td"), "overflow-wrap", "anywhere")).toBe(true);
+  });
+
+  it("has no wrapper, edge to edge toolbar or footer inset of its own left in the stylesheet of the page: the card is a padded one", () => {
+    const communication = parse(read("apps/admin/src/communication/communication.css"));
+    expect(communication.some((r) => r.selector.includes(".communication-table-wrap"))).toBe(false);
+    expect(communication.some((r) => r.selector.includes(".communication-log-footer"))).toBe(false);
+    const toolbar = bodyOf(communication, ".communication-toolbar");
+    expect(declares(toolbar, "padding")).toBe(false);
+    expect(declares(toolbar, "border-bottom")).toBe(false);
+  });
+});
+
 describe("the sessions of the Account page", () => {
   const account = parse(read("apps/admin/src/account/account-page.css"));
   const width = (column: number) => rem(bodyOf(account, `.item-table.account-sessions-table .table :is(th, td):nth-child(${column})`), "width");

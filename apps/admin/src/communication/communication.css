@@ -802,15 +802,13 @@
   justify-content: center;
 }
 
-/* Toolbar lives inside the log Card (like attendees-toolbar), not above it - search fills
-   remaining space, Filters + Export sit at the trailing edge. */
+/* Toolbar lives inside the log Card (a padded one), above the boxed table - search fills
+   remaining space, Filters sit at the trailing edge. */
 .communication-toolbar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4);
-  min-height: calc(var(--control-h) + 2 * var(--space-4) + 1px);
-  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-4);
   flex-wrap: wrap;
 }
 
@@ -888,19 +886,6 @@
   width: 100%;
 }
 
-.communication-table-wrap {
-  overflow-x: auto;
-}
-
-/* PaginationFooter (.audit-log-footer) carries no horizontal padding of its own - it assumes
-   a padded Card body (its only other two call sites, AuditLogPanel and EventArchivingPanel,
-   both use the default padded Card). This Card is padded={false} so the table can bleed
-   edge-to-edge for horizontal scroll, so the footer needs its own inset here, matching
-   .communication-toolbar's own var(--space-4) compensation above it. */
-.communication-log-footer {
-  padding: 0 var(--space-4) var(--space-4);
-}
-
 .communication-table {
   width: 100%;
 }
@@ -959,7 +944,7 @@
   text-align: right;
 }
 
-/* Mobile card list (< 768px, same useIsDesktop-driven split as Attendees/Reports). */
+/* Card list (< 1024px, where the boxed table of delivery-log-table.css gives way; the split is useIsDesktop(1024) in DeliveryLogTable.tsx). */
 .communication-cards {
   display: flex;
   flex-direction: column;

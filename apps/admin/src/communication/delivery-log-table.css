@@ -1,0 +1,69 @@
+/* The Delivery log in the shared boxed table (components/item-table.css) from 1024px, and the stacked cards below it (`useIsDesktop(1024)` in DeliveryLogTable.tsx). Every column
+   has a width, so a box wider than their sum is shared among them in proportion. From 1280px the table has all six columns (54.5rem in the 56.8rem of its box at that width, with
+   the classic scrollbar). Below it Template and Purpose fold into one line under the recipient and four columns are left (39rem in the 40.8rem of 1024px). The Sent / Queued column
+   is 15.5rem because the local-time line of a time ("03:05 PM (Europe/Warsaw, UTC+2)", 13.9rem) and the padding of its cell need 15.4rem to stay on one line, and the Actions column is
+   the 2rem button of the row menu and the padding on both sides of it. */
+
+/* Recipient, Template, Purpose, Status, Sent / Queued, Actions. */
+.item-table.delivery-log-box .table :is(th, td):nth-child(1) {
+  width: 13.5rem;
+}
+
+.item-table.delivery-log-box .table :is(th, td):nth-child(2) {
+  width: 9.5rem;
+}
+
+.item-table.delivery-log-box .table :is(th, td):nth-child(3) {
+  width: 6rem;
+}
+
+.item-table.delivery-log-box .table :is(th, td):nth-child(4) {
+  width: 6.5rem;
+}
+
+.item-table.delivery-log-box .table :is(th, td):nth-child(5) {
+  width: 15.5rem;
+}
+
+.item-table.delivery-log-box .table :is(th, td):nth-child(6) {
+  width: 3.5rem;
+}
+
+/* A cell of a fixed layout cannot grow to fit a long word: an e-mail address or a template name with no break in it wraps instead of painting across the next cell. */
+.item-table.delivery-log-box .table td {
+  overflow-wrap: anywhere;
+}
+
+/* Template and Purpose as one line under the recipient: nothing on a screen with room for their columns. */
+.delivery-log-table__below-1280 {
+  display: none;
+  margin-top: var(--space-1);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-muted);
+}
+
+@media (max-width: 1279px) {
+  /* No size for the text either: a hidden cell that kept its text would still be as tall as it, in a cell of no width. */
+  .item-table.delivery-log-box .table :is(th, td).delivery-log-table__from-1280 {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+    white-space: nowrap;
+  }
+
+  .item-table.delivery-log-box .table th.delivery-log-table__from-1280 {
+    font-size: 0;
+  }
+
+  .item-table.delivery-log-box .table :is(th, td).delivery-log-table__from-1280 > * {
+    display: none;
+  }
+
+  .item-table.delivery-log-box .delivery-log-table__below-1280 {
+    display: block;
+  }
+}
