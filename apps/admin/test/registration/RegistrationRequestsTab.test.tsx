@@ -239,14 +239,20 @@ describe("RegistrationRequestsTab: the requests", () => {
     expect(within(third!).getByText("-")).toBeTruthy();
   });
 
-  it("shows the time of a request in UTC, with its machine-readable form", async () => {
+  it("shows the time of a request in UTC, in the look of every time, with its machine-readable form", async () => {
     renderTab();
     await listLoaded();
 
-    const time = within(bodyRows()[0]!).getByText(/UTC$/);
-    expect(time.tagName).toBe("TIME");
+    const row = bodyRows()[0]!;
+    const time = row.querySelector("time")!;
     expect(time.getAttribute("datetime")).toBe("2026-10-23T10:14:00.000Z");
     expect(time.textContent).toContain("2026");
+    expect(time.textContent).toMatch(/ UTC$/);
+    // The zone is its own element, quiet as in every other time (time-stack.css), and the time is the primary line of a time stack.
+    expect(time.querySelector(".time-stack__zone")?.textContent).toBe(" UTC");
+    expect(time.closest(".time-stack__utc")).toBeTruthy();
+    // The list is not sent the zone of a guest's browser, so it has no clock of theirs: the viewer's own is never put in its place.
+    expect(row.querySelector(".time-stack__local")).toBeNull();
   });
 
   it("marks a guest who brings someone, and says so to a screen reader", async () => {

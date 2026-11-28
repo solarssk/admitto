@@ -132,12 +132,7 @@
   color: var(--text-muted);
 }
 
-.registration-requests__table time,
-.registration-requests__cards time {
-  color: var(--text-secondary);
-}
-
-/* The time of a row is one line ("20 Nov 2026, 08:14 UTC"), not three. */
+/* The time of a row is one line ("20 Nov 2026, 08:14 UTC"), not three. Its colours are those of every time (time-stack.css): the digits dark and the zone quiet. */
 .registration-requests__table time {
   white-space: nowrap;
 }

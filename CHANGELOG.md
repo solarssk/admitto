@@ -112,6 +112,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Show every time in one look: the normal font with aligned digits, a quiet grey zone and the local time under it, in the logs, the attendee page, Reports, the delivery log and the sessions ([#1994](https://github.com/solarssk/admitto/pull/1994))
 - Show the Audit and Security logs in the standard boxed table with shorter action names, call the Security Event column Action, and keep the open view in the page address ([#1995](https://github.com/solarssk/admitto/pull/1995))
 - Show the Delivery log in the standard boxed table, with the template and purpose under the recipient below 1280 px and cards below 1024 px ([#1996](https://github.com/solarssk/admitto/pull/1996))
+- Show the times of a registration request in the standard look, and the guest's own clock under the time of the request when the event kept the guest's time zone ([#1998](https://github.com/solarssk/admitto/pull/1998))
 
 ### Fixed
 

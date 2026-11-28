@@ -1,7 +1,7 @@
 import { Notice } from "@admitto/ui";
 import type { RegistrationCountsDto } from "../api/types.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
 import { pluralize } from "../utils/pluralize.js";
+import { RequestInlineTime } from "./RequestTime.js";
 import "./registration-requests.css";
 
 /**
@@ -21,7 +21,7 @@ export function RequestsBanner({ counts }: Readonly<{ counts: RegistrationCounts
         {oldest ? (
           <>
             {" "}
-            The oldest came in on <time dateTime={oldest}>{formatUtcDateTime(oldest)}</time>.
+            The oldest came in on <RequestInlineTime iso={oldest} />.
           </>
         ) : null}
       </Notice>

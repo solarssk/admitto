@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Badge, Button, Checkbox, EmptyState, Skeleton, StatusBadge } from "@admitto/ui";
 import type { RegistrationListItemDto, RegistrationMailBriefDto } from "../api/types.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
 import { SLOW_NOTICE_TEXT } from "../utils/loading-timing.js";
 import {
   requestCompanionsLabel,
@@ -10,6 +9,7 @@ import {
   requestMailTone,
 } from "./registrationRequests.js";
 import type { RequestSelection } from "./useRequestSelection.js";
+import { RequestSentTime } from "./RequestTime.js";
 import "../components/item-table.css";
 import "./registration-requests.css";
 
@@ -98,11 +98,6 @@ function RequestCompany({ row }: Readonly<{ row: RegistrationListItemDto }>) {
   );
 }
 
-/** The time the guest sent the request: the same text for every viewer, in UTC (it has no zone of its own). */
-function RequestTime({ iso }: Readonly<{ iso: string }>) {
-  return <time dateTime={iso}>{formatUtcDateTime(iso)}</time>;
-}
-
 function RequestStatus({ status }: Readonly<{ status: RegistrationListItemDto["status"] }>) {
   return <StatusBadge status={`registration_${status}`} />;
 }
@@ -133,7 +128,7 @@ function RequestTableRow({ row, selected, onToggle, onOpen }: Readonly<RowProps>
         <RequestMail mail={row.last_mail} />
       </td>
       <td>
-        <RequestTime iso={row.created_at} />
+        <RequestSentTime iso={row.created_at} timeZone={null} />
       </td>
     </tr>
   );
@@ -154,7 +149,7 @@ function RequestCard({ row, selected, onToggle, onOpen }: Readonly<RowProps>) {
         {affiliation ? <span className="registration-requests__affiliation">{affiliation}</span> : null}
         <div className="registration-requests__card-facts">
           <RequestStatus status={row.status} />
-          <RequestTime iso={row.created_at} />
+          <RequestSentTime iso={row.created_at} timeZone={null} />
         </div>
         <div className="registration-requests__card-mail">
           <span className="registration-requests__card-label">Last email</span>
