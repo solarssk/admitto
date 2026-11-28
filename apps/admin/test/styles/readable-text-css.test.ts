@@ -317,26 +317,20 @@ describe("the Requests tab of the Registration page", () => {
     }
   });
 
-  it("gives the guest the widest column of the table, the company the room of a long department and the last email the room of its longest name, so a row stays two lines tall (the first column holds the checkbox)", () => {
-    expect(sets(bodyOf(requests, ".registration-requests__table thead th:nth-child(2)"), "width", "32%")).toBe(true);
-    expect(sets(bodyOf(requests, ".registration-requests__table thead th:nth-child(3)"), "min-width", "12rem")).toBe(true);
-    expect(sets(bodyOf(requests, ".registration-requests__table thead th:nth-child(5)"), "min-width", "9.5rem")).toBe(true);
-  });
-
   it("balances a company and a department, which stand alone in their cell, so that a name of two lines does not end on a word or two", () => {
     expect(sets(bodyOf(requests, ".registration-requests__company > span"), "text-wrap", "balance")).toBe(true);
   });
 
   it("gives the muted texts of a selected row and card the secondary grey, which is readable on the tint (the muted one is under 4.5:1)", () => {
     for (const selector of [
-      ".attendees-table-v2__row--selected .registration-requests__email, .attendees-table-v2__row--selected .registration-requests__department, .attendees-table-v2__row--selected .registration-requests__mail-kind, .attendees-table-v2__row--selected .registration-requests__none, .registration-requests__card--selected .registration-requests__email, .registration-requests__card--selected .registration-requests__affiliation, .registration-requests__card--selected .registration-requests__mail-kind, .registration-requests__card--selected .registration-requests__card-label, .registration-requests__card--selected .registration-requests__none",
+      ".attendees-table-v2__row--selected .registration-requests__email, .attendees-table-v2__row--selected .registration-requests__department, .attendees-table-v2__row--selected .registration-requests__mail-kind, .attendees-table-v2__row--selected .registration-requests__none, .attendees-table-v2__row--selected .registration-requests__below-1360, .attendees-table-v2__row--selected .registration-requests__below-1180, .registration-requests__card--selected .registration-requests__email, .registration-requests__card--selected .registration-requests__affiliation, .registration-requests__card--selected .registration-requests__mail-kind, .registration-requests__card--selected .registration-requests__card-label, .registration-requests__card--selected .registration-requests__none",
     ]) {
       expect(sets(bodyOf(requests, selector), "color", "var\\(--text-secondary\\)")).toBe(true);
     }
   });
 
-  it("leaves the colours of a time of a request to the look of every time (time-stack.css), with no colour of its own on `time` in the table or the cards", () => {
-    const ofATime = requests.filter((rule) => rule.selector.split(",").some((part) => part.trim().endsWith(" time")));
+  it("leaves the colours of a time of a request to the look of every time (time-stack.css), with no colour of its own on a time in the table or the cards", () => {
+    const ofATime = requests.filter((rule) => /(?:^|[\s.])time\b|time-stack/.test(rule.selector));
     expect(ofATime.length).toBeGreaterThan(0);
     for (const rule of ofATime) expect(declares(rule.body, "color"), rule.selector).toBe(false);
   });
@@ -347,11 +341,11 @@ describe("the Requests tab of the Registration page", () => {
     expect(sets(bodyOf(requests, ".registration-requests__cards-wrap"), "margin", "var\\(--space-4\\)")).toBe(true);
   });
 
-  it("keeps the table at a width it can be read in, and lets only it scroll sideways, inside its box, never the page", () => {
-    const box = ".item-table.registration-requests__box";
-    expect(sets(bodyOf(requests, `${box} .registration-requests__table-wrap .table`), "min-width", "640px")).toBe(true);
-    expect(sets(bodyOf(requests, `${box} .registration-requests__table-wrap .table`), "table-layout", "auto")).toBe(true);
-    expect(sets(bodyOf(requests, `${box} .registration-requests__table-wrap`), "overflow-x", "auto")).toBe(true);
+  it("keeps the shared fixed layout of the boxed table: no minimum width, no automatic layout and no sideways scroll of its own, which were what squeezed the guest to 59px at 1024px", () => {
+    for (const rule of requests.filter((r) => r.selector.includes("registration-requests__box") || r.selector.includes("registration-requests__table"))) {
+      for (const property of ["min-width", "table-layout", "overflow-x"]) expect(declares(rule.body, property), `${rule.selector} ${property}`).toBe(false);
+    }
+    expect(requests.some((r) => r.selector.includes("table-wrap"))).toBe(false);
   });
 
   it("gives the cards a box that looks like the table's: a border, rounded corners and a grey head row for Select all", () => {
@@ -792,6 +786,63 @@ describe("the Admission log table of the Reports page", () => {
     expect(declares(note, "border-bottom")).toBe(false);
     const footer = bodyOf(reportsPage, ".reports-skeleton__footer");
     for (const property of ["margin-top", "padding-top", "border-top"]) expect(declares(footer, property), property).toBe(true);
+  });
+});
+
+describe("the table of the Requests tab", () => {
+  const box = ".item-table.registration-requests__box";
+  const width = (column: number) => rem(bodyOf(requests, `${box} .table :is(th, td):nth-child(${column})`), "width");
+  const sum = (...columns: number[]) => columns.reduce((total, column) => total + width(column), 0);
+  const CLASSIC_SCROLLBAR = 15 / 16;
+
+  it("fits its six columns in the box at 1360px, the five that stay below it at 1180px and the four that stay below that at 1024px, with the classic scrollbar, since a fixed layout paints past its box when they add up to more", () => {
+    // Checkbox, Guest, Company, Status, Last email, Registered.
+    expect(sum(1, 2, 3, 4, 5, 6)).toBeLessThanOrEqual(boxRem(1360) - CLASSIC_SCROLLBAR);
+    expect(sum(1, 2, 4, 5, 6)).toBeLessThanOrEqual(boxRem(1180) - CLASSIC_SCROLLBAR);
+    expect(sum(1, 2, 4, 6)).toBeLessThanOrEqual(boxRem(1024) - CLASSIC_SCROLLBAR);
+  });
+
+  it("gives every column a width, so that a wider box is shared in proportion and no column is handed all of it", () => {
+    for (const column of [1, 2, 3, 4, 5, 6]) expect(Number.isFinite(width(column)), `column ${column}`).toBe(true);
+  });
+
+  it("keeps the guest the widest column, with room for a name after its padding, and gives the status and the last email the room of their longest badge and name", () => {
+    for (const column of [3, 4, 5, 6]) expect(width(2), `column ${column}`).toBeGreaterThan(width(column));
+    expect(width(2) - 2).toBeGreaterThanOrEqual(MIN_NAME);
+    // "Waiting for a decision" is 138px in 12px semibold, "Address confirmation" 132px, and a cell pads about 29px.
+    expect(width(4) * 16 - 29).toBeGreaterThanOrEqual(138);
+    expect(width(5) * 16 - 29).toBeGreaterThanOrEqual(132);
+  });
+
+  it("folds Company below 1360px into a line under the guest and Last email below 1180px into a line under the status, and shows each line only there", () => {
+    for (const [from, query, line] of [
+      [1360, "@media (max-width: 1359px)", "registration-requests__below-1360"],
+      [1180, "@media (max-width: 1179px)", "registration-requests__below-1180"],
+    ] as const) {
+      const folded = bodyOf(requests, `${box} .table :is(th, td).registration-requests__from-${from}`, query);
+      expect(sets(folded, "width", "0"), `${from}`).toBe(true);
+      // A hidden cell that kept the size of its text would still be as tall as it, and a second size after the first would win over it.
+      expect(sets(folded, "font-size", "0"), `${from}`).toBe(true);
+      expect(folded.match(/(?:^|[;\s])font-size\s*:/g), `${from}`).toHaveLength(1);
+      expect(sets(folded, "white-space", "nowrap"), `${from}`).toBe(true);
+      expect(sets(bodyOf(requests, `${box} .${line}`, query), "display", "block"), `${from}`).toBe(true);
+    }
+    expect(sets(bodyOf(requests, ".registration-requests__below-1360, .registration-requests__below-1180"), "display", "none")).toBe(true);
+  });
+
+  it("keeps the two fold lines as quiet as the address under a name, and a failed email the one red in them", () => {
+    const quiet = bodyOf(requests, ".registration-requests__below-1360, .registration-requests__below-1180");
+    expect(sets(quiet, "color", "var\\(--text-muted\\)")).toBe(true);
+    expect(sets(quiet, "font-size", "var\\(--fs-xs\\)")).toBe(true);
+    expect(sets(bodyOf(requests, `${box} .registration-requests__fold-mail--error`), "color", "var\\(--status-error-fg\\)")).toBe(true);
+    // The pending and the sent line are grey: a colour that means something is on the one that needs a person.
+    expect(requests.some((r) => r.selector.includes("fold-mail--ok") || r.selector.includes("fold-mail--warn"))).toBe(false);
+  });
+
+  it("wraps a long word in any cell, and balances a time that does not fit on one line", () => {
+    expect(sets(bodyOf(requests, `${box} .table td`), "overflow-wrap", "anywhere")).toBe(true);
+    // "Oct 23, 2026, 10:14 AM UTC": balanced, it breaks after the date, not between 10:14 and AM.
+    expect(sets(bodyOf(requests, `${box} .time-stack__utc`), "text-wrap", "balance")).toBe(true);
   });
 });
 

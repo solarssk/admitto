@@ -14,42 +14,100 @@
   padding: var(--space-4) var(--space-4) 0;
 }
 
-/* The table is the boxed table of the other lists (components/item-table.css), inset by the card. This one has six columns with
-   long content (an address, a company and a department, the name of an email), so it does not take the standard's fixed layout and the
-   28% of its first column: the columns share the room by their content, the checkbox column is narrow, and under 640px the table
-   scrolls inside its box, never the page. Below 1024px the requests are cards, so the standard's ladder for columns does not apply. */
+/* The table is the boxed table of the other lists (components/item-table.css), inset by the card: a fixed layout with a width for every column, so that a box wider than
+   their sum is shared in proportion and the guest, whose address can break at any dot, is never squeezed by the columns beside it (with the columns sharing the room by
+   their content it was 59px wide at 1024px, and the table scrolled sideways). Checkbox, Guest, Company, Status, Last email, Registered: 60.5rem, which the box has from 1360px
+   (60.9rem with the classic scrollbar). Below it Company folds into a line under the guest and 49.25rem are left (49.6rem at 1180px); below 1180px Last email folds into a line
+   under the Status and 39rem are left (39.9rem at 1024px). The Status is 10.5rem for its longest badge ("Waiting for a decision"), the last email 10.25rem for the longest
+   name of a mail ("Address confirmation") on one line. The time is text that wraps ("Oct 23, 2026, 10:14 AM UTC" is one line from a 13rem column, two below it), so the column
+   needs no width for the longest form. Below 1024px the requests are cards. */
 .registration-requests__box {
   margin: var(--space-4);
 }
 
-.item-table.registration-requests__box .registration-requests__table-wrap {
-  overflow-x: auto;
-}
-
-.item-table.registration-requests__box .registration-requests__table-wrap .table {
-  min-width: 640px;
-  table-layout: auto;
-}
-
-.item-table.registration-requests__box .table th:first-child,
-.item-table.registration-requests__box .table td:first-child {
+.item-table.registration-requests__box .table :is(th, td):nth-child(1) {
   width: 3rem;
 }
 
-/* The guest is what a person reads first and the column that holds the longest text (an address), so it asks for its room before the others do. The
-   last email keeps the room for the longest name of a mail ("Address confirmation") on one line, so that a row stays two lines tall. */
-.registration-requests__table thead th:nth-child(2) {
-  width: 32%;
+.item-table.registration-requests__box .table :is(th, td):nth-child(2) {
+  width: 13.5rem;
 }
 
-.registration-requests__table thead th:nth-child(5) {
-  min-width: 9.5rem;
+.item-table.registration-requests__box .table :is(th, td):nth-child(3) {
+  width: 11.25rem;
 }
 
-/* A company and a department read badly in a column narrower than this (a department as long as "Finance & Accounting (EMEA)" breaks into
-   three lines of one or two words). The guest column, whose address can break at any dot, gives way to it when the table is narrow. */
-.registration-requests__table thead th:nth-child(3) {
-  min-width: 12rem;
+.item-table.registration-requests__box .table :is(th, td):nth-child(4) {
+  width: 10.5rem;
+}
+
+.item-table.registration-requests__box .table :is(th, td):nth-child(5) {
+  width: 10.25rem;
+}
+
+.item-table.registration-requests__box .table :is(th, td):nth-child(6) {
+  width: 12rem;
+}
+
+/* A cell of a fixed layout cannot grow to fit a long word: an address or a company with no break in it wraps instead of painting across the next cell. */
+.item-table.registration-requests__box .table td {
+  overflow-wrap: anywhere;
+}
+
+/* Company and Last email as a line under the guest and under the Status: nothing on a screen with room for their columns. Muted, like the address under a name; only a failed
+   email keeps its red, since it is what a person comes here to see (5.8:1 on the tint of a selected row, which the grey of a pending or retried one would not have). */
+.registration-requests__below-1360,
+.registration-requests__below-1180 {
+  display: none;
+  margin-top: var(--space-1);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-muted);
+}
+
+.item-table.registration-requests__box .registration-requests__fold-mail--error {
+  color: var(--status-error-fg);
+}
+
+@media (max-width: 1359px) {
+  /* No size for the text either: a hidden cell that kept its text would still be as tall as it, in a cell of no width. */
+  .item-table.registration-requests__box .table :is(th, td).registration-requests__from-1360 {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+    white-space: nowrap;
+  }
+
+  .item-table.registration-requests__box .table :is(th, td).registration-requests__from-1360 > * {
+    display: none;
+  }
+
+  .item-table.registration-requests__box .registration-requests__below-1360 {
+    display: block;
+  }
+}
+
+@media (max-width: 1179px) {
+  .item-table.registration-requests__box .table :is(th, td).registration-requests__from-1180 {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+    white-space: nowrap;
+  }
+
+  .item-table.registration-requests__box .table :is(th, td).registration-requests__from-1180 > * {
+    display: none;
+  }
+
+  .item-table.registration-requests__box .registration-requests__below-1180 {
+    display: block;
+  }
 }
 
 /* Cells top-aligned: a long name or address makes a tall row, and its badges stay level with the name instead of the middle of it. */
@@ -132,9 +190,10 @@
   color: var(--text-muted);
 }
 
-/* The time of a row is one line ("20 Nov 2026, 08:14 UTC"), not three. Its colours are those of every time (time-stack.css): the digits dark and the zone quiet. */
-.registration-requests__table time {
-  white-space: nowrap;
+/* The time of a row is one line when its column has the room and two balanced lines when it has not ("Oct 23, 2026," over "10:14 AM UTC"), never a time that
+   touches the edge of the box. Its colours are those of every time (time-stack.css): the digits dark and the zone quiet. */
+.item-table.registration-requests__box .time-stack__utc {
+  text-wrap: balance;
 }
 
 /* Cards, below the width the table fits: one request each, in a box that looks like the table's (a border, rounded corners, a grey
@@ -184,6 +243,8 @@
 .attendees-table-v2__row--selected .registration-requests__department,
 .attendees-table-v2__row--selected .registration-requests__mail-kind,
 .attendees-table-v2__row--selected .registration-requests__none,
+.attendees-table-v2__row--selected .registration-requests__below-1360,
+.attendees-table-v2__row--selected .registration-requests__below-1180,
 .registration-requests__card--selected .registration-requests__email,
 .registration-requests__card--selected .registration-requests__affiliation,
 .registration-requests__card--selected .registration-requests__mail-kind,

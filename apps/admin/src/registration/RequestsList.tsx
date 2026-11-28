@@ -89,6 +89,20 @@ function OpenRequestButton({ row, onOpen, className }: Readonly<{ row: Registrat
 /** What a screen reader says of the checkbox of a request: the guest's name. */
 const selectLabel = (row: RegistrationListItemDto): string => `Select ${requestGuestName(row)}`;
 
+/** The company and the department of a request as one text, or "" when it has neither. */
+const affiliationOf = (row: RegistrationListItemDto): string => [row.company, row.department].filter(Boolean).join(" · ");
+
+/**
+ * What the Status cell keeps of the Last email column on a screen with no room for it (registration-requests.css): one line with the state of the email and what it
+ * was, in red when it failed, so that a failed email is still seen. Its text starts with "Last email:", so it is not the text of the column a second time.
+ */
+function MailFoldLine({ mail }: Readonly<{ mail: RegistrationMailBriefDto | null }>) {
+  if (mail === null) return <div className="registration-requests__below-1180">Last email: none</div>;
+  const tone = requestMailTone(mail);
+  const className = tone.variant === "error" ? "registration-requests__below-1180 registration-requests__fold-mail--error" : "registration-requests__below-1180";
+  return <div className={className}>{`Last email: ${tone.label} · ${requestMailKind(mail.template_name)}`}</div>;
+}
+
 function RequestCompany({ row }: Readonly<{ row: RegistrationListItemDto }>) {
   return (
     <div className="registration-requests__company">
@@ -110,6 +124,7 @@ interface RowProps {
 }
 
 function RequestTableRow({ row, selected, onToggle, onOpen }: Readonly<RowProps>) {
+  const affiliation = affiliationOf(row);
   return (
     <tr className={selected ? "attendees-table-v2__row attendees-table-v2__row--selected" : "attendees-table-v2__row"}>
       <td>
@@ -117,14 +132,17 @@ function RequestTableRow({ row, selected, onToggle, onOpen }: Readonly<RowProps>
       </td>
       <td>
         <OpenRequestButton row={row} onOpen={onOpen} />
+        {/* What a screen with no room for the Company column keeps of it: a line under the guest, only when the request has a company or a department. */}
+        {affiliation ? <div className="registration-requests__below-1360">{`Company: ${affiliation}`}</div> : null}
       </td>
-      <td>
+      <td className={FOLDED_CELL.Company}>
         <RequestCompany row={row} />
       </td>
       <td>
         <RequestStatus status={row.status} />
+        <MailFoldLine mail={row.last_mail} />
       </td>
-      <td>
+      <td className={FOLDED_CELL["Last email"]}>
         <RequestMail mail={row.last_mail} />
       </td>
       <td>
@@ -136,7 +154,7 @@ function RequestTableRow({ row, selected, onToggle, onOpen }: Readonly<RowProps>
 
 /** A request as a card, for a screen too narrow for the table. */
 function RequestCard({ row, selected, onToggle, onOpen }: Readonly<RowProps>) {
-  const affiliation = [row.company, row.department].filter(Boolean).join(" · ");
+  const affiliation = affiliationOf(row);
   return (
     <li className={selected ? "registration-requests__card registration-requests__card--selected" : "registration-requests__card"}>
       <div className="registration-requests__card-top">
@@ -162,6 +180,12 @@ function RequestCard({ row, selected, onToggle, onOpen }: Readonly<RowProps>) {
 
 const COLUMNS = ["Guest", "Company", "Status", "Last email", "Registered"] as const;
 
+/** The two columns a narrower screen folds into a line of another cell, with the class that takes the column's width away (registration-requests.css). */
+const FOLDED_CELL: Partial<Record<(typeof COLUMNS)[number], string>> = {
+  Company: "registration-requests__from-1360",
+  "Last email": "registration-requests__from-1180",
+};
+
 /** The heading row of the table, which its placeholder draws too: the first column holds the checkbox that selects the page. */
 function ColumnHeads({ selectAll }: Readonly<{ selectAll?: ReactNode }>) {
   return (
@@ -170,7 +194,7 @@ function ColumnHeads({ selectAll }: Readonly<{ selectAll?: ReactNode }>) {
         {selectAll}
       </th>
       {COLUMNS.map((column) => (
-        <th key={column} scope="col">
+        <th key={column} scope="col" className={FOLDED_CELL[column]}>
           {column}
         </th>
       ))}
@@ -207,7 +231,7 @@ export function RequestsRows({
   }
   return (
     <div className="item-table registration-requests__box">
-      <div className="attendees-table-wrap registration-requests__table-wrap">
+      <div className="attendees-table-wrap">
         <table className="table registration-requests__table" aria-label="Requests">
           <thead>
             <ColumnHeads
@@ -298,7 +322,7 @@ export function RequestsSkeleton({
     <div className={held ? "at-loading-hold" : "at-fade-in"} aria-busy="true">
       {isDesktop ? (
         <div className="item-table registration-requests__box">
-          <div className="attendees-table-wrap registration-requests__table-wrap">
+          <div className="attendees-table-wrap">
             <table className="table registration-requests__table" aria-hidden="true">
               <thead>
                 <ColumnHeads />
