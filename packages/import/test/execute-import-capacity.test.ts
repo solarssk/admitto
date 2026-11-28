@@ -125,3 +125,68 @@ describe("import reclaim intervals (real migrated PostgreSQL)", () => {
     expect((await db.adminJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("failed");
   });
 });
+
+describe("import of the long text, date, phone and rule-bound fields of the registry (real migrated PostgreSQL)", () => {
+  const HEADER = "first_name,last_name,email,arrival,phone,notes,plate";
+
+  async function fieldsFixture() {
+    const f = await fixture(50);
+    await db.eventCustomField.createMany({
+      data: [
+        { event_id: f.event.id, source_field: "arrival", label: "Arrival", type: "date", display_order: 0 },
+        { event_id: f.event.id, source_field: "phone", label: "Phone", type: "phone", display_order: 1, rules: { min_length: 9 } },
+        { event_id: f.event.id, source_field: "notes", label: "Notes", type: "long_text", display_order: 2 },
+        {
+          event_id: f.event.id,
+          source_field: "plate",
+          label: "Plate",
+          type: "text",
+          display_order: 3,
+          rules: { digits_only: true, min_length: 3, max_length: 6, example: "123456" },
+        },
+      ],
+    });
+    return f;
+  }
+
+  it("stores each answer in its normal form and refuses, row by row, what breaks a type or a rule", async () => {
+    const f = await fieldsFixture();
+    const csv = [
+      HEADER,
+      'Ann,One,types-1@example.com,2026-11-04,+48 600 100 200,"Two seats,\nplease.",123456',
+      "Bob,Two,types-2@example.com,2026-11-05T00:00:00.000Z,(22) 123-45-67,,987",
+      "Cy,Three,types-3@example.com,2026-02-30,600100200,,123",
+      "Di,Four,types-4@example.com,2026-11-06,600100200,,12a",
+      "Ed,Five,types-5@example.com,2026-11-07,12345,,123",
+    ].join("\n");
+
+    const result = await executeImportCommit(db, { ...f.params, csv });
+
+    expect(result).toMatchObject({ created: 2, invalidCount: 3 });
+    expect(result.invalidRows.map((row) => row.reason)).toEqual([
+      "Invalid value for Arrival (expected a date as YYYY-MM-DD)",
+      "Invalid value for Plate (expected digits only, 3 to 6 characters, for example 123456)",
+      "Invalid value for Phone (expected a phone number with 3 to 15 digits, at least 9 characters)",
+    ]);
+    const stored = await db.attendee.findMany({ where: { event_id: f.event.id }, orderBy: { email: "asc" } });
+    expect(stored.map((a) => a.custom_data)).toEqual([
+      { arrival: "2026-11-04", phone: "+48600100200", notes: "Two seats,\nplease.", plate: "123456" },
+      { arrival: "2026-11-05", phone: "221234567", plate: "987" },
+    ]);
+  });
+
+  it("holds an update of an existing attendee to the same rules, so one bad answer skips the row", async () => {
+    const f = await fieldsFixture();
+    await db.attendee.create({
+      data: { event_id: f.event.id, email: "types-update@example.com", name: "Up Date", custom_data: { plate: "123" } },
+    });
+    const csv = [HEADER, "Up,Date,types-update@example.com,2026-11-04,600100200,,12a"].join("\n");
+
+    const result = await executeImportCommit(db, { ...f.params, csv, overwrite: true });
+
+    expect(result.updated).toBe(0);
+    expect(result.invalidCount).toBe(1);
+    const row = await db.attendee.findFirstOrThrow({ where: { event_id: f.event.id, email: "types-update@example.com" } });
+    expect(row.custom_data).toEqual({ plate: "123" });
+  });
+});

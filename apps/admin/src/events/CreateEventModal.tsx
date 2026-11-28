@@ -1,14 +1,13 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Button, Input, ModalBackdrop, Notice } from "@admitto/ui";
 import { LOCATION_LIMITS } from "@admitto/location";
-import { ApiError, createEvent } from "../api/client.js";
+import { createEvent } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, GeocodingResultDto } from "../api/types.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
-import { slugFromTitle } from "./slug.js";
 import { componentsFromResult } from "../settings/locationGeocode.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
@@ -32,7 +31,6 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef, open);
   const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
   const [date, setDate] = useState("");
   const [eventHoursStart, setEventHoursStart] = useState("");
   const [eventHoursEnd, setEventHoursEnd] = useState("");
@@ -48,13 +46,8 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setSlug(slugFromTitle(title, 80));
-  }, [title]);
-
   const resetForm = () => {
     setTitle("");
-    setSlug("");
     setDate("");
     setEventHoursStart("");
     setEventHoursEnd("");
@@ -76,7 +69,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
 
   useModalFocusTrap(panelRef, open, handleClose);
 
-  const canSubmit = Boolean(title.trim() && slug.trim() && date && timezone && eventHoursStartValid && eventHoursEndValid);
+  const canSubmit = Boolean(title.trim() && date && timezone && eventHoursStartValid && eventHoursEndValid);
 
   const updateEventHoursStartValidity = (valid: boolean) => {
     eventHoursStartValidRef.current = valid;
@@ -97,7 +90,6 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
     try {
       const event = await createEvent({
         title: title.trim(),
-        slug: slug.trim(),
         date,
         timezone,
         event_hours_start: eventHoursStart || undefined,
@@ -113,11 +105,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
       resetForm();
       onClose();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        setError("An event with a similar name already exists. Change the title slightly and try again.");
-      } else {
-        setError(operatorApiErrorMessage(err, "Failed to create event. Try again."));
-      }
+      setError(operatorApiErrorMessage(err, "Failed to create event. Try again."));
     } finally {
       setSubmitting(false);
     }

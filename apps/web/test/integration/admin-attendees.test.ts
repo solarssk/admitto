@@ -780,6 +780,44 @@ describe("GET /api/admin/events/:eventId/attendees/:id", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("lists an item for guests with a companion only for an attendee who has a companion, and the item names no companion", async () => {
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_A,
+        key: "companion",
+        label: "Companion",
+        config: { audience: "with_companion", requires_return: false, issue_on_checkin: false },
+      },
+    });
+    await prisma.attendeeCompanion.create({ data: { attendee_id: ATT_A1, slot: 1, name: "Zzyzx Companion Name" } });
+    try {
+      const detailOf = async (id: string) => {
+        const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${id}`, { headers: { Cookie: adminCookie } });
+        expect(res.status).toBe(200);
+        return res.text();
+      };
+      const items = (text: string) => (JSON.parse(text) as { event_items: { key: string; state: string }[] }).event_items;
+      const companionOf = (text: string) => (JSON.parse(text) as { companion: { name: string } | null }).companion;
+
+      const withCompanion = await detailOf(ATT_A1);
+      // Not issued yet, and no state row made by reading: the summary reads, it does not write.
+      expect(items(withCompanion)).toEqual([
+        { key: "companion", label: "Companion", icon: null, state: "pending" },
+        expect.objectContaining({ key: "giftbag" }),
+      ]);
+      // The item is the same for every companion; the person is in the card of the detail (`companion`), not in the list of items.
+      expect(JSON.stringify(items(withCompanion))).not.toContain("Zzyzx Companion Name");
+      expect(companionOf(withCompanion)?.name).toBe("Zzyzx Companion Name");
+      const withoutCompanion = await detailOf(ATT_A2);
+      expect(items(withoutCompanion).map((item) => item.key)).toEqual(["giftbag"]);
+      expect(companionOf(withoutCompanion)).toBeNull();
+      expect(await prisma.attendeeItemState.count({ where: { attendee_id: { in: [ATT_A1, ATT_A2] }, event_item: { key: "companion" } } })).toBe(0);
+    } finally {
+      await prisma.attendeeCompanion.deleteMany({ where: { attendee_id: ATT_A1 } });
+      await prisma.eventItem.deleteMany({ where: { event_id: EVENT_A, key: "companion" } });
+    }
+  });
 });
 
 describe("the removed hard-delete routes", () => {
@@ -5774,6 +5812,14 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     return row.updated_at.toISOString();
   }
 
+  /** A bare attendee for the address tests: the only custom field of the event at this point of the file (shirt size)
+   * is not required, so an attendee without answers can be saved. Later tests need that field, so it stays. */
+  async function addAttendeeWithAddress(id: string, email: string): Promise<void> {
+    await prisma.attendee.create({
+      data: { id, event_id: EVENT_A, email, name: "Case Test", first_name: "Case", last_name: "Test" },
+    });
+  }
+
   it("returns 403 without updating a cross-event attendee", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}`, {
       method: "PATCH",
@@ -5971,6 +6017,89 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("email_conflict");
+  });
+
+  it("saves a changed address in lower case, without the spaces around it", async () => {
+    await addAttendeeWithAddress("att-admin-case-lower", "case-lower@example.com");
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/att-admin-case-lower`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: " Case.Changed@Example.COM ",
+          expected_updated_at: await currentUpdatedAt("att-admin-case-lower"),
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { email: string }).email).toBe("case.changed@example.com");
+      const stored = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-admin-case-lower" } });
+      expect(stored.email).toBe("case.changed@example.com");
+    } finally {
+      await prisma.attendee.deleteMany({ where: { id: "att-admin-case-lower" } });
+    }
+  });
+
+  it("returns 409 for an address that another attendee holds in other letters", async () => {
+    // Saved before addresses were lower-cased: the unique index sees another spelling, so only the check can refuse it.
+    await addAttendeeWithAddress("att-admin-case-legacy", "Case.Legacy@Example.com");
+    await addAttendeeWithAddress("att-admin-case-target", "case-target@example.com");
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/att-admin-case-target`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "case.legacy@example.com",
+          expected_updated_at: await currentUpdatedAt("att-admin-case-target"),
+        }),
+      });
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: string }).error).toBe("email_conflict");
+      const stored = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-admin-case-target" } });
+      expect(stored.email).toBe("case-target@example.com");
+    } finally {
+      await prisma.attendee.deleteMany({ where: { id: { in: ["att-admin-case-legacy", "att-admin-case-target"] } } });
+    }
+  });
+
+  it("does not take an underscore in a new address for any other character", async () => {
+    // A case-insensitive match written as a pattern (ILIKE) would read `wild_card` as `wildxcard`.
+    await addAttendeeWithAddress("att-admin-wild-other", "wildxcard@example.com");
+    await addAttendeeWithAddress("att-admin-wild-target", "wild-target@example.com");
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/att-admin-wild-target`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "wild_card@example.com",
+          expected_updated_at: await currentUpdatedAt("att-admin-wild-target"),
+        }),
+      });
+      expect(res.status).toBe(200);
+      const stored = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-admin-wild-target" } });
+      expect(stored.email).toBe("wild_card@example.com");
+    } finally {
+      await prisma.attendee.deleteMany({ where: { id: { in: ["att-admin-wild-other", "att-admin-wild-target"] } } });
+    }
+  });
+
+  it("lets an attendee whose address has capitals save it in lower case", async () => {
+    // The check leaves the attendee itself out: tidying one's own address is not a conflict.
+    await addAttendeeWithAddress("att-admin-case-self", "Case.Self@Example.com");
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/att-admin-case-self`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "case.self@example.com",
+          expected_updated_at: await currentUpdatedAt("att-admin-case-self"),
+        }),
+      });
+      expect(res.status).toBe(200);
+      const stored = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-admin-case-self" } });
+      expect(stored.email).toBe("case.self@example.com");
+    } finally {
+      await prisma.attendee.deleteMany({ where: { id: "att-admin-case-self" } });
+    }
   });
 
   it("rejects a ticket_type not in the event's catalog (batch 04 / #351)", async () => {
@@ -8874,6 +9003,52 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("email_taken");
+  });
+
+  it("POST create saves the address in lower case, without the spaces around it", async () => {
+    await resetEventACustomFields();
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: " New.Guest@Example.COM ", first_name: "New", last_name: "Guest" }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; email: string };
+    expect(body.email).toBe("new.guest@example.com");
+    const stored = await prisma.attendee.findUniqueOrThrow({ where: { id: body.id } });
+    expect(stored.email).toBe("new.guest@example.com");
+
+    await prisma.attendee.delete({ where: { id: body.id } });
+  });
+
+  it("POST create returns 409 email_taken for an address that differs only in letter case", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "ANNA@Example.com", first_name: "Duplicate", last_name: "Test" }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("email_taken");
+  });
+
+  it("POST create does not take an underscore in the address for any other character", async () => {
+    await resetEventACustomFields();
+    await prisma.attendee.create({
+      data: { id: "att-admin-wild-create", event_id: EVENT_A, email: "wildycard@example.com", name: "Wild Card", first_name: "Wild", last_name: "Card" },
+    });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "wild_card@example.com", first_name: "Wild", last_name: "Guest" }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string };
+      await prisma.attendee.delete({ where: { id: body.id } });
+    } finally {
+      await prisma.attendee.deleteMany({ where: { id: "att-admin-wild-create" } });
+    }
   });
 
   it("POST create rejects operator", async () => {

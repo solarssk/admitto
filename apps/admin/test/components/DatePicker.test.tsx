@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { DatePicker } from "../../src/components/DatePicker.js";
+import { useModalFocusTrap } from "../../src/components/useModalFocusTrap.js";
 import * as eventDates from "../../src/utils/event-dates.js";
 import { mockVisualViewport, mockPlacementLayout } from "./panelPlacementMocks.js";
 
@@ -222,6 +223,25 @@ describe("DatePicker", () => {
 
     fireEvent.click(screen.getByRole("gridcell", { name: "2026-08-20" }));
     expect(onChange).toHaveBeenCalledWith("2026-08-20");
+  });
+
+  it("keeps the year of a date before the year 1000 as written: a day picked in it is written with four digits, and the next month is of that year", () => {
+    const onChange = vi.fn();
+    mockOpenCalendarBasics();
+    vi.spyOn(eventDates, "formatCalendarMonth").mockImplementation((year, month) => `${year}-${month}`);
+
+    render(<DatePicker value="0050-03-15" onChange={onChange} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    expect(screen.getByText("50-3")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("gridcell", { name: "0050-03-20" }));
+    expect(onChange).toHaveBeenLastCalledWith("0050-03-20");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    expect(screen.getByText("50-4")).toBeTruthy();
+    fireEvent.click(screen.getByRole("gridcell", { name: "0050-04-02" }));
+    expect(onChange).toHaveBeenLastCalledWith("0050-04-02");
   });
 
   it("threads ariaLabel to both the input and the calendar toggle button when there's no visible label", () => {
@@ -561,5 +581,32 @@ describe("DatePicker", () => {
     expect(hovered.className).not.toContain("date-picker__day--highlighted");
     const today = screen.getByRole("gridcell", { name: "2026-07-02" });
     expect(today.className).toContain("date-picker__day--highlighted");
+  });
+});
+
+describe("DatePicker in a dialog", () => {
+  function Dialog({ onCancel }: Readonly<{ onCancel: () => void }>) {
+    const panelRef = useRef<HTMLDivElement>(null);
+    useModalFocusTrap(panelRef, true, onCancel);
+    return (
+      <div ref={panelRef}>
+        <DatePicker value="" onChange={() => {}} label="Arrival" />
+      </div>
+    );
+  }
+
+  it("closes its calendar on Escape and leaves the dialog open, so that what was typed in it is not lost; the next Escape is the dialog's", () => {
+    mockOpenCalendarBasics();
+    const onCancel = vi.fn();
+    render(<Dialog onCancel={onCancel} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    expect(screen.getByRole("dialog", { name: "Choose date" })).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Choose date" })).toBeNull();
+    expect(onCancel).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

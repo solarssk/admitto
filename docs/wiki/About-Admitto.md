@@ -26,4 +26,4 @@ For the full list, see the [Glossary](Glossary).
 
 ## What Admitto does not replace
 
-Admitto is not a public registration site, payment system, or general customer database. Use your organisation's approved process for work outside the event lifecycle described here.
+Admitto is not a payment system or a general customer database. Use your organisation's approved process for work outside the event lifecycle described here.

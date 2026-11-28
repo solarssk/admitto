@@ -516,7 +516,7 @@ function LocationSettingsPanelBody({
         title={<HintLabel hint={ADDRESS_CARD_HINT}>Address</HintLabel>}
         actions={
           !isArchived && hasCoordinates ? (
-            <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={handleClearLocation}>
+            <Button type="button" variant="ghost" disabled={saving} onClick={handleClearLocation}>
               Remove pin
             </Button>
           ) : undefined

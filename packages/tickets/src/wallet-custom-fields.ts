@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
 import { customDataValue } from "./custom-data.js";
+import { sensitiveSourceFields, type SensitivityField } from "./sensitive-custom-data.js";
 
 /** Prefix for a wallet field-mapping placeholder id backed by an EventCustomField, distinguishing
  * it from the fixed WALLET_MAPPING_PLACEHOLDERS vocabulary (packages/wallet/src/
@@ -8,8 +9,46 @@ import { customDataValue } from "./custom-data.js";
 export const WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX = "custom:";
 
 /** Only select (dictionary) and boolean custom fields are exposed to wallet field mapping - free
- * text is excluded (unpredictable length/content for a pass card), per ROADMAP.md's v0.7.1 scope. */
+ * input is excluded (text, long text, date, date and time, phone: unpredictable length/content for
+ * a pass card), per ROADMAP.md's v0.7.1 scope. An allowlist on purpose: a type added later stays
+ * off the pass until someone lists it here. */
 const WALLET_MAPPABLE_CUSTOM_FIELD_TYPES = new Set(["select", "boolean"]);
+
+/** Whether a question's answer may go on a pass: a select or boolean question that is not sensitive. A sensitive question's answer
+ * is never put on a pass (D-E6), even when a mapping saved earlier still names it. */
+function isWalletMappable(field: { type?: string; sensitive?: boolean }): boolean {
+  return !field.sensitive && !!field.type && WALLET_MAPPABLE_CUSTOM_FIELD_TYPES.has(field.type);
+}
+
+/**
+ * The `source_field`s that a wallet field mapping points at (`"custom:<source_field>"` values), and that are sensitive (D-E6):
+ * a pass is handed to the guest's phone and to the wallet provider, so the answer to a sensitive question never goes on it.
+ * The mapping route refuses a mapping with any of them; {@link resolveWalletCustomFieldPlaceholders} skips them whatever the
+ * stored mapping says, which covers a mapping saved before the question became sensitive.
+ */
+export function sensitiveWalletMappingFields(
+  mapping: Record<string, string>,
+  sensitiveFields: readonly SensitivityField[],
+): string[] {
+  const sensitive = sensitiveSourceFields(sensitiveFields);
+  return [...new Set(walletMappingCustomFields(mapping).filter((sourceField) => sensitive.has(sourceField)))];
+}
+
+/** The `source_field`s that a wallet field mapping names (`"custom:<source_field>"` values). */
+function walletMappingCustomFields(mapping: Record<string, string>): string[] {
+  return Object.values(mapping)
+    .filter((value) => value.startsWith(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX))
+    .map((value) => value.slice(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX.length));
+}
+
+/**
+ * Whether a wallet field mapping names the question `sourceField` (any property of the pass). A question that is named cannot
+ * become sensitive: its answer may already be on issued passes, and the pass on the guest's phone keeps it until it is updated
+ * (D-E6). The organiser takes the question off the mapping first, as for an item.
+ */
+export function walletMappingNamesField(mapping: Record<string, string> | null, sourceField: string): boolean {
+  return mapping !== null && walletMappingCustomFields(mapping).includes(sourceField);
+}
 
 /**
  * Builds the `{ "custom:<source_field>": "<display value>" }` bag for one attendee's wallet pass,
@@ -43,7 +82,7 @@ export async function resolveWalletCustomFieldPlaceholders(
   const fields = await loadEventCustomDataFields(db, eventId);
   const out: Record<string, string> = {};
   for (const field of fields) {
-    if (!field.type || !WALLET_MAPPABLE_CUSTOM_FIELD_TYPES.has(field.type)) continue;
+    if (!isWalletMappable(field)) continue;
     const raw = customDataValue(attendeeCustomData, field.source_field);
     if (!raw) continue;
     // A boolean field only ever normalizes to the literal strings "true"/"false"

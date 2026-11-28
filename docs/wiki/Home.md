@@ -20,7 +20,7 @@ Admitto helps event teams prepare attendee lists, send tickets, and run check-in
 
 ```mermaid
 flowchart TD
-    create[Create event] --> configure[Configure event, ticket types, requirements]
+    create[Create event] --> configure[Configure event, ticket types, event items]
     configure --> attendees[Add or import attendees]
     attendees --> messages[Prepare, test, and send messages]
     messages --> wallet{Wallet configured?}
@@ -35,7 +35,7 @@ flowchart TD
 The diagram is a quick overview. The numbered list below describes the same journey in text, and who normally does each step - see [Roles and Permissions](Roles-and-Permissions) for exactly what each role can and cannot do.
 
 1. **Create the event and check its basic details** (name, date, timezone, venue). *Administrator or Superadmin.*
-2. **Configure ticket types, requirements, and (optionally) Wallet.** Wallet setup itself is Superadmin-only; everything else here is Administrator or Superadmin.
+2. **Configure ticket types, event items, and (optionally) Wallet.** Wallet setup itself is Superadmin-only; everything else here is Administrator or Superadmin.
 3. **Add or import attendees** - one at a time, or from a CSV/XLSX file. *Administrator or Superadmin.*
 4. **Prepare a message, send a test, then send tickets.** If Wallet is configured, the attendee can add their pass straight from the ticket page - no separate step for staff to trigger. *Administrator or Superadmin sends; the attendee receives and, optionally, adds the pass.*
 5. **Monitor delivery and correct problems** - resend a bounced or failed message, correct a typo, revoke or reissue a ticket if needed. *Administrator or Superadmin.*

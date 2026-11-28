@@ -17,7 +17,8 @@ vi.mock("@admitto/auth", () => ({
   resolveSecurityAuditLogRetentionDays: vi.fn(() => 30),
 }));
 
-vi.mock("@admitto/mail-delivery", () => ({
+vi.mock("@admitto/mail-delivery", async () => ({
+  ...(await import("./registration-mail-mock.js")).registrationMailMock,
   DEFAULT_MAIL_DRAIN_LIMIT,
   assertValidBounceIngestTickSecondsEnv: vi.fn(),
   drainPendingDeliveries: vi.fn(async () => ({ claimed: 0, sent: 0, failed: 0, skipped: 0, eventIds: [] })),

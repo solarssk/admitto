@@ -11,7 +11,12 @@ import {
 } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 import { Button, Input, ModalBackdrop, Notice, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
-import { enabledWalletPlatforms, type AttendeeRemovalReason, type EnabledWalletPlatforms } from "@admitto/shared";
+import {
+  enabledWalletPlatforms,
+  isFreeInputCustomFieldType,
+  type AttendeeRemovalReason,
+  type EnabledWalletPlatforms,
+} from "@admitto/shared";
 import {
   ApiError,
   bulkChangeRsvpStatus,
@@ -86,6 +91,7 @@ import { loadWithTimeout } from "../utils/load-timeout.js";
 import { goToLogin } from "../auth/login-navigation.js";
 import { LOAD_TIMEOUT_MESSAGE } from "../utils/loading-timing.js";
 import { pluralize } from "../utils/pluralize.js";
+import { guestQuestions } from "../utils/questionRecipient.js";
 import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
@@ -758,6 +764,8 @@ interface HeaderMoreMenuProps {
   onSendTickets: () => void;
   isDesktop: boolean;
   exportingFormat: ExportFormat | null;
+  /** True while the list the export would cover is empty (no attendees, or none match the filters). */
+  nothingToExport: boolean;
   onExport: (format: ExportFormat) => void;
   walletPlatforms: EnabledWalletPlatforms;
   /** Whether the event actually has a wallet template + decryptable API key - distinct from
@@ -794,6 +802,7 @@ function HeaderMoreMenu({
   onSendTickets,
   isDesktop,
   exportingFormat,
+  nothingToExport,
   onExport,
   walletPlatforms,
   walletConfigured,
@@ -853,8 +862,9 @@ function HeaderMoreMenu({
            * (same convention as BulkMoreActionsMenu's wallet section, AttendeesTable.tsx). Push
            * updates needs a wallet platform to still be on AND the event configured; Refresh status
            * only reads from the provider, so it needs only the event's credentials - it stays
-           * available with the Wallet switch off (bot review). */}
-          {(walletPlatforms.any || walletConfigured) && (
+           * available with the Wallet switch off (bot review). Every item needs the event configured, so the
+           * group, and its divider, is shown only then (a platform on alone would leave a divider with nothing under it). */}
+          {walletConfigured && (
             <>
               <hr className="more-actions-menu__divider" />
               {walletPlatforms.any && walletConfigured && (
@@ -923,7 +933,8 @@ function HeaderMoreMenu({
                   icon={format.icon}
                   label={`Export ${format.label}`}
                   hint={format.hint}
-                  disabled={exportingFormat !== null}
+                  disabled={exportingFormat !== null || nothingToExport}
+                  tooltip={nothingToExport ? NOTHING_TO_EXPORT_TOOLTIP : undefined}
                   onClick={() => {
                     setOpen(false);
                     onExport(format.key);
@@ -942,8 +953,11 @@ type ExportFormat = "xlsx" | "csv" | "pdf";
 
 interface ExportMenuProps {
   exportingFormat: ExportFormat | null;
+  nothingToExport: boolean;
   onExport: (format: ExportFormat) => void;
 }
+
+const NOTHING_TO_EXPORT_TOOLTIP = "No attendees to export.";
 
 const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: string }[] = [
   { key: "xlsx", label: "XLSX", icon: "table", hint: "Excel workbook" },
@@ -952,27 +966,42 @@ const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: st
 ];
 
 /** Single "Export" entry point — opens a small menu for XLSX/CSV/PDF, replacing three separate buttons. */
-function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
+function ExportMenu({ exportingFormat, nothingToExport, onExport }: Readonly<ExportMenuProps>) {
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
+  // The menu can be open before the first answer: when that answer is an empty list, it closes.
+  useEffect(() => {
+    if (nothingToExport) setOpen(false);
+  }, [nothingToExport, setOpen]);
 
   return (
     <div className="attendees-export-menu" ref={rootRef}>
-      <Button
-        ref={triggerRef}
-        type="button"
-        variant="secondary"
-        icon={<i className="ti ti-download" aria-hidden="true" />}
-        hasMenu
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={exportingFormat !== null}
-        loading={exportingFormat !== null}
-        onClick={() => setOpen((o) => !o)}
+      {/* Export is not an edit, so an archived event still exports: no event is passed, only the reason. */}
+      <ArchivedGuard
+        event={null}
+        reasonId="export-attendees-reason"
+        disabled={nothingToExport}
+        tooltip={NOTHING_TO_EXPORT_TOOLTIP}
       >
-        Export
-      </Button>
+        {(guard) => (
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="secondary"
+            icon={<i className="ti ti-download" aria-hidden="true" />}
+            hasMenu
+            aria-haspopup="menu"
+            aria-expanded={open}
+            {...guard}
+            disabled={guard.disabled || exportingFormat !== null}
+            loading={exportingFormat !== null}
+            onClick={() => setOpen((o) => !o)}
+          >
+            Export
+          </Button>
+        )}
+      </ArchivedGuard>
       {open && (
         <div className="attendees-export-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           {EXPORT_FORMATS.map((format) => (
@@ -983,7 +1012,7 @@ function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
               className="attendees-export-menu__item"
               onClick={() => {
                 close();
-                onExport(format.key);
+                if (!nothingToExport) onExport(format.key);
               }}
             >
               <span className="attendees-export-menu__item-icon">
@@ -1281,6 +1310,9 @@ export function AttendeesPage() {
     if (!beginCustomFields()) setCustomFieldsError(null);
     const ac = new AbortController();
     fetchEventCustomFields(eventId, ac.signal)
+      // The list holds the guests' own answers: a question about a companion is answered into another row. A sensitive
+      // question has no filter: the server ignores it, and a box that does nothing would only mislead (D-E6).
+      .then((all) => guestQuestions(all).filter((field) => field.sensitive !== true))
       .then((fields) => {
         if (ac.signal.aborted) return;
         setCustomFields((current) => (current.length === 0 && fields.length === 0 ? current : fields));
@@ -1362,7 +1394,7 @@ export function AttendeesPage() {
   const customFieldParams = useMemo(() => {
     const params: Record<string, string[]> = {};
     for (const field of customFields) {
-      if (field.type === "text") {
+      if (isFreeInputCustomFieldType(field.type)) {
         const text = customFieldTextQueries[field.source_field];
         if (text) params[`cf_${field.source_field}`] = [text];
       } else {
@@ -1372,6 +1404,14 @@ export function AttendeesPage() {
     }
     return params;
   }, [customFields, customFieldSelectValues, customFieldTextQueries]);
+
+  // Which filters a list answer is for, so a zero total is only trusted for the filters it was read with.
+  const listFilterKey = useMemo(
+    () =>
+      JSON.stringify([searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, mailStatusFilter, customFieldParams, showErased]),
+    [searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, mailStatusFilter, customFieldParams, showErased],
+  );
+  const [totalFilterKey, setTotalFilterKey] = useState("");
 
   const loadList = useCallback(async () => {
     if (!eventId) return;
@@ -1414,6 +1454,7 @@ export function AttendeesPage() {
       }
       setItems(data.items);
       setTotal(data.total);
+      setTotalFilterKey(listFilterKey);
       setErasedCount(data.erased_count ?? 0);
       setLoadError(null);
     } catch (err) {
@@ -1436,6 +1477,7 @@ export function AttendeesPage() {
     mailStatusFilter,
     customFieldParams,
     showErased,
+    listFilterKey,
     sortBy,
     sortDir,
     reportApiError,
@@ -1452,25 +1494,25 @@ export function AttendeesPage() {
   const listFailure = useRetryKeepingError(loadError, loadList);
 
   // EventLayout stays mounted across in-event navigation and only re-fetches its own event on an
-  // eventId change, so its cached active_attendee_count can be wrong by the time this page (re-)
+  // eventId change, so its cached seats_in_use can be wrong by the time this page (re-)
   // mounts, in two different ways: (1) reached via the events picker, whose EventCard snapshot
-  // never computes active_attendee_count at all (only the single-event fetch does); (2) reached
+  // never computes seats_in_use at all (only the single-event fetch does); (2) reached
   // by navigating back from a sibling route (e.g. AttendeeDetailPage deleting or restoring an
   // attendee) that changed the capacity-consuming population without refreshing the layout's
   // event. Unconditionally refreshing once per mount covers both, rather than trying to track
   // "is this specific count stale" or teach every capacity-changing sibling mutation to refresh
   // the layout itself. Skipped for an unlimited event (capacity null), where the count is moot.
-  // Keyed on event.id, not on capacity/active_attendee_count themselves, so this runs once per
+  // Keyed on event.id, not on capacity/seats_in_use themselves, so this runs once per
   // event entry, not again after refreshEvent's own update changes those same fields.
   useEffect(() => {
     if (event.capacity != null) {
       void refreshEvent?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on event identity, not on capacity/active_attendee_count (see comment above)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on event identity, not on capacity/seats_in_use (see comment above)
   }, [event.id, refreshEvent]);
 
   // reloadToken bumps after every attendee mutation on this page (create, delete, bulk actions,
-  // restore, …) - re-fetching the event alongside keeps active_attendee_count in sync with
+  // restore, …) - re-fetching the event alongside keeps seats_in_use in sync with
   // capacity so the Add attendee button's disabled state below reflects reality without an
   // extra round-trip per handler. Skips the initial mount: the effect above (or EventLayout's own
   // fallback fetch) already covers getting a fresh count once, before any mutation has happened.
@@ -2227,6 +2269,11 @@ export function AttendeesPage() {
     mailStatusFilter.length === 0 &&
     Object.keys(customFieldParams).length === 0;
 
+  // The export covers the filtered list, so a filter that matches nobody leaves nothing to export too. Not before the
+  // first answer (the total is still 0) and not after a failed load (the list is not known to be empty).
+  // `total` belongs to the filters that were loaded with it: while a changed set is awaiting its answer, the old zero says nothing.
+  const nothingToExport = hasLoadedOnce && !listFailure.error && total === 0 && totalFilterKey === listFilterKey;
+
   // How many of the selection the bulk "Revoke check-in" confirm dialog would actually affect,
   // not the raw selection size — matches the bulk bar's own menu-item hint (PO review).
   const revokableCheckInCount = items.filter(
@@ -2261,15 +2308,15 @@ export function AttendeesPage() {
     (row) => selectedIds.has(row.id) && row.wallet_status !== null,
   ).length;
 
-  // Undefined active_attendee_count reads as "not full" rather than blocking the button on a
+  // Undefined seats_in_use reads as "not full" rather than blocking the button on a
   // guess - the effect above fetches it as soon as it's missing, so this only stays undefined
   // for the brief window before that fetch resolves. The server remains the source of truth
   // either way and still rejects over capacity with the same event_full error AddAttendeeModal
   // now shows correctly.
   const atCapacity =
-    event.capacity != null && (event.active_attendee_count ?? 0) >= event.capacity;
+    event.capacity != null && (event.seats_in_use ?? 0) >= event.capacity;
   const capacityTooltip = atCapacity
-    ? `Event is at capacity (${event.active_attendee_count}/${event.capacity}). Free a slot or increase capacity to add more attendees.`
+    ? `Event is at capacity (${event.seats_in_use}/${event.capacity}). Free a slot or increase capacity to add more attendees.`
     : undefined;
 
   if (!eventId) return <p>Missing event.</p>;
@@ -2309,6 +2356,7 @@ export function AttendeesPage() {
               }}
               isDesktop={isDesktop}
               exportingFormat={exportingFormat}
+              nothingToExport={nothingToExport}
               onExport={(format) => void handleExport(format)}
               walletPlatforms={walletPlatforms}
               walletConfigured={event.wallet_configured}
@@ -2324,7 +2372,7 @@ export function AttendeesPage() {
             {/* Hidden below 768px — its 3 formats fold into HeaderMoreMenu's own panel there
              * instead (above), so only "+ Add"/"More" remain as standalone buttons, which is
              * few enough to sit beside the "Attendees" title (attendees.css). */}
-            {isDesktop && <ExportMenu exportingFormat={exportingFormat} onExport={(format) => void handleExport(format)} />}
+            {isDesktop && <ExportMenu exportingFormat={exportingFormat} nothingToExport={nothingToExport} onExport={(format) => void handleExport(format)} />}
           </>
         }
       />
@@ -2501,6 +2549,7 @@ export function AttendeesPage() {
 
       <AddAttendeeModal
         eventId={eventId}
+        eventTimeZone={event.timezone}
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onCreated={handleCreated}

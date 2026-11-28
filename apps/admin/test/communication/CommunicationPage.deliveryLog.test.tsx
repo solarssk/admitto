@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { formatUtcDateTime } from "../../src/utils/event-dates.js";
-import { advanceTimers, isOff, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { advanceTimers, isOff, mockMatchMedia, renderWithToast, timeText } from "../test-utils.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 import { communicationApiMocks } from "./communicationApiMock.js";
 import type { DeliveryDetailDto, DeliveryDto } from "../../src/api/types.js";
@@ -259,10 +259,10 @@ describe("CommunicationPage delivery log - table", () => {
     expect(table.getByText("Initial")).toBeTruthy();
     // Accepted row: green "Sent" badge (ADR 0007), timestamp falls back to accepted_at.
     expect(table.getByText("Sent")).toBeTruthy();
-    expect(table.getByText(formatUtcDateTime(acceptedRow.accepted_at!))).toBeTruthy();
+    expect(table.getByText(timeText(formatUtcDateTime(acceptedRow.accepted_at!)))).toBeTruthy();
     // Failed row keeps failed_at and the raw error code shows only in the details modal, not the table.
     expect(table.getByText("Failed")).toBeTruthy();
-    expect(table.getByText(formatUtcDateTime(failedRow.failed_at!))).toBeTruthy();
+    expect(table.getByText(timeText(formatUtcDateTime(failedRow.failed_at!)))).toBeTruthy();
   });
 
   it("keeps its placeholder, held for the first 200ms, until delivery data resolves", async () => {
@@ -435,6 +435,42 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
         expect.any(AbortSignal),
       );
     });
+  });
+
+  it("leaves a registration mail out of the Template filter: it is never in the Delivery log", async () => {
+    fetchEventTemplates.mockResolvedValue([
+      {
+        id: "tmpl-1",
+        name: "vip",
+        label: "VIP invite",
+        template_format: "mjml",
+        subject_template: "You're on the list",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "tmpl-confirm",
+        name: "registration-confirm",
+        label: "Registration: confirm email",
+        template_format: "mjml",
+        subject_template: "Confirm",
+        updated_at: "2026-01-02T00:00:00.000Z",
+        is_system: true,
+      },
+    ]);
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    const templateList = screen.getByRole("list", { name: "Template" });
+    expect(within(templateList).getAllByRole("button").map((o) => o.textContent)).toEqual([
+      "All templates",
+      "Default ticket template",
+      "VIP invite",
+    ]);
   });
 
   it("Live toggles to Paused and back, and stops the count from going stale (regression: it used to stay blank until the tab was opened)", async () => {

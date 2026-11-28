@@ -21,6 +21,11 @@
   padding-right: var(--space-1);
 }
 
+/* A list with no attendee counts (the suggestions of a text field) has no column for them. */
+.options-editor__list--plain {
+  grid-template-columns: var(--control-h-sm) 1fr auto;
+}
+
 .options-editor__row {
   grid-column: 1 / -1;
   display: grid;

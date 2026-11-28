@@ -10,11 +10,12 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { Badge, Button, Card, EmptyState, HintLabel, Input, Skeleton, useToast, type BadgeVariant } from "@admitto/ui";
+import { useSearchParams } from "react-router";
+import { Button, Card, EmptyState, HintLabel, Input, Skeleton, useToast, type BadgeVariant } from "@admitto/ui";
 import { ATTENDEE_REMOVAL_REASON_LABELS, type AttendeeRemovalReason } from "@admitto/shared";
 import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog, fetchSecurityAuditLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
+import type { AuditLogEntryDto, EventDto, IpLocationDto, SecurityAuditLogEntryDto } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
@@ -23,6 +24,7 @@ import { PaginationFooter } from "../components/PaginationFooter.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
+import { LocalTimeLine, TimeStack } from "../components/TimeStack.js";
 import { useClickOutside } from "../components/useClickOutside.js";
 import { useFloatingPlacement } from "../components/useFloatingPlacement.js";
 import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
@@ -48,23 +50,27 @@ import {
   SystemLogsPanel,
   type SystemLogsPanelHandle,
 } from "./SystemLogsPanel.js";
+import "../components/item-table.css";
+import "./audit-log-table.css";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
-  account_mfa_enrolled: "2FA enrolled (self-service)",
-  account_mfa_reset: "2FA reset (self-service)",
-  account_password_changed: "Password changed (self-service)",
-  account_session_revoked: "Session revoked (self-service)",
-  account_sso_unlinked: "SSO unlinked (self-service)",
+  account_mfa_enrolled: "Own 2FA enrolled",
+  account_mfa_reset: "Own 2FA reset",
+  account_password_changed: "Own password changed",
+  account_session_revoked: "Own session revoked",
+  account_sso_unlinked: "Own SSO unlinked",
+  attendee_companion_removed: "Companion removed",
+  attendee_companion_updated: "Companion updated",
   attendee_created_manual: "Attendee created manually",
   // Erase and Remove from event share these two types, so that one filter finds every attendee who is gone;
   // an entry's own label tells them apart (entryActionLabel).
   attendee_erased: "Attendee erased or removed",
   attendees_bulk_erased: "Attendees bulk erased or removed",
   audit_log_exported: "Audit log exported",
-  bounce_ingest_settings_tested: "Bounce detection connection tested",
-  bounce_ingest_manual_run: "Bounce detection check run manually",
-  bounce_ingest_settings_updated: "Bounce detection settings updated",
+  bounce_ingest_settings_tested: "Bounce connection tested",
+  bounce_ingest_manual_run: "Bounce check run manually",
+  bounce_ingest_settings_updated: "Bounce settings updated",
   branding_font_uploaded: "Branding font uploaded",
   emergency_session_purge: "Emergency session purge",
   event_archived: "Event archived",
@@ -77,7 +83,7 @@ const ACTION_LABELS: Record<string, string> = {
   event_deleted: "Event deleted",
   event_items_bulk_revoked: "Event items bulk revoked",
   event_location_updated: "Event location updated",
-  event_mail_bounce_probed: "Event bounce verification probed",
+  event_mail_bounce_probed: "Event bounce check probed",
   event_mail_settings_cleared: "Event mail settings cleared",
   event_mail_settings_updated: "Event mail settings updated",
   event_mail_smtp_probed: "Event SMTP connection probed",
@@ -90,12 +96,16 @@ const ACTION_LABELS: Record<string, string> = {
   event_resource_updated: "Event resource updated",
   event_unarchived: "Event restored",
   event_updated: "Event updated",
-  identity_cf_access_updated: "Cloudflare Access settings updated",
+  identity_cf_access_updated: "Cloudflare Access updated",
   identity_provider_created: "SSO provider created",
-  identity_provider_discovered: "SSO provider endpoints rediscovered",
+  identity_provider_discovered: "SSO endpoints rediscovered",
   identity_provider_toggled: "SSO provider enabled/disabled",
   identity_provider_updated: "SSO provider updated",
   instance_setup_completed: "Instance setup completed",
+  legal_document_deleted: "Legal text deleted",
+  legal_document_published: "Legal text published",
+  legal_document_saved: "Legal text saved",
+  legal_document_unpublished: "Legal text unpublished",
   mail_settings_updated: "Mail settings updated",
   mail_smtp_probed: "SMTP connection probed",
   mail_transport_tested: "Mail transport tested",
@@ -103,12 +113,24 @@ const ACTION_LABELS: Record<string, string> = {
   notification_settings_tested: "Notification settings tested",
   notification_settings_updated: "Notification settings updated",
   operator_sessions_bulk_revoked: "Operator sessions revoked",
-  org_branding_logo_uploaded: "Organization branding logo uploaded",
+  org_branding_logo_uploaded: "Branding logo uploaded",
+  registration_accepted: "Guest registration accepted",
+  registration_access_methods_updated: "Registration access updated",
+  registration_bot_protection_updated: "Bot protection updated",
+  registration_custom_domain_updated: "Registration address updated",
+  registration_password_changed: "Registration password changed",
+  registration_sso_provider_updated: "Company SSO provider updated",
+  registration_rejected: "Guest registration rejected",
+  registration_settings_changed: "Registration settings changed",
+  registration_turnstile_cleared: "Turnstile keys removed",
+  registration_turnstile_updated: "Turnstile keys updated",
+  registrations_deleted: "Guest registrations deleted",
   retention_run: "Retention job run",
   role_granted: "Role granted",
   role_changed: "Role changed",
   role_revoked: "Role revoked",
   security_audit_log_exported: "Security log exported",
+  sensitive_data_revealed: "Sensitive answers shown",
   session_device_label_updated: "Session device label updated",
   session_revoked: "Session revoked",
   support_contact_updated: "Support contact updated",
@@ -147,6 +169,7 @@ function entryActionLabel(entry: Pick<AuditLogEntryDto, "action_type" | "metadat
  * the Badge default `neutral` and isn't listed here. */
 const TONE_BY_ADMIN_ACTION: Record<string, BadgeVariant> = {
   account_session_revoked: "error",
+  attendee_companion_removed: "error",
   attendee_erased: "error",
   attendees_bulk_erased: "error",
   emergency_session_purge: "error",
@@ -156,6 +179,7 @@ const TONE_BY_ADMIN_ACTION: Record<string, BadgeVariant> = {
   event_items_bulk_revoked: "error",
   event_resource_deleted: "error",
   operator_sessions_bulk_revoked: "error",
+  registrations_deleted: "error",
   role_revoked: "error",
   session_revoked: "error",
   user_deactivated: "error",
@@ -198,8 +222,8 @@ const SECURITY_EVENT_LABELS: Record<string, string> = {
   "auth.trusted_device.used": "2FA skipped (trusted device)",
   "notification.dispatch.sent": "Notification sent",
   "notification.dispatch.failed": "Notification delivery failed",
-  "notification.dispatch.skipped_throttled": "Notification throttled (duplicate)",
-  "notification.dispatch.skipped_org_disabled": "Notification skipped (disabled by organization)",
+  "notification.dispatch.skipped_throttled": "Notification skipped (duplicate)",
+  "notification.dispatch.skipped_org_disabled": "Notification skipped (disabled)",
   "notification.dispatch.skipped_no_recipients": "Notification skipped (no recipients)",
 };
 
@@ -229,6 +253,13 @@ const TONE_BY_SECURITY_EVENT: Record<string, BadgeVariant> = {
 
 function securityEventTone(type: string): BadgeVariant {
   return TONE_BY_SECURITY_EVENT[type] ?? "neutral";
+}
+
+/** The action of a row of either log, in a table cell and in a card: its name as plain text that wraps like any other,
+ * led by a dot in the colour of its tone (audit-log-table.css). A grey box around a long name read as a heavy rectangle
+ * and told nothing, since most actions are neutral. */
+function ActionLabel({ tone, children }: Readonly<{ tone: BadgeVariant; children: ReactNode }>): ReactNode {
+  return <span className={`audit-log-action audit-log-action--${tone}`}>{children}</span>;
 }
 
 const SECURITY_EVENT_TYPE_OPTIONS = Object.keys(SECURITY_EVENT_LABELS).sort((a, b) =>
@@ -279,13 +310,7 @@ function viewerLocalTimeText(iso: string): string {
 function UserLocalTimeLine({ entry }: Readonly<{ entry: AuditLogEntryDto }>): ReactNode {
   const text = userLocalTimeText(entry);
   if (!text) return null;
-  return (
-    <div className="sessions-subdued audit-log-time__local">
-      <i className="ti ti-user" aria-hidden="true" title="User's local time" />
-      <span className="sr-only">User's local time: </span>
-      {text}
-    </div>
-  );
+  return <LocalTimeLine title="User's local time">{text}</LocalTimeLine>;
 }
 
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
@@ -491,6 +516,8 @@ interface LogColumn<T> {
   key: string;
   header: ReactNode;
   className?: string;
+  /** The column is a column from this width of the screen, and a line of another cell below it (audit-log-table.css). */
+  hideBelow?: 1280 | 1180;
   title?: (entry: T) => string | undefined;
   cell: (entry: T) => ReactNode;
 }
@@ -555,7 +582,34 @@ function LogError({
   );
 }
 
+/** The class that hides a column below its width, with the width it keeps for its heading and its cells (audit-log-table.css). */
+function columnFoldClass(col: Readonly<{ hideBelow?: 1280 | 1180 }>): string | undefined {
+  return col.hideBelow ? `audit-log-table__from-${col.hideBelow}` : undefined;
+}
+
+/** The IP address of a row as a line under its user, for a screen with no room for the column of it (audit-log-table.css). */
+function IpFoldLine({ ip, country }: Readonly<{ ip: string | null; country: IpLocationDto }>): ReactNode {
+  if (!ip) return null;
+  return (
+    <div className="audit-log-secondary audit-log-table__below-1180">
+      {ip} <GeoCell location={country} />
+    </div>
+  );
+}
+
+/** The IP address of a row in the foot of a card, with where it is from as the IP column of the table has it, or a dash when the row has none. */
+function IpFoot({ ip, country }: Readonly<{ ip: string | null; country: IpLocationDto }>): ReactNode {
+  if (!ip) return "-";
+  return (
+    <>
+      {ip} <GeoCell location={country} />
+    </>
+  );
+}
+
 interface LogTableProps<T> {
+  /** Which of the two tables this is: their columns sit at the same x (audit-log-table.css). */
+  variant: "audit" | "security";
   entries: T[];
   columns: LogColumn<T>[];
   rowKey: (entry: T) => string;
@@ -569,6 +623,7 @@ interface LogTableProps<T> {
  * supplies its own column list, but the table/row/details-cell scaffolding itself no longer
  * exists twice. */
 function LogTable<T>({
+  variant,
   entries,
   columns,
   rowKey,
@@ -577,37 +632,39 @@ function LogTable<T>({
   onCopyRow,
 }: Readonly<LogTableProps<T>>) {
   return (
-    <div className="audit-log-table-wrap">
-      <table className="table audit-log-table">
-        <thead>
-          <tr>
-            {columns.map((col) => (
-              <th key={col.key} scope="col">
-                {col.header}
-              </th>
-            ))}
-            <th scope="col">Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry) => (
-            <tr key={rowKey(entry)}>
+    <div className={`item-table audit-log-box audit-log-box--${variant}`}>
+      <div className="attendees-table-wrap">
+        <table className="table audit-log-table">
+          <thead>
+            <tr>
               {columns.map((col) => (
-                <td key={col.key} className={col.className} title={col.title?.(entry)}>
-                  {col.cell(entry)}
-                </td>
+                <th key={col.key} scope="col" className={columnFoldClass(col)}>
+                  {col.header}
+                </th>
               ))}
-              <td>
-                <LogDetailsAction
-                  metadata={metadataOf(entry)}
-                  hiddenKeys={metadataHiddenKeys}
-                  onCopy={() => void onCopyRow(entry)}
-                />
-              </td>
+              <th scope="col">Details</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {entries.map((entry) => (
+              <tr key={rowKey(entry)}>
+                {columns.map((col) => (
+                  <td key={col.key} className={[col.className, columnFoldClass(col)].filter(Boolean).join(" ") || undefined} title={col.title?.(entry)}>
+                    {col.cell(entry)}
+                  </td>
+                ))}
+                <td>
+                  <LogDetailsAction
+                    metadata={metadataOf(entry)}
+                    hiddenKeys={metadataHiddenKeys}
+                    onCopy={() => void onCopyRow(entry)}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -675,7 +732,8 @@ interface LogListContentProps {
   emptyIcon: ReactNode;
   emptyTitle: string;
   emptyDescription: string;
-  isDesktop: boolean;
+  /** The boxed table (from 1024px), or the cards below it. */
+  showTable: boolean;
   renderTable: () => ReactNode;
   renderCards: () => ReactNode;
 }
@@ -729,19 +787,17 @@ function LogListContent({
   emptyIcon,
   emptyTitle,
   emptyDescription,
-  isDesktop,
+  showTable,
   renderTable,
   renderCards,
 }: Readonly<LogListContentProps>) {
   if (skeleton) return skeleton;
   if (error) return <LogError title={errorTitle} message={error} retrying={retrying} onRetry={onRetry} />;
   const empty = emptyLogState({ entriesCount, total, hasActiveFilters, emptyIcon, emptyTitle, emptyDescription });
-  // Mobile: one card per entry instead of a horizontally-scrolling table, mirroring
-  // AttendeesTable's/ReportsPage's own desktop-table/mobile-card split at the same
-  // useIsDesktop() breakpoint.
+  // Below 1024px: one card per entry instead of a table whose columns would not fit its box (audit-log-table.css).
   return (
     <RefetchRegion refreshing={refreshing} label={refreshLabel}>
-      {empty ?? (isDesktop ? renderTable() : renderCards())}
+      {empty ?? (showTable ? renderTable() : renderCards())}
     </RefetchRegion>
   );
 }
@@ -753,21 +809,29 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     {
       key: "time",
       header: <HintLabel hint={TIME_HINT}>Time</HintLabel>,
-      className: "audit-log-time",
     cell: (entry) => (
-      <>
-        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
+      <TimeStack primary={formatUtcPrimaryTime(entry.created_at)}>
         <UserLocalTimeLine entry={entry} />
-      </>
+      </TimeStack>
     ),
   },
   {
     key: "action",
     header: "Action",
-    cell: (entry) => <Badge variant={actionTone(entry.action_type)}>{entryActionLabel(entry)}</Badge>,
+    cell: (entry) => (
+      <>
+        <ActionLabel tone={actionTone(entry.action_type)}>{entryActionLabel(entry)}</ActionLabel>
+        <div className="audit-log-secondary audit-log-table__below-1280">
+          <span className="audit-log-scope" title={scopeLabel(entry, eventTitleById)}>
+            {scopeLabel(entry, eventTitleById)}
+          </span>
+        </div>
+      </>
+    ),
   },
   {
     key: "scope",
+    hideBelow: 1280,
     header: <HintLabel hint={SCOPE_HINT}>Scope</HintLabel>,
     title: (entry) => scopeLabel(entry, eventTitleById),
     cell: (entry) => <span className="audit-log-scope">{scopeLabel(entry, eventTitleById)}</span>,
@@ -782,6 +846,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
         {entry.actor_display_name && entry.actor_email && (
           <div className="audit-log-secondary">{entry.actor_email}</div>
         )}
+        <IpFoldLine ip={entry.ip} country={entry.country} />
       </>
     ),
   },
@@ -789,6 +854,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     key: "ip",
     header: "IP address",
     className: "audit-log-ip",
+    hideBelow: 1180,
     cell: (entry) => (
       <>
         {entry.ip ?? "-"}
@@ -806,11 +872,12 @@ function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
   return (
     <>
       <div className="audit-log-card__action" title={label}>
-        <Badge variant={actionTone(entry.action_type)}>{label}</Badge>
+        <ActionLabel tone={actionTone(entry.action_type)}>{label}</ActionLabel>
       </div>
-      <div className="audit-log-time audit-log-card__time">
-        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
-        <UserLocalTimeLine entry={entry} />
+      <div className="audit-log-card__time">
+        <TimeStack primary={formatUtcPrimaryTime(entry.created_at)}>
+          <UserLocalTimeLine entry={entry} />
+        </TimeStack>
       </div>
     </>
   );
@@ -896,7 +963,7 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
     : `Your local time · ${viewerLocalTimeText(entry.created_at)}`;
   const lines = [
     `Time: ${formatUtcPrimaryTime(entry.created_at)} (${localLine})`,
-    `Event: ${securityEventLabel(entry.event_type)}`,
+    `Action: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
     `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
   ];
@@ -917,19 +984,17 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   {
     key: "time",
     header: <HintLabel hint={SECURITY_TIME_HINT}>Time</HintLabel>,
-    className: "audit-log-time",
     cell: (entry) => (
-      <>
-        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
+      <TimeStack primary={formatUtcPrimaryTime(entry.created_at)}>
         <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
-      </>
+      </TimeStack>
     ),
   },
   {
-    key: "event",
-    header: "Event",
+    key: "action",
+    header: "Action",
     cell: (entry) => (
-      <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
+      <ActionLabel tone={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</ActionLabel>
     ),
   },
   {
@@ -940,6 +1005,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
       <>
         {securityUserDisplay(entry)}
         {securityUserEmail(entry) && <div className="audit-log-secondary">{securityUserEmail(entry)}</div>}
+        <IpFoldLine ip={entry.ip} country={entry.country} />
       </>
     ),
   },
@@ -947,6 +1013,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     key: "ip",
     header: "IP address",
     className: "audit-log-ip",
+    hideBelow: 1180,
     cell: (entry) => (
       <>
         {entry.ip ?? "-"}
@@ -960,10 +1027,13 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
 function renderSecurityCardTop(entry: SecurityAuditLogEntryDto): ReactNode {
   return (
     <>
-      <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
-      <div className="audit-log-time audit-log-card__time">
-        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
-        <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
+      <div className="audit-log-card__action" title={securityEventLabel(entry.event_type)}>
+        <ActionLabel tone={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</ActionLabel>
+      </div>
+      <div className="audit-log-card__time">
+        <TimeStack primary={formatUtcPrimaryTime(entry.created_at)}>
+          <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
+        </TimeStack>
       </div>
     </>
   );
@@ -1111,23 +1181,23 @@ interface SecurityFilterFieldsProps {
   setPage: Dispatch<SetStateAction<number>>;
 }
 
-/** Security's own Event-type select - mirrors AuditFilterFields above. */
+/** Security's own Action select - mirrors AuditFilterFields above. An event is a gathering of people, so the select says Action. */
 function SecurityFilterFields({ filters, setFilters, setPage }: Readonly<SecurityFilterFieldsProps>) {
   return (
     <div className="audit-log-filters-menu__field">
-      <label className="audit-log-filter__label" htmlFor="security-audit-log-filter-event">
-        Event
+      <label className="audit-log-filter__label" htmlFor="security-audit-log-filter-action">
+        Action
       </label>
       <SearchableSelect
-        id="security-audit-log-filter-event"
-        label="Event"
-        placeholder="All event types"
-        searchPlaceholder="Search event types…"
-        emptyLabel="No event types found"
+        id="security-audit-log-filter-action"
+        label="Action"
+        placeholder="All actions"
+        searchPlaceholder="Search actions…"
+        emptyLabel="No actions found"
         showLabel={false}
         value={filters.eventType || "all"}
         options={[
-          { id: "all", label: "All event types" },
+          { id: "all", label: "All actions" },
           ...SECURITY_EVENT_TYPE_OPTIONS.map((type) => ({ id: type, label: securityEventLabel(type) })),
         ]}
         onChange={(value) => {
@@ -1636,6 +1706,13 @@ function LogView({
 
 type LogsView = "system" | "audit" | "security";
 
+/** The query parameter that holds the open view of the Logs tab, as in `?tab=logs&log=audit`: a refresh or a shared link opens the same view. */
+const LOGS_VIEW_PARAM = "log";
+
+function logsViewFromParam(value: string | null): LogsView {
+  return value === "audit" || value === "security" ? value : "system";
+}
+
 const LOGS_VIEW_OPTIONS: ReadonlyArray<SegmentedOption<LogsView>> = [
   { value: "system", label: "System" },
   { value: "audit", label: "Audit" },
@@ -1729,7 +1806,22 @@ function isFirstLogLoad(query: Readonly<{ loading: boolean; hasLoadedOnce: boole
 
 /** Superadmin audit log viewer — read-only paginated table with action and date filters. */
 export function AuditLogPanel() {
-  const [view, setView] = useState<LogsView>("system");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = logsViewFromParam(searchParams.get(LOGS_VIEW_PARAM));
+  const setView = useCallback(
+    (next: LogsView) => {
+      // Replace, as the tabs of the page do (SettingsLayout): a click on a view is not a step to go back to.
+      setSearchParams(
+        (previous) => {
+          const params = new URLSearchParams(previous);
+          params.set(LOGS_VIEW_PARAM, next);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
   // Mirrored up from SystemLogsPanel purely so the header's Live/Download buttons (which live
   // here, next to the System/Audit toggle, rather than being duplicated inside the panel) can
   // reflect its state - SystemLogsPanel itself remains the source of truth for both.
@@ -1737,6 +1829,8 @@ export function AuditLogPanel() {
   const [systemHasEntries, setSystemHasEntries] = useState(false);
   const systemLogsRef = useRef<SystemLogsPanelHandle>(null);
   const isDesktop = useIsDesktop();
+  // The boxed tables fit from 1024px: their columns, folded as far as they go, need more than the 460 to 680px a screen of 768 to 1023px leaves their box.
+  const showTable = useIsDesktop(1024);
   const { addToast } = useToast();
 
   const {
@@ -1977,9 +2071,10 @@ export function AuditLogPanel() {
       emptyIcon={<i className="ti ti-history" aria-hidden="true" />}
       emptyTitle="No audit log entries yet"
       emptyDescription="Actions taken across Settings will appear here."
-      isDesktop={isDesktop}
+      showTable={showTable}
       renderTable={() => (
         <LogTable
+          variant="audit"
           entries={entries}
           columns={auditColumns}
           rowKey={(entry) => entry.id}
@@ -1994,7 +2089,7 @@ export function AuditLogPanel() {
           rowKey={(entry) => entry.id}
           renderTop={renderAuditCardTop}
           renderMeta={(entry) => renderAuditCardMeta(entry, eventTitleById)}
-          renderFootLeft={(entry) => entry.ip ?? "-"}
+          renderFootLeft={(entry) => <IpFoot ip={entry.ip} country={entry.country} />}
           metadataOf={(entry) => entry.metadata}
           metadataHiddenKeys={AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopyRow}
@@ -2035,11 +2130,12 @@ export function AuditLogPanel() {
       total={security.total}
       hasActiveFilters={security.answeredWithFilters}
       emptyIcon={<i className="ti ti-shield-lock" aria-hidden="true" />}
-      emptyTitle="No security events yet"
-      emptyDescription="Logins, 2FA checks, logout, OIDC, and access-denied events will appear here."
-      isDesktop={isDesktop}
+      emptyTitle="No security log entries yet"
+      emptyDescription="Logins, 2FA checks, logouts, OIDC sign-ins and denied access will appear here."
+      showTable={showTable}
       renderTable={() => (
         <LogTable
+          variant="security"
           entries={security.entries}
           columns={SECURITY_COLUMNS}
           rowKey={(entry) => entry.id}
@@ -2054,7 +2150,7 @@ export function AuditLogPanel() {
           rowKey={(entry) => entry.id}
           renderTop={renderSecurityCardTop}
           renderMeta={renderSecurityCardMeta}
-          renderFootLeft={(entry) => entry.ip ?? "-"}
+          renderFootLeft={(entry) => <IpFoot ip={entry.ip} country={entry.country} />}
           metadataOf={(entry) => entry.metadata}
           metadataHiddenKeys={SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopySecurityRow}

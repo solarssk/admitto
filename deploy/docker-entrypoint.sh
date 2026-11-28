@@ -38,7 +38,25 @@ ensure_emergency_export_dir_writable() {
 # scripts/test-geoip-entrypoint.sh can point it at a throwaway directory instead of /app/data.
 MAXMIND_DATA_DIR="${MAXMIND_DATA_DIR:-/app/data/geoip-custom}"
 MAXMIND_STAGING_DIR="${MAXMIND_DATA_DIR}.staging"
+# Where ip-location-api puts the zip and the CSV files it downloads to build the dataset (about
+# 400 MB). Its own default is inside node_modules, where they would stay in the container for as
+# long as it lives; here they sit next to the staging directory and are removed in both outcomes of
+# a fetch (#1853).
+MAXMIND_DOWNLOAD_DIR="${MAXMIND_DATA_DIR}.download"
 MAXMIND_KEY_MARKER="$MAXMIND_DATA_DIR/.maxmind-key-sha256"
+# The ip-location-api field list the dataset is fetched with. It must equal ILA_FIELDS in the
+# Dockerfile (both stages) and apps/web/.env.example: ip-location-api keeps each field list in its
+# own directory under ILA_DATA_DIR, so a dataset fetched with another list is not found by the app,
+# which then starts a blocking download at every start.
+MAXMIND_FIELDS="country,region1_name,city"
+MAXMIND_FIELDS_MARKER="$MAXMIND_DATA_DIR/.maxmind-fields"
+
+# Was the dataset in $MAXMIND_DATA_DIR fetched with the field list this image reads? A dataset left
+# by an older image (no marker, or another list) is not usable even when the key is unchanged, so
+# every place that reuses the cache asks this as well as the key marker and 4-1.dat.
+maxmind_fields_current() {
+  [ -f "$MAXMIND_FIELDS_MARKER" ] && [ "$(cat "$MAXMIND_FIELDS_MARKER")" = "$MAXMIND_FIELDS" ]
+}
 
 maybe_refresh_geoip_from_maxmind() {
   key="${MAXMIND_LICENSE_KEY:-}"
@@ -48,13 +66,15 @@ maybe_refresh_geoip_from_maxmind() {
   # whether to (re-)download (node_modules/ip-location-api/src/main.mjs's `dataFiles.v41`). The
   # marker alone isn't enough - it only proves a download once succeeded for this key, not that
   # the actual dataset is still there (an operator's `rm geoip-data/*` leaves this dotfile marker
-  # untouched while deleting every real data file, since a bare `*` glob skips dotfiles).
-  if [ -f "$MAXMIND_KEY_MARKER" ] && [ "$(cat "$MAXMIND_KEY_MARKER")" = "$key_hash" ] && [ -f "$MAXMIND_DATA_DIR/4-1.dat" ]; then
+  # untouched while deleting every real data file, since a bare `*` glob skips dotfiles). The same
+  # goes for the field list: a download made by an image that read other fields is not found by
+  # this one, so it is fetched again once (maxmind_fields_current).
+  if [ -f "$MAXMIND_KEY_MARKER" ] && [ "$(cat "$MAXMIND_KEY_MARKER")" = "$key_hash" ] && maxmind_fields_current && [ -f "$MAXMIND_DATA_DIR/4-1.dat" ]; then
     log "geoip: MAXMIND_LICENSE_KEY unchanged - reusing the already-downloaded dataset"
     export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
     return 0
   fi
-  log "geoip: MAXMIND_LICENSE_KEY set (new or changed) - fetching the GeoLite2 City database from MaxMind"
+  log "geoip: MAXMIND_LICENSE_KEY set (new, changed, or fetched with other fields) - fetching the GeoLite2 City database from MaxMind"
   # Fetch into a fresh staging directory, never $MAXMIND_DATA_DIR directly: ip-location-api's own
   # sync reload only re-downloads when its data files are absent (existence check, not by which
   # key produced them - see node_modules/ip-location-api/src/main.mjs's `reload`), so reusing the
@@ -62,10 +82,14 @@ maybe_refresh_geoip_from_maxmind() {
   # forever, while this function's own marker claimed the new key was in effect. Staging also
   # means a failed fetch can never destroy an already-working dataset - only a verified-good
   # download ever replaces it.
-  rm -rf "$MAXMIND_STAGING_DIR"
+  rm -rf "$MAXMIND_STAGING_DIR" "$MAXMIND_DOWNLOAD_DIR"
   mkdir -p "$MAXMIND_STAGING_DIR"
-  if ILA_LICENSE_KEY="$key" ILA_FIELDS=country,city ILA_DATA_DIR="$MAXMIND_STAGING_DIR" ILA_AUTO_UPDATE=false \
+  if ILA_LICENSE_KEY="$key" ILA_FIELDS="$MAXMIND_FIELDS" ILA_DATA_DIR="$MAXMIND_STAGING_DIR" \
+      ILA_TMP_DATA_DIR="$MAXMIND_DOWNLOAD_DIR" ILA_DOWNLOAD_TYPE=false ILA_AUTO_UPDATE=false \
       node apps/web/scripts/prefetch-geo-db.mjs; then
+    # ILA_DOWNLOAD_TYPE=false makes the library delete the download directory itself; this makes
+    # sure of it whatever the library did, so no zip and CSV files stay behind in the container.
+    rm -rf "$MAXMIND_DOWNLOAD_DIR"
     # $MAXMIND_DATA_DIR is a Docker bind-mount root when MAXMIND_LICENSE_KEY is used through the
     # shipped Compose stack (docker-compose.yml) - `rm -rf` can empty a mount point's contents but
     # the kernel refuses to remove the mount point itself ("Resource busy"), which `set -e` would
@@ -77,14 +101,17 @@ maybe_refresh_geoip_from_maxmind() {
     mv "$MAXMIND_STAGING_DIR"/* "$MAXMIND_DATA_DIR"/
     rmdir "$MAXMIND_STAGING_DIR"
     printf '%s' "$key_hash" >"$MAXMIND_KEY_MARKER"
+    printf '%s' "$MAXMIND_FIELDS" >"$MAXMIND_FIELDS_MARKER"
     export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
     log "geoip: MaxMind dataset ready"
   else
-    rm -rf "$MAXMIND_STAGING_DIR"
+    rm -rf "$MAXMIND_STAGING_DIR" "$MAXMIND_DOWNLOAD_DIR"
     # Same 4-1.dat check as the fast path above - a marker alone doesn't prove the last-good
     # dataset is still actually there (it could have been deleted since, the exact scenario that
-    # got us into this failed-refetch branch in the first place).
-    if [ -f "$MAXMIND_KEY_MARKER" ] && [ -f "$MAXMIND_DATA_DIR/4-1.dat" ]; then
+    # got us into this failed-refetch branch in the first place). And the last-good dataset must
+    # have been fetched with this image's field list too: one from an older image is not found by
+    # the app, so the built-in dataset (baked with the right fields) is the better fallback.
+    if [ -f "$MAXMIND_KEY_MARKER" ] && maxmind_fields_current && [ -f "$MAXMIND_DATA_DIR/4-1.dat" ]; then
       log "geoip: warning: MaxMind fetch failed - reusing the last known-good dataset"
       export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
     else

@@ -1,6 +1,7 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { Cell, Pie, PieChart, PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, EmptyState } from "@admitto/ui";
+import { useReportEmpty } from "../reports/useReportEmpty.js";
 import { CUSTOM_FIELD_NOT_ANSWERED_KEY } from "@admitto/shared";
 import type { EventCustomFieldReportsResponse } from "../api/types.js";
 import { BreakdownRows, type BreakdownRow } from "./ReportsPage.js";
@@ -152,7 +153,7 @@ function FillRateGauge({ pct, isActive }: Readonly<{ pct: number; isActive: bool
 
 /** Same placement as every WalletsReportsTab.tsx card - a plain description paragraph above the
  * chart. Unlike Wallets' own fixed captions, this one is admin-entered per field
- * (EventCustomField.description, same text as the Requirements page's field editor), so it falls
+ * (EventCustomField.description, same text as the field editor on the Registration page), so it falls
  * back to a literal "No description" rather than rendering nothing when the admin left it blank -
  * every card keeps the same shape instead of some having a caption and others not. */
 function FieldDescription({ description }: Readonly<{ description: string | null }>) {
@@ -192,15 +193,45 @@ function CustomFieldCard({
   );
 }
 
+/** How many attendees answered a field, by the same numbers its card shows: the fill count of a text field, the
+ * categories of a select or boolean field other than "Not answered". */
+function answeredCount(field: CustomFieldReport): number {
+  if (field.response_rate) return field.response_rate.answered;
+  return (field.distribution ?? [])
+    .filter((row) => row.key !== CUSTOM_FIELD_NOT_ANSWERED_KEY)
+    .reduce((sum, row) => sum + row.count, 0);
+}
+
+/** Nothing to show or export: no field, or no field answered by anyone yet (no attendees at all is the same: every card
+ * would read zero). The tab draws only its empty state, and the page switches Export off, by this one answer. */
+export function isCustomFieldsReportEmpty(data: EventCustomFieldReportsResponse): boolean {
+  return data.fields.every((field) => answeredCount(field) === 0);
+}
+
 /** The custom field report itself, given what the read answered. It is a chunk of its own (the charts are in it): the tab, in
  * reports/ReportsTabs.tsx, loads it together with the data, and owns the placeholder, the error and the memo. */
-export function CustomFieldsReport({ data, isActive }: Readonly<{ data: EventCustomFieldReportsResponse; isActive: boolean }>) {
+export function CustomFieldsReport({
+  data,
+  isActive,
+  onEmptyChange,
+}: Readonly<{ data: EventCustomFieldReportsResponse; isActive: boolean; onEmptyChange?: (empty: boolean) => void }>) {
+  const empty = isCustomFieldsReportEmpty(data);
+  useReportEmpty(onEmptyChange, empty);
   if (data.fields.length === 0) {
     return (
       <EmptyState
         icon={<i className="ti ti-forms" aria-hidden="true" />}
         title="No custom fields yet"
-        description="Add custom fields on the Requirements page to see a chart for each one here."
+        description="Add custom fields on the Fields tab of the Registration page to see a chart for each one here."
+      />
+    );
+  }
+  if (empty) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-forms" aria-hidden="true" />}
+        title="No answers yet"
+        description="Answers to your custom fields show up here once guests fill them in."
       />
     );
   }

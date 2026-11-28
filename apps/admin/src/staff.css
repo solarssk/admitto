@@ -1789,10 +1789,10 @@ html:not(.icons-ready) .ti {
 }
 
 .ck-recent__right time {
-  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--text-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .ck-recent__ticket {
@@ -2840,8 +2840,17 @@ html:not(.icons-ready) .ti {
    enough to stay beside the "Check-in" title on mobile too, instead of the shared
    PageHeader's default stack-below-full-width (components.css) — same reasoning as
    .reports-pageheader / .event-settings-pageheader. Operator's header reuses this same
-   .checkin-pageheader class (CheckInPage.tsx) so both surfaces match. */
+   .checkin-pageheader class (CheckInPage.tsx) so both surfaces match. The buttons are the
+   default size, as in every other page header; under 768px they are compacted by this
+   rule, the way .attendees-pageheader and .settings-pageheader do it (the icons stay: the
+   mute and torch buttons have nothing else). */
 @media (max-width: 767px) {
+  .checkin-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
   .checkin-pageheader .at-pageheader__row {
     flex-direction: row;
     align-items: flex-start;
@@ -3293,6 +3302,13 @@ html:not(.icons-ready) .ti {
    rely on unchanged. */
 .theme-surface-rows .settings-row {
   align-items: center;
+}
+
+/* The icon tile (the one of the identity rows) beside the name and the line under it. */
+.theme-surface-text {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 /* A label+description row with one Switch (Check-in behaviour): the Switch sits at the vertical
@@ -3954,6 +3970,37 @@ html:not(.icons-ready) .ti {
   position: relative;
 }
 
+/* The three rows of Theme by surface line up: the colour control and the font select are 220px each (the longest label,
+   "Same as Admin panel", and a font name fit), whatever is picked. On a phone the controls stack and take the row. */
+.theme-surface-rows .settings-row__controls > * {
+  flex: 0 0 220px;
+  width: 220px;
+  min-width: 0;
+}
+
+/* Under 1024px the content is too narrow for the text and 448px of controls side by side (a 768px screen has about 460px of
+   content): the controls go under the text, the colour and the font side by side while they fit and one under the other
+   when they do not, and on a phone each takes the row. The centring above is for a row beside its controls. */
+@media (max-width: 1023px) {
+  .theme-surface-rows .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .theme-surface-rows .settings-row__controls {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .theme-surface-rows .settings-row__controls > * {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+}
+
 /* Same box as .searchable-select__trigger (font picker, right next to this one in the same row) -
    only the colour dot inside is specific to this control, so the two read as one control family
    instead of the colour picker looking like a different kind of widget. */
@@ -3961,7 +4008,7 @@ html:not(.icons-ready) .ti {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: 160px;
+  width: 100%;
   height: var(--control-h);
   box-sizing: border-box;
   padding: 0 var(--space-3);
@@ -4000,10 +4047,6 @@ html:not(.icons-ready) .ti {
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
-}
-
-.color-surface-control__label--placeholder {
-  color: var(--text-muted);
 }
 
 .color-surface-control__chevron {
@@ -4417,17 +4460,7 @@ html:not(.icons-ready) .ti {
   background: var(--primary-tint);
 }
 
-/* No card-within-a-card chrome (border/background/padding) - it read as a separate box and,
-   since that padding wasn't shared by "Font"/"Theme by surface" above it, put "Live preview"
-   slightly out of horizontal alignment with them. Sits directly in the Theme card's own flow
-   instead, at the same 20px section gap as Font. */
-.theme-preview {
-  margin-top: 20px;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Font / Theme by surface: same rhythm as .theme-preview - tight label→hint, 10px to the
+/* Font / Theme by surface: tight label→hint, 10px to the
    control, 20px between sections. Do not wrap these in .settings-card-stack (its uniform gap
    stacks with the section margins and blows out the spacing). */
 .theme-section {
@@ -4444,7 +4477,7 @@ html:not(.icons-ready) .ti {
 }
 
 .theme-section > .at-label,
-.theme-section > .overline {
+.theme-section > .attendees-section-label {
   margin-bottom: 0;
 }
 
@@ -4457,117 +4490,6 @@ html:not(.icons-ready) .ti {
 /* Card intro → first theme section: same 20px step as between sections. */
 .settings-card-intro + .theme-section {
   margin-top: 20px;
-}
-
-/* Same reasoning as .logo-upload: a uniform gap would also space the heading from its own
-   description below it - tight there to match Font/Theme by surface, every other pair keeps the
-   same 10px rhythm as before. */
-.theme-preview > *:not(:last-child) {
-  margin-bottom: 10px;
-}
-
-.theme-preview > .at-label,
-.theme-preview > .overline {
-  margin-bottom: 0;
-}
-
-.theme-preview__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 11px 16px;
-  border-radius: var(--radius-md);
-  color: #fff;
-  font-weight: 600;
-  font-size: var(--fs-sm);
-}
-
-.theme-preview__row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.theme-preview__bar--sm {
-  justify-content: center;
-  padding: 9px;
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.85;
-}
-
-.theme-preview__tint {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  padding: 9px;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-}
-
-.theme-preview__controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.theme-preview__btn {
-  border: 0;
-  color: #fff;
-  font-weight: 600;
-  font-size: var(--fs-sm);
-  padding: 9px 18px;
-  border-radius: var(--radius);
-  cursor: default;
-}
-
-.theme-preview__btn--outline {
-  background: transparent;
-  border: var(--border-width) solid var(--border-strong);
-  color: var(--text-primary);
-}
-
-.theme-preview__badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 5px 12px;
-  border-radius: var(--radius-pill);
-  background: var(--at-gray-100, #f1f5f9);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  /* No align-self override - .theme-preview__controls' own align-items: center already
-     vertically centers every child; flex-start here fought that and sat the badge flush to
-     the row's top edge instead of level with the buttons beside it. */
-}
-
-.theme-preview__sample {
-  margin: 6px 0 0;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-
-.theme-preview__variants {
-  display: flex;
-  gap: 18px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: var(--border-width) dashed var(--border);
-  /* Larger than the app's usual body text on purpose - this row exists specifically to let
-     someone see the Regular/Bold/Italic weight contrast at a glance, and that contrast is much
-     harder to judge at normal body size. */
-  font-size: var(--fs-h2);
-  color: var(--text-primary);
-}
-
-.theme-preview__faux {
-  font-size: var(--fs-xs);
-  margin-left: 4px;
-  color: var(--text-disabled);
-  vertical-align: middle;
 }
 
 /* Mail transport panel */
@@ -5105,12 +5027,13 @@ output.mail-field-hint {
   padding: 0;
 }
 
+/* The state of a secret ("Not set", the mask) is words, so it is set in the product font and the size of the text of a field
+   (one font on a screen: standards/admin-spa/readability.md). */
 .mail-secret-field__display-value {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-family: ui-monospace, monospace;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-body);
   color: var(--text-secondary);
 }
 
@@ -5908,28 +5831,6 @@ output.mail-field-hint {
   padding: var(--space-4) 0;
 }
 
-/* Audit/Security logs deliberately grow with their rows. Account sessions use their own
-   .account-sessions-table-wrap scroll region, so lazy-loading the Account page can never cap
-   this table's height. */
-.audit-log-table-wrap {
-  overflow-x: auto;
-}
-
-/* Negative margin only, no matching padding - a margin/padding pair of the same size on the
-   same box cancels out (the padding re-insets exactly what the margin bled out), leaving the
-   table at the same width as an unbled child. Bleeding all the way to the card's own edge is
-   the actual goal here, matching .users-page__table-wrap's own (correct) version of this same
-   idiom - this copy quietly never achieved it (PO report: several tables using this class read
-   narrower than the card, indistinguishable from not having the trick at all).
-   Scoped to .at-card__body (a padded Card's own wrapper, packages/ui/src/components/Card.tsx)
-   - ReportsPage.tsx's Admission log reuses this same class on a padded={false} Card, which
-   never renders .at-card__body at all, so this bleed never applies there (codex review):
-   with no padding to offset, the same negative margin would push that table 24px past each
-   edge of its already-unpadded card instead of reaching it. */
-.at-card__body .audit-log-table-wrap {
-  margin: 0 calc(-1 * var(--pad-card));
-}
-
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -6378,37 +6279,6 @@ output.mail-field-hint {
   margin: 0;
 }
 
-/* --fs-mono (13px) matches the table's own 13px body text numerically, but a monospace
-   typeface's glyphs read visually larger than a proportional one at the same size - --fs-xs
-   (12px, the same size already used for badges/table captions) is what actually looks the
-   same size as the rest of the row. */
-.audit-log-time {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  /* Stack UTC + local (td white-space / inline children must not keep them on one row). */
-  white-space: normal;
-}
-
-/* Secondary local-time line under UTC (block flex, not inline - otherwise it sits beside UTC). */
-.audit-log-time__local {
-  display: flex;
-  align-items: baseline;
-  gap: 0.3rem;
-  max-width: 100%;
-  /* The timestamp remains monospace via .audit-log-time. Its size, line-height, and muted
-     treatment deliberately match email and IP-location sublines in the neighbouring columns. */
-  font-size: var(--fs-xs);
-  line-height: var(--lh-normal);
-  color: var(--text-muted);
-}
-
-.audit-log-time__local .ti {
-  flex-shrink: 0;
-  font-size: 0.95em;
-  opacity: 0.85;
-  line-height: 1;
-}
-
 /* Long event titles clamp to 2 lines (Time and User already routinely render 2 lines in this
    table - UTC + local time, name + email - so this keeps Scope's row-height in the same rhythm
    instead of wrapping without limit and making one row much taller than its neighbours). Anything
@@ -6476,19 +6346,8 @@ output.mail-field-hint {
   width: 100%;
 }
 
-.audit-log-card__action .at-badge {
-  white-space: normal;
-  text-align: left;
-  display: inline-block;
-  max-width: 100%;
-  line-height: 1.35;
-  padding-block: 4px;
-  box-sizing: border-box;
-  vertical-align: top;
-}
-
 .audit-log-card__time {
-  /* Stacked under the action badge on cards so long labels never squeeze beside UTC /
+  /* Stacked under the action on cards so long labels never squeeze beside UTC /
      user-local time (and the ti-user icon in UserLocalTimeLine). */
   flex: none;
   min-width: 0;
@@ -6951,20 +6810,6 @@ output.mail-field-hint {
   margin: var(--space-2) 0;
 }
 
-/* Negative margin only, no matching padding - see .audit-log-table-wrap's own comment
-   (staff.css) for why a same-size padding here would silently cancel the bleed back to a
-   plain unbled child's width (PO report: this still read narrower than Staff users' table
-   after the first attempt at this fix). */
-.archiving-table-wrap {
-  overflow-x: auto;
-  margin: 0 calc(-1 * var(--pad-card)) var(--space-2);
-}
-
-.archiving-table-wrap th:last-child,
-.archiving-table-wrap td:last-child {
-  text-align: right;
-}
-
 .archiving-subdued {
   font-size: var(--fs-sm);
   color: var(--text-muted);
@@ -6994,7 +6839,7 @@ output.mail-field-hint {
   z-index: 100;
 }
 
-/* Mobile/tablet (<768px, matching useIsDesktop's default breakpoint) one-card-per-event list -
+/* Narrow screens (<1024px, the breakpoint EventArchivingPanel gives useIsDesktop) one-card-per-event list -
    the table below this width has too many columns to shrink into without wrapping cell text
    into unreadable fragments, so it's replaced outright rather than left to scroll horizontally. */
 .archiving-cards {
@@ -7567,6 +7412,11 @@ output.mail-field-hint {
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+}
+
+/* The People on site tile (shown once a companion has been let in) takes the whole row under the two facts. */
+.overview-glance__tile--wide {
+  grid-column: 1 / -1;
 }
 
 .overview-glance__icon {
@@ -8981,4 +8831,9 @@ output.mail-field-hint {
 
 .event-load-error .at-empty-state {
   padding-bottom: 1.5rem;
+}
+
+/* A closed collapsible card in a placeholder: the header alone, with no line under it, as the card is when it is loaded. */
+.settings-skeleton__closed .at-card__header {
+  border-bottom-color: transparent;
 }

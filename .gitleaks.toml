@@ -12,4 +12,7 @@ paths = [
 # removed). The scan reads every commit of a PR, so the value has to stay allowlisted.
 regexes = [
   '''sk-test-0123456789abcdef''',
+  # A test-only admin password in the legal texts integration test (a synthetic fixture). It sits in
+  # an early commit of the legal texts PR, and the scan reads every commit of a PR.
+  '''legal-docs-pass-123''',
 ]

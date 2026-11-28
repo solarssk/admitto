@@ -1,4 +1,4 @@
-import { EXPORT_STOPPED_BY_ERASURE_ERROR } from "./stop-open-jobs.js";
+import { EXPORT_STOPPED_BY_ERASURE_ERROR, EXPORT_STOPPED_BY_FIELD_DELETION_ERROR } from "./stop-open-jobs.js";
 import { STALE_EXPORT_JOB_ERROR, STALE_EXPORT_PENDING_ERROR } from "./reclaim-stale-export-jobs.js";
 
 export const EXPORT_JOB_FAILED_ERROR = "Export failed. Run the export again.";
@@ -6,6 +6,7 @@ export const EXPORT_JOB_FAILED_ERROR = "Export failed. Run the export again.";
 const SAFE_EXPORT_ERRORS = new Set([
   EXPORT_JOB_FAILED_ERROR,
   EXPORT_STOPPED_BY_ERASURE_ERROR,
+  EXPORT_STOPPED_BY_FIELD_DELETION_ERROR,
   STALE_EXPORT_JOB_ERROR,
   STALE_EXPORT_PENDING_ERROR,
   "export_job_incomplete",

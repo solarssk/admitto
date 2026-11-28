@@ -1,0 +1,317 @@
+/* The Requests tab of the Registration page: a card with the Attendees list's toolbar and bulk bar (attendees.css, which both
+   import), the banner of the requests that wait, the requests as a boxed table or as cards, and the pager. The toolbar, the bulk bar, the table headings,
+   the checkboxes and the busy and dimmed states are the ones the other lists use; what is here is the shape of a request. */
+
+/* The notice and the card are 12px apart, the space the notice has under the tabs: the same on both sides of it. */
+.registration-requests {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* How many requests wait, over the table, inset like it. The Notice is the kit's (amber), with no colour of its own. */
+.registration-requests__banner {
+  padding: var(--space-4) var(--space-4) 0;
+}
+
+/* The table is the boxed table of the other lists (components/item-table.css), inset by the card: a fixed layout with a width for every column, so that a box wider than
+   their sum is shared in proportion and the guest, whose address can break at any dot, is never squeezed by the columns beside it (with the columns sharing the room by
+   their content it was 59px wide at 1024px, and the table scrolled sideways). Checkbox, Guest, Company, Status, Last email, Registered: 60.5rem, which the box has from 1360px
+   (60.9rem with the classic scrollbar). Below it Company folds into a line under the guest and 49.25rem are left (49.6rem at 1180px); below 1180px Last email folds into a line
+   under the Status and 39rem are left (39.9rem at 1024px). The Status is 10.5rem for its longest badge ("Waiting for a decision"), the last email 10.25rem for the longest
+   name of a mail ("Address confirmation") on one line. The time is text that wraps ("Oct 23, 2026, 10:14 AM UTC" is one line from a 13rem column, two below it), so the column
+   needs no width for the longest form. Below 1024px the requests are cards. */
+.registration-requests__box {
+  margin: var(--space-4);
+}
+
+.item-table.registration-requests__box .table :is(th, td):nth-child(1) {
+  width: 3rem;
+}
+
+.item-table.registration-requests__box .table :is(th, td):nth-child(2) {
+  width: 13.5rem;
+}
+
+.item-table.registration-requests__box .table :is(th, td):nth-child(3) {
+  width: 11.25rem;
+}
+
+.item-table.registration-requests__box .table :is(th, td):nth-child(4) {
+  width: 10.5rem;
+}
+
+.item-table.registration-requests__box .table :is(th, td):nth-child(5) {
+  width: 10.25rem;
+}
+
+.item-table.registration-requests__box .table :is(th, td):nth-child(6) {
+  width: 12rem;
+}
+
+/* A cell of a fixed layout cannot grow to fit a long word: an address or a company with no break in it wraps instead of painting across the next cell. */
+.item-table.registration-requests__box .table td {
+  overflow-wrap: anywhere;
+}
+
+/* Company and Last email as a line under the guest and under the Status: nothing on a screen with room for their columns. Muted, like the address under a name; only a failed
+   email keeps its red, since it is what a person comes here to see (5.8:1 on the tint of a selected row, which the grey of a pending or retried one would not have). */
+.registration-requests__below-1360,
+.registration-requests__below-1180 {
+  display: none;
+  margin-top: var(--space-1);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-muted);
+}
+
+.item-table.registration-requests__box .registration-requests__fold-mail--error {
+  color: var(--status-error-fg);
+}
+
+@media (max-width: 1359px) {
+  /* No size for the text either: a hidden cell that kept its text would still be as tall as it, in a cell of no width. */
+  .item-table.registration-requests__box .table :is(th, td).registration-requests__from-1360 {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+    white-space: nowrap;
+  }
+
+  .item-table.registration-requests__box .table :is(th, td).registration-requests__from-1360 > * {
+    display: none;
+  }
+
+  .item-table.registration-requests__box .registration-requests__below-1360 {
+    display: block;
+  }
+}
+
+@media (max-width: 1179px) {
+  .item-table.registration-requests__box .table :is(th, td).registration-requests__from-1180 {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+    white-space: nowrap;
+  }
+
+  .item-table.registration-requests__box .table :is(th, td).registration-requests__from-1180 > * {
+    display: none;
+  }
+
+  .item-table.registration-requests__box .registration-requests__below-1180 {
+    display: block;
+  }
+}
+
+/* Cells top-aligned: a long name or address makes a tall row, and its badges stay level with the name instead of the middle of it. */
+.item-table.registration-requests__box .table tbody td {
+  vertical-align: top;
+}
+
+/* The guest as the button that opens the request: the same two lines (the attendees' row button resets the rest), and a ring when the keyboard is on it. */
+.registration-requests__open {
+  border-radius: var(--radius-sm);
+}
+
+.registration-requests__open:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--border-focus);
+}
+
+/* The guest. A name or an address is read in full, so it wraps (and breaks inside a word only when it does not fit) instead of being cut. */
+.registration-requests__guest {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.registration-requests__name {
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* "+1": the guest brings someone, who takes a seat too. */
+.registration-requests__plus {
+  margin-left: var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+.registration-requests__email {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.registration-requests__company {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* A company and a department are short names that stand alone in their cell, so they are balanced: a name that takes two lines does not
+   end on "(EMEA)" alone. */
+.registration-requests__company > span {
+  text-wrap: balance;
+}
+
+.registration-requests__department,
+.registration-requests__affiliation {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.registration-requests__mail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.registration-requests__mail-kind {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.registration-requests__none {
+  color: var(--text-muted);
+}
+
+/* The time of a row is one line when its column has the room and two balanced lines when it has not ("Oct 23, 2026," over "10:14 AM UTC"), never a time that
+   touches the edge of the box. Its colours are those of every time (time-stack.css): the digits dark and the zone quiet. */
+.item-table.registration-requests__box .time-stack__utc {
+  text-wrap: balance;
+}
+
+/* Cards, below the width the table fits: one request each, in a box that looks like the table's (a border, rounded corners, a grey
+   head row with the checkbox that selects the page, hairlines between the cards). */
+.registration-requests__cards-wrap {
+  margin: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.registration-requests__selectall {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+}
+
+.registration-requests__cards {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.registration-requests__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.registration-requests__card:last-child {
+  border-bottom: 0;
+}
+
+.registration-requests__card--selected {
+  background: var(--primary-tint);
+}
+
+/* A selected row or card is tinted, and the muted grey of the address, the department and the name of the email is under 4.5:1 on that
+   tint (axe, serious). While it is selected they take the secondary grey, which is not. */
+.attendees-table-v2__row--selected .registration-requests__email,
+.attendees-table-v2__row--selected .registration-requests__department,
+.attendees-table-v2__row--selected .registration-requests__mail-kind,
+.attendees-table-v2__row--selected .registration-requests__none,
+.attendees-table-v2__row--selected .registration-requests__below-1360,
+.attendees-table-v2__row--selected .registration-requests__below-1180,
+.registration-requests__card--selected .registration-requests__email,
+.registration-requests__card--selected .registration-requests__affiliation,
+.registration-requests__card--selected .registration-requests__mail-kind,
+.registration-requests__card--selected .registration-requests__card-label,
+.registration-requests__card--selected .registration-requests__none {
+  color: var(--text-secondary);
+}
+
+/* The checkbox beside the guest, and the lines under the name indented to start under it (the Attendees cards' rhythm). */
+.registration-requests__card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.registration-requests__card-cb {
+  padding-top: 3px;
+}
+
+.registration-requests__card-open {
+  flex: 1;
+  min-width: 0;
+}
+
+.registration-requests__card-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: 1.75rem;
+}
+
+.registration-requests__card-facts,
+.registration-requests__card-mail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-sm);
+}
+
+.registration-requests__card-label {
+  color: var(--text-muted);
+}
+
+/* In a card the badge and what the email was share a line, as the label shares it with them. */
+.registration-requests__card-mail .registration-requests__mail {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The line under the placeholder after 8 seconds of waiting. Its status region is empty, and has no height, until then. */
+.registration-requests__slow {
+  display: block;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  text-align: center;
+}
+
+/* PaginationFooter assumes a padded card body; this card has none, so the table can reach its edges. */
+.registration-requests__footer {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+/* What a confirmation adds under its message: the seats an acceptance takes, the requests it leaves out, what a checkbox does. */
+.registration-requests__dialog-note {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-secondary);
+}

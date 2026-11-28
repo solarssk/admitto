@@ -1,0 +1,41 @@
+/* The look of a time in a row or a card, in one place for every table and card that shows one (the sessions, the logs, the delivery log, the role assignments,
+   the wallet history, the notification dialog): the primary time, and under it the same moment in the zone where it happened. Both are in the body font of the
+   row, never monospace: a log is not code, and a time that is monospace in one table and not in the next reads as two products. The digits are tabular so that a
+   column of times lines up without a monospace font. Markup: components/TimeStack.tsx; `time-text` is for a time that is only text (a date in a list of facts, the
+   admission time of a scan): the same digits, nothing else. */
+.time-stack {
+  /* A cell of a log table keeps its text on one line; the two lines here are blocks and the second one may wrap. */
+  white-space: normal;
+}
+
+.time-text,
+.time-stack__utc,
+.time-stack__local {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The zone at the end of a time ("UTC", "UTC+5:30") is the quiet part: smaller and grey, where the digits are dark. It says which clock the digits are on and
+   nothing a reader looks for first; as loud as the digits, three capital letters were what caught the eye in a row of a log. */
+.time-stack__zone {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* The secondary line is a flex line, not inline: otherwise it sits beside the primary time. Its size, line-height and muted colour match the email and the
+   location lines of the neighbouring columns. */
+.time-stack__local {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  max-width: 100%;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-muted);
+}
+
+.time-stack__local .ti {
+  flex-shrink: 0;
+  font-size: 0.95em;
+  opacity: 0.85;
+  line-height: 1;
+}

@@ -1,0 +1,76 @@
+/* The Admission log of the Reports page in the shared boxed table (components/item-table.css) from 1024px, and the cards below it (`useIsDesktop(1024)` in ReportsPage.tsx). Every
+   column has a width, so a box wider than their sum is shared among them in proportion. From 1180px the table has all five columns (49rem in the 50.6rem of its box at that width,
+   with the classic scrollbar). Below it Items folds into a line under the guest and four columns are left (40rem in the 40.8rem of 1024px). The time of an admission is text that
+   wraps ("Jun 01, 2026, 10:05 AM UTC+1" is two lines in its 9rem when the log spans more than one day), so the column needs no width for the longest form. */
+
+/* Attendee, Ticket type, Admitted at, Checked in by, Items. */
+.item-table.reports-log-box .table :is(th, td):nth-child(1) {
+  width: 13rem;
+}
+
+.item-table.reports-log-box .table :is(th, td):nth-child(2) {
+  width: 7.5rem;
+}
+
+.item-table.reports-log-box .table :is(th, td):nth-child(3) {
+  width: 9rem;
+}
+
+.item-table.reports-log-box .table :is(th, td):nth-child(4) {
+  width: 10.5rem;
+}
+
+.item-table.reports-log-box .table :is(th, td):nth-child(5) {
+  width: 9rem;
+}
+
+/* A cell of a fixed layout cannot grow to fit a long word: an e-mail address or a device id with no break in it wraps instead of painting across the next cell. */
+.item-table.reports-log-box .table td {
+  overflow-wrap: anywhere;
+}
+
+/* The time of an admission reads "Jun 01, 2026, 11:05 AM UTC+2" when the log spans more than one day: balanced, it breaks after the date and not between 11:05 and AM. */
+.item-table.reports-log-box .table td.time-text {
+  text-wrap: balance;
+}
+
+/* The label of a ticket type is data an admin typed: a long one wraps inside the badge instead of painting past its cell. */
+.item-table.reports-log-box .table .at-badge {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
+/* Items as a line under the guest: nothing on a screen with room for its column. */
+.reports-log-table__below-1180 {
+  display: none;
+  margin-top: var(--space-1);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-muted);
+}
+
+@media (max-width: 1179px) {
+  /* No size for the text either: a hidden cell that kept its text would still be as tall as it, in a cell of no width. */
+  .item-table.reports-log-box .table :is(th, td).reports-log-table__from-1180 {
+    width: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+    white-space: nowrap;
+  }
+
+  .item-table.reports-log-box .table th.reports-log-table__from-1180 {
+    font-size: 0;
+  }
+
+  .item-table.reports-log-box .table :is(th, td).reports-log-table__from-1180 > * {
+    display: none;
+  }
+
+  .item-table.reports-log-box .reports-log-table__below-1180 {
+    display: block;
+  }
+}

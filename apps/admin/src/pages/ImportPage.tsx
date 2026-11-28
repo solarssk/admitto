@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type DragEvent,
   type KeyboardEvent,
   type RefObject,
@@ -19,6 +20,7 @@ import type {
   ImportSampleRow,
   ImportSkippedRow,
 } from "../api/types.js";
+import { answerImportNote } from "../attendees/answerFormat.js";
 import { fetchAttendeeCustomFields, type CustomDataFieldDef } from "../attendees/customData.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
@@ -35,6 +37,7 @@ import { goToLogin } from "../auth/login-navigation.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import { pluralize } from "../utils/pluralize.js";
 import "../attendees/attendees.css";
+import "../components/item-table.css";
 import "./import.css";
 
 type Step = "upload" | "preview" | "done";
@@ -67,11 +70,13 @@ function ImportSampleTable({ rows, attributeFieldLabels }: Readonly<ImportSample
   const hasDepartment = rows.some((r) => r.department);
   const hasExtUuid = rows.some((r) => r.external_uuid);
   const hasCustom = attributeFieldLabels.length > 0;
+  // The columns after the email: import.css keeps each of them at least 8rem wide, so the table scrolls sideways before it squeezes one.
+  const extraColumns = [hasTicketType, hasCompany, hasDepartment, hasExtUuid].filter(Boolean).length + attributeFieldLabels.length;
 
   return (
-    <div className="import-sample">
-      <div className="import-sample-wrap">
-        <table className="table import-sample-table">
+    <div className="item-table import-table import-table--sample" style={{ "--import-sample-extra": extraColumns } as CSSProperties}>
+      <div className="attendees-table-wrap">
+        <table className="table">
           <thead>
             <tr>
               <th>#</th>
@@ -129,23 +134,25 @@ function ImportSampleTable({ rows, attributeFieldLabels }: Readonly<ImportSample
  * silently doing nothing (PO feedback while testing #358 phase C). */
 function SkippedRowsTable({ rows }: Readonly<{ rows: readonly ImportSkippedRow[] }>) {
   return (
-    <div className="attendees-table-wrap">
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Reason</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={`${row.email}-${index}`}>
-              <td>{row.email}</td>
-              <td>{row.reason}</td>
+    <div className="item-table import-table import-table--skipped">
+      <div className="attendees-table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Reason</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${row.email}-${index}`}>
+                <td>{row.email}</td>
+                <td>{row.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -154,23 +161,25 @@ function SkippedRowsTable({ rows }: Readonly<{ rows: readonly ImportSkippedRow[]
  * commit-time invalidRows - same shape, same rendering, different source. */
 function InvalidRowsTable({ rows }: Readonly<{ rows: readonly { rowIndex: number; reason: string }[] }>) {
   return (
-    <div className="attendees-table-wrap">
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Row</th>
-            <th>Reason</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.rowIndex}>
-              <td>{row.rowIndex}</td>
-              <td>{row.reason}</td>
+    <div className="item-table import-table import-table--invalid">
+      <div className="attendees-table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Row</th>
+              <th>Reason</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.rowIndex}>
+                <td>{row.rowIndex}</td>
+                <td>{row.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -345,9 +354,14 @@ function UploadFileControl({
   );
 }
 
+/** The Dry run row says what the switch does and, while it cannot be turned off yet, why: it unlocks once a validation summary is on screen. */
+const DRY_RUN_TEXT_BEFORE_VALIDATION = "Only checks the file, nothing is saved. You can turn it off once the file is validated.";
+const DRY_RUN_TEXT_AFTER_VALIDATION = "Only checks the file, nothing is saved. Turn it off after you have read the summary, to import.";
+
 /** Describes the type-specific note appended to a custom field's description in the "Required
- * CSV columns" table (select options, or the boolean Yes/No hint) - a plain lookup instead of a
- * nested ternary (Sonar S3776: kept this branching out of ImportPage's own complexity count). */
+ * CSV columns" table (select options, the boolean Yes/No hint, the format of a date or a phone
+ * number, a field's format rules) - a plain lookup instead of a nested ternary (Sonar S3776: kept
+ * this branching out of ImportPage's own complexity count). */
 function attributeFieldNote(field: CustomDataFieldDef): string {
   if (field.type === "select" && field.options?.length) {
     return ` (select: ${field.options.join(", ")})`;
@@ -355,7 +369,8 @@ function attributeFieldNote(field: CustomDataFieldDef): string {
   if (field.type === "boolean") {
     return " (Yes/No or true/false)";
   }
-  return "";
+  const note = answerImportNote(field);
+  return note ? ` (${note})` : "";
 }
 
 /** One row of the "Required CSV columns" table for a custom attribute field - extracted
@@ -762,217 +777,214 @@ function ImportPageBody({ eventId }: Readonly<{ eventId: string }>) {
 
 
       {step !== "done" && (
-        <div className="import-two-col">
-          <div className="import-stack">
-            <Card
-              title="1 · Upload file"
-              className="import-card"
-              actions={
-                <a
-                  href={`/api/admin/events/${eventId}/import/template`}
-                  download="admitto-import-template.csv"
-                  className="at-btn at-btn--secondary at-btn--sm"
-                >
-                  <span className="at-btn__icon" aria-hidden="true">
-                    <i className="ti ti-download" />
-                  </span>
-                  <span>Download CSV template</span>
-                </a>
-              }
-            >
-              {/* The file goes to the server for both actions and neither reports progress: an indeterminate bar along the
-                  card of the file, from the click (no 200ms hold: the operator has just asked for it). */}
-              <TopProgressBar active={loading} placement="container" label={workLabel} />
-              {/* Said once for assistive tech: the bar itself is only a name. */}
-              <output className="sr-only">{loading ? `${workLabel}. Actions are paused until it finishes.` : ""}</output>
-              <div className="import-form">
-                <Tooltip
-                  content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                  className="import-upload-fieldset-wrapper"
-                >
-                  <fieldset className="import-upload-fieldset" disabled={isEventArchived(event)}>
-                    <UploadFileControl
-                      event={event}
-                      file={file}
-                      preview={preview}
-                      loading={loading}
-                      step={step}
-                      dragOver={dragOver}
-                      fileInputRef={fileInputRef}
-                      dropzoneRef={dropzoneRef}
-                      onDragOverChange={setDragOver}
-                      onSelectFile={selectFile}
-                      onOpenFilePicker={openFilePicker}
-                      onDropzoneKeyDown={onDropzoneKeyDown}
-                      onDrop={onDrop}
-                    />
-                  </fieldset>
-                </Tooltip>
-
-                <details className="import-columns-info">
-                  <summary>Required CSV columns</summary>
-                  <table className="import-columns-table">
-                    <thead>
-                      <tr>
-                        <th>Column</th>
-                        <th>Required</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr><td><code>first_name</code></td><td>Yes</td><td>Attendee&apos;s first name</td></tr>
-                      <tr><td><code>last_name</code></td><td>Yes</td><td>Attendee&apos;s last name</td></tr>
-                      <tr><td><code>email</code></td><td>Yes</td><td>Valid email address (used as unique key)</td></tr>
-                      <tr>
-                        <td><code>ticket_type</code></td>
-                        <td>No</td>
-                        <td>
-                          Must match a{" "}
-                          <Link to={`/admin/events/${eventId}/settings?tab=ticket-types`}>
-                            ticket type configured for this event
-                          </Link>
-                          ; the whole row is skipped if this doesn&apos;t match
-                        </td>
-                      </tr>
-                      <tr><td><code>company</code></td><td>No</td><td>Attendee&apos;s company</td></tr>
-                      <tr><td><code>department</code></td><td>No</td><td>Department or team</td></tr>
-                      <tr>
-                        <td><code>external_uuid</code></td>
-                        <td>No</td>
-                        <td>
-                          Only needed if your ticketing agency already assigns each attendee a
-                          unique ID. Add it here so re-importing the same file updates that
-                          person instead of creating a duplicate
-                        </td>
-                      </tr>
-                      <tr>
-                        <td><code>qr_payload</code></td>
-                        <td>No</td>
-                        <td>
-                          Leave empty. Admitto generates a secure ticket code automatically. Only
-                          fill this in if attendees already have a ticket code from elsewhere that
-                          needs to match
-                        </td>
-                      </tr>
-                      {attributeFields.map(renderAttributeFieldRow)}
-                    </tbody>
-                  </table>
-                  <CustomColumnsStatus lookup={customColumns} />
-                </details>
-                {attributeFields.length > 0 ? (
-                  <p className="import-hint">
-                    Event attribute columns use the <code>source_field</code> slug (included in the
-                    downloadable template). Export files may use human-readable labels; re-import accepts
-                    those too.
-                  </p>
-                ) : null}
-              </div>
-            </Card>
-
-            {step === "preview" && preview && (
-              <Card
-                title={
-                  preview.parse.validCount > preview.sampleRows.length
-                    ? `Row preview (showing first ${preview.sampleRows.length} of ${preview.parse.validCount} valid rows)`
-                    : "Row preview"
-                }
-                className="import-card"
+        <div className="settings-sections">
+          <Card
+            title="1 · Upload file"
+            className="import-card"
+            actions={
+              <a
+                href={`/api/admin/events/${eventId}/import/template`}
+                download="admitto-import-template.csv"
+                className="at-btn at-btn--secondary at-btn--sm"
               >
-                <ImportSampleTable
-                  rows={preview.sampleRows}
-                  attributeFieldLabels={preview.attributeFieldLabels}
-                />
-              </Card>
-            )}
-          </div>
-
-          <div className="import-stack">
-            <Card
-              title="2 · Options"
-              className="import-card"
-              footer={
-                step === "upload" ? (
-                  <div className="import-actions">
-                    <ArchivedGuard event={event} reasonId="import-preview-reason" disabled={!file}>
-                      {(guard) => (
-                        <Button
-                          variant="primary"
-                          loading={validating}
-                          loadingLabel="Validating…"
-                          onClick={() => void onPreview()}
-                          onFocus={holdsFocus}
-                          {...guard}
-                        >
-                          Validate file
-                        </Button>
-                      )}
-                    </ArchivedGuard>
-                  </div>
-                ) : undefined
-              }
-            >
+                <span className="at-btn__icon" aria-hidden="true">
+                  <i className="ti ti-download" />
+                </span>
+                <span>Download CSV template</span>
+              </a>
+            }
+          >
+            {/* The file goes to the server for both actions and neither reports progress: an indeterminate bar along the
+                card of the file, from the click (no 200ms hold: the operator has just asked for it). */}
+            <TopProgressBar active={loading} placement="container" label={workLabel} />
+            {/* Said once for assistive tech: the bar itself is only a name. */}
+            <output className="sr-only">{loading ? `${workLabel}. Actions are paused until it finishes.` : ""}</output>
+            <div className="settings-card-stack">
               <Tooltip
                 content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
                 className="import-upload-fieldset-wrapper"
               >
                 <fieldset className="import-upload-fieldset" disabled={isEventArchived(event)}>
-                  <div className="import-option">
-                    <Switch
-                      label="Dry run (validate only, no writes)"
-                      checked={dryRun}
-                      // Only togglable once a validation summary is actually on screen — otherwise
-                      // an operator could turn it off during the upload step, before ever seeing
-                      // what a commit would do, and Commit import would arm the instant the
-                      // preview arrived (Codex review).
-                      disabled={loading || step !== "preview"}
-                      onChange={(e) => setDryRun(e.target.checked)}
-                    />
-                    <span className="import-checkbox__hint">
-                      Validation never writes anything. Turn this off after reviewing the summary to
-                      enable committing.
-                    </span>
-                  </div>
-                  <div className="import-option">
-                    <Switch
-                      label="Overwrite existing attendees"
-                      checked={overwrite}
-                      // Togglable at any step, including preview — flip it after seeing an existing
-                      // attendee skipped in the Validation summary, then Re-validate (PO feedback:
-                      // this used to lock the instant a summary appeared, with no way back except
-                      // picking a new file).
-                      disabled={loading}
-                      onChange={(e) => setOverwrite(e.target.checked)}
-                    />
-                    <span className="import-checkbox__hint">
-                      When off, existing attendees matched by email are skipped.
-                    </span>
-                  </div>
+                  <UploadFileControl
+                    event={event}
+                    file={file}
+                    preview={preview}
+                    loading={loading}
+                    step={step}
+                    dragOver={dragOver}
+                    fileInputRef={fileInputRef}
+                    dropzoneRef={dropzoneRef}
+                    onDragOverChange={setDragOver}
+                    onSelectFile={selectFile}
+                    onOpenFilePicker={openFilePicker}
+                    onDropzoneKeyDown={onDropzoneKeyDown}
+                    onDrop={onDrop}
+                  />
                 </fieldset>
               </Tooltip>
-            </Card>
 
-            {step === "preview" && preview && (
-              <ValidationSummaryCard
-                preview={preview}
-                validating={validating}
-                committing={committing}
-                dryRun={dryRun}
-                canCommit={canCommit}
-                event={event}
-                superadmin={superadmin}
-                capacityBlocked={capacityBlocked}
-                forceCapacity={forceCapacity}
-                importCount={importCount}
-                titleRef={summaryTitleRef}
-                onHoldsFocus={holdsFocus}
-                onRevalidate={() => void onPreview()}
-                onCommit={() => void onCommit({ force: forceCapacity && superadmin })}
-                onForceCapacityChange={setForceCapacity}
+              <details className="import-columns-info">
+                <summary>Required CSV columns</summary>
+                <div className="item-table import-table import-table--columns">
+                  <div className="attendees-table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Column name in the file</th>
+                          <th>Required</th>
+                          <th>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr><td><code>first_name</code></td><td>Yes</td><td>Attendee&apos;s first name</td></tr>
+                        <tr><td><code>last_name</code></td><td>Yes</td><td>Attendee&apos;s last name</td></tr>
+                        <tr><td><code>email</code></td><td>Yes</td><td>Valid email address (used as unique key)</td></tr>
+                        <tr>
+                          <td><code>ticket_type</code></td>
+                          <td>No</td>
+                          <td>
+                            Must match a{" "}
+                            <Link to={`/admin/events/${eventId}/settings?tab=ticket-types`}>
+                              ticket type configured for this event
+                            </Link>
+                            ; the whole row is skipped if this doesn&apos;t match
+                          </td>
+                        </tr>
+                        <tr><td><code>company</code></td><td>No</td><td>Attendee&apos;s company</td></tr>
+                        <tr><td><code>department</code></td><td>No</td><td>Department or team</td></tr>
+                        <tr>
+                          <td><code>external_uuid</code></td>
+                          <td>No</td>
+                          <td>
+                            Only needed if your ticketing agency already assigns each attendee a
+                            unique ID. Add it here so re-importing the same file updates that
+                            person instead of creating a duplicate
+                          </td>
+                        </tr>
+                        <tr>
+                          <td><code>qr_payload</code></td>
+                          <td>No</td>
+                          <td>
+                            Leave empty. Admitto generates a secure ticket code automatically. Only
+                            fill this in if attendees already have a ticket code from elsewhere that
+                            needs to match
+                          </td>
+                        </tr>
+                        {attributeFields.map(renderAttributeFieldRow)}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <CustomColumnsStatus lookup={customColumns} />
+              </details>
+              {attributeFields.length > 0 ? (
+                <p className="import-hint">
+                  The columns for this event&apos;s own questions are named as in the table above, and the
+                  downloadable template has them. An exported file may use the question labels instead;
+                  importing it again works too.
+                </p>
+              ) : null}
+            </div>
+          </Card>
+          <Card
+            title="2 · Options"
+            className="import-card"
+            footer={
+              step === "upload" ? (
+                <div className="import-actions">
+                  <ArchivedGuard event={event} reasonId="import-preview-reason" disabled={!file}>
+                    {(guard) => (
+                      <Button
+                        variant="primary"
+                        loading={validating}
+                        loadingLabel="Validating…"
+                        onClick={() => void onPreview()}
+                        onFocus={holdsFocus}
+                        {...guard}
+                      >
+                        Validate file
+                      </Button>
+                    )}
+                  </ArchivedGuard>
+                </div>
+              ) : undefined
+            }
+          >
+            <Tooltip
+              content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+              className="import-upload-fieldset-wrapper"
+            >
+              <fieldset className="import-options" disabled={isEventArchived(event)}>
+                <div className="settings-row settings-row--switch">
+                  <div className="settings-row__text">
+                    <strong>Dry run</strong>
+                    <p>{step === "preview" ? DRY_RUN_TEXT_AFTER_VALIDATION : DRY_RUN_TEXT_BEFORE_VALIDATION}</p>
+                  </div>
+                  <Switch
+                    aria-label="Dry run"
+                    checked={dryRun}
+                    // Only togglable once a validation summary is actually on screen — otherwise
+                    // an operator could turn it off during the upload step, before ever seeing
+                    // what a commit would do, and Commit import would arm the instant the
+                    // preview arrived (Codex review).
+                    disabled={loading || step !== "preview"}
+                    onChange={(e) => setDryRun(e.target.checked)}
+                  />
+                </div>
+                <div className="settings-row settings-row--switch">
+                  <div className="settings-row__text">
+                    <strong>Overwrite existing attendees</strong>
+                    <p>When off, attendees that already exist (matched by email) are skipped.</p>
+                  </div>
+                  <Switch
+                    aria-label="Overwrite existing attendees"
+                    checked={overwrite}
+                    // Togglable at any step, including preview — flip it after seeing an existing
+                    // attendee skipped in the Validation summary, then Re-validate (PO feedback:
+                    // this used to lock the instant a summary appeared, with no way back except
+                    // picking a new file).
+                    disabled={loading}
+                    onChange={(e) => setOverwrite(e.target.checked)}
+                  />
+                </div>
+              </fieldset>
+            </Tooltip>
+          </Card>
+          {step === "preview" && preview && (
+            <ValidationSummaryCard
+              preview={preview}
+              validating={validating}
+              committing={committing}
+              dryRun={dryRun}
+              canCommit={canCommit}
+              event={event}
+              superadmin={superadmin}
+              capacityBlocked={capacityBlocked}
+              forceCapacity={forceCapacity}
+              importCount={importCount}
+              titleRef={summaryTitleRef}
+              onHoldsFocus={holdsFocus}
+              onRevalidate={() => void onPreview()}
+              onCommit={() => void onCommit({ force: forceCapacity && superadmin })}
+              onForceCapacityChange={setForceCapacity}
+            />
+          )}
+          {step === "preview" && preview && (
+            <Card
+              title={
+                preview.parse.validCount > preview.sampleRows.length
+                  ? `Row preview (showing first ${preview.sampleRows.length} of ${preview.parse.validCount} valid rows)`
+                  : "Row preview"
+              }
+              className="import-card"
+            >
+              <ImportSampleTable
+                rows={preview.sampleRows}
+                attributeFieldLabels={preview.attributeFieldLabels}
               />
-            )}
-
-            <ImportHistoryCard list={history} />
-          </div>
+            </Card>
+          )}
+          <ImportHistoryCard list={history} />
         </div>
       )}
 

@@ -21,6 +21,8 @@ Toasts dedupe identical `message + variant`, cap at five, and sit below the chec
 **Never use the native `window.confirm()` / `window.alert()`** for a confirmation. Always use the app's
 `ConfirmDialog` (`apps/admin/src/components/ConfirmDialog.tsx`).
 
+Every `ConfirmDialog` has an icon beside its title. Pass `icon` when a specific one says more (a trash can for a delete); when it is left out, the dialog uses the icon of its severity (a question mark for `primary`, a circle with an exclamation mark for `warning`, a triangle for `danger`). Never hide the icon.
+
 `confirmVariant` defaults to `"primary"`. Reserve a higher severity only for actions that actually destroy something:
 
 - **`"primary"` (default):** any other confirmation, including prompts about form state that only exists in-memory and nothing has actually been lost yet. "Discard unsaved changes?" is the canonical example: the wording sounds alarming, but the amber/red treatment used for a real delete would misrepresent the risk.

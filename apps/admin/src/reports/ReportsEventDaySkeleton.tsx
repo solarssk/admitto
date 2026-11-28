@@ -1,4 +1,7 @@
 import { Card, Skeleton } from "@admitto/ui";
+import "../components/item-table.css";
+import { useIsDesktop } from "../hooks/useIsDesktop.js";
+import "../pages/reports-log-table.css";
 import { SettingsSkeletonRegion } from "../settings/SettingsPanelSkeleton.js";
 import { BreakdownSkeleton } from "./skeletonParts.js";
 
@@ -43,52 +46,69 @@ function ChartSkeleton() {
 
 const LOG_COLUMNS = ["Attendee", "Ticket type", "Admitted at", "Checked in by", "Items"] as const;
 const LOG_ROWS = 5;
+const LOG_CARDS = 3;
+/** The bar inside a card of the real log (96px with its padding and border, a card whose details take two lines), measured in Chrome. */
+const LOG_CARD_HEIGHT = 71;
 
-/** The admission log: its real column headings over a few rows of bars (the log has up to a page of rows), and the line of
- * paging controls under them. */
+/** The admission log: its real column headings over a few rows of bars (the log has up to a page of rows), or the stacked
+ * cards of the narrow layout the real log switches to, and the line of paging controls under them. */
 function AdmissionLogSkeleton() {
+  // The same split as the real log: the boxed table from 1024px, the cards below it.
+  const showTable = useIsDesktop(1024);
   return (
-    <Card title="Admission log" padded={false} actions={<Skeleton variant="rect" width={88} height={32} />}>
-      <div className="reports-log-table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              {LOG_COLUMNS.map((column) => (
-                <th key={column}>{column}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: LOG_ROWS }, (_, row) => (
-              <tr key={row}>
-                <td>
-                  <div className="reports-log-user">
-                    <Skeleton variant="rect" width={120} height={14} />
-                    <Skeleton variant="rect" width={170} height={12} />
-                  </div>
-                </td>
-                <td>
-                  <Skeleton variant="rect" width={72} height={22} />
-                </td>
-                <td>
-                  <Skeleton variant="rect" width={64} height={14} />
-                </td>
-                <td>
-                  <Skeleton variant="rect" width={96} height={14} />
-                </td>
-                <td>
-                  <Skeleton variant="rect" width={24} height={14} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="reports-log-footer">
-        <div className="reports-skeleton__footer">
-          <Skeleton variant="rect" width={96} height={14} />
-          <Skeleton variant="rect" width={72} height={32} />
+    <Card title="Admission log" actions={<Skeleton variant="rect" width={88} height={32} />}>
+      {showTable ? (
+        <div className="item-table reports-log-box">
+          <div className="attendees-table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  {LOG_COLUMNS.map((column) => (
+                    <th key={column} className={column === "Items" ? "reports-log-table__from-1180" : undefined}>
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: LOG_ROWS }, (_, row) => (
+                  <tr key={row}>
+                    <td>
+                      <div className="reports-log-user">
+                        <Skeleton variant="rect" width={120} height={14} />
+                        <Skeleton variant="rect" width={170} height={12} />
+                      </div>
+                    </td>
+                    <td>
+                      <Skeleton variant="rect" width={72} height={22} />
+                    </td>
+                    <td>
+                      <Skeleton variant="rect" width={64} height={14} />
+                    </td>
+                    <td>
+                      <Skeleton variant="rect" width={96} height={14} />
+                    </td>
+                    <td className="reports-log-table__from-1180">
+                      <Skeleton variant="rect" width={24} height={14} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
+      ) : (
+        <div className="reports-log-cards">
+          {Array.from({ length: LOG_CARDS }, (_, card) => (
+            <div key={card} className="reports-log-card">
+              <Skeleton variant="rect" height={LOG_CARD_HEIGHT} />
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="reports-skeleton__footer">
+        <Skeleton variant="rect" width={96} height={14} />
+        <Skeleton variant="rect" width={72} height={28} />
       </div>
     </Card>
   );

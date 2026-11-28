@@ -189,3 +189,29 @@ export function isOff(button: HTMLElement): boolean {
   return (button as HTMLButtonElement).disabled || button.getAttribute("aria-disabled") === "true";
 }
 
+
+/** The text of a node as it is read: the no-break space that keeps the end of a sentence together is an ordinary space. */
+export function plain(text: string | null | undefined): string {
+  return (text ?? "").replaceAll("\u00A0", " ");
+}
+
+/**
+ * A matcher for a time whose zone is an element of its own ("2026-06-15 12:00:00" and, in `.time-stack__zone`, " UTC": components/TimeStack.tsx): the element that holds the
+ * zone and reads the whole text. `getByText("2026-06-15 12:00:00 UTC")` cannot find it, as the text is in two nodes.
+ */
+export function timeText(text: string): (content: string, element: Element | null) => boolean {
+  return (_content, element) =>
+    element?.textContent === text && [...element.children].some((child) => child.classList.contains("time-stack__zone"));
+}
+
+/** The width of the screen, as the header asks the browser about it (jsdom has no `matchMedia`): a desktop by default, a phone with `false`. */
+export function setViewport(desktop: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: desktop,
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+  }));
+}

@@ -114,3 +114,85 @@ describe("sendTestEmail", () => {
     expect(exported[0]?.message.html).not.toContain("/m/evt-test-send.png");
   });
 });
+
+describe("sendTestEmail for a system mail by name", () => {
+  const env = { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" };
+
+  async function sendByName(name: string) {
+    exported.length = 0;
+    const result = await sendTestEmail(
+      { eventId: EVENT_ID, toAddress: "operator@example.com", templateName: name },
+      prisma,
+      env,
+      { exportSink: (p) => exported.push(p) },
+    );
+    expect(result.status).toBe("accepted");
+    expect(exported).toHaveLength(1);
+    return exported[0]!.message;
+  }
+
+  afterAll(async () => {
+    await prisma.mailTemplate.deleteMany({ where: { scope_id: { in: [EVENT_ID, "org-test-send"] }, name: { startsWith: "registration-" } } });
+    await prisma.eventContact.deleteMany({ where: { event_id: EVENT_ID } });
+  });
+
+  it("renders the built-in default when the event has no row of that name, without touching the ticket template", async () => {
+    const message = await sendByName("registration-waitlist");
+    expect(message.subject).toBe("You are on the waiting list for Test Send Event");
+    expect(message.html).toContain("waiting list");
+    expect(message.html).not.toContain("{{");
+  });
+
+  it("sends the confirmation mail with its button going nowhere, not to the sample link of a page that does not exist", async () => {
+    const message = await sendByName("registration-confirm");
+    expect(message.subject).toBe("Confirm your email for Test Send Event");
+    expect(message.html).toContain("Confirm email address");
+    expect(message.html).toContain('href="#"');
+    expect(message.html).not.toContain("sample-id.sample-mac");
+    expect(message.html).not.toContain("tickets.example.com");
+  });
+
+  it("uses the event's own contact in place of the sample one, and no contact line when it has none", async () => {
+    expect((await sendByName("registration-received")).html).not.toContain("Questions?");
+
+    await prisma.eventContact.create({
+      data: { event_id: EVENT_ID, name: "Ann Organizer", email: "ann@example.com" },
+    });
+    expect((await sendByName("registration-received")).html).toContain("Questions? Contact Ann Organizer at ann@example.com.");
+    expect((await sendByName("registration-received")).html).not.toContain("organizer@example.com");
+  });
+
+  it("renders the event's own row of that name in preference to the built-in default", async () => {
+    await setMailTemplate(
+      { scopeType: "event", scopeId: EVENT_ID, name: "registration-rejected" },
+      { subject: "Sorry about {{event_name}}", body: "<p>Not this time.</p>", format: "html" },
+      prisma,
+    );
+    const message = await sendByName("registration-rejected");
+    expect(message.subject).toBe("Sorry about Test Send Event");
+    expect(message.html).toContain("Not this time.");
+  });
+
+  it("falls back to the organization's row before the built-in default", async () => {
+    await setMailTemplate(
+      { scopeType: "organization", scopeId: "org-test-send", name: "registration-confirm" },
+      { subject: "Org confirm {{event_name}}", body: '<p>Org text <a href="{{confirm_url}}">go</a></p>', format: "html" },
+      prisma,
+    );
+    expect((await sendByName("registration-confirm")).subject).toBe("Org confirm Test Send Event");
+  });
+
+  it("prefers a template id over a name when both are given", async () => {
+    const row = await prisma.mailTemplate.findFirstOrThrow({
+      where: { scope_type: "event", scope_id: EVENT_ID, name: "registration-rejected" },
+    });
+    exported.length = 0;
+    await sendTestEmail(
+      { eventId: EVENT_ID, toAddress: "operator@example.com", templateId: row.id, templateName: "registration-waitlist" },
+      prisma,
+      env,
+      { exportSink: (p) => exported.push(p) },
+    );
+    expect(exported[0]?.message.subject).toBe("Sorry about Test Send Event");
+  });
+});

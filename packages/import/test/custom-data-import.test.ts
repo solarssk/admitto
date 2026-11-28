@@ -24,6 +24,7 @@ import {
   extractCustomDataFromRow,
   importCustomDataSkipReason,
 } from "../src/custom-data-import.js";
+import type { ImportAttributeField } from "../src/types.js";
 
 describe("buildAttributeHeaderKeys", () => {
   it("treats labels that differ only by case as duplicates", () => {
@@ -181,5 +182,155 @@ describe("importCustomDataSkipReason", () => {
       "Invalid custom attribute data",
     );
     expect(importCustomDataSkipReason("database detail", fields)).toBe("Invalid custom attribute data");
+  });
+});
+
+const extract = (raw: Record<string, string>, fields: ImportAttributeField[]) =>
+  extractCustomDataFromRow(raw, fields, new Set<string>());
+
+describe("extractCustomDataFromRow: long text, date, date and time and phone fields", () => {
+  const notes: ImportAttributeField = { label: "Notes", source_field: "notes", type: "long_text" };
+  const arrival: ImportAttributeField = { label: "Arrival date", source_field: "arrival", type: "date" };
+  const arrivesAt: ImportAttributeField = { label: "Arrival time", source_field: "arrives_at", type: "datetime" };
+  const phone: ImportAttributeField = { label: "Mobile phone", source_field: "phone", type: "phone" };
+
+  it("stores each type's answer in its normal form", () => {
+    expect(
+      extract(
+        { notes: "Two seats,\r\nplease. ", arrival: " 2026-11-04 ", arrives_at: "2026-11-04T10:30", phone: "+48 600-100-200" },
+        [notes, arrival, arrivesAt, phone],
+      ),
+    ).toEqual({
+      ok: true,
+      custom_data: {
+        notes: "Two seats,\nplease.",
+        arrival: "2026-11-04",
+        arrives_at: "2026-11-04T10:30",
+        phone: "+48600100200",
+      },
+    });
+  });
+
+  it("reads a column through its export-style header, so an exported file imports again", () => {
+    expect(extract({ "arrival date": "2026-11-04", "mobile phone": "+48600100200" }, [arrival, phone])).toEqual({
+      ok: true,
+      custom_data: { arrival: "2026-11-04", phone: "+48600100200" },
+    });
+  });
+
+  it("leaves a blank cell as no answer", () => {
+    expect(extract({ arrival: "", phone: "  " }, [arrival, phone])).toEqual({ ok: true, custom_data: undefined });
+  });
+
+  it("reads the date cell of an XLSX file as the date it shows", () => {
+    // The XLSX reader writes a date cell as an instant at midnight, and a date and time cell as an
+    // instant at that wall-clock time, both with a Z.
+    expect(
+      extract({ arrival: "2026-11-04T00:00:00.000Z", arrives_at: "2026-11-04T10:30:00.000Z" }, [arrival, arrivesAt]),
+    ).toEqual({ ok: true, custom_data: { arrival: "2026-11-04", arrives_at: "2026-11-04T10:30" } });
+  });
+
+  it("refuses an instant that is not a date or a minute-precise time", () => {
+    expect(extract({ arrival: "2026-11-04T10:00:00.000Z" }, [arrival])).toEqual({
+      ok: false,
+      reason: "Invalid value for Arrival date (expected a date as YYYY-MM-DD)",
+    });
+    expect(extract({ arrives_at: "2026-11-04T10:30:15.000Z" }, [arrivesAt])).toEqual({
+      ok: false,
+      reason: "Invalid value for Arrival time (expected a date and time as YYYY-MM-DDTHH:mm)",
+    });
+    expect(extract({ arrives_at: "2026-11-04T10:30:00+01:00" }, [arrivesAt]).ok).toBe(false);
+  });
+
+  it("does not read an instant as a date for a field of another type", () => {
+    expect(extract({ notes: "2026-11-04T00:00:00.000Z" }, [notes])).toEqual({
+      ok: true,
+      custom_data: { notes: "2026-11-04T00:00:00.000Z" },
+    });
+  });
+
+  it("explains what a refused value should look like, without echoing it", () => {
+    expect(extract({ arrival: "2026-02-30" }, [arrival])).toEqual({
+      ok: false,
+      reason: "Invalid value for Arrival date (expected a date as YYYY-MM-DD)",
+    });
+    expect(extract({ arrives_at: "tomorrow" }, [arrivesAt])).toEqual({
+      ok: false,
+      reason: "Invalid value for Arrival time (expected a date and time as YYYY-MM-DDTHH:mm)",
+    });
+    expect(extract({ phone: "call me" }, [phone])).toEqual({
+      ok: false,
+      reason: "Invalid value for Mobile phone (expected a phone number with 3 to 15 digits)",
+    });
+    expect(extract({ notes: "a".repeat(1001) }, [notes])).toEqual({
+      ok: false,
+      reason: "Invalid value for Notes (expected at most 1000 characters)",
+    });
+  });
+
+  it("names the field that is wrong when another one in the same row is fine", () => {
+    expect(extract({ arrival: "2026-11-04", phone: "12" }, [arrival, phone])).toEqual({
+      ok: false,
+      reason: "Invalid value for Mobile phone (expected a phone number with 3 to 15 digits)",
+    });
+  });
+});
+
+describe("extractCustomDataFromRow: format rules", () => {
+  const plate = (rules: ImportAttributeField["rules"]): ImportAttributeField => ({
+    label: "Plate",
+    source_field: "plate",
+    type: "text",
+    rules,
+  });
+
+  it("refuses a value that breaks a rule and says which rules the field has", () => {
+    const fields = [plate({ digits_only: true, min_length: 3, max_length: 6, example: "123456" })];
+    expect(extract({ plate: "12a" }, fields)).toEqual({
+      ok: false,
+      reason: "Invalid value for Plate (expected digits only, 3 to 6 characters, for example 123456)",
+    });
+    expect(extract({ plate: "1234567" }, fields).ok).toBe(false);
+    expect(extract({ plate: "12" }, fields).ok).toBe(false);
+    expect(extract({ plate: "123456" }, fields)).toEqual({ ok: true, custom_data: { plate: "123456" } });
+  });
+
+  it("words each length rule on its own", () => {
+    const reason = (rules: ImportAttributeField["rules"], value: string) => {
+      const result = extract({ plate: value }, [plate(rules)]);
+      return result.ok ? null : result.reason;
+    };
+    expect(reason({ min_length: 9, max_length: 9 }, "1")).toBe("Invalid value for Plate (expected exactly 9 characters)");
+    expect(reason({ min_length: 9 }, "1")).toBe("Invalid value for Plate (expected at least 9 characters)");
+    expect(reason({ max_length: 4 }, "12345")).toBe("Invalid value for Plate (expected at most 4 characters)");
+    expect(reason({ digits_only: true }, "1a")).toBe("Invalid value for Plate (expected digits only)");
+  });
+
+  it("adds a phone number's own limits to its rules, and the long text limit to a long text's", () => {
+    const phone: ImportAttributeField = {
+      label: "Phone",
+      source_field: "phone",
+      type: "phone",
+      rules: { min_length: 9, example: "600100200" },
+    };
+    expect(extract({ phone: "12345" }, [phone])).toEqual({
+      ok: false,
+      reason: "Invalid value for Phone (expected a phone number with 3 to 15 digits, at least 9 characters, for example 600100200)",
+    });
+    const notes: ImportAttributeField = { label: "Notes", source_field: "notes", type: "long_text", rules: { min_length: 10 } };
+    expect(extract({ notes: "short" }, [notes])).toEqual({
+      ok: false,
+      reason: "Invalid value for Notes (expected 10 to 1000 characters)",
+    });
+    expect(extract({ notes: "a".repeat(500) }, [{ ...notes, rules: { max_length: 500 } }]).ok).toBe(true);
+    expect(extract({ notes: "a".repeat(501) }, [{ ...notes, rules: { max_length: 500 } }]).ok).toBe(false);
+  });
+
+  it("keeps the old text behaviour: no rules, no hint, and the 100 character cut", () => {
+    expect(extract({ plate: "a".repeat(150) }, [plate(undefined)])).toEqual({
+      ok: true,
+      custom_data: { plate: "a".repeat(100) },
+    });
+    expect(extract({ plate: "x" }, [plate({})])).toEqual({ ok: true, custom_data: { plate: "x" } });
   });
 });

@@ -26,3 +26,12 @@ describe("Switch off states CSS (jsdom does not load the stylesheet, so the sour
     expect(declarationsOf('.at-switch:has(input[aria-busy="true"])')).toMatch(/cursor:\s*progress/);
   });
 });
+
+describe("Switch and checkbox: the hidden input stays inside its label (#1893)", () => {
+  // Their input is position: absolute with no offsets. Without a positioned label it is placed against the page, at the spot it
+  // has in the flow, far below the fold of a long page; focusing it (a click on the label does) then scrolls the whole shell
+  // (overflow: hidden does not stop that) and leaves an empty strip at the bottom of the window.
+  it.each([".at-switch", ".at-check"])("makes %s the containing block of its input", (selector) => {
+    expect(declarationsOf(`${selector} {`)).toMatch(/position:\s*relative/);
+  });
+});

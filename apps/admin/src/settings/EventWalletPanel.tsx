@@ -15,6 +15,7 @@ import { formatEventHoursRange } from "@admitto/shared/region-date-format";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import type { WalletPushHistoryScope } from "../api/client.js";
 import type { EventCustomFieldDto, EventLocationDto, EventSettingsDto } from "../api/types.js";
+import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { RefetchRegion } from "../components/RefetchRegion.js";
 import { RetryEmptyState } from "../components/RetryEmptyState.js";
@@ -23,13 +24,13 @@ import { useCardLoad } from "../hooks/useCardLoad.js";
 import type { WalletPushHistoryState } from "../hooks/useEventSettingsWalletTab.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
+import { TimeStack } from "../components/TimeStack.js";
 import type { EventSettingsFormPanelProps, SettingsForm } from "../pages/EventSettingsPage.js";
 import { walletTestFingerprint, type WalletExpirationTest } from "./walletExpirationTest.js";
 import {
   formatUtcDateTime,
   formatWalletDatePreview,
   formatWalletDatePreviewShort,
-  formatZonedClockTime,
 } from "../utils/event-dates.js";
 import { EVENT_TYPE_LABELS } from "./eventTypeOptions.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow, SettingsFooter } from "./mailTransportFormParts.js";
@@ -192,7 +193,7 @@ export function computeWalletCustomFieldPreview(
   if (customFields === undefined) return WALLET_VALUE_NOT_LOADED;
   const sourceField = id.slice(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX.length);
   const field = customFields.find(
-    (f) => f.source_field === sourceField && (f.type === "select" || f.type === "boolean"),
+    (f) => f.source_field === sourceField && !f.sensitive && (f.type === "select" || f.type === "boolean"),
   );
   if (!field) return WALLET_VALUE_NOT_SET;
   return field.type === "boolean" ? "e.g. Yes" : `e.g. ${field.options?.[0] ?? "…"}`;
@@ -308,12 +309,11 @@ function WalletPushHistoryCard({ history }: WalletPushHistoryCardProps) {
                 {rows.map((entry) => (
                   <tr key={entry.id}>
                     <td>
-                      {formatUtcDateTime(entry.created_at)}
-                      {entry.client_timezone && (
-                        <div className="sessions-subdued">
-                          {formatZonedClockTime(entry.created_at, entry.client_timezone)}
-                        </div>
-                      )}
+                      <TimeStack primary={formatUtcDateTime(entry.created_at)}>
+                        {entry.client_timezone && (
+                          <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.client_timezone} />
+                        )}
+                      </TimeStack>
                     </td>
                     <td>
                       <StatusBadge status={entry.status} />
@@ -417,7 +417,7 @@ export function EventWalletPanel({
         actions={
           <Switch
             id="event-wallet-enabled"
-            label={form.walletEnabled ? "On" : "Off"}
+            aria-label="Wallet"
             checked={form.walletEnabled}
             disabled={isArchived || saving}
             onChange={(e) => setForm({ ...form, walletEnabled: e.target.checked })}

@@ -190,6 +190,64 @@ describe("ImportPage upload → preview → commit flow", () => {
     });
   });
 
+  it("shows the two options as the settings rows of the rest of the admin: a title, a description and a switch with no On or Off text", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    for (const [title, description] of [
+      ["Dry run", "Only checks the file, nothing is saved. You can turn it off once the file is validated."],
+      ["Overwrite existing attendees", "When off, attendees that already exist (matched by email) are skipped."],
+    ]) {
+      const row = screen.getByText(title, { selector: "strong" }).closest(".settings-row") as HTMLElement;
+      expect(row.classList.contains("settings-row--switch")).toBe(true);
+      expect(within(row).getByText(description)).toBeTruthy();
+      expect(within(row).getByRole("switch", { name: title })).toBeTruthy();
+      expect(row.querySelector(".at-switch__label")).toBeNull();
+    }
+  });
+
+  it("is one column of cards in the order of the work, and draws every table in the shared box of the admin", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    fetchImportHistory.mockResolvedValue([
+      { id: "h1", created_at: "2026-11-20T09:12:00.000Z", client_timezone: "UTC", filename: "guests.csv", status: "succeeded", error: null, created: 1, updated: 0, skipped: 0 },
+    ]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        parse: { validCount: 1, invalidRows: [{ rowIndex: 3, reason: "Email is missing" }], invalidCount: 1, warnings: [] },
+        summary: { toCreate: 1, toUpdate: 0, toSkip: 1, skipped: [{ email: "old@example.com", reason: "Attendee already exists" }] },
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    await screen.findByText("To create");
+    await screen.findByText("guests.csv");
+
+    // One column: the cards are children of one stack, in the order of the work.
+    const titles = Array.from(document.querySelectorAll(".at-card__title")).map((title) => title.textContent);
+    expect(titles).toEqual(["1 · Upload file", "2 · Options", "Validation summary", "Row preview", "Import history"]);
+    const stack = document.querySelector(".settings-sections");
+    expect(stack?.querySelectorAll(":scope > .at-card")).toHaveLength(5);
+    expect(document.querySelector(".import-two-col")).toBeNull();
+
+    // The columns of a file, the rows that are not imported, the preview and the history: each table is the shared box.
+    const tables = Array.from(document.querySelectorAll("table"));
+    expect(tables.map((table) => table.closest(".item-table")?.className.match(/import-table--(\w+)/)?.[1])).toEqual(["columns", "invalid", "skipped", "sample", "history"]);
+    for (const table of tables) {
+      expect(table.closest(".item-table .attendees-table-wrap")).not.toBeNull();
+      expect(table.classList.contains("table")).toBe(true);
+    }
+  });
+
+  it("names the first column of the table of columns for what it is: the column name in the file", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Column name in the file" })).toBeTruthy();
+  });
+
   it("keeps Dry run locked on until a validation summary is showing, so it can't be turned off on reflex before ever validating (Codex review)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
@@ -200,11 +258,14 @@ describe("ImportPage upload → preview → commit flow", () => {
     const dryRunSwitch = screen.getByLabelText(/Dry run/) as HTMLInputElement;
     expect(dryRunSwitch.disabled).toBe(true);
     expect(dryRunSwitch.checked).toBe(true);
+    // The row says why it is locked: a pale switch with no reason is not an answer.
+    expect(screen.getByText("Only checks the file, nothing is saved. You can turn it off once the file is validated.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
     expect(await screen.findByText("To create")).toBeTruthy();
 
-    // Only now, with the summary on screen, can it be toggled.
+    // Only now, with the summary on screen, can it be toggled, and the row says when to do it.
+    expect(screen.getByText("Only checks the file, nothing is saved. Turn it off after you have read the summary, to import.")).toBeTruthy();
     expect(dryRunSwitch.disabled).toBe(false);
     const commitBtn = screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }) as HTMLButtonElement;
     expect(commitBtn.disabled).toBe(true);
@@ -285,6 +346,9 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(await screen.findByText("shirt_size")).toBeTruthy();
     expect(screen.getByText("Attendee's t-shirt size for the swag bag")).toBeTruthy();
     expect(screen.queryByText("Shirt size")).toBeNull();
+    // The help under the table says it in plain words, with no "source_field slug".
+    expect(screen.getByText(/The columns for this event's own questions are named as in the table above/)).toBeTruthy();
+    expect(screen.queryByText(/source_field/)).toBeNull();
   });
 
   it("falls back to a plain 'No description provided' note for a custom field with no description set", async () => {
@@ -338,6 +402,40 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(mealRow?.textContent).toContain("Yes");
     expect(mealRow?.textContent).toContain("Meal preference (select: Vegetarian, Standard)");
     expect(newsletterRow?.textContent).toContain("Newsletter consent (Yes/No or true/false)");
+  });
+
+  it("tells how to write a date, a date and time, a phone number and a long text, and what the rules of a text field ask for", async () => {
+    const field = (source_field: string, label: string, type: string, extra: Record<string, unknown> = {}) => ({
+      id: source_field,
+      source_field,
+      label,
+      description: null,
+      type,
+      required: false,
+      options: null,
+      rules: null,
+      created_at: "2026-01-01T00:00:00.000Z",
+      ...extra,
+    });
+    fetchEventCustomFields.mockResolvedValue([
+      field("arrival_day", "Arrival day", "date", { description: "The day they arrive" }),
+      field("arrival", "Arrival", "datetime"),
+      field("mobile", "Mobile", "phone", { rules: { digits_only: true, example: "600100200" } }),
+      field("abstract", "Abstract", "long_text"),
+      field("postcode", "Postcode", "text", { description: "Postcode", rules: { digits_only: true, min_length: 5, max_length: 5, example: "01234" } }),
+      field("diet", "Diet", "text", { description: "Dietary needs" }),
+    ]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    const noteOf = (slug: string) => screen.getByText(slug).closest("tr")!.querySelectorAll("td")[2]!.textContent;
+    expect(noteOf("arrival_day")).toBe("The day they arrive (date as YYYY-MM-DD)");
+    expect(noteOf("arrival")).toBe("No description provided (date and time as YYYY-MM-DDTHH:mm, the time at the event)");
+    expect(noteOf("mobile")).toBe("No description provided (phone number with 3 to 15 digits, digits only, for example 600100200)");
+    expect(noteOf("abstract")).toBe("No description provided (long text, at most 1000 characters)");
+    expect(noteOf("postcode")).toBe("Postcode (digits only, exactly 5 characters, for example 01234)");
+    // A text field with no rules has no note.
+    expect(noteOf("diet")).toBe("Dietary needs");
   });
 
   it("lists parse warnings on the validation summary", async () => {
@@ -496,9 +594,42 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
 
     await screen.findByText("Dietary requirements");
-    const previewTable = document.querySelector(".import-sample-table");
+    const previewTable = document.querySelector(".import-table--sample table");
     expect(previewTable).not.toBeNull();
     expect(within(previewTable as HTMLElement).getAllByText("-")).toHaveLength(6);
+  });
+
+  it("tells the stylesheet how many columns the preview has after the email, so that its minimum width keeps each of them readable", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(
+      samplePreview({
+        sampleRows: [
+          {
+            rowIndex: 1,
+            name: "Sam",
+            email: "sam@example.com",
+            ticket_type: "vip",
+            company: "Admitto",
+            department: "Events",
+            external_uuid: "external-2",
+            custom_data: { dietary: "Vegetarian" },
+          },
+        ],
+        attributeFieldLabels: [{ source_field: "dietary", label: "Dietary requirements" }],
+      }),
+    );
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+
+    await screen.findByText("Dietary requirements");
+    const box = document.querySelector<HTMLElement>(".import-table--sample");
+    expect(box).not.toBeNull();
+    const headings = box!.querySelectorAll("th").length;
+    expect(headings).toBe(8);
+    expect(box!.style.getPropertyValue("--import-sample-extra")).toBe(String(headings - 3));
   });
 
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
@@ -954,7 +1085,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
   it("shows an empty state when there are no imports yet", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     renderPage();
-    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+    expect(await screen.findByText("No imports yet")).toBeTruthy();
   });
 
   it("shows an inline error with Retry when history fails to load, and retries", async () => {
@@ -965,7 +1096,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     expect(await screen.findByText("Could not load import history.")).toBeTruthy();
     expect(screen.getByText("Could not load import history.").closest("[role='alert']")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+    expect(await screen.findByText("No imports yet")).toBeTruthy();
   });
 
   it("keeps the error on screen with a busy Retry until the answer is in, instead of replacing it with a loading line", async () => {
@@ -988,7 +1119,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     await act(async () => {
       resolveRetry([]);
     });
-    expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
+    expect(await screen.findByText("No imports yet")).toBeTruthy();
     expect(screen.queryByText("Could not load import history.")).toBeNull();
   });
 

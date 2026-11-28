@@ -56,7 +56,6 @@ const EXCEPTIONS: Record<Rule, Record<string, { count: number; reason: string }>
   },
   "viewer-local-time": {
     "apps/admin/src/components/ActorOrViewerLocalTimeLine.tsx": { count: 1, reason: SECONDARY_LINE },
-    "apps/admin/src/pages/users/RoleAssignmentsTab.tsx": { count: 2, reason: SECONDARY_LINE },
   },
   "implicit-zone-format": {},
   "zone-fallback-not-utc": {},

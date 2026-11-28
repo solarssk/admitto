@@ -430,6 +430,37 @@ describe("PUT /api/admin/theme", () => {
     expect(persisted.theme.ticket_primary).toBe("#ea580c");
   });
 
+  it("persists registration_primary and registration_font_family_name, independent of the ticket page's", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(prisma, superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        ticket_primary: "#ea580c",
+        registration_primary: "#aa2200",
+        registration_font_family_name: "Form Sans",
+      }),
+    });
+    expect(res.status).toBe(200);
+    type Saved = { theme: { ticket_primary?: string; registration_primary?: string; registration_font_family_name?: string } };
+    const body = (await res.json()) as Saved;
+    expect(body.theme).toMatchObject({ ticket_primary: "#ea580c", registration_primary: "#aa2200", registration_font_family_name: "Form Sans" });
+    const persisted = (await (await getAdminTheme()).json()) as Saved;
+    expect(persisted.theme).toMatchObject({ registration_primary: "#aa2200", registration_font_family_name: "Form Sans" });
+
+    const cleared = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: { Cookie: await sessionCookieFor(prisma, superId), "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ ticket_primary: "#ea580c", registration_primary: "javascript:1" }),
+    });
+    const after = (await cleared.json()) as Saved;
+    expect(after.theme.registration_primary).toBeUndefined();
+    expect(after.theme.registration_font_family_name).toBeUndefined();
+  });
+
   it("rejects org admin PUT", async () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",

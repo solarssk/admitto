@@ -19,6 +19,8 @@ import { LOAD_TIMEOUT_MESSAGE, SLOW_NOTICE_TEXT } from "../../src/utils/loading-
 const fetchEventReports = vi.fn();
 const fetchTicketTypes = vi.fn();
 const fetchEventWalletReports = vi.fn();
+const fetchEventMailReports = vi.fn();
+const fetchEventCustomFieldReports = vi.fn();
 const exportEventReportsCsv = vi.fn();
 const exportEventWalletReportsCsv = vi.fn();
 const exportEventMailReportsCsv = vi.fn();
@@ -40,6 +42,7 @@ const { MockApiError } = vi.hoisted(() => {
 });
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
+let activityChangedHandler: (() => void) | null = null;
 // The event id the page last subscribed to the live stream with (undefined = it did not subscribe).
 let streamEventId: string | undefined;
 let mockArchivedAt: string | null = null;
@@ -82,9 +85,10 @@ vi.mock("react-router", async (importOriginal) => {
 });
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: (eventId: string | undefined, onCheckin: (event: StreamCheckinEvent) => void) => {
+  useEventStream: (eventId: string | undefined, onCheckin: (event: StreamCheckinEvent) => void, onActivityChanged?: () => void) => {
     streamEventId = eventId;
     streamHandler = onCheckin;
+    activityChangedHandler = onActivityChanged ?? null;
     return { connected: true, status: "connected" };
   },
 }));
@@ -107,6 +111,8 @@ vi.mock("../../src/api/client.js", () => ({
   exportEventReportsCsv: (...args: unknown[]) => exportEventReportsCsv(...args),
   eventReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf`,
   fetchEventWalletReports: (...args: unknown[]) => fetchEventWalletReports(...args),
+  fetchEventMailReports: (...args: unknown[]) => fetchEventMailReports(...args),
+  fetchEventCustomFieldReports: (...args: unknown[]) => fetchEventCustomFieldReports(...args),
   exportEventWalletReportsCsv: (...args: unknown[]) => exportEventWalletReportsCsv(...args),
   eventWalletReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf&report=wallets`,
   exportEventMailReportsCsv: (...args: unknown[]) => exportEventMailReportsCsv(...args),
@@ -130,6 +136,7 @@ function reportFixture(
       admission_rate_pct: Math.round((admitted / 10) * 1000) / 10,
       peak_hour: "14:00",
       peak_hour_count: admitted,
+      companions_admitted: 0,
     },
     by_hour: [],
     by_ticket_type: [],
@@ -185,9 +192,9 @@ const liveEvent: StreamCheckinEvent = {
   deviceLabel: null,
 };
 
-function renderPage() {
+function renderPage(search = "") {
   return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+    <MemoryRouter initialEntries={[`/admin/events/evt-1/reports${search}`]}>
       <Routes>
         <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
       </Routes>
@@ -228,6 +235,7 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   streamHandler = null;
+  activityChangedHandler = null;
 });
 
 describe("ReportsPage — live SSE updates (ADR 0014)", () => {
@@ -298,6 +306,166 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
         expect(fetchEventReports).toHaveBeenCalledTimes(2);
         expect(admittedValue()).toBe("7");
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reconciles from the server when an item is issued, returned or revoked: the companions on site change with no check-in to bump anything", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventReports
+        .mockResolvedValueOnce(reportFixture(5))
+        .mockResolvedValue(reportFixture(5, { summary: { ...reportFixture(5).summary, companions_admitted: 1 } }));
+      renderPage();
+
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+      expect(screen.queryByText(/People on site/)).toBeNull();
+      expect(activityChangedHandler).not.toBeNull();
+
+      act(() => {
+        activityChangedHandler?.();
+      });
+      // Nothing is bumped on the spot: an item is no check-in. The numbers are the server's once the debounce is over.
+      expect(admittedValue()).toBe("5");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      await waitFor(() => {
+        expect(fetchEventReports).toHaveBeenCalledTimes(2);
+        expect(screen.getByText(/People on site: 6 \(5 guests and 1 companion\)\./)).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reconciles within 3 seconds of the first signal while more keep coming: a steady stream of items does not postpone it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventReports
+        .mockResolvedValueOnce(reportFixture(5))
+        .mockResolvedValue(reportFixture(5, { summary: { ...reportFixture(5).summary, companions_admitted: 1 } }));
+      renderPage();
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      act(() => {
+        activityChangedHandler?.();
+      });
+      // One second is left to reach 3 seconds from the first signal. A timer restarted by every signal would still have two to go.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+
+      // Checked at once, not inside `waitFor`, which waits longer than the two seconds the restarted timer would still need.
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      await waitFor(() => {
+        expect(screen.getByText(/People on site: 6 \(5 guests and 1 companion\)\./)).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a reconcile that is on its way finish while more signals fall due, and reads once more after it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const withCompanions = (companions: number) => reportFixture(5, { summary: { ...reportFixture(5).summary, companions_admitted: companions } });
+      const slow = deferred<EventReportsResponse>();
+      fetchEventReports.mockResolvedValueOnce(reportFixture(5)).mockReturnValueOnce(slow.promise).mockResolvedValue(withCompanions(2));
+      renderPage();
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      // The read is on its way and the server is slow.
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      const onItsWay = fetchEventReports.mock.calls[1]?.[1] as AbortSignal;
+
+      // More activity, and its timer falls due while that read has still not answered: it neither starts another nor cancels this one.
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      expect(onItsWay.aborted).toBe(false);
+
+      await act(async () => slow.resolve(withCompanions(1)));
+      await waitFor(() => {
+        expect(screen.getByText(/People on site: 6 \(5 guests and 1 companion\)\./)).toBeTruthy();
+      });
+
+      // The signal that had to wait gets its read, after the timer.
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      expect(fetchEventReports).toHaveBeenCalledTimes(3);
+      await waitFor(() => {
+        expect(screen.getByText(/People on site: 7 \(5 guests and 2 companions\)\./)).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels the reconcile that is on its way when the page is left, and starts no other after it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const slow = deferred<EventReportsResponse>();
+      fetchEventReports.mockResolvedValueOnce(reportFixture(5)).mockReturnValueOnce(slow.promise).mockResolvedValue(reportFixture(5));
+      renderPage();
+      await waitFor(() => {
+        expect(admittedValue()).toBe("5");
+      });
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      const onItsWay = fetchEventReports.mock.calls[1]?.[1] as AbortSignal;
+      // A signal waits for that read, and the page is left before the read answers.
+      act(() => {
+        activityChangedHandler?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      cleanup();
+      expect(onItsWay.aborted).toBe(true);
+      await act(async () => slow.resolve(reportFixture(5)));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6_000);
+      });
+
+      expect(fetchEventReports).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
@@ -605,6 +773,53 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
 
     expect(await screen.findByText("No matches")).toBeTruthy();
     expect(screen.queryByText("Vip Guest")).toBeNull();
+  });
+});
+
+describe("ReportsPage: people on site (the companions let in with their guests)", () => {
+  const withCompanions = (admitted: number, companions: number) =>
+    reportFixture(admitted, { summary: { ...reportFixture(admitted).summary, companions_admitted: companions } });
+  const sentence = () => document.querySelector(".reports-people-on-site")?.textContent ?? null;
+
+  it("says nothing of companions while none has been let in: the figures look as they always did", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+
+    renderPage();
+
+    await waitFor(() => expect(admittedValue()).toBe("5"));
+    expect(sentence()).toBeNull();
+    expect(screen.queryByText(/People on site/)).toBeNull();
+  });
+
+  it("adds one sentence under the figures: the guests and the companions, and how many of each", async () => {
+    fetchEventReports.mockResolvedValue(withCompanions(5, 2));
+
+    renderPage();
+
+    await waitFor(() => expect(sentence()).toBe("People on site: 7 (5 guests and 2 companions)."));
+    // The figures stay on the guests.
+    expect(admittedValue()).toBe("5");
+    expect(noShowsValue()).toBe("5");
+  });
+
+  it("says 'guest' and 'companion' for one of each", async () => {
+    fetchEventReports.mockResolvedValue(withCompanions(1, 1));
+
+    renderPage();
+
+    await waitFor(() => expect(sentence()).toBe("People on site: 2 (1 guest and 1 companion)."));
+  });
+
+  it("counts a guest who has just checked in, before the report is read again", async () => {
+    fetchEventReports.mockResolvedValue(withCompanions(5, 2));
+    renderPage();
+    await waitFor(() => expect(sentence()).toBe("People on site: 7 (5 guests and 2 companions)."));
+
+    act(() => {
+      streamHandler?.(liveEvent);
+    });
+
+    await waitFor(() => expect(sentence()).toBe("People on site: 8 (6 guests and 2 companions)."));
   });
 });
 
@@ -1033,7 +1248,7 @@ describe("ReportsPage: the export", () => {
     const trigger = await pressCsv();
     expect(trigger.getAttribute("aria-busy")).toBe("true");
     expect(trigger.hasAttribute("disabled")).toBe(false);
-    expect(trigger.textContent).toContain("Export report");
+    expect(trigger.textContent).toContain("Export");
     expect(document.activeElement).toBe(trigger);
     // A second press does not open the menu, so there is no second export.
     fireEvent.click(trigger);
@@ -1056,5 +1271,145 @@ describe("ReportsPage: the export", () => {
 
     expect(document.activeElement).toBe(trigger);
     expect(screen.getByText("Export failed.")).toBeTruthy();
+  });
+});
+
+describe("ReportsPage: Export is off while the tab has nothing to export", () => {
+  const exportButton = () => screen.getByRole("button", { name: /Export/ }) as HTMLButtonElement;
+  const reason = () => document.getElementById(exportButton().getAttribute("aria-describedby") ?? "")?.textContent;
+
+  beforeEach(() => {
+    fetchEventReports.mockReset();
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+  });
+
+  it("Event day: only the empty state, and Export off, until someone has checked in (with or without attendees); on after", async () => {
+    fetchEventReports.mockResolvedValueOnce(
+      reportFixture(0, { summary: { ...reportFixture(0).summary, total_attendees: 0, no_shows: 0 } }),
+    );
+    const none = renderPage();
+    await screen.findByText("No check-ins yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(reason()).toBe("Nothing to export yet.");
+    expect(screen.queryByText("Total attendees")).toBeNull();
+    none.unmount();
+
+    fetchEventReports.mockResolvedValueOnce(reportFixture(0));
+    const noCheckIns = renderPage();
+    await screen.findByText("No check-ins yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByText("Total attendees")).toBeNull();
+    noCheckIns.unmount();
+
+    renderPage();
+    await waitFor(() => expect(admittedValue()).toBe("5"));
+    expect(exportButton().disabled).toBe(false);
+  });
+
+  it("Wallets: off while no pass was issued, on once there is one", async () => {
+    const empty = walletFixture();
+    empty.adoption = { got_pass: 0, got_pass_pct: 0, confirmed: 0, confirmed_pct: 0 };
+    fetchEventWalletReports.mockResolvedValueOnce(empty);
+    const { unmount } = renderPage("?tab=wallets");
+    await screen.findByText("No wallet passes yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByText("Wallet adoption")).toBeNull();
+    expect(reason()).toBe("Nothing to export yet.");
+    unmount();
+
+    fetchEventWalletReports.mockResolvedValueOnce(walletFixture());
+    renderPage("?tab=wallets");
+    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("No wallet passes yet")).toBeNull());
+    expect(exportButton().disabled).toBe(false);
+  });
+
+  it("Mail: a menu opened while the tab was still reading closes when the tab turns out empty, and starts no export", async () => {
+    const read = deferred<unknown>();
+    fetchEventMailReports.mockReturnValueOnce(read.promise);
+    renderPage("?tab=mail");
+    fireEvent.click(exportButton());
+    const csv = screen.getByRole("menuitem", { name: /CSV/ });
+
+    read.resolve({ delivery: { total_attempts: 0 } });
+    await screen.findByText("No emails sent yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(csv);
+    expect(exportEventMailReportsCsv).not.toHaveBeenCalled();
+  });
+
+  it("Mail: off while no email was sent", async () => {
+    fetchEventMailReports.mockResolvedValueOnce({ delivery: { total_attempts: 0 } });
+    renderPage("?tab=mail");
+    await screen.findByText("No emails sent yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByText("Event journey")).toBeNull();
+    expect(reason()).toBe("Nothing to export yet.");
+  });
+
+  it("Custom fields: off while the event has no custom field", async () => {
+    fetchEventCustomFieldReports.mockResolvedValueOnce({ fields: [], total_attendees: 0 });
+    renderPage("?tab=customfields");
+    await screen.findByText("No custom fields yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(reason()).toBe("Nothing to export yet.");
+  });
+
+  const textField = (answered: number) => ({
+    id: "f1",
+    source_field: "diet",
+    label: "Diet",
+    description: null,
+    type: "text" as const,
+    distribution: null,
+    response_rate: { answered, pct: answered > 0 ? 50 : 0 },
+  });
+  const selectField = (rows: Array<{ key: string; label: string; count: number; pct: number }>) => ({
+    id: "f2",
+    source_field: "size",
+    label: "Size",
+    description: null,
+    type: "select" as const,
+    distribution: rows,
+    response_rate: null,
+  });
+
+  it("Custom fields: off while nobody has answered any field (no attendees, or only 'Not answered')", async () => {
+    fetchEventCustomFieldReports.mockResolvedValueOnce({
+      total_attendees: 0,
+      fields: [textField(0), selectField([])],
+    });
+    const { unmount } = renderPage("?tab=customfields");
+    await screen.findByText("No answers yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByText("Diet")).toBeNull();
+    unmount();
+
+    fetchEventCustomFieldReports.mockResolvedValueOnce({
+      total_attendees: 4,
+      fields: [textField(0), selectField([{ key: "__not_answered__", label: "Not answered", count: 4, pct: 100 }])],
+    });
+    renderPage("?tab=customfields");
+    await screen.findByText("No answers yet");
+    await waitFor(() => expect(exportButton().disabled).toBe(true));
+    expect(screen.queryByText("Size")).toBeNull();
+  });
+
+  it("Custom fields: on once any field has an answer", async () => {
+    fetchEventCustomFieldReports.mockResolvedValueOnce({
+      total_attendees: 4,
+      fields: [
+        textField(0),
+        selectField([
+          { key: "M", label: "M", count: 1, pct: 25 },
+          { key: "__not_answered__", label: "Not answered", count: 3, pct: 75 },
+        ]),
+      ],
+    });
+    renderPage("?tab=customfields");
+    await screen.findByText("Diet");
+    await waitFor(() => expect(fetchEventCustomFieldReports).toHaveBeenCalled());
+    expect(exportButton().disabled).toBe(false);
   });
 });

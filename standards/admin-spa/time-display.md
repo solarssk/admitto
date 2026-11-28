@@ -21,6 +21,12 @@ The event's own date is a calendar day stored as noon UTC, so it goes through `f
 
 An event can be far from the people who work on it, from its attendees and from the mail scanners that open their links. A time shown in the event's zone is a guess that looks like a fact, so the event's zone is not used to guess where an action happened. It is used for facts about the event and its venue: a check-in happens there. UTC claims nothing.
 
+## How a time looks
+
+One look for every time, from one stylesheet (`apps/admin/src/components/time-stack.css`). A time with a line under it is a `TimeStack`: the primary text, then `ActorOrViewerLocalTimeLine`, or a `LocalTimeLine` of your own when the text under it is not the actor's zone or the viewer's. A time that is only text wears the class `time-text`. Both are in the body font of the row with tabular digits, so a column of times lines up. The zone at the end of a time ("UTC", "UTC+2") is the quiet part: smaller and grey, in its own element (`TimeWithZone`, which `TimeStack` and `TimeText` use), so three capital letters do not catch the eye before the digits do; the text is the same string. In a test a time is found with the matcher `timeText` of `test/test-utils.tsx`, as its text is in two nodes.
+
+A time is never monospace, and never a hand made "subdued" line: the logs, the timeline and Reports once showed a time in monospace while the sessions did not, and the same moment looked different from one screen to the next. `test/styles/time-look.test.ts` fails on a rule for a selector about a time, a date, a clock or a stamp that sets a monospace font.
+
 ## Where the viewer's own zone is still read
 
 The scan in `time-zone-standard.test.ts` lists each such read it finds, with its reason. They are of four kinds:

@@ -27,6 +27,11 @@ Manual verification after deploy or auth changes. It assumes:
 | 5 | Admin on event (WireGuard) | `/admin` | Redirect `/login` → password + TOTP → `/admin` | No CF layer |
 | 6 | Admin on event needs check-in | `/login` then `/operator` | Session cookie required before check-in | N/A |
 | 7 | Attendee ticket link | `/t/<token>` | Ticket page, no staff login | N/A |
+| 8 | Guest registration form | `/r/<event slug>` | Form or sign-in button, no staff login (bypass `/r/*`, `/legal/*`) | N/A |
+| 9 | Guest company sign-in return | `/sso/callback` | Not redirected to staff login by the gateway | N/A |
+| 10 | Guest form, Turnstile on a test event | `/r/<event slug>` (POST) | With Cloudflare's published Turnstile test keys saved in Organisation settings, the always-pass key does not let a registration through, because Admitto refuses its answer (the answer carries no `cdata` binding and a pass from a test key is refused), the always-fail key gets the refusal (not a 500); to test the way through, use a real Turnstile site key and secret key on an allowed hostname; the app container can reach `challenges.cloudflare.com` | N/A |
+| 11 | Guest form, oversized body through the proxy | `/r/<event slug>` (POST, over 64 KB) | `413 request too large` from Admitto, with no staff login in between (a 413 with an HTML body comes from the proxy: raise its body limit) | N/A |
+| 12 | Response headers on a guest address | `/r/<slug>` and a path that does not exist | One `Strict-Transport-Security: max-age=31536000` (no `includeSubDomains`) on the guest address; the instance's address ends in `; includeSubDomains` | N/A |
 
 ## Quick automated regression (CI)
 

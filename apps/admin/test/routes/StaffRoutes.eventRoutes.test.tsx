@@ -34,6 +34,14 @@ vi.mock("../../src/pages/EventOverviewPage.js", () => ({
   EventOverviewPage: () => <div>mapped event overview</div>,
 }));
 
+vi.mock("../../src/pages/RegistrationPage.js", () => ({
+  RegistrationPage: () => <div>mapped registration page</div>,
+}));
+
+vi.mock("../../src/pages/RequirementsPage.js", () => ({
+  RequirementsPage: () => <div>mapped event items page</div>,
+}));
+
 vi.mock("../../src/pages/PlaceholderPage.js", () => ({
   PlaceholderPage: ({ title }: { title: string }) => <div>placeholder:{title}</div>,
 }));
@@ -68,9 +76,22 @@ describe("StaffRoutes event route selection", () => {
     expect(screen.queryByText("placeholder:Overview")).toBeNull();
   });
 
-  it("falls back to the placeholder for an event section without an implementation", async () => {
-    renderAt("/admin/events/evt-1/approval");
+  it("opens the Registration page at its own address, not the placeholder", async () => {
+    renderAt("/admin/events/evt-1/registration");
 
-    expect(await screen.findByText("placeholder:Approval & waitlist")).toBeTruthy();
+    expect(await screen.findByText("mapped registration page")).toBeTruthy();
+    expect(screen.queryByText("placeholder:Registration")).toBeNull();
+  });
+
+  it("opens the Event items page at /event-items", async () => {
+    renderAt("/admin/events/evt-1/event-items");
+
+    expect(await screen.findByText("mapped event items page")).toBeTruthy();
+  });
+
+  it("falls back to the placeholder for an event section without an implementation", async () => {
+    renderAt("/admin/events/evt-1/wallet");
+
+    expect(await screen.findByText("placeholder:Wallet passes")).toBeTruthy();
   });
 });

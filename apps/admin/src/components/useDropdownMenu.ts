@@ -17,6 +17,36 @@ export function isAnyDropdownMenuOpen(): boolean {
   return openDropdownCount > 0;
 }
 
+/** For a popover that is not built on `useDropdownMenu` (the time picker): while it is open it counts as an open dropdown, so that the
+ * modal it sits in leaves Escape to it, and Escape closes it (`onEscape`), wherever the focus is. */
+export function usePopoverEscape(open: boolean, onEscape: () => void): void {
+  const onEscapeRef = useRef(onEscape);
+  useEffect(() => {
+    onEscapeRef.current = onEscape;
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    openDropdownCount += 1;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onEscapeRef.current();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      openDropdownCount -= 1;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+}
+
+/** An item that CSS hides on this screen (an item of a narrow layout, on a wide one) cannot take the focus: the walk up to the panel finds a `display: none`. */
+function isRendered(item: HTMLElement, panel: HTMLElement | null | undefined): boolean {
+  for (let node: HTMLElement | null = item; node && node !== panel; node = node.parentElement) {
+    if (getComputedStyle(node).display === "none") return false;
+  }
+  return true;
+}
+
 export interface UseDropdownMenuOptions {
   /** Gap between trigger and panel, in px. Default 4. */
   gap?: number;
@@ -38,6 +68,10 @@ export interface UseDropdownMenuOptions {
    * handler always steps aside for what it thinks is a nested combobox - instead the dropdown's
    * bubble-phase Escape handler fires, closing the panel out from under the still-open dialog. */
   escapeSuspended?: boolean;
+  /** Asked before an outside pointer press or focus closes the panel: returning true keeps it open. For a panel that holds a control
+   * which opens a window of the system (the native colour picker): the press that dismisses that window lands on the page and must not
+   * also close the panel. */
+  ignoreOutside?: () => boolean;
 }
 
 /** Open/close state, click-outside, Escape-to-close, first-`menuitem` focus, and `position:
@@ -60,7 +94,7 @@ export function useDropdownMenu<
   TTrigger extends HTMLElement = HTMLButtonElement,
   TPanel extends HTMLElement = HTMLDivElement,
 >(options: UseDropdownMenuOptions = {}) {
-  const { gap = 4, align = "start", matchTriggerWidth = false, minWidth, escapeSuspended = false } = options;
+  const { gap = 4, align = "start", matchTriggerWidth = false, minWidth, escapeSuspended = false, ignoreOutside } = options;
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<TTrigger>(null);
@@ -87,7 +121,10 @@ export function useDropdownMenu<
     if (reason !== "focus" && reason !== "scroll") triggerRef.current?.focus({ preventScroll: true });
   };
 
-  useClickOutside(rootRef, open, close);
+  useClickOutside(rootRef, open, (reason) => {
+    if (ignoreOutside?.()) return;
+    close(reason);
+  });
 
   // `openUpward` is for consumers that need more than the position from `panelStyle` (SearchableSelect
   // and PhoneCountrySelect reverse their children so the search box stays next to the trigger): the
@@ -112,7 +149,7 @@ export function useDropdownMenu<
     // the trigger button and nothing told keyboard/screen-reader users the panel had opened
     // (CodeRabbit review).
     const panel = panelRef.current;
-    const firstMenuItem = panel?.querySelector<HTMLElement>('[role="menuitem"]');
+    const firstMenuItem = Array.from(panel?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []).find((item) => isRendered(item, panel));
     // preventScroll: the panel is already positioned right next to its trigger, which the user
     // just clicked - it's already on-screen, so the browser's default "scroll into view" on
     // focus has nothing useful to do here and only risks jumping a long, scrolled page.
@@ -127,9 +164,8 @@ export function useDropdownMenu<
       }
       if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
 
-      const items = Array.from(
-        panelRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [],
-      );
+      const panelNow = panelRef.current;
+      const items = Array.from(panelNow?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []).filter((item) => isRendered(item, panelNow));
       if (items.length === 0) return;
       const activeIndex = items.indexOf(document.activeElement as HTMLButtonElement);
 

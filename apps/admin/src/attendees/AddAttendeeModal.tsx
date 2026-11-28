@@ -8,6 +8,7 @@ import {
   customDataApiErrorMessage,
   fetchAttendeeCustomFields,
   initialCustomFieldValues,
+  shownCustomFields,
   validateCustomFieldsForm,
   type CustomDataFieldDef,
 } from "./customData.js";
@@ -16,12 +17,16 @@ import { SlowNote } from "../components/SlowNote.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
-import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { attendeeFieldAttrs } from "../utils/no-autofill.js";
 import { LOAD_TIMEOUT_MESSAGE, LOAD_TIMEOUT_MS, SLOW_NOTICE_MS } from "../utils/loading-timing.js";
+import { SectionLabel } from "./SectionLabel.js";
 import "./add-attendee-modal.css";
+import "./attendee-fields-grid.css";
 
 type AddAttendeeModalProps = {
   eventId: string;
+  /** The event's time zone, which a date and time answer is read in. */
+  eventTimeZone?: string;
   open: boolean;
   onClose: () => void;
   onCreated: (attendee: AttendeeDetailDto) => void;
@@ -46,7 +51,7 @@ function add409ErrorMessage(err: ApiError): string {
 /** The dialog's fields while they load: the five text fields and the ticket type, drawn over the (still invisible) real ones. */
 function FieldsSkeleton() {
   return (
-    <div className="add-attendee-modal__fields-skeleton">
+    <div className="add-attendee-modal__fields-skeleton attendee-fields-grid">
       {Array.from({ length: 6 }, (_, i) => (
         <div className="add-attendee-modal__skeleton-field" key={i}>
           <Skeleton variant="rect" width="28%" height={14} />
@@ -57,7 +62,7 @@ function FieldsSkeleton() {
   );
 }
 
-export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly<AddAttendeeModalProps>) {
+export function AddAttendeeModal({ eventId, eventTimeZone, open, onClose, onCreated }: Readonly<AddAttendeeModalProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -216,7 +221,8 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     setError(null);
     try {
       const custom_data: Record<string, string> = {};
-      for (const field of attributeFields) {
+      // Only the questions that are asked: what is typed for one that a condition hides is not sent.
+      for (const field of shownCustomFields(attributeFields, customFields)) {
         const value = customFields[field.source_field]?.trim();
         if (value) custom_data[field.source_field] = value;
       }
@@ -282,7 +288,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop />
-      <div ref={panelRef} className="add-attendee-modal__panel">
+      <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--w720">
       <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-user-plus" aria-hidden="true" /> Add attendee
@@ -336,24 +342,26 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
           </Notice>
         )}
         <div
-          className={`add-attendee-modal__fields ${fieldsHeld ? "at-loading-hold" : "at-fade-in"}`}
+          className={`add-attendee-modal__fields attendee-fields-grid ${fieldsHeld ? "at-loading-hold" : "at-fade-in"}`}
           aria-busy={fieldsHeld || undefined}
         >
           {fieldsHeld && fieldsGate.showIndicator && <FieldsSkeleton />}
-          <Input
-            label="Email *"
-            type="text"
-            inputMode="email"
-            required
-            icon={<i className="ti ti-mail" aria-hidden="true" />}
-            value={email}
-            disabled={submitting}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              setError(null);
-            }}
-            {...NO_AUTOFILL_PROPS}
-          />
+          <div className="attendee-fields-grid__full">
+            <Input
+              label="Email *"
+              type="text"
+              inputMode="email"
+              required
+              icon={<i className="ti ti-mail" aria-hidden="true" />}
+              value={email}
+              disabled={submitting}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError(null);
+              }}
+              {...attendeeFieldAttrs("add-attendee-contact")}
+            />
+          </div>
           <Input
             label="First name *"
             required
@@ -364,7 +372,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
               setFirstName(e.target.value);
               setError(null);
             }}
-            {...NO_AUTOFILL_PROPS}
+            {...attendeeFieldAttrs("add-attendee-given")}
           />
           <Input
             label="Last name *"
@@ -376,7 +384,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
               setLastName(e.target.value);
               setError(null);
             }}
-            {...NO_AUTOFILL_PROPS}
+            {...attendeeFieldAttrs("add-attendee-family")}
           />
           <Input
             label="Company"
@@ -387,6 +395,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
               setCompany(e.target.value);
               setError(null);
             }}
+            {...attendeeFieldAttrs("add-attendee-org")}
           />
           <Input
             label="Department"
@@ -421,10 +430,12 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
               }}
             />
           </div>
-          {attributeFields.map((field) => (
+          {attributeFields.length > 0 && <SectionLabel className="attendee-fields-grid__full">Custom fields</SectionLabel>}
+          {shownCustomFields(attributeFields, customFields).map((field) => (
             <CustomDataFieldInput
               key={field.source_field}
               field={field}
+              eventTimeZone={eventTimeZone}
               value={customFields[field.source_field] ?? ""}
               disabled={submitting}
               onChange={(next) => {

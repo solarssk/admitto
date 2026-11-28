@@ -236,7 +236,6 @@ export function GeneralSettingsPanel() {
             <Button
               type="button"
               variant="ghost"
-              size="sm"
               loading={clearing}
               disabled={saving}
               onClick={() => void handleClearInstanceUrl()}

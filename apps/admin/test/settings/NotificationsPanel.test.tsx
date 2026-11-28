@@ -33,6 +33,14 @@ function el<T extends HTMLElement>(id: string): T {
   return node as T;
 }
 
+/** A recipient's description is said twice: in its column of a screen of 1280px and more, and as the line under the email of a narrower one. */
+function expectDescriptionTwice(text: string) {
+  const found = screen.getAllByText(text);
+  expect(found).toHaveLength(2);
+  expect(found.filter((element) => element.closest("td.notifications-recipients__from-1280"))).toHaveLength(1);
+  expect(found.filter((element) => element.closest(".notifications-recipients__below-1280"))).toHaveLength(1);
+}
+
 function sampleRecipient(
   email: string,
   overrides: Partial<NotificationEmailRecipientDto> = {},
@@ -197,7 +205,7 @@ describe("NotificationsPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(screen.getByText("ops@example.com")).toBeTruthy();
-    expect(screen.getByText("Ops team")).toBeTruthy();
+    expectDescriptionTwice("Ops team");
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -209,14 +217,47 @@ describe("NotificationsPanel", () => {
     });
   });
 
+  it("draws the recipients in the shared box, with the description and the time it was added as the columns that a narrower screen loses", async () => {
+    mockFetch.mockResolvedValue(
+      sampleResponse({ extra_email_recipients: [sampleRecipient("ops@example.com", { description: "Ops team" })] }),
+    );
+    await renderLoaded();
+
+    const box = document.querySelector(".item-table.notifications-recipients") as HTMLElement;
+    expect(box.querySelector(":scope > .attendees-table-wrap > table.table")).toBeTruthy();
+    expect(box.closest(".at-card__body")).toBeTruthy();
+    expect([...box.querySelectorAll("th")].map((th) => th.className)).toEqual([
+      "",
+      "notifications-recipients__from-1280",
+      "notifications-recipients__from-1024",
+      "",
+    ]);
+    // Under the email: the description below 1280px, and when it was added below 1024px, each with the words of its column.
+    const lines = [...box.querySelectorAll<HTMLElement>(".notifications-recipients__line")].map((line) => [line.className, line.textContent]);
+    expect(lines).toEqual([
+      ["notifications-recipients__line notifications-recipients__below-1280", "Ops team"],
+      ["notifications-recipients__line notifications-recipients__below-1024", expect.stringMatching(/^Added .* UTC by Admin$/)],
+    ]);
+  });
+
+  it("draws the type x channel matrix in the shared box, as a table that is a block for each type below 1024px", async () => {
+    await renderLoaded();
+
+    const box = document.querySelector(".item-table.notifications-matrix") as HTMLElement;
+    expect(box.querySelector(":scope > .attendees-table-wrap > table.table.notifications-type-matrix")).toBeTruthy();
+    expect(box.closest(".at-card__body")).toBeTruthy();
+    expect(document.querySelector(".notifications-type-matrix-wrap")).toBeNull();
+  });
+
   it("shows 'No description' for a recipient added without one, and 'Not saved yet' before the first save", async () => {
     await renderLoaded();
     fireEvent.change(el<HTMLInputElement>("notifications-extra-recipient-input"), {
       target: { value: "ops@example.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    expect(screen.getByText("No description")).toBeTruthy();
-    expect(screen.getByText("Not saved yet")).toBeTruthy();
+    // Each is said in its column of a wide screen and as the line under the email of a narrower one.
+    expect(screen.getAllByText("No description")).toHaveLength(2);
+    expect(screen.getAllByText("Not saved yet")).toHaveLength(2);
   });
 
   it("shows when a saved recipient was added and by whom", async () => {
@@ -228,7 +269,7 @@ describe("NotificationsPanel", () => {
       }),
     );
     await renderLoaded();
-    expect(screen.getByText(/by Jane Admin/)).toBeTruthy();
+    expect(screen.getAllByText(/by Jane Admin/)).toHaveLength(2);
   });
 
   it("does nothing when Add is clicked with a blank email input", async () => {
@@ -557,7 +598,7 @@ describe("NotificationsPanel", () => {
     fireEvent.change(within(dialog).getByLabelText("Description"), { target: { value: "Ops team" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(screen.getByText("ops@example.com")).toBeTruthy();
-    expect(screen.getByText("Ops team")).toBeTruthy();
+    expectDescriptionTwice("Ops team");
   });
 
   it("rejects an invalid address in the edit modal without closing it", async () => {
@@ -825,7 +866,7 @@ describe("NotificationsPanel", () => {
 
     fireEvent.keyDown(el<HTMLInputElement>("notifications-extra-recipient-description"), { key: "Enter" });
     expect(screen.getByText("ops@example.com")).toBeTruthy();
-    expect(screen.getByText("Ops team")).toBeTruthy();
+    expectDescriptionTwice("Ops team");
   });
 
   it("changes the recipients page size and resets back to page 1", async () => {
@@ -858,7 +899,7 @@ describe("NotificationsPanel", () => {
 
     expect(screen.getByText("ops2@example.com")).toBeTruthy();
     expect(screen.getByText("finance@example.com")).toBeTruthy();
-    expect(screen.getByText("Finance")).toBeTruthy();
+    expectDescriptionTwice("Finance");
   });
 
   it("shows no 'by' attribution when a saved recipient has neither a display name nor an email on file", async () => {

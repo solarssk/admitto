@@ -7,6 +7,7 @@ import { useListLoad } from "../../hooks/useListLoad.js";
 import { fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { RoleAssignmentListItemDto } from "../../api/types.js";
+import { ActorOrViewerLocalTimeLine } from "../../components/ActorOrViewerLocalTimeLine.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { FiltersMenu } from "../../components/FiltersMenu.js";
 import { paginationHandlers, PaginationFooter } from "../../components/PaginationFooter.js";
@@ -14,12 +15,14 @@ import { RefetchRegion } from "../../components/RefetchRegion.js";
 import { ListFailure } from "../../components/ListFailure.js";
 import { RetryHint } from "../../components/RetryHint.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
+import { TimeStack, TimeWithZone } from "../../components/TimeStack.js";
 import { isPastTheEnd, withAssignmentRemoved, type RoleAssignmentsAnswer } from "./list-changes.js";
 import { UsersListSkeleton, type SkeletonColumn } from "./UsersListSkeleton.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
-import { formatUtcDateTime, viewerLocalTime } from "../../utils/event-dates.js";
+import { formatUtcDateTime } from "../../utils/event-dates.js";
+import "../../components/item-table.css";
 
 // The placeholder of the list: four rows and three cards, each as tall as a real one.
 const SKELETON_ROWS = 4;
@@ -28,7 +31,7 @@ const ROLE_COLUMNS: ReadonlyArray<SkeletonColumn> = [
   { id: "scope", label: "Scope" },
   { id: "user", label: "User" },
   { id: "role", label: "Role" },
-  { id: "granted", label: "Granted" },
+  { id: "granted", label: "Granted", className: "users-table__wide-only" },
   { id: "actions", label: <span className="sr-only">Actions</span> },
 ];
 // GET /api/admin/role-assignments caps pageSize server-side at 50 (role-assignments-routes.ts) -
@@ -67,6 +70,14 @@ type AssignmentRowProps = {
   onRevoke: (row: RoleAssignmentListItemDto) => void;
 };
 
+function GrantedTimes({ row }: Readonly<{ row: RoleAssignmentListItemDto }>) {
+  return (
+    <TimeStack primary={formatUtcDateTime(row.granted_at)}>
+      <ActorOrViewerLocalTimeLine iso={row.granted_at} actorTimezone={null} />
+    </TimeStack>
+  );
+}
+
 function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProps>) {
   return (
     <tr>
@@ -84,10 +95,12 @@ function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRow
             <i className="ti ti-cloud" aria-hidden="true" />
           </span>
         )}
+        <div className="users-table__narrow-only users-page__folded" title={`Granted ${formatUtcDateTime(row.granted_at)}`}>
+          <TimeWithZone text={formatUtcDateTime(row.granted_at)} />
+        </div>
       </td>
-      <td>
-        {formatUtcDateTime(row.granted_at)}
-        <div className="sessions-subdued">{viewerLocalTime(row.granted_at)}</div>
+      <td className="users-table__wide-only">
+        <GrantedTimes row={row} />
       </td>
       <td>
         {canRevoke ? (
@@ -141,8 +154,9 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
         <div className="users-page__card-meta-wide">
           <dt>Granted</dt>
           <dd>
-            {formatUtcDateTime(row.granted_at)}
-            <div className="sessions-subdued">{viewerLocalTime(row.granted_at)}</div>
+            <TimeStack primary={formatUtcDateTime(row.granted_at)}>
+              <ActorOrViewerLocalTimeLine iso={row.granted_at} actorTimezone={null} />
+            </TimeStack>
           </dd>
         </div>
         {row.is_oidc && (
@@ -338,8 +352,9 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
           held={!gate.showIndicator}
           slow={slow}
           columns={ROLE_COLUMNS}
+          tableClass="users-table--roles"
           rows={SKELETON_ROWS}
-          rowHeight={40}
+          rowHeight={43}
           cards={3}
           cardHeight={200}
         />
@@ -381,31 +396,33 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
 
           {rows.length > 0 && (
             <>
-              <div className="users-page__table-wrap users-page__table-wrap--desktop">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Scope</th>
-                      <th>User</th>
-                      <th>Role</th>
-                      <th><HintLabel hint={GRANTED_HINT}>Granted</HintLabel></th>
-                      <th><span className="sr-only">Actions</span></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row) => (
-                      <AssignmentTableRow
-                        key={row.id}
-                        row={row}
-                        canRevoke={canRevokeRow(row)}
-                        onRevoke={setConfirmTarget}
-                      />
-                    ))}
-                  </tbody>
-                </table>
+              <div className="item-table users-table users-table--roles users-page__table-wrap--desktop">
+                <div className="attendees-table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Scope</th>
+                        <th>User</th>
+                        <th>Role</th>
+                        <th className="users-table__wide-only"><HintLabel hint={GRANTED_HINT}>Granted</HintLabel></th>
+                        <th><span className="sr-only">Actions</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row) => (
+                        <AssignmentTableRow
+                          key={row.id}
+                          row={row}
+                          canRevoke={canRevokeRow(row)}
+                          onRevoke={setConfirmTarget}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              <div className="users-page__cards users-page__cards--mobile">
+              <div className="users-page__cards users-page__cards--narrow">
                 {rows.map((row) => (
                   <AssignmentCard
                     key={row.id}

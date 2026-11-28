@@ -28,6 +28,23 @@ describe("sanitizeTheme (branding theme storage validation)", () => {
     expect(result.ticket_primary).toBeUndefined();
   });
 
+  it("keeps a valid registration_primary beside the ticket and admin ones, and drops an invalid one", () => {
+    const result = sanitizeTheme({ primary: "#066fd1", ticket_primary: "#ea580c", registration_primary: "#aa2200" });
+    expect(result).toMatchObject({ primary: "#066fd1", ticket_primary: "#ea580c", registration_primary: "#aa2200" });
+    expect(sanitizeTheme({ registration_primary: "red" }).registration_primary).toBeUndefined();
+    expect(sanitizeTheme({ registration_primary: 12 }).registration_primary).toBeUndefined();
+    expect(sanitizeTheme({}).registration_primary).toBeUndefined();
+  });
+
+  it("sanitizes registration_font_family_name the same way as the other two, and leaves it unset when absent", () => {
+    expect(sanitizeTheme({ registration_font_family_name: "Form Sans" }).registration_font_family_name).toBe("Form Sans");
+    expect(sanitizeTheme({ registration_font_family_name: "</style><script>1</script>" }).registration_font_family_name).toBe(
+      "stylescript1script",
+    );
+    expect(sanitizeTheme({ registration_font_family_name: 5 }).registration_font_family_name).toBeUndefined();
+    expect(sanitizeTheme({ font_family_name: "Admin Sans" }).registration_font_family_name).toBeUndefined();
+  });
+
   it("sanitizes ticket_font_family_name the same way as font_family_name, independently", () => {
     const result = sanitizeTheme({
       font_family_name: "Admin Sans",

@@ -138,6 +138,7 @@ const emptyReport = {
     admission_rate_pct: 0,
     peak_hour: null,
     peak_hour_count: 0,
+    companions_admitted: 0,
   },
   by_hour: [],
   by_ticket_type: [],
@@ -147,6 +148,12 @@ const emptyReport = {
   by_rsvp_status: [],
   by_checkin_method: [],
   by_operator: [],
+};
+
+// Export is off until someone has checked in, so the export tests need one admitted attendee.
+const reportWithAttendee = {
+  ...emptyReport,
+  summary: { ...emptyReport.summary, total_attendees: 1, admitted: 1, admission_rate_pct: 100 },
 };
 
 const archivedEvent = {
@@ -500,9 +507,9 @@ describe("RoleAssignmentsTab operator errors", () => {
 describe("RequirementsPage operator errors", () => {
   function renderRequirements() {
     renderWithToast(
-      <MemoryRouter initialEntries={["/admin/events/evt-1/requirements"]}>
+      <MemoryRouter initialEntries={["/admin/events/evt-1/event-items"]}>
         <Routes>
-          <Route path="/admin/events/:eventId/requirements" element={<RequirementsPage />} />
+          <Route path="/admin/events/:eventId/event-items" element={<RequirementsPage />} />
         </Routes>
       </MemoryRouter>,
     );
@@ -525,7 +532,7 @@ describe("RequirementsPage operator errors", () => {
     vi.mocked(fetchEventItems).mockRejectedValueOnce(new Error("network transport detail"));
     renderRequirements();
 
-    expect(await screen.findByText("Could not load requirements.")).toBeTruthy();
+    expect(await screen.findByText("Could not load event items.")).toBeTruthy();
     expect(screen.queryByText("network transport detail")).toBeNull();
   });
 
@@ -676,7 +683,7 @@ describe("ReportsPage operator errors", () => {
   });
 
   it("toasts export failure without leaking internals", async () => {
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
@@ -686,9 +693,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
@@ -721,7 +728,7 @@ describe("ReportsPage operator errors", () => {
       assign: vi.fn(),
       pathname: "/admin/events/evt-1/reports",
     });
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new ApiError(401, "unauthenticated"));
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
@@ -731,9 +738,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
       expect(window.location.assign).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Freports");
@@ -741,7 +748,7 @@ describe("ReportsPage operator errors", () => {
   });
 
   it("toasts a generic export failure for a non-API error (e.g. a network failure)", async () => {
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new TypeError("Failed to fetch"));
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
@@ -751,9 +758,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
@@ -762,7 +769,7 @@ describe("ReportsPage operator errors", () => {
 
   it("exports the PDF report by opening the print URL in a new tab", async () => {
     vi.stubGlobal("open", vi.fn());
-    vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
+    vi.mocked(fetchEventReports).mockResolvedValueOnce(reportWithAttendee);
     renderWithToast(
       <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
         <Routes>
@@ -771,9 +778,9 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export report" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /PDF/ }));
     expect(window.open).toHaveBeenCalledWith(
       "/api/admin/events/evt-1/reports/export?format=pdf",
@@ -923,6 +930,7 @@ describe("ReportsPage stat tiles", () => {
         admission_rate_pct: 70,
         peak_hour: "14:00",
         peak_hour_count: 4,
+        companions_admitted: 0,
       },
     });
     const { container } = renderWithToast(
@@ -963,6 +971,7 @@ describe("ReportsPage stat tiles", () => {
         admission_rate_pct: 66.7,
         peak_hour: null,
         peak_hour_count: 0,
+        companions_admitted: 0,
       },
     });
     renderWithToast(

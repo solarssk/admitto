@@ -21,10 +21,14 @@
 - [Importing Attendees](Importing-Attendees)
 - [Ticket Types](Ticket-Types)
 - [Custom Attendee Fields](Custom-Attendee-Fields)
+- [Legal Texts and Consents](Legal-Texts-and-Consents)
+- [Registration Form Fields](Registration-Form-Fields)
+- [Registration Access](Registration-Access)
+- [Registration Requests](Registration-Requests)
 
-**Requirements and Fulfilment**
+**Event items and Fulfilment**
 
-- [Requirements and Fulfilment](Requirements-and-Fulfilment)
+- [Event items and Fulfilment](Requirements-and-Fulfilment)
 - [Event Items and Check-in Behaviour](Event-Items-and-Check-in-Behaviour)
 
 **Tickets and Passes**

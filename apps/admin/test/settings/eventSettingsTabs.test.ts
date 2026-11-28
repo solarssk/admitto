@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inPageTabFromSearch } from "../../src/settings/eventSettingsTabs.js";
+import { EVENT_SETTINGS_TABS, inPageTabFromSearch, SUPERADMIN_ONLY_TABS } from "../../src/settings/eventSettingsTabs.js";
 
 function paramsWithTab(tab: string | null): URLSearchParams {
   const params = new URLSearchParams();
@@ -31,5 +31,26 @@ describe("inPageTabFromSearch", () => {
   it("falls back to general for a superadmin-only tab when the caller isn't a superadmin", () => {
     expect(inPageTabFromSearch(paramsWithTab("mail"), false)).toBe("general");
     expect(inPageTabFromSearch(paramsWithTab("mail"), true)).toBe("mail");
+  });
+
+  it("opens the registration tab for every administrator of the event", () => {
+    expect(inPageTabFromSearch(paramsWithTab("registration"), true)).toBe("registration");
+    expect(inPageTabFromSearch(paramsWithTab("registration"), false)).toBe("registration");
+    expect(SUPERADMIN_ONLY_TABS.has("registration")).toBe(false);
+  });
+
+  it("lists the tabs in the order an event is set up", () => {
+    expect(EVENT_SETTINGS_TABS.map((tab) => tab.id)).toEqual([
+      "general",
+      "location",
+      "ticket-types",
+      "registration",
+      "mail",
+      "wallet",
+      "images",
+      "checkin-behaviour",
+      "integrations",
+      "danger-zone",
+    ]);
   });
 });

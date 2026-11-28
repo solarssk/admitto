@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuditLogEntryDto, AuditLogResponse, SecurityAuditLogResponse, SystemLogResponse } from "../../src/api/types.js";
-import { hangUntilAborted, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { hangUntilAborted, mockMatchMedia, renderWithToastAndRouter } from "../test-utils.js";
 import { describePanelLoading } from "./panel-loading.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -58,7 +58,7 @@ function page(entries: AuditLogEntryDto[], total = entries.length): AuditLogResp
 
 /** The panel opens on the System view; every test here is about the Audit side. */
 function renderAuditPanel() {
-  const result = renderWithToast(<AuditLogPanel />);
+  const result = renderWithToastAndRouter(<AuditLogPanel />);
   fireEvent.click(screen.getByRole("radio", { name: "Audit" }));
   return result;
 }
@@ -159,7 +159,7 @@ describe("AuditLogPanel loading", () => {
 
   it("moves the focus the list's Retry held to the tab panel when the retry works", async () => {
     mockAudit.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(
+    renderWithToastAndRouter(
       <div role="tabpanel" aria-label="Logs">
         <AuditLogPanel />
       </div>,
@@ -207,13 +207,13 @@ describe("AuditLogPanel loading", () => {
   it("keeps the Security view's empty answer on screen, blocked and marked busy, while a filter change loads", async () => {
     renderAuditPanel();
     fireEvent.click(screen.getByRole("radio", { name: "Security" }));
-    expect(await screen.findByText("No security events yet")).toBeTruthy();
+    expect(await screen.findByText("No security log entries yet")).toBeTruthy();
     let resolveNext: (value: SecurityAuditLogResponse) => void = () => {};
     vi.mocked(fetchSecurityAuditLog).mockReturnValueOnce(new Promise((resolve) => (resolveNext = resolve)));
     fireEvent.change(screen.getByLabelText("Search user"), { target: { value: "login" } });
     await waitFor(() => expect(vi.mocked(fetchSecurityAuditLog)).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(document.querySelector(".refetch-card--busy")?.getAttribute("aria-busy")).toBe("true"));
-    expect(document.querySelector(".refetch-card--busy")?.textContent).toContain("No security events yet");
+    expect(document.querySelector(".refetch-card--busy")?.textContent).toContain("No security log entries yet");
     expect(screen.queryByText("No matches")).toBeNull();
     await act(async () => resolveNext({ entries: [], total: 0, page: 1, pageSize: 25 } as SecurityAuditLogResponse));
     expect(await screen.findByText("No matches")).toBeTruthy();

@@ -174,30 +174,6 @@
   text-align: center;
 }
 
-/* Labeled break between the four fixed filters and the event's own custom-field filter rows -
-   the label sits inline with a rule filling the rest of the row (design mockup), not a border
-   sitting above a block of text: a bare `<p>`'s UA-stylesheet margin-bottom stacking on top of
-   the panel's own flex `gap` was one bug already (PO report); a border-top read as a divider
-   above the *next* row instead of one belonging to this label. */
-.attendees-filters-menu__section-label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--primary-active);
-}
-
-.attendees-filters-menu__section-label::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
 /* Mobile-only "Sort by" select + direction toggle (AttendeesTable has no column headers to
    click below 768px) — sits at the top of the same filters panel. */
 .attendees-toolbar__sort {
@@ -231,8 +207,10 @@
      pattern as .reports-pageheader/.checkin-pageheader). Still compacted the same way as the
      bulk bar: smaller buttons, decorative icons dropped (More's own trailing chevron
      survives), and "+ Add attendee" also shortens in AttendeesPage.tsx (via useIsDesktop()),
-     the one part CSS can't do. */
-  .attendees-pageheader .at-pageheader__row {
+     the one part CSS can't do. The Registration page header has the same anatomy (a main button and
+     "More actions"), so it shares every rule of this block as .registration-pageheader. */
+  .attendees-pageheader .at-pageheader__row,
+  .registration-pageheader .at-pageheader__row {
     flex-direction: row;
     align-items: flex-start;
   }
@@ -243,23 +221,27 @@
      rather than whatever further-up ancestor happens to be positioned; same mechanism as
      .attendees-bulkbar__actions below and the shared .more-actions-menu rule further down
      this file. */
-  .attendees-pageheader .at-pageheader__actions {
+  .attendees-pageheader .at-pageheader__actions,
+  .registration-pageheader .at-pageheader__actions {
     gap: var(--space-2);
     justify-content: flex-end;
     position: relative;
   }
 
-  .attendees-pageheader .at-pageheader__actions .at-btn {
+  .attendees-pageheader .at-pageheader__actions .at-btn,
+  .registration-pageheader .at-pageheader__actions .at-btn {
     height: var(--control-h-sm);
     font-size: var(--fs-sm);
     padding: 0 var(--space-2);
   }
 
-  .attendees-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+  .attendees-pageheader .at-pageheader__actions .at-btn .at-btn__icon,
+  .registration-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
     display: none;
   }
 
-  .attendees-pageheader .more-actions-menu .at-btn .at-btn__icon {
+  .attendees-pageheader .more-actions-menu .at-btn .at-btn__icon,
+  .registration-pageheader .more-actions-menu .at-btn .at-btn__icon {
     display: inline-flex;
   }
 
@@ -1061,7 +1043,7 @@
   background: var(--surface-card);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
-  width: min(480px, 100%);
+  width: min(720px, 100%);
   /* dvh follows iOS Safari's dynamic toolbar; vh is the fallback for browsers without dvh
      support. See add-attendee-modal.css for the same fix on the other modal shell. */
   max-height: calc(100vh - 2 * var(--space-4));
@@ -1221,6 +1203,19 @@
   opacity: 1;
 }
 
+/* The name of the attendee with the avatar before it: the initials for now, the photo of the person when there is one (Avatar takes
+   a `src`). Long names wrap inside their own box instead of pushing the avatar or the buttons out. */
+.attendee-detail-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.attendee-detail-title > :last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Mirrors .attendees-pageheader's mobile treatment above (row restored beside the title,
    compact buttons, decorative icons dropped except the More menu's own) - was left at the
    shared PageHeader's default (stack below, full desktop button size) until a PO review found
@@ -1246,6 +1241,13 @@
   .attendee-detail-pageheader .at-pageheader__title {
     grid-column: 1;
     grid-row: 1;
+  }
+
+  /* Beside the two buttons the name has about 120px: no room for an avatar before it (the name broke inside a word), so the
+     avatar, and the skeleton's circle in its place, wait for a screen that has the room. */
+  .attendee-detail-title > .at-avatar,
+  .attendee-detail-title > .at-skeleton {
+    display: none;
   }
 
   .attendee-detail-pageheader .at-pageheader__subtitle {
@@ -1349,6 +1351,19 @@
   min-width: 0;
   overflow-wrap: anywhere;
   text-align: right;
+}
+
+/* A long answer, or one with line breaks (a long text field), is read under its label, from the left, with its line breaks kept:
+   in the right-hand column beside the label it would be a ragged block. */
+.attendee-detail-row--long {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.attendee-detail-row--long > :last-child {
+  text-align: left;
+  white-space: pre-wrap;
 }
 
 /* Event items list - matches the design mockup's .att-item-row exactly (values pulled
@@ -1617,10 +1632,10 @@
 }
 
 .at-tl-time {
-  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   font-size: 0.75rem;
   color: var(--text-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Who performed the row's action, moved here next to the time instead of mixed into the diff
@@ -1783,10 +1798,10 @@
 }
 
 .at-notes-list__time {
-  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   font-size: 0.75rem;
   color: var(--text-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .at-notes-list__text {

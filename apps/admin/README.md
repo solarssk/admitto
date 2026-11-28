@@ -50,6 +50,7 @@ Browser-level tests in this repo, all under `apps/admin/e2e/`:
 - `checkin.spec.ts`: an operator logs in, looks up a seeded attendee by name, and admits them through the manual check-in path (not the camera/QR scanner).
 - `a11y.spec.ts`: an axe-core accessibility scan of the login page, the operator check-in page and the main admin pages.
   - The main admin pages are the events list, overview, attendees, attendee detail, event settings and communication. They are scanned as a seeded superadmin (`admin-login.ts` walks the forced TOTP enrollment over the API).
+  - The public guest registration pages are scanned too, without signing in: the form of a seeded event (at a desktop width and at 390 px) and the page a confirmation link opens. Two more tests run the form with the keyboard only and at the width of a 200% zoom. The seed (`e2e/seed.ts`) opens that form with Cloudflare's published Turnstile test keys; they sit in the disposable database only.
   - iframes (the mail-template previews) are excluded.
   - Every violation is printed, written to the job summary, and saved as `test-results/*/axe-*.json`. Serious and critical ones fail the test. Minor and moderate stay report-only.
 - `topbar-phone.spec.ts`: the staff top bar on a phone. It runs as the seeded superadmin on a 390, a 360, a 340 and a 320 pixel wide screen (touch emulation).

@@ -50,8 +50,10 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { NOTIFICATION_SEVERITY_ICON, NOTIFICATION_TYPE_DESCRIPTIONS } from "../components/notificationSeverity.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import "../components/item-table.css";
 import "../settings/notifications-panel.css";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
+import { TimeStack } from "../components/TimeStack.js";
 import { useDelayedLoading, useLoadingGate, useMinimumBusy } from "../hooks/useDelayedLoading.js";
 import { useFocusAfterPageRetry } from "../hooks/useFocusAfterPageRetry.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
@@ -828,10 +830,10 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     errorHadFocusRef,
     ACCOUNT_RETRY_FOCUS_TARGETS,
   );
-  // Desktop table vs. stacked mobile cards below 768px, same breakpoint-driven switch as Users &
+  // Desktop table (the shared boxed table, from 1024px) vs. stacked cards below it, same breakpoint-driven switch as Users &
   // roles' own Active sessions tab - only one ever renders (not both, CSS-hidden), so a row's
   // content never appears twice in the accessibility tree.
-  const isSessionsDesktop = useIsDesktop();
+  const isSessionsDesktop = useIsDesktop(1024);
 
   if (!accountGate.showContent) {
     return (
@@ -2249,57 +2251,59 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             />
           )}
           {notifPrefsGate.showContent && !notifPrefsFailure.error && (
-            <div className="notifications-type-matrix-wrap">
-              <table className="table notifications-type-matrix">
-                <thead>
-                  <tr>
-                    <th scope="col">Type</th>
-                    <th scope="col">Email</th>
-                    <th scope="col">In-app</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {notifPrefs.map((type) => (
-                    <tr key={type.id}>
-                      <td>
-                        <div className="notifications-type-matrix__label-row">
-                          <span
-                            className={`status-circle status-circle--sm status-circle--${type.default_severity}`}
-                            aria-hidden="true"
-                          >
-                            <i
-                              className={`ti ${NOTIFICATION_SEVERITY_ICON[type.default_severity] ?? "ti-info-circle"}`}
-                              aria-hidden="true"
-                            />
-                          </span>
-                          <div className="notifications-type-matrix__label-text">
-                            <strong>{type.label}</strong>
-                            <p>{NOTIFICATION_TYPE_DESCRIPTIONS[type.id] ?? "Alerts admin staff when this event occurs."}</p>
-                          </div>
-                        </div>
-                      </td>
-                      {(["email", "in_app"] as const).map((channel) =>
-                        type.available_channels.includes(channel) ? (
-                          <td key={channel} data-label={channel === "email" ? "Email" : "In-app"}>
-                            <Switch
-                              id={`account-notif-${type.id}-${channel}`}
-                              aria-label={`${type.label} - ${channel === "email" ? "Email" : "In-app"}`}
-                              checked={type.channels[channel] ?? true}
-                              disabled={notifPrefSaving.has(`${type.id}:${channel}`)}
-                              onChange={(e) => void toggleNotificationPreference(type.id, channel, e.target.checked)}
-                            />
-                          </td>
-                        ) : (
-                          <td key={channel} className="notifications-type-matrix__na" data-label={channel === "email" ? "Email" : "In-app"}>
-                            <span aria-hidden="true">-</span>
-                            <span className="sr-only">Not applicable</span>
-                          </td>
-                        ),
-                      )}
+            <div className="item-table notifications-matrix">
+              <div className="attendees-table-wrap">
+                <table className="table notifications-type-matrix">
+                  <thead>
+                    <tr>
+                      <th scope="col">Type</th>
+                      <th scope="col">Email</th>
+                      <th scope="col">In-app</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {notifPrefs.map((type) => (
+                      <tr key={type.id}>
+                        <td>
+                          <div className="notifications-type-matrix__label-row">
+                            <span
+                              className={`status-circle status-circle--sm status-circle--${type.default_severity}`}
+                              aria-hidden="true"
+                            >
+                              <i
+                                className={`ti ${NOTIFICATION_SEVERITY_ICON[type.default_severity] ?? "ti-info-circle"}`}
+                                aria-hidden="true"
+                              />
+                            </span>
+                            <div className="notifications-type-matrix__label-text">
+                              <strong>{type.label}</strong>
+                              <p>{NOTIFICATION_TYPE_DESCRIPTIONS[type.id] ?? "Alerts admin staff when this event occurs."}</p>
+                            </div>
+                          </div>
+                        </td>
+                        {(["email", "in_app"] as const).map((channel) =>
+                          type.available_channels.includes(channel) ? (
+                            <td key={channel} data-label={channel === "email" ? "Email" : "In-app"}>
+                              <Switch
+                                id={`account-notif-${type.id}-${channel}`}
+                                aria-label={`${type.label} - ${channel === "email" ? "Email" : "In-app"}`}
+                                checked={type.channels[channel] ?? true}
+                                disabled={notifPrefSaving.has(`${type.id}:${channel}`)}
+                                onChange={(e) => void toggleNotificationPreference(type.id, channel, e.target.checked)}
+                              />
+                            </td>
+                          ) : (
+                            <td key={channel} className="notifications-type-matrix__na" data-label={channel === "email" ? "Email" : "In-app"}>
+                              <span aria-hidden="true">-</span>
+                              <span className="sr-only">Not applicable</span>
+                            </td>
+                          ),
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -2311,7 +2315,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     return (
       <Card
         title="Active sessions"
-        actions={canRevokeOthers(sessionsGate.showContent, sessionsFailure.error, otherSessions.length) ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}
+        actions={canRevokeOthers(sessionsGate.showContent, sessionsFailure.error, otherSessions.length) ? <Button type="button" variant="danger" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}
         {...refetchCardProps(sessionsRefreshing, sessionsRefetch.showIndicator)}
       >
         <TopProgressBar active={sessionsRefetch.showIndicator} placement="container" label="Refreshing sessions" />
@@ -2334,63 +2338,64 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           />
         )}
         {sessionsGate.showContent && !sessionsFailure.error && sessions.length === 0 && <p className="sessions-status">No active sessions.</p>}
-        {/* Only Sign-in drops in the 768-1180px tablet range (.sessions-col-tablet-hide) - unlike
+        {/* Only Sign-in drops between 1024px and 1180px (.sessions-col-tablet-hide) - unlike
             Users & roles' own 8-column table, this one only has 5 content columns to begin with,
             and Device/IP address are both things an admin reviewing their own sessions wants to
             keep seeing (PO review) rather than trimmed down to just Logged in/Last active. */}
         {sessionsGate.showContent && !sessionsFailure.error && sessions.length > 0 && isSessionsDesktop && (
-          <div className="account-sessions-table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Device</th>
-                  <th>IP address</th>
-                  <th>Logged in</th>
-                  <th>Last active</th>
-                  <th className="sessions-col-tablet-hide">Sign-in</th>
-                  <th className="sessions-action-col" aria-label="Actions">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sessionsPageSlice.map((s) => (
-                  <tr key={s.id}>
-                    <td title={s.userAgent ?? undefined}>
-                      {s.deviceLabel || parseUserAgent(s.userAgent)}
-                      {s.isCurrent && <Badge variant="neutral" className="sessions-current-badge">Current</Badge>}
-                    </td>
-                    <td className="sessions-ip-cell">
-                      {s.ip ?? "-"}
-                      {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
-                    </td>
-                    <td>
-                      {formatUtcPrimaryTime(s.loginAt)}
-                      <ActorOrViewerLocalTimeLine
-                        iso={s.loginAt}
-                        actorTimezone={s.timezone}
-                        actorTitle="Signer's local time"
-                      />
-                    </td>
-                    <td>{formatRelativeTime(s.lastSeenAt)}</td>
-                    <td className="sessions-col-tablet-hide">
-                      <SessionSignIn authMethod={s.authMethod} />
-                    </td>
-                    <td>
-                      <div className="sessions-row-actions">
-                        <SessionRevokeAction
-                          session={s}
-                          onRevoke={(session) => {
-                            setRevokeError(null);
-                            setRevokeTarget(session);
-                          }}
-                        />
-                      </div>
-                    </td>
+          <div className="item-table account-sessions-table">
+            <div className="attendees-table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Device</th>
+                    <th>IP address</th>
+                    <th>Logged in</th>
+                    <th>Last active</th>
+                    <th className="sessions-col-tablet-hide">Sign-in</th>
+                    <th className="sessions-action-col" aria-label="Actions">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sessionsPageSlice.map((s) => (
+                    <tr key={s.id}>
+                      <td title={s.userAgent ?? undefined}>
+                        <div className="sessions-device">
+                          <span>{s.deviceLabel || parseUserAgent(s.userAgent)}</span>
+                          {s.isCurrent && <Badge variant="neutral">Current</Badge>}
+                        </div>
+                      </td>
+                      <td className="sessions-ip-cell">
+                        {s.ip ?? "-"}
+                        {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
+                      </td>
+                      <td>
+                        <TimeStack primary={formatUtcPrimaryTime(s.loginAt)}>
+                          <ActorOrViewerLocalTimeLine iso={s.loginAt} actorTimezone={s.timezone} actorTitle="Signer's local time" />
+                        </TimeStack>
+                      </td>
+                      <td>{formatRelativeTime(s.lastSeenAt)}</td>
+                      <td className="sessions-col-tablet-hide">
+                        <SessionSignIn authMethod={s.authMethod} />
+                      </td>
+                      <td>
+                        <div className="sessions-row-actions">
+                          <SessionRevokeAction
+                            session={s}
+                            onRevoke={(session) => {
+                              setRevokeError(null);
+                              setRevokeTarget(session);
+                            }}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
         {sessionsGate.showContent && !sessionsFailure.error && sessions.length > 0 && !isSessionsDesktop && (
@@ -2398,9 +2403,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             {sessionsPageSlice.map((s) => (
               <article key={s.id} className="account-sessions-card">
                 <div className="account-sessions-card__head">
-                  <div title={s.userAgent ?? undefined}>
+                  <div className="sessions-device" title={s.userAgent ?? undefined}>
                     <strong>{s.deviceLabel || parseUserAgent(s.userAgent)}</strong>
-                    {s.isCurrent && <Badge variant="neutral" className="sessions-current-badge">Current</Badge>}
+                    {s.isCurrent && <Badge variant="neutral">Current</Badge>}
                   </div>
                   <div className="sessions-row-actions">
                     <SessionRevokeAction
@@ -2423,12 +2428,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
                   <div>
                     <dt>Logged in</dt>
                     <dd>
-                      {formatUtcPrimaryTime(s.loginAt)}
-                      <ActorOrViewerLocalTimeLine
-                        iso={s.loginAt}
-                        actorTimezone={s.timezone}
-                        actorTitle="Signer's local time"
-                      />
+                      <TimeStack primary={formatUtcPrimaryTime(s.loginAt)}>
+                        <ActorOrViewerLocalTimeLine iso={s.loginAt} actorTimezone={s.timezone} actorTitle="Signer's local time" />
+                      </TimeStack>
                     </dd>
                   </div>
                   <div>

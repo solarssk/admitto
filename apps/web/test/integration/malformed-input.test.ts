@@ -217,6 +217,13 @@ describe("an event that does not exist", () => {
       `/api/admin/events/${EVENT_MISSING}/templates/tpl-missing/test-send`,
       { to: "someone@example.com" },
     ],
+    ["a registration mail's source", "GET", `/api/admin/events/${EVENT_MISSING}/system-templates/registration-confirm`, undefined],
+    [
+      "a registration mail's test send",
+      "POST",
+      `/api/admin/events/${EVENT_MISSING}/system-templates/registration-confirm/test-send`,
+      { to: "someone@example.com" },
+    ],
   ])("answers 404 for %s", async (_label, method, target, body) => {
     const res = await app.request(target, {
       method,

@@ -320,7 +320,8 @@ function buildSampleRows(
   return rows.slice(0, SAMPLE_LIMIT).map((row) => {
     const custom_data: Record<string, string> = {};
     for (const field of attributeFields) {
-      custom_data[field.source_field] = row.custom_data?.[field.source_field] ?? "";
+      // The file may carry an answer to a sensitive question and the import stores it, but the preview does not repeat it (D-E6).
+      custom_data[field.source_field] = field.sensitive ? "" : (row.custom_data?.[field.source_field] ?? "");
     }
     const firstName = row.first_name ?? "";
     const lastName = row.last_name ?? "";

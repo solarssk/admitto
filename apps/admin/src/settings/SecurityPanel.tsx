@@ -323,7 +323,6 @@ export function SecurityPanel() {
               <Switch
                 id="security-operator-event-day-sessions"
                 aria-label="Operators stay signed in on event day"
-                label={draft.operatorEventDaySessions ? "On" : "Off"}
                 checked={draft.operatorEventDaySessions}
                 disabled={eventDaySessionsLocked}
                 onChange={() =>
@@ -393,7 +392,6 @@ export function SecurityPanel() {
                 <Switch
                   id="security-webauthn-enabled"
                   aria-label="Passkey / security key sign-in"
-                  label={draft.webauthnEnabled ? "On" : "Off"}
                   checked={draft.webauthnEnabled}
                   disabled={webauthnLocked}
                   onChange={() => setDraft({ ...draft, webauthnEnabled: !draft.webauthnEnabled })}
@@ -415,7 +413,6 @@ export function SecurityPanel() {
                 <Switch
                   id="security-passkey-login-enabled"
                   aria-label="Passkey sign-in on the login page"
-                  label={draft.passkeyLoginEnabled ? "On" : "Off"}
                   checked={draft.passkeyLoginEnabled}
                   disabled={passkeyLoginLocked || !draft.webauthnEnabled}
                   onChange={() =>
@@ -439,7 +436,6 @@ export function SecurityPanel() {
                 <Switch
                   id="security-passkey-conditional-ui-enabled"
                   aria-label="Autofill passkey suggestions"
-                  label={draft.passkeyConditionalUiEnabled ? "On" : "Off"}
                   checked={draft.passkeyConditionalUiEnabled}
                   disabled={
                     passkeyConditionalUiLocked || !draft.webauthnEnabled || !draft.passkeyLoginEnabled

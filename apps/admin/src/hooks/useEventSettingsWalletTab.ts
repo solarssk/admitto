@@ -7,6 +7,7 @@ import {
 } from "../api/client.js";
 import type { EventCustomFieldDto, EventLocationDto } from "../api/types.js";
 import type { EventSettingsTab } from "../settings/eventSettingsTabs.js";
+import { guestQuestions } from "../utils/questionRecipient.js";
 import { WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT } from "../settings/EventWalletPanel.js";
 import { useListLoad, type ListLoad } from "./useListLoad.js";
 
@@ -47,7 +48,7 @@ export function useWalletLocationPreview(
   return { walletLocationPreview, invalidateWalletLocationPreview };
 }
 
-/** The event's own custom-field registry (Requirements/Registrations tab), reused by the Wallet
+/** The event's own custom-field registry (Registration page, Fields tab), reused by the Wallet
  * tab's field mapping dropdown so an admin can map a select/boolean custom field onto a
  * PassCreator property (v0.7.1) - same fetch-once-on-visit shape as useWalletLocationPreview
  * above, for the same reason (this is a read-only preview list, not the editable copy owned by
@@ -68,8 +69,9 @@ export function useWalletCustomFields(
     if (!eventId || !visitedTabs.has("wallet") || cached?.eventId === eventId) return;
     const controller = new AbortController();
     fetchEventCustomFields(eventId, controller.signal)
+      // A pass is made from the attendee's own fields: a question about a companion has no place in its mapping.
       .then((items) => {
-        if (!controller.signal.aborted) setCached({ eventId, items });
+        if (!controller.signal.aborted) setCached({ eventId, items: guestQuestions(items) });
       })
       .catch(() => {
         /* preview-only: a failed fetch just leaves the dropdown without custom-field options */

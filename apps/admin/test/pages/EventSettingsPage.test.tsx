@@ -16,6 +16,7 @@ import {
   renderWithToast,
 } from "../test-utils.js";
 import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
+import { legalAnswer, settings as registrationSettingsFixture } from "../registration/accessData.js";
 
 const superadminAssignments: RoleAssignment[] = [
   makeSuperadminAssignment(),
@@ -78,6 +79,10 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchOpsConfig: vi.fn(),
     updateOpsConfig: vi.fn(),
     fetchEventItems: vi.fn(),
+    fetchRegistrationSettings: vi.fn(),
+    fetchRegistrationReturnAddresses: vi.fn(),
+    fetchLegalDocuments: vi.fn(),
+    saveCustomDomain: vi.fn(),
   };
 });
 
@@ -128,6 +133,10 @@ import {
   saveEventBounceIngestSettings,
   fetchEventLocation,
   fetchEventSettings,
+  fetchRegistrationSettings,
+  fetchRegistrationReturnAddresses,
+  fetchLegalDocuments,
+  saveCustomDomain,
   fetchTicketTypes,
   fetchMapTileConfig,
   fetchTimezoneForCoordinates,
@@ -171,6 +180,7 @@ const activeEvent = {
   deletion_blockers: ["attendees"] as string[],
   admitted_count: 0,
   issued_items_count: 0,
+  exportable_attendee_count: 3,
   installed_wallet_pass_count: 0,
   issued_wallet_pass_count: 0,
   installed_wallet_pass_count_by_platform: { apple: 0, google: 0, samsung: 0 },
@@ -315,6 +325,9 @@ beforeEach(() => {
   // next test.
   vi.mocked(fetchEventImageAssets).mockResolvedValue([]);
   vi.mocked(fetchTicketTypes).mockResolvedValue([]);
+  // The General tab holds the card "Address for guests", which reads the registration settings of the event.
+  vi.mocked(fetchRegistrationSettings).mockResolvedValue(registrationSettingsFixture());
+  vi.mocked(fetchLegalDocuments).mockResolvedValue(legalAnswer([]));
   vi.mocked(fetchEventMailSettings).mockResolvedValue(inheritedMailSettingsResponse());
   vi.mocked(fetchEventBounceIngestSettings).mockResolvedValue(emptyBounceIngestSettingsResponse());
   vi.mocked(saveEventBounceIngestSettings).mockImplementation(async (_eventId, body) => ({
@@ -479,6 +492,9 @@ describe("EventSettingsPage tabs", () => {
     );
     expect(screen.getByText("Basic information")).toBeTruthy();
     expect(screen.getByText("Status")).toBeTruthy();
+    // The link name is internal: no field, no value, no sentence about it.
+    expect(screen.queryByLabelText("Event link ID")).toBeNull();
+    expect(screen.queryByDisplayValue("summit")).toBeNull();
     expect(
       screen.getByText("When the event takes place."),
     ).toBeTruthy();
@@ -1043,7 +1059,8 @@ describe("EventSettingsPage tabs", () => {
     for (const input of fileInputs) {
       expect((input as HTMLInputElement).disabled).toBe(true);
     }
-    expect(screen.queryByText(/This event is archived/)).toBeNull();
+    // The reason of a guarded button of another tab (the address for guests) is not this tab's to say.
+    expect(within(screen.getByRole("tabpanel", { name: "Images" })).queryByText(/This event is archived/)).toBeNull();
 
     await screen.findByText("No images yet");
     const assetFileInput = document.querySelector(
@@ -1166,16 +1183,19 @@ describe("EventSettingsPage tabs", () => {
     // Always UTC first, regardless of the event's own timezone - this is when the job actually
     // ran on the server, not an event-schedule fact (Event settings for this fixture is IST).
     // Locale-independent: check for "UTC" and the digits, not a full formatted string (see
-    // event-dates.test.ts for why - Intl output shape varies by locale). Filtered to <td> since
-    // the column header's own HintLabel hint text also contains the word "UTC".
-    const utcCells = screen.getAllByText(/UTC/).filter((el) => el.tagName === "TD");
+    // event-dates.test.ts for why - Intl output shape varies by locale). Taken from the primary
+    // line of a time (`time-stack__utc`), as the column header's own HintLabel hint text also
+    // contains the word "UTC"; each one has the zone (`time-stack__zone`) at its end.
+    const utcCells = [...document.querySelectorAll(".time-stack__utc")];
     expect(utcCells).toHaveLength(2);
-    expect(utcCells[0]!.textContent).toMatch(/10:00/);
-    expect(utcCells[1]!.textContent).toMatch(/10:00/);
+    for (const cell of utcCells) {
+      expect(cell.textContent).toMatch(/10:00.* UTC$/);
+      expect(cell.querySelector(".time-stack__zone")?.textContent).toBe(" UTC");
+    }
 
     // job-1 has a stored client_timezone - gets a second, subdued local-time line; job-2 (no
     // client_timezone) doesn't, and nothing throws for its absence.
-    const localTimeLines = document.querySelectorAll(".sessions-subdued");
+    const localTimeLines = document.querySelectorAll(".time-stack__local");
     expect(localTimeLines).toHaveLength(1);
     expect(localTimeLines[0]!.textContent).toMatch(/\d{1,2}:\d{2}/);
   });
@@ -2497,6 +2517,29 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
+  it("discards the Registration tab's typed restriction after archiving, as the other tabs' drafts", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(archiveEvent).mockResolvedValueOnce(undefined);
+    vi.mocked(fetchRegistrationSettings).mockResolvedValue({ ...registrationSettingsFixture(), access_methods: ["sso"] });
+    vi.mocked(fetchRegistrationReturnAddresses).mockResolvedValue({ provider_id: null, state: "not_selected", providers: [], redirect_uri: null, redirect_uris: [] });
+    renderSettings("/admin/events/evt-1/settings?tab=registration");
+    const name = (await screen.findByLabelText("Claim name")) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "tid" } });
+    expect(name.value).toBe("tid");
+    expect(fetchRegistrationSettings).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Archive event/ }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => expect(archiveEvent).toHaveBeenCalledWith("evt-1"));
+    // The panel was mounted afresh and read the settings again: the typed text did not survive the warning that it would be lost.
+    await waitFor(() => expect(fetchRegistrationSettings).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("tab", { name: "Registration" }));
+    expect(((await screen.findByLabelText("Claim name")) as HTMLInputElement).value).toBe("");
+  });
+
   it("keeps the Danger zone header title-only and shows the impact notice outside the panel", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
@@ -3146,6 +3189,234 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     await screen.findByLabelText("Event title");
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByText("Event API connections are on the roadmap")).toBeNull();
+  });
+});
+
+describe("EventSettingsPage Registration tab", () => {
+  const registrationSettings = registrationSettingsFixture();
+
+  beforeEach(() => {
+    vi.mocked(fetchRegistrationSettings).mockResolvedValue(registrationSettings);
+    vi.mocked(fetchRegistrationReturnAddresses).mockResolvedValue({
+      provider_id: "idp-1",
+      state: "ready",
+      providers: [{ id: "idp-1", display_name: "Acme Entra ID", kind: "entra" }],
+      redirect_uri: null,
+      redirect_uris: [],
+    });
+  });
+
+  it("is the fourth tab for a superadmin, after Ticket types", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await screen.findByRole("tab", { name: "Registration" });
+
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "General",
+      "Location",
+      "Ticket types",
+      "Registration",
+      "Mailing",
+      "Wallet",
+      "Images",
+      "Check-in",
+      "Integrations",
+      "Danger zone",
+    ]);
+  });
+
+  it("is a tab of an organisation administrator too, after Ticket types, with the other tabs that are not a superadmin's", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await screen.findByRole("tab", { name: "Registration" });
+
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["General", "Location", "Ticket types", "Registration", "Images", "Check-in", "Danger zone"]);
+  });
+
+  it("opens with the cards Access method, Company SSO, Form and Handling requests, in that order, and no address card", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await screen.findByRole("tab", { name: "Registration" });
+    fireEvent.click(screen.getByRole("tab", { name: "Registration" }));
+
+    await screen.findByRole("switch", { name: "Waiting list" });
+    const panel = screen.getByRole("tabpanel", { name: "Registration" });
+    const titles = Array.from(panel.querySelectorAll(".at-card__title")).map((node) => node.textContent);
+    expect(titles).toEqual(["Access method", "Company SSO", "Form", "Handling requests"]);
+    expect(within(panel).queryByLabelText("Own address")).toBeNull();
+  });
+
+  it.each([
+    ["a superadmin", superadminAssignments, false],
+    ["an organisation administrator", orgAdminAssignments, true],
+  ])("opens from a deep link ?tab=registration for %s, with the access method %s", async (_who, assignments, readOnly) => {
+    mockAssignments = assignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings("/admin/events/evt-1/settings?tab=registration");
+
+    await screen.findByRole("switch", { name: "Waiting list" });
+    expect(screen.getByRole("tab", { name: "Registration" }).getAttribute("aria-selected")).toBe("true");
+    expect(isOff(screen.getByLabelText("Claim name"))).toBe(true);
+    expect(isOff(screen.getByRole("radio", { name: "Link" }))).toBe(readOnly);
+    expect(screen.queryAllByText("Only a superadmin can change this.").length > 0).toBe(readOnly);
+    expect(vi.mocked(fetchRegistrationReturnAddresses).mock.calls.length > 0).toBe(!readOnly);
+  });
+
+  it("counts an unsaved form change as an unsaved change of the page for an organisation administrator, and a saved one as none", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings("/admin/events/evt-1/settings?tab=registration");
+    await screen.findByRole("switch", { name: "Waiting list" });
+    const leave = () => {
+      const closing = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(closing);
+      return closing.defaultPrevented;
+    };
+    expect(leave()).toBe(false);
+
+    fireEvent.click(screen.getByRole("switch", { name: "Ask for the company" }));
+    await waitFor(() => expect(leave()).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    await waitFor(() => expect(leave()).toBe(false));
+  });
+
+  it("counts an unsaved claim as an unsaved change of the page for a superadmin", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchRegistrationSettings).mockResolvedValue({ ...registrationSettings, access_methods: ["sso"] });
+    renderSettings("/admin/events/evt-1/settings?tab=registration");
+    const name = (await screen.findByLabelText("Claim name")) as HTMLInputElement;
+    const leave = () => {
+      const closing = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(closing);
+      return closing.defaultPrevented;
+    };
+    expect(leave()).toBe(false);
+
+    fireEvent.change(name, { target: { value: "tid" } });
+    await waitFor(() => expect(leave()).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    await waitFor(() => expect(leave()).toBe(false));
+  });
+});
+
+describe("EventSettingsPage General tab: the card Address for guests", () => {
+  it("has the field for a superadmin, under Basic information and above the Save of the tab", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+
+    const field = await screen.findByLabelText("Own address");
+    const basic = screen.getByLabelText("Event title");
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(basic.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(field.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
+  it("shows how the address stands, with no field and no button, to an organisation administrator, and says who can change it", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchRegistrationSettings).mockResolvedValue({
+      ...registrationSettingsFixture(),
+      instance_host: "admitto.example.com",
+      own_address: { domain: "events.example.com", status: "ok", check_result: "ok", verified: true, checked_at: null },
+    });
+    renderSettings();
+
+    await screen.findByText("Only a superadmin can change this.");
+    const card = screen.getByText("Address for guests", { selector: ".at-card__title" }).closest(".at-card") as HTMLElement;
+    expect(within(card).getByText("events.example.com: Working")).toBeTruthy();
+    expect(within(card).getByText("Only a superadmin can change this.")).toBeTruthy();
+    expect(within(card).queryByLabelText("Own address")).toBeNull();
+    expect(within(card).queryByRole("button")).toBeNull();
+  });
+
+  it("counts a running request of the card as busy, so that the page is not left under it", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(saveCustomDomain).mockReturnValue(new Promise(() => undefined));
+    renderSettings();
+    const field = await screen.findByLabelText("Own address");
+    const leave = () => {
+      const closing = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(closing);
+      return closing.defaultPrevented;
+    };
+    expect(leave()).toBe(false);
+
+    fireEvent.change(field, { target: { value: "events.example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set address" }));
+
+    await waitFor(() => expect(leave()).toBe(true));
+  });
+
+  it("shows the address as set, not checked yet, once it is saved", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(saveCustomDomain).mockResolvedValue({
+      custom_domain: "events.example.com",
+      custom_domain_status: "unchecked",
+      custom_domain_check_result: null,
+      custom_domain_verified_at: null,
+      custom_domain_checked_at: null,
+    });
+    renderSettings();
+    const field = await screen.findByLabelText("Own address");
+
+    fireEvent.change(field, { target: { value: "events.example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set address" }));
+
+    await waitFor(() => expect(saveCustomDomain).toHaveBeenCalledWith("evt-1", "events.example.com"));
+    expect(await screen.findByText("events.example.com: Not checked yet")).toBeTruthy();
+  });
+
+  it("reads the settings and the return addresses of the Registration tab again when the address is saved, and keeps what is typed there", async () => {
+    mockAssignments = superadminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(saveCustomDomain).mockResolvedValue({
+      custom_domain: "events.example.com",
+      custom_domain_status: "unchecked",
+      custom_domain_check_result: null,
+      custom_domain_verified_at: null,
+      custom_domain_checked_at: null,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=registration");
+    await screen.findByRole("switch", { name: "Waiting list" });
+    fireEvent.click(screen.getByRole("switch", { name: "Ask for the company" }));
+    const leave = () => {
+      const closing = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(closing);
+      return closing.defaultPrevented;
+    };
+    await waitFor(() => expect(leave()).toBe(true));
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    const field = await screen.findByLabelText("Own address");
+    const settingsReads = vi.mocked(fetchRegistrationSettings).mock.calls.length;
+    const addressReads = vi.mocked(fetchRegistrationReturnAddresses).mock.calls.length;
+
+    fireEvent.change(field, { target: { value: "events.example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set address" }));
+
+    expect(await screen.findByText("events.example.com: Not checked yet")).toBeTruthy();
+    // The card of the address reads once more, and so does the Registration tab: the settings and the return addresses.
+    await waitFor(() => expect(vi.mocked(fetchRegistrationReturnAddresses).mock.calls.length).toBeGreaterThan(addressReads));
+    expect(vi.mocked(fetchRegistrationSettings).mock.calls.length).toBeGreaterThanOrEqual(settingsReads + 1);
+    expect(leave()).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: "Registration" }));
+    expect((screen.getByRole("switch", { name: "Ask for the company" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("says the event has no address of its own when it has none", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+
+    expect(await screen.findByText(/no address of its own/)).toBeTruthy();
   });
 });
 
@@ -4448,6 +4719,26 @@ describe("EventSettingsPage first load on the loading standard", () => {
 });
 
 describe("EventSettingsPage Danger zone: Export personal data", () => {
+  it("disables Export personal data, with the reason in the row, when the event has no attendees", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, exportable_attendee_count: 0 });
+    renderSettings("/admin/events/evt-1/settings?tab=danger-zone");
+    const button = (await screen.findByRole("button", { name: "Export personal data" })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByText("This event has no attendees yet.")).toBeTruthy();
+    expect(screen.queryByText(/Downloads every attendee/)).toBeNull();
+    expect(document.getElementById(button.getAttribute("aria-describedby") ?? "")?.textContent).toBe(
+      "No attendees to export",
+    );
+  });
+
+  it("keeps Export personal data on, with the download sentence, when the event has attendees", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, exportable_attendee_count: 2 });
+    renderSettings("/admin/events/evt-1/settings?tab=danger-zone");
+    const button = (await screen.findByRole("button", { name: "Export personal data" })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(screen.getByText(/Downloads every attendee/)).toBeTruthy();
+  });
+
   it("shows the button busy, as 'Exporting…', while the file is made: it keeps its focus and ignores a second click", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
     const file = deferred<Response>();

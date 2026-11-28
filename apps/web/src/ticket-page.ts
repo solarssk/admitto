@@ -17,7 +17,7 @@ import {
   OPENMETEO_ATTRIBUTION_TEXT,
 } from "./weather/config.js";
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 

@@ -28,6 +28,11 @@ export interface BrandingTheme {
   /** The active pick for the public ticket page - same rules as font_family_name, falls back to
    * it when unset so a single global font remains the default until someone overrides it. */
   ticket_font_family_name?: string;
+  /** The active pick for the public registration form and its confirmation page - falls back to the
+   * ticket page's pick, then the admin's, when unset. */
+  registration_primary?: string;
+  /** Font of the registration form - same rules as ticket_font_family_name, falls back to it when unset. */
+  registration_font_family_name?: string;
   custom_font_families?: BrandingCustomFontFamily[];
 }
 
@@ -158,8 +163,22 @@ function sanitizeTheme(raw: unknown): BrandingTheme {
     typeof o.ticket_font_family_name === "string"
       ? sanitizeBrandingFontFamilyName(o.ticket_font_family_name)
       : undefined;
+  const registration_primary =
+    typeof o.registration_primary === "string" && HEX_RE.test(o.registration_primary) ? o.registration_primary : undefined;
+  const registration_font_family_name =
+    typeof o.registration_font_family_name === "string"
+      ? sanitizeBrandingFontFamilyName(o.registration_font_family_name)
+      : undefined;
   const custom_font_families = sanitizeCustomFontFamilies(o.custom_font_families) ?? migrateLegacyFontUrl(o);
-  return { primary, ticket_primary, font_family_name, ticket_font_family_name, custom_font_families };
+  return {
+    primary,
+    ticket_primary,
+    font_family_name,
+    ticket_font_family_name,
+    registration_primary,
+    registration_font_family_name,
+    custom_font_families,
+  };
 }
 
 /** Load branding theme from SystemSettings (env > DB > default). */

@@ -38,6 +38,16 @@ describe("UsersListSkeleton", () => {
     expect(cards.every((card) => card.style.height === "230px")).toBe(true);
   });
 
+  it("draws a list that has a table class in the shared box with the same column classes, and its cards for a screen narrower than 1024px", () => {
+    const { container } = draw({ tableClass: "users-table--staff" });
+    const box = container.querySelector(".item-table.users-table.users-table--staff");
+    expect(box?.getAttribute("aria-hidden")).toBe("true");
+    expect(box?.querySelector(":scope > .attendees-table-wrap > table.table")).toBeTruthy();
+    expect(container.querySelector(".users-page__table-wrap")).toBeNull();
+    expect(container.querySelectorAll(".users-page__cards--narrow .at-skeleton")).toHaveLength(3);
+    expect(container.querySelector(".users-page__cards--mobile")).toBeNull();
+  });
+
   it("says it is taking longer than usual after 8 seconds", () => {
     draw({ slow: true });
     expect(screen.getByLabelText("Loading users").textContent).toContain(SLOW_NOTICE_TEXT);

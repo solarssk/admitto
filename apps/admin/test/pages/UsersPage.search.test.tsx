@@ -75,6 +75,21 @@ afterEach(() => {
   useAuthMock.mockReturnValue({ assignments: SUPERADMIN_ASSIGNMENTS, user: { id: "current-admin" } });
 });
 
+describe("UsersPage staff list layout", () => {
+  it("draws the staff list in the shared boxed table of a padded card, with three columns for a wide screen only, and the cards for a narrower one", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [makeStaffUser("u1", "Anna Nowak")], total: 1, page: 1, pageSize: 25 });
+
+    renderAt("/admin/users");
+    await screen.findAllByText("Anna Nowak");
+
+    const box = document.querySelector(".item-table.users-table--staff") as HTMLElement;
+    expect(box.querySelector(":scope > .attendees-table-wrap > table.table")).toBeTruthy();
+    expect(box.closest(".at-card__body")).toBeTruthy();
+    expect([...box.querySelectorAll("th.users-table__wide-only")].map((th) => th.textContent)).toEqual(["Sign-in", "Two-factor", "Sessions"]);
+    expect(document.querySelector(".users-page__cards--narrow .users-page__card")).toBeTruthy();
+  });
+});
+
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>

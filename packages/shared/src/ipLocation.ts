@@ -7,12 +7,15 @@ export type IpLocationKind = "internal" | "resolved" | "unknown";
 export interface IpLocation {
   kind: IpLocationKind;
   countryCode?: string;
-  /** City name, when the configured dataset resolves one (ILA_FIELDS=country,city, see
+  /** City name, when the configured dataset resolves one (ILA_FIELDS has `city`, see
    * apps/web/.env.example and the Dockerfile) - absent for a country-only lookup result, or when
    * the dataset has no city entry for this specific IP (rural/carrier-grade-NAT ranges commonly
    * resolve to country only even in the City edition). Never present without `countryCode` also
    * being present. */
   city?: string;
+  /** First-level region name (a state, a voivodeship), when the dataset carries it (ILA_FIELDS has `region1_name`, as the image's own
+   * data does) - absent for a dataset without it, or when it has no region for this specific IP. Never present without `countryCode`. */
+  region?: string;
 }
 
 /**
@@ -27,7 +30,7 @@ export interface IpLocation {
  * Backed by MaxMind's GeoLite2 City database, downloaded from the node-geolite2-redist community
  * mirror (ILA_LICENSE_KEY=redist, ip-location-api's own default) rather than requiring our own
  * MaxMind account/license key - see THIRD-PARTY-NOTICES.md for the CC BY-SA 4.0 attribution this
- * data carries. ILA_FIELDS=country,city (see apps/web/.env.example and the Dockerfile) is what
+ * data carries. ILA_FIELDS=country,region1_name,city (see apps/web/.env.example and the Dockerfile) is what
  * actually selects the City edition over the lighter Country-only one; `country` alone resolves
  * the ~7MB Country edition regardless of ILA_LICENSE_KEY. Never makes a network call at request
  * time, never throws: a lookup miss or failure degrades to "unknown" rather than breaking the
@@ -52,9 +55,9 @@ export function resolveIpLocation(ip: string | null): IpLocation {
       );
       return { kind: "unknown" };
     }
-    const resolved = result as { country?: string; city?: string } | null;
+    const resolved = result as { country?: string; city?: string; region1_name?: string } | null;
     if (!resolved?.country) return { kind: "unknown" };
-    return { kind: "resolved", countryCode: resolved.country, city: resolved.city || undefined };
+    return { kind: "resolved", countryCode: resolved.country, city: resolved.city || undefined, region: resolved.region1_name || undefined };
   } catch {
     return { kind: "unknown" };
   }

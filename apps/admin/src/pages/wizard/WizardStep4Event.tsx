@@ -7,14 +7,13 @@ import {
 } from "react";
 import { Input, Notice, useToast } from "@admitto/ui";
 import { LOCATION_LIMITS } from "@admitto/location";
-import { ApiError, createEvent, fetchAdminEvents } from "../../api/client.js";
+import { createEvent, fetchAdminEvents } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { DatePicker } from "../../components/DatePicker.js";
 import { RetryHint } from "../../components/RetryHint.js";
 import { TimezoneSelect } from "../../components/TimezoneSelect.js";
 import { VenueAutocomplete } from "../../components/VenueAutocomplete.js";
 import type { GeocodingResultDto } from "../../api/types.js";
-import { slugFromTitle } from "../../events/slug.js";
 import { useOptionsLoad } from "../../hooks/useOptionsLoad.js";
 import { componentsFromResult } from "../../settings/locationGeocode.js";
 import { useWizard } from "./WizardContext.js";
@@ -46,8 +45,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
     const [locationGeocode, setLocationGeocode] = useState<GeocodingResultDto | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
-    const slug = slugFromTitle(title, 80);
-    const canSubmit = Boolean(title.trim() && date && slug.length > 0 && timezone);
+    const canSubmit = Boolean(title.trim() && date && timezone);
 
     useEffect(() => {
       onCanContinueChange(canSubmit);
@@ -77,7 +75,6 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
       try {
         const event = await createEvent({
           title: title.trim(),
-          slug: slug.trim(),
           date,
           timezone,
           venue_name: location.trim() || undefined,
@@ -92,11 +89,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
         onDirtyChange?.(false);
         return true;
       } catch (err) {
-        if (err instanceof ApiError && err.status === 409) {
-          addToast("An event with a similar name already exists. Change the title slightly and try again.", "error");
-        } else {
-          addToast(operatorApiErrorMessage(err, "Failed to create event."), "error");
-        }
+        addToast(operatorApiErrorMessage(err, "Failed to create event."), "error");
         return false;
       } finally {
         setSubmitting(false);

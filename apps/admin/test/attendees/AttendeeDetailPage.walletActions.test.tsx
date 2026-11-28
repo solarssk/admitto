@@ -923,7 +923,7 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
         .getAllByText(label)
         .map((el) => el.closest(".attendee-detail-row"))
         .find(Boolean)
-        ?.querySelector(".mono")?.textContent;
+        ?.querySelector(".time-text")?.textContent;
 
     // Pass created is the first tap on Add to Wallet (a mail scanner can make it), the rest are admin or
     // worker actions with no stored zone, so each row is UTC: the same text wherever the viewer is.

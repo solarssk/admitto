@@ -1,0 +1,22 @@
+/* A labelled break between two groups of fields (SectionLabel): the four fixed filters and the event's own custom-field filters, or
+   the fixed fields of an attendee and the custom ones. The label sits inline with a rule that fills the rest of the row (design
+   mockup), not a border above a block of text: a bare `<p>`'s UA margin-bottom stacking on top of the parent's own `gap` was one bug
+   already (PO report), and a border-top read as a divider above the *next* row instead of one belonging to this label. */
+.attendees-section-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--primary-active);
+}
+
+.attendees-section-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}

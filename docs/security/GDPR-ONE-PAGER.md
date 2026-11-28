@@ -38,6 +38,7 @@ If you rely on **legitimate interest** (Art. 6(1)(f) GDPR), your DPO should docu
 | Operational | Check-in time, ticket type | Operational |
 | Technical | IP address, user agent (sessions, rate limits) | Personal data (online identifier) |
 | SSO access metadata | Identity provider group membership, stored in `ExternalIdentity.groups` | Personal data (access metadata) |
+| Registration form visitors | IP address and browser signals, sent to Cloudflare Turnstile when the public form opens. Admitto does not keep what Turnstile receives. It handles the visitor's IP address like any other, see the Technical row | Personal data (online identifier). Name Cloudflare in the privacy notice of the form |
 
 ---
 
@@ -109,6 +110,7 @@ They depend on your configuration. Typical categories:
 | Email | Microsoft 365 / Graph or corporate SMTP |
 | Edge (optional) | CDN, WAF, access gateway |
 | Wallet | Third-party pass provider (PassCreator), when enabled for an event |
+| Bot protection | Cloudflare Turnstile on the public registration form, when its keys are saved |
 
 Full list: [SUBPROCESSORS.md](SUBPROCESSORS.md).
 

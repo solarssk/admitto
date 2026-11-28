@@ -1,5 +1,5 @@
-/** Event Settings tab ids — General/Location/Ticket types/Images/Check-in/Wallet/Integrations/
- * Danger zone (single in-page tab row, no nested routes). */
+/** Event Settings tab ids — General/Location/Ticket types/Registration/Mailing/Wallet/Images/Check-in/Integrations/
+ * Danger zone, in the order an event is set up (single in-page tab row, no nested routes). */
 export type EventSettingsTab =
   | "general"
   | "location"
@@ -8,6 +8,7 @@ export type EventSettingsTab =
   | "checkin-behaviour"
   | "mail"
   | "wallet"
+  | "registration"
   | "integrations"
   | "danger-zone";
 
@@ -15,10 +16,11 @@ export const EVENT_SETTINGS_TABS = [
   { id: "general", label: "General" },
   { id: "location", label: "Location" },
   { id: "ticket-types", label: "Ticket types" },
-  { id: "images", label: "Images" },
-  { id: "checkin-behaviour", label: "Check-in" },
+  { id: "registration", label: "Registration" },
   { id: "mail", label: "Mailing" },
   { id: "wallet", label: "Wallet" },
+  { id: "images", label: "Images" },
+  { id: "checkin-behaviour", label: "Check-in" },
   { id: "integrations", label: "Integrations" },
   { id: "danger-zone", label: "Danger zone" },
 ] as const;

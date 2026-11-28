@@ -15,6 +15,7 @@ const DB_ROOT = path.resolve(__dirname, "..");
 const ORG_ID = "worker-wake-notify-org";
 const EVENT_ID = "worker-wake-notify-event";
 const ATTENDEE_ID = "worker-wake-notify-attendee";
+const REGISTRATION_ID = "worker-wake-notify-registration";
 const WAKE_CHANNEL = "admitto_worker_wake";
 
 let prisma: PrismaClient | undefined;
@@ -66,6 +67,17 @@ beforeAll(async () => {
       name: "Worker Wake Notify",
     },
   });
+  await prisma.registration.create({
+    data: {
+      id: REGISTRATION_ID,
+      event_id: EVENT_ID,
+      email: "worker-wake-registration@example.com",
+      first_name: "Wake",
+      last_name: "Registration",
+      name: "Wake Registration",
+      status: "pending",
+    },
+  });
 });
 
 afterAll(async () => {
@@ -75,6 +87,7 @@ afterAll(async () => {
   if (prisma) {
     await prisma.emailDelivery.deleteMany({ where: { organization_id: ORG_ID } });
     await prisma.adminJob.deleteMany({ where: { organization_id: ORG_ID } });
+    await prisma.registration.deleteMany({ where: { event_id: EVENT_ID } });
     await prisma.attendee.deleteMany({ where: { event_id: EVENT_ID } });
     await prisma.event.deleteMany({ where: { id: EVENT_ID } });
     await prisma.organization.deleteMany({ where: { id: ORG_ID } });
@@ -166,6 +179,34 @@ describe("admitto_worker_wake trigger", () => {
     await prisma!.emailDelivery.update({
       where: { id: "wake-test-delivery-3" },
       data: { status: "sent" },
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    listener!.removeListener("notification", onNotification);
+    expect(notified).toBe(false);
+  });
+
+  it("notifies on RegistrationMail insert with status queued, and when a failed row is reset to queued", async () => {
+    const inserted = waitForNotification();
+    await prisma!.registrationMail.create({
+      data: { id: "wake-test-registration-mail", registration_id: REGISTRATION_ID, event_id: EVENT_ID, template_name: "registration-received" },
+    });
+    await expect(inserted).resolves.toMatchObject({ channel: WAKE_CHANNEL, payload: "RegistrationMail" });
+
+    await prisma!.registrationMail.update({ where: { id: "wake-test-registration-mail" }, data: { status: "failed", retryable: true } });
+    const requeued = waitForNotification();
+    await prisma!.registrationMail.update({ where: { id: "wake-test-registration-mail" }, data: { status: "queued" } });
+    await expect(requeued).resolves.toMatchObject({ channel: WAKE_CHANNEL, payload: "RegistrationMail" });
+  });
+
+  it("does not notify when a registration mail leaves queued or is inserted already sent", async () => {
+    let notified = false;
+    const onNotification = () => {
+      notified = true;
+    };
+    listener!.once("notification", onNotification);
+    await prisma!.registrationMail.update({ where: { id: "wake-test-registration-mail" }, data: { status: "sent" } });
+    await prisma!.registrationMail.create({
+      data: { id: "wake-test-registration-mail-sent", registration_id: REGISTRATION_ID, event_id: EVENT_ID, template_name: "registration-waitlist", status: "sent" },
     });
     await new Promise((r) => setTimeout(r, 300));
     listener!.removeListener("notification", onNotification);

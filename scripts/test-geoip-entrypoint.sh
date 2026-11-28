@@ -16,6 +16,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENTRYPOINT="$ROOT/deploy/docker-entrypoint.sh"
 FAKEBIN="$ROOT/scripts/fixtures/fake-node-geoip"
 PREFETCH_SCRIPT="prefetch-geo-db.mjs"
+# The ILA_FIELDS of the Dockerfile's production stage, read from the file so that a change there that
+# the entrypoint does not follow fails this test, instead of silently leaving the app without data.
+IMAGE_FIELDS="$(sed -n 's/^ENV ILA_FIELDS=//p' "$ROOT/Dockerfile" | sort -u)"
+if [[ -z "$IMAGE_FIELDS" || "$IMAGE_FIELDS" == *$'\n'* ]]; then
+  echo "FAIL: the Dockerfile must set exactly one ILA_FIELDS list in both stages, found [$IMAGE_FIELDS]" >&2
+  exit 1
+fi
+# Left to its defaults, ip-location-api keeps about 400 MB of zip and CSV files in
+# node_modules/ip-location-api/tmp, and the production stage copies node_modules whole (#1853). The
+# builder stage must name another directory and tell the library to delete the files.
+IMAGE_TMP_DIR="$(sed -n 's/^ENV ILA_TMP_DATA_DIR=//p' "$ROOT/Dockerfile")"
+IMAGE_DOWNLOAD_TYPE="$(sed -n 's/^ENV ILA_DOWNLOAD_TYPE=//p' "$ROOT/Dockerfile")"
 
 chmod +x "$ENTRYPOINT" "$FAKEBIN/node"
 
@@ -59,6 +71,11 @@ assert_file_exists() {
   echo "ok: $label"
 }
 
+echo "== Dockerfile: the GeoIP download files stay out of node_modules =="
+assert_eq "$([[ "$IMAGE_TMP_DIR" == /* && "$IMAGE_TMP_DIR" != *node_modules* ]] && echo yes || echo no)" "yes" "the builder stage puts ILA_TMP_DATA_DIR outside node_modules, got [$IMAGE_TMP_DIR]"
+assert_eq "$IMAGE_DOWNLOAD_TYPE" "false" "the builder stage makes the library delete its download files"
+
+echo ""
 echo "== Scenario A: first download writes fresh data and the key marker =="
 data_dir="$tmpdir/a"
 calls="$tmpdir/a-calls.log"
@@ -66,8 +83,13 @@ calls="$tmpdir/a-calls.log"
 run_serve "$data_dir" "key-a" 0 "$calls"
 assert_eq "$(cat "$data_dir/fake-dataset-key")" "key-a" "scenario A: dataset reflects key-a"
 assert_eq "$(cat "$data_dir/.maxmind-key-sha256")" "$(printf '%s' key-a | sha256sum | cut -d' ' -f1)" "scenario A: marker hash matches key-a"
+assert_eq "$(cat "$data_dir/fake-dataset-fields")" "$IMAGE_FIELDS" "scenario A: the fetch asks for the field list the image reads"
+assert_eq "$(cat "$data_dir/.maxmind-fields")" "$IMAGE_FIELDS" "scenario A: fields marker records that list"
 assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls")" "1" "scenario A: prefetch called once"
 assert_file_missing "$tmpdir/a.staging" "scenario A: staging dir cleaned up"
+assert_eq "$(cat "$data_dir/fake-dataset-tmp-dir")" "$tmpdir/a.download" "scenario A: the fetch keeps its download files next to the staging dir, not in node_modules"
+assert_eq "$(cat "$data_dir/fake-dataset-download-type")" "false" "scenario A: the library is told to delete its download files"
+assert_file_missing "$tmpdir/a.download" "scenario A: download dir cleaned up"
 
 echo ""
 echo "== Scenario B: unchanged key skips re-fetching entirely =="
@@ -175,6 +197,80 @@ rm -f "$data_dir"/*
 run_serve "$data_dir" "key-a" 1 "$calls" >"$output" 2>&1
 assert_eq "$(grep -c 'ILA_DATA_DIR=unset' "$output" || true)" "1" "scenario I: falls back to the built-in dataset instead of an unusable directory"
 assert_file_missing "$data_dir/4-1.dat" "scenario I: no dataset file left behind by the failed refetch"
+
+echo ""
+echo "== Scenario J: a download made by an older image (no fields marker) is fetched again once =="
+# An image that read other fields (or none yet, as before this marker existed) left the key marker
+# and the data behind. The app of this image looks in another directory of the same ILA_DATA_DIR and
+# would find nothing, so an unchanged key is not enough to reuse the download.
+data_dir="$tmpdir/j"
+calls="$tmpdir/j-calls.log"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+rm -f "$data_dir/.maxmind-fields"
+printf '%s' "country,city" >"$data_dir/fake-dataset-fields"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls" || true)" "1" "scenario J: prefetch re-run for an unchanged key without a fields marker"
+assert_eq "$(cat "$data_dir/fake-dataset-fields")" "$IMAGE_FIELDS" "scenario J: dataset fetched again with the image's field list"
+assert_eq "$(cat "$data_dir/.maxmind-fields")" "$IMAGE_FIELDS" "scenario J: fields marker written"
+calls="$tmpdir/j2-calls.log"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls" || true)" "0" "scenario J: the next start reuses the new download"
+
+echo ""
+echo "== Scenario K: a download whose fields marker names another list is fetched again too =="
+data_dir="$tmpdir/k"
+calls="$tmpdir/k-calls.log"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+printf '%s' "country,city" >"$data_dir/.maxmind-fields"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls" || true)" "1" "scenario K: prefetch re-run when the marker names another list"
+assert_eq "$(cat "$data_dir/.maxmind-fields")" "$IMAGE_FIELDS" "scenario K: fields marker names the image's list again"
+
+echo ""
+echo "== Scenario L: a failed refetch does not fall back to a download made with other fields =="
+# Same trap as Scenario I from the other side: the key marker and 4-1.dat are fine, but the data
+# sits in the directory of another field list. Exporting ILA_DATA_DIR at it would make the app try
+# a blocking download at every start; the built-in dataset (baked with the right fields) is safe.
+data_dir="$tmpdir/l"
+calls="$tmpdir/l-calls.log"
+output="$tmpdir/l-output.log"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+rm -f "$data_dir/.maxmind-fields"
+: >"$calls"
+run_serve "$data_dir" "key-a" 1 "$calls" >"$output" 2>&1
+assert_eq "$(grep -c 'ILA_DATA_DIR=unset' "$output" || true)" "1" "scenario L: falls back to the built-in dataset, not to data of another field list"
+assert_file_exists "$data_dir/4-1.dat" "scenario L: the old download stays in place for a later successful fetch"
+
+echo ""
+echo "== Scenario M: the download files of a fetch do not stay behind, even if the library keeps them =="
+# ip-location-api keeps its zip and CSV files (about 400 MB) unless it is told to delete them. The
+# entrypoint gives it a directory next to the staging one and removes that itself after a fetch, so
+# nothing stays in the container whatever the library did (#1853). A directory left by an earlier,
+# interrupted start must not reach the library either.
+data_dir="$tmpdir/m"
+calls="$tmpdir/m-calls.log"
+: >"$calls"
+mkdir -p "$tmpdir/m.download"
+: >"$tmpdir/m.download/left-by-an-interrupted-start.zip"
+FAKE_PREFETCH_KEEP_TMP=1 run_serve "$data_dir" "key-a" 0 "$calls"
+assert_eq "$(cat "$data_dir/fake-tmp-at-start")" "absent" "scenario M: the library starts without the directory of an earlier start"
+assert_file_missing "$tmpdir/m.download" "scenario M: download dir removed after a fetch although the library kept it"
+assert_file_exists "$data_dir/4-1.dat" "scenario M: the dataset itself is in place"
+
+echo ""
+echo "== Scenario N: a failed fetch leaves no download files either =="
+data_dir="$tmpdir/n"
+calls="$tmpdir/n-calls.log"
+: >"$calls"
+run_serve "$data_dir" "key-bad" 1 "$calls"
+assert_file_missing "$tmpdir/n.download" "scenario N: download dir removed after a failed fetch"
+assert_file_missing "$tmpdir/n.staging" "scenario N: staging dir removed after a failed fetch"
 
 echo ""
 echo "test-geoip-entrypoint.sh: all passed"

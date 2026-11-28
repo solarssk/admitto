@@ -191,6 +191,19 @@ describe("POST /api/admin/events", () => {
     expect(JSON.stringify(entry)).not.toContain("Autumn Summit 2026");
   });
 
+  it("gives a new event no custom attendee fields: the suggested questions are added only when an organiser asks for them", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Event Without Seeded Fields",
+      slug: "event-without-seeded-fields",
+      date: "2026-09-29",
+      timezone: "UTC",
+    });
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: { id: string } };
+
+    expect(await prisma.eventCustomField.count({ where: { event_id: event.id } })).toBe(0);
+  });
+
   it("creates a geocoded EventLocation row from the selected location fields", async () => {
     const res = await postCreateEvent(superCookie, {
       title: "Geocoded Event",
@@ -420,6 +433,32 @@ describe("POST /api/admin/events", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it("makes a random slug when none is sent, with nothing from the title", async () => {
+    const create = async () => {
+      const res = await postCreateEvent(superCookie, {
+        title: "Autumn Summit Random Slug",
+        date: "2026-09-29",
+        timezone: "UTC",
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { event: { id: string; slug: string } }).event;
+    };
+    const first = await create();
+    const second = await create();
+
+    expect(first.slug).toMatch(/^[a-z2-7]{26}$/);
+    expect(second.slug).toMatch(/^[a-z2-7]{26}$/);
+    expect(second.slug).not.toBe(first.slug);
+    expect(first.slug).not.toContain("autumn");
+    const row = await prisma.event.findUnique({ where: { id: first.id } });
+    expect(row?.slug).toBe(first.slug);
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_CREATE, action_type: "event_created" },
+      orderBy: { created_at: "desc" },
+    });
+    expect((audit?.metadata as { slug?: string }).slug).toBe(second.slug);
   });
 
   it("returns 409 when slug is taken", async () => {

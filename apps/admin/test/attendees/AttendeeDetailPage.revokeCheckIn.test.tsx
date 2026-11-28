@@ -208,7 +208,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
 
     const item = within(openMoreActionsMenu()).getByRole("menuitem", { name: /Revoke items/ });
     expect((item as HTMLButtonElement).disabled).toBe(true);
-    expect(getTooltipText(item)).toBe("No items configured for this event. Add some in Requirements.");
+    expect(getTooltipText(item)).toBe("No items configured for this event. Add some in Event items.");
   });
 
   it.each(["cancelled", "revoked"] as const)(

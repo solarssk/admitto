@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useRef } from "react";
 import { TimeInput } from "../../src/components/TimeInput.js";
+import { useModalFocusTrap } from "../../src/components/useModalFocusTrap.js";
 import { setPreferredTimeFormat } from "../../src/utils/locale-store.js";
 import { mockPlacementLayout } from "./panelPlacementMocks.js";
 
@@ -316,5 +318,67 @@ describe("TimeInput", () => {
     const dialog = screen.getByRole("group", { name: "Choose time" });
     await waitFor(() => expect(dialog.style.maxHeight).toBe("96px"));
     expect(dialog.style.overflowY).toBe("auto");
+  });
+});
+
+describe("TimeInput in a dialog", () => {
+  function Dialog({ onCancel }: Readonly<{ onCancel: () => void }>) {
+    const panelRef = useRef<HTMLDivElement>(null);
+    useModalFocusTrap(panelRef, true, onCancel);
+    return (
+      <div ref={panelRef}>
+        <TimeInput hourCycle="24h" label="Arrival time" value="" onChange={vi.fn()} />
+      </div>
+    );
+  }
+  const pickerGroup = () => screen.queryByRole("group", { name: "Choose time" });
+
+  it("closes its picker on Escape and leaves the dialog open, so that what was typed in it is not lost; the next Escape is the dialog's", () => {
+    const onCancel = vi.fn();
+    render(<Dialog onCancel={onCancel} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+    expect(pickerGroup()).not.toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(pickerGroup()).toBeNull();
+    expect(onCancel).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes its picker on Escape with the focus on a row of the list, and puts the focus back in the input", () => {
+    render(<Dialog onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+    const row = within(screen.getByLabelText("Hour")).getByRole("button", { name: "10" });
+    row.focus();
+
+    fireEvent.keyDown(row, { key: "Escape" });
+
+    expect(pickerGroup()).toBeNull();
+    expect(document.activeElement).toBe(screen.getByLabelText("Arrival time"));
+  });
+
+  it("leaves the dialog its Escape when the picker was never opened", () => {
+    const onCancel = vi.fn();
+    render(<Dialog onCancel={onCancel} />);
+    fireEvent.keyDown(screen.getByLabelText("Arrival time"), { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the dialog its Escape back when the picker is closed by a click outside it", () => {
+    const onCancel = vi.fn();
+    render(
+      <div>
+        <button type="button">Elsewhere</button>
+        <Dialog onCancel={onCancel} />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Elsewhere" }));
+    expect(pickerGroup()).toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

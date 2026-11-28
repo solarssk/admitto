@@ -171,27 +171,47 @@ async function runOneExportJob(
     try {
       // Only a job that is still running records its file: one that was closed meanwhile (an erasure that
       // committed after the last check of the rows stopped it) must not end up with a file that holds the
-      // people the erasure removed. One statement, so the check and the write cannot part.
-      recorded = await db.adminJob.updateMany({
-        where: { id: job.id, status: "running" },
-        data: {
-          status: "succeeded",
-          finished_at: new Date(),
-          storage_key: staged.key,
-          filename: file.filename,
-          created_count: file.rowCount,
-          result_json: {
-            request: {
-              kind: request.kind,
-              format: request.format,
-              filters: redactAttendeeListFiltersForStorage(request.filters),
-            },
+      // people the erasure removed. Nor one whose export was invalidated meanwhile (a question became sensitive
+      // while the file was built and stored: the marker of invalidateEventExports is on the row, and this write
+      // must neither replace `result_json`, which holds it, nor mark the job ready). The row is locked, judged and
+      // written in one transaction, so the checks and the write cannot part. It waits for a transaction that holds
+      // the row (the one that sets the marker takes the job rows first, lockOpenAttendeeJobs, and waits for nothing
+      // this holds, so the order of locks of docs/dev/attendee-erasure.md stays acyclic), then judges the row as that
+      // transaction left it.
+      recorded = await db.$transaction(async (tx) => {
+        const rows = await tx.$queryRaw<{ invalidated: boolean }[]>`
+          SELECT COALESCE("result_json" ->> 'invalidated', '') = 'true' AS "invalidated"
+          FROM "AdminJob" WHERE "id" = ${job.id} AND "status" = 'running' FOR UPDATE
+        `;
+        if (rows[0]?.invalidated === true) {
+          // Still running and carrying the marker: closed as failed, with `result_json` as it is.
+          await tx.adminJob.updateMany({
+            where: { id: job.id, status: "running" },
+            data: { status: "failed", finished_at: new Date(), error: EXPORT_JOB_FAILED_ERROR },
+          });
+          return { count: 0 };
+        }
+        return tx.adminJob.updateMany({
+          where: { id: job.id, status: "running" },
+          data: {
+            status: "succeeded",
+            finished_at: new Date(),
+            storage_key: staged.key,
             filename: file.filename,
-            contentType: file.contentType,
-            rowCount: file.rowCount,
+            created_count: file.rowCount,
+            result_json: {
+              request: {
+                kind: request.kind,
+                format: request.format,
+                filters: redactAttendeeListFiltersForStorage(request.filters),
+              },
+              filename: file.filename,
+              contentType: file.contentType,
+              rowCount: file.rowCount,
+            },
+            error: null,
           },
-          error: null,
-        },
+        });
       });
     } catch (finalizeErr) {
       // The write itself failed. The file is in storage and no row names it: take it back.

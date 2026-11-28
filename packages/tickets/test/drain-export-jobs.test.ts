@@ -67,6 +67,9 @@ describe("drainExportJobs", () => {
     };
     backgroundWorkerHeartbeat: { findUnique: ReturnType<typeof vi.fn> };
     event: { findUniqueOrThrow: ReturnType<typeof vi.fn> };
+    // The write of the result locks the row first and runs in one transaction (here: the same mock).
+    $transaction: ReturnType<typeof vi.fn>;
+    $queryRaw: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -95,7 +98,10 @@ describe("drainExportJobs", () => {
           timezone: "UTC",
         }),
       },
+      $transaction: vi.fn(),
+      $queryRaw: vi.fn().mockResolvedValue([{ invalidated: false }]),
     };
+    db.$transaction.mockImplementation(async (work: (tx: unknown) => unknown) => work(db));
 
     vi.mocked(countFilteredAttendees).mockResolvedValue(1);
     vi.mocked(findFilteredAttendeesForExport).mockResolvedValue([

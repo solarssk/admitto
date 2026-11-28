@@ -150,7 +150,7 @@ describe("ImportPage on the loading standard: the import history", () => {
     renderPage();
     await advanceTimers(0);
     expect(placeholder()).toBeNull();
-    expect(screen.getByText("No imports yet for this event.")).toBeTruthy();
+    expect(screen.getByText("No imports yet")).toBeTruthy();
     await advanceTimers(500);
     expect(placeholder()).toBeNull();
   });
@@ -172,7 +172,7 @@ describe("ImportPage on the loading standard: the import history", () => {
     expect(screen.getByText("first.csv")).toBeTruthy();
   });
 
-  it("keeps the card unpadded for the table and for its placeholder, and padded for the text states", async () => {
+  it("keeps the card padded for the table and for its placeholder, as for the text states: the table is the shared box inside the padding", async () => {
     const card = () => screen.getByText("Import history").closest(".at-card") as HTMLElement;
     const rows = deferred<ReturnType<typeof historyRow>[]>();
     fetchImportHistory.mockReturnValueOnce(rows.promise);
@@ -180,19 +180,19 @@ describe("ImportPage on the loading standard: the import history", () => {
     await advanceTimers(0);
     await advanceTimers(250);
     expect(placeholder()).not.toBeNull();
-    expect(card().querySelector(".at-card__body")).toBeNull();
+    expect(card().querySelector(".at-card__body .item-table .attendees-table-wrap")).not.toBeNull();
 
     await act(async () => rows.resolve([historyRow("log-1", "first.csv")]));
     await advanceTimers(500);
     expect(screen.getByText("first.csv")).toBeTruthy();
-    expect(card().querySelector(".at-card__body")).toBeNull();
+    expect(card().querySelector(".at-card__body .item-table.import-table--history .attendees-table-wrap table")).not.toBeNull();
   });
 
   it("keeps the normal card padding for the text states: no imports yet, and an error", async () => {
     const card = () => screen.getByText("Import history").closest(".at-card") as HTMLElement;
     renderPage();
     await advanceTimers(0);
-    expect(screen.getByText("No imports yet for this event.")).toBeTruthy();
+    expect(screen.getByText("No imports yet")).toBeTruthy();
     expect(card().querySelector(".at-card__body")).not.toBeNull();
     cleanup();
 

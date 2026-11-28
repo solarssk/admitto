@@ -26,6 +26,7 @@ describe("WORKER_LOCK_KEYS", () => {
     expect(WORKER_LOCK_KEYS.bounce).toBe("admitto:worker:bounce");
     expect(WORKER_LOCK_KEYS.retention).toBe("admitto:worker:retention");
     expect(WORKER_LOCK_KEYS.mail_delivery).toBe("admitto:worker:mail_delivery");
+    expect(WORKER_LOCK_KEYS.registration_mail).toBe("admitto:worker:registration_mail");
     expect(WORKER_LOCK_KEYS.import).toBe("admitto:worker:import");
     expect(WORKER_LOCK_KEYS.export).toBe("admitto:worker:export");
     expect(WORKER_LOCK_KEYS.wallet_sync).toBe("admitto:worker:wallet_sync");

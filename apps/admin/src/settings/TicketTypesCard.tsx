@@ -485,7 +485,6 @@ function TicketTypesCardBody({ eventId, event, onDirtyChange, onSavingChange, on
                 <Button
                   type="button"
                   variant="primary"
-                  size="sm"
                   icon={<i className="ti ti-plus" aria-hidden="true" />}
                   {...guard}
                   onClick={() => setDraftOpen(true)}

@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RoleAssignmentsTab } from "../../../src/pages/users/RoleAssignmentsTab.js";
 import { formatUtcDateTime } from "../../../src/utils/event-dates.js";
-import { advanceTimers, deferred, mockMatchMedia, renderWithToast } from "../../test-utils.js";
+import { advanceTimers, deferred, mockMatchMedia, renderWithToast, timeText } from "../../test-utils.js";
 
 const fetchRoleAssignments = vi.fn();
 const fetchAdminEvents = vi.fn();
@@ -319,7 +319,11 @@ describe("RoleAssignmentsTab", () => {
     renderWithToast(<RoleAssignmentsTab />);
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText(formatUtcDateTime(grantedAt))).toBeTruthy();
+    // The Granted column of a wide screen and the line under the role of a narrower one say the same time.
+    const times = within(table).getAllByText(timeText(formatUtcDateTime(grantedAt)));
+    expect(times).toHaveLength(2);
+    expect(times.filter((time) => time.closest("td.users-table__wide-only"))).toHaveLength(1);
+    expect(times.filter((time) => time.closest(".users-table__narrow-only"))).toHaveLength(1);
 
     const headerTrigger = within(table).getByText("Granted").closest(".at-tooltip-trigger");
     expect(headerTrigger).toBeTruthy();
@@ -328,6 +332,35 @@ describe("RoleAssignmentsTab", () => {
       "textContent",
       "Top: when this role was granted, in UTC. Below: the same moment in your own local time.",
     );
+  });
+
+  it("draws the table in the shared box of a padded card, with the Granted column as the one a narrower screen loses", async () => {
+    fetchRoleAssignments.mockResolvedValue({
+      assignments: [{
+        id: "role-1",
+        user_id: "user-1",
+        user_email: "staff@example.com",
+        user_display_name: null,
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-1",
+        is_oidc: false,
+        granted_at: "2026-01-01T12:00:00.000Z",
+        event: { id: "evt-1", title: "Kickoff", slug: "kickoff", organization_id: "org-1" },
+        organization: null,
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    const { container } = renderWithToast(<RoleAssignmentsTab />);
+    await screen.findByRole("table");
+
+    const box = container.querySelector(".item-table.users-table--roles");
+    expect(box?.querySelector(":scope > .attendees-table-wrap > table.table")).toBeTruthy();
+    expect([...box!.querySelectorAll("th.users-table__wide-only")].map((th) => th.textContent?.trim())).toEqual(["Granted"]);
+    expect(container.querySelector(".users-page__cards--narrow")).toBeTruthy();
   });
 
   it("notifies the parent to refresh other tabs after a successful revoke", async () => {

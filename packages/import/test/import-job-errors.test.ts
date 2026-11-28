@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { IMPORT_STOPPED_BY_ERASURE_ERROR } from "@admitto/tickets";
+import { IMPORT_STOPPED_BY_ERASURE_ERROR, IMPORT_STOPPED_BY_FIELD_DELETION_ERROR } from "@admitto/tickets";
 import { IMPORT_CAPACITY_ERROR, IMPORT_JOB_FAILED_ERROR, safeImportJobError } from "../src/import-job-errors.js";
 import { STALE_IMPORT_JOB_ERROR, STALE_IMPORT_PENDING_ERROR } from "../src/reclaimStaleImportJobs.js";
 
 describe("safe import job errors", () => {
   it.each([
-    IMPORT_JOB_FAILED_ERROR, IMPORT_CAPACITY_ERROR, IMPORT_STOPPED_BY_ERASURE_ERROR,
+    IMPORT_JOB_FAILED_ERROR, IMPORT_CAPACITY_ERROR, IMPORT_STOPPED_BY_ERASURE_ERROR, IMPORT_STOPPED_BY_FIELD_DELETION_ERROR,
     STALE_IMPORT_JOB_ERROR, STALE_IMPORT_PENDING_ERROR,
     "Import stopped before it finished.", "import_job_incomplete",
   ])("preserves the fixed category %s", (error) => {

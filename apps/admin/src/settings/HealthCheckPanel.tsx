@@ -32,6 +32,7 @@ const CHECK_ICONS: Record<string, string> = {
   data_encryption: "lock",
   background_worker: "activity-heartbeat",
   mail_delivery_queue: "mail-forward",
+  registration_mail: "mail-opened",
   instance_url: "link",
   file_storage: "folder",
   email_sending: "mail",
@@ -42,6 +43,8 @@ const CHECK_ICONS: Record<string, string> = {
   weather: "cloud",
   identity_providers: "shield-lock",
   cloudflare_access: "brand-cloudflare",
+  registration_captcha: "shield-check",
+  event_addresses: "world-www",
 };
 
 /** Shared by the "Run live checks" tooltip and its mirror item in More actions (mobile). */
@@ -589,7 +592,6 @@ export function HealthCheckPanel({ isActive = true }: Readonly<{ isActive?: bool
               <Button
                 type="button"
                 variant="secondary"
-                size="sm"
                 icon={<i className="ti ti-refresh" aria-hidden="true" />}
                 onClick={() => void handleLive()}
                 loading={liveLoading}

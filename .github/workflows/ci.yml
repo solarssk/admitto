@@ -277,14 +277,7 @@ jobs:
       - if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
-      # One advisory is accepted on purpose: GHSA-fc5q-39xc-vjpf (picomatch ReDoS through repeated
-      # extglobs, published 2026-11-17, affects every version up to 4.0.7, NO patched release yet).
-      # picomatch reaches the repo only through dev tooling (vite, vitest, tinyglobby), not the
-      # production tree or the image. Remove ACCEPTED_ADVISORY once picomatch has a patched release
-      # (the step prints a notice when the advisory disappears from the report).
-      - name: Dependency audit (high and critical, one accepted advisory)
-        env:
-          ACCEPTED_ADVISORY: GHSA-fc5q-39xc-vjpf
+      - name: Dependency audit (high and critical)
         run: bash scripts/audit-gate.sh
       - name: License compliance check (report-only - see scripts/check-licenses.mjs)
         continue-on-error: true
@@ -855,7 +848,12 @@ jobs:
             | grep -qx 'migration-destructive-approved'; then
             echo "MIGRATION_DESTRUCTIVE_LABEL_APPROVED=1" >> "$GITHUB_ENV"
           fi
+      # A pull request is scanned against its own base branch, so a PR into release/x.y.z checks only
+      # the migrations it adds, not every migration the release already carries. The release's pull
+      # request into main has base main and so scans all of them (and needs the label for a drop).
       - name: Scan new migrations for destructive SQL
+        env:
+          MIGRATION_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'origin/main' }}
         run: bash scripts/check-migrations-destructive.sh
       - name: Migration guard unit tests
         run: bash scripts/check-migrations-destructive.test.sh

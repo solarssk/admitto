@@ -554,7 +554,7 @@ export const EventBounceIngestPanel = forwardRef<
         actions={
           <Switch
             id="event-bounce-detection-enabled"
-            label={draft.enabled ? "On" : "Off"}
+            aria-label="Bounce detection"
             checked={draft.enabled}
             disabled={isArchived}
             onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))}
@@ -723,7 +723,7 @@ export const EventBounceIngestPanel = forwardRef<
           runBlocked ? (
             <Tooltip content={runBlockedReason}>
               <span>
-                <Button type="button" variant="secondary" size="sm" disabled>
+                <Button type="button" variant="secondary" disabled>
                   Run check now
                 </Button>
               </span>
@@ -733,7 +733,6 @@ export const EventBounceIngestPanel = forwardRef<
               <Button
                 type="button"
                 variant="secondary"
-                size="sm"
                 icon={<i className="ti ti-refresh" aria-hidden="true" />}
                 onClick={() => void handleRunCheck()}
                 loading={runningCheck}
