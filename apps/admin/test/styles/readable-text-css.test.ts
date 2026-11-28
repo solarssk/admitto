@@ -645,6 +645,16 @@ describe("the Audit and Security tables of the Logs tab", () => {
     expect(sets(bodyOf(logs, ".audit-log-card__foot > span"), "min-width", "0")).toBe(true);
   });
 
+  it("gives the address and where it is from the room that View and the copy button leave in the foot of a card, and keeps those two together at the right", () => {
+    // The details cell is 100% wide in a table cell; in the foot it took most of the row and left "Internal network" a word a line at 440px.
+    const address = bodyOf(logs, ".audit-log-card__foot > span");
+    expect(sets(address, "flex", "1 1 0")).toBe(true);
+    const actions = bodyOf(logs, ".audit-log-card__foot .audit-log-details-cell");
+    expect(sets(actions, "width", "auto")).toBe(true);
+    expect(sets(actions, "flex", "none")).toBe(true);
+    expect(declares(actions, "gap")).toBe(true);
+  });
+
   it("wraps a long word in any cell, where a fixed layout would let it paint across the next one", () => {
     expect(sets(bodyOf(logs, ".item-table.audit-log-box .table td"), "overflow-wrap", "anywhere")).toBe(true);
   });

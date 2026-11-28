@@ -168,6 +168,15 @@
   overflow-wrap: anywhere;
 }
 
+/* The foot of a card: the address with where it is from takes what the two actions leave, and View and the copy button sit together at the right. The details cell
+   has a width of 100% for a table cell, and in the foot it took most of the row and squeezed "Internal network" into a word a line (at 440px). */
 .audit-log-card__foot > span {
+  flex: 1 1 0;
   min-width: 0;
+}
+
+.audit-log-card__foot .audit-log-details-cell {
+  width: auto;
+  flex: none;
+  gap: var(--space-3);
 }
