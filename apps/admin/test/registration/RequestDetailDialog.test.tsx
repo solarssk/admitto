@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldDto, EventDto, RegistrationDetailDto, RetryRegistrationMailsDto } from "../../src/api/types.js";
-import { formatUtcDateTime } from "../../src/utils/event-dates.js";
+import { formatUtcDateTime, formatZonedClockTime } from "../../src/utils/event-dates.js";
 import { SLOW_NOTICE_TEXT } from "../../src/utils/loading-timing.js";
 import { advanceTimers, deferred, getTooltipText, hangUntilAborted, isOff, mockMatchMedia } from "../test-utils.js";
 import { FakeServer, api, resetApi } from "./requestsApi.js";
@@ -187,6 +187,38 @@ describe("what a request says", () => {
     expect(valueOf(box, "IP address")).toBe("203.0.113.7");
     expect(within(box).getByText("203.0.113.7").className).toBe("mono");
     expect(valueOf(box, "Language")).toBe("pl-PL");
+  });
+
+  it("shows the time a guest sent the request in the look of every time, with the guest's own clock under it when the zone of their browser was kept", async () => {
+    api.fetchRegistration.mockResolvedValue(
+      detail("r1", { created_at: "2026-01-15T10:00:00.000Z", origin: { ip: null, time_zone: "Asia/Tokyo", country: null, region: null } }),
+    );
+    renderTab({ search: EVERY_STATE });
+    await loaded();
+
+    const box = await openRequest("r1", "Ann Kowalska");
+    await within(box).findByText("Request", { selector: "h3" });
+
+    const sent = within(box).getByText("Sent", { selector: "dt" }).parentElement!.querySelector("dd")!;
+    expect(sent.querySelector("time")?.getAttribute("datetime")).toBe("2026-01-15T10:00:00.000Z");
+    expect(sent.querySelector(".time-stack__zone")?.textContent).toBe(" UTC");
+    // The line says whose clock it is, to a screen reader too, and shows the instant in the zone the guest's browser reported.
+    const local = sent.querySelector(".time-stack__local")!;
+    expect(local.textContent).toContain("Guest's local time");
+    expect(local.textContent).toContain(formatZonedClockTime("2026-01-15T10:00:00.000Z", "Asia/Tokyo"));
+  });
+
+  it("has no clock of the guest under the time of a request whose zone was not kept, and never puts the viewer's own there", async () => {
+    api.fetchRegistration.mockResolvedValue(detail("r1"));
+    renderTab({ search: EVERY_STATE });
+    await loaded();
+
+    const box = await openRequest("r1", "Ann Kowalska");
+    await within(box).findByText("Request", { selector: "h3" });
+
+    const sent = within(box).getByText("Sent", { selector: "dt" }).parentElement!.querySelector("dd")!;
+    expect(sent.textContent).toBe(utc("2026-10-23T10:14:00.000Z"));
+    expect(sent.querySelector(".time-stack__local")).toBeNull();
   });
 
   it("has no heading for where it came from when nothing of it was kept", async () => {

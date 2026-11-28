@@ -11,11 +11,11 @@ import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGu
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { panelView, usePanelLoad } from "../hooks/usePanelLoad.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
 import { canAccept, canReject } from "./registrationDecisions.js";
 import { originRows } from "./requestOrigin.js";
 import { requestGuestName, requestMailKind, requestMailTone } from "./registrationRequests.js";
 import { BreakableAddress } from "./RequestsList.js";
+import { RequestInlineTime, RequestSentTime } from "./RequestTime.js";
 import { RequestDetailSkeleton } from "./RequestDetailSkeleton.js";
 import type { BusyDecision } from "./useRegistrationDecisions.js";
 import type { RequestLookups } from "./useRequestLookups.js";
@@ -46,10 +46,6 @@ export interface RequestDetailDialogProps {
   onRetryMail: (id: string, setError: (message: string | null) => void) => void;
 }
 
-function UtcTime({ iso }: Readonly<{ iso: string }>) {
-  return <time dateTime={iso}>{formatUtcDateTime(iso)}</time>;
-}
-
 function Pair({ label, wide = false, children }: Readonly<{ label: string; wide?: boolean; children: ReactNode }>) {
   return (
     <div className={wide ? "request-detail__wide" : undefined}>
@@ -61,11 +57,11 @@ function Pair({ label, wide = false, children }: Readonly<{ label: string; wide?
 
 /** What the address check came to: when the guest confirmed it, that it is still waited for, or that nothing asked for it (single sign-on, or an event that does not check). */
 function AddressCheck({ detail }: Readonly<{ detail: RegistrationDetailDto }>) {
-  if (detail.email_verified_at) return <UtcTime iso={detail.email_verified_at} />;
+  if (detail.email_verified_at) return <RequestInlineTime iso={detail.email_verified_at} />;
   if (detail.confirm_expires_at) {
     return (
       <>
-        Not confirmed yet. The link works until <UtcTime iso={detail.confirm_expires_at} />.
+        Not confirmed yet. The link works until <RequestInlineTime iso={detail.confirm_expires_at} />.
       </>
     );
   }
@@ -76,7 +72,7 @@ function Decision({ detail }: Readonly<{ detail: RegistrationDetailDto }>) {
   if (!detail.decided_at) return <>-</>;
   return (
     <>
-      <UtcTime iso={detail.decided_at} />
+      <RequestInlineTime iso={detail.decided_at} />
       {detail.decided_by ? ` by ${detail.decided_by.name}` : ""}
     </>
   );
@@ -180,14 +176,14 @@ function RequestSection({
             <StatusBadge status={`registration_${detail.status}`} />
           </Pair>
           <Pair label="Sent">
-            <UtcTime iso={detail.created_at} />
+            <RequestSentTime iso={detail.created_at} timeZone={detail.origin.time_zone} />
           </Pair>
           {detail.company ? <Pair label="Company">{detail.company}</Pair> : null}
           {detail.department ? <Pair label="Department">{detail.department}</Pair> : null}
           <Pair label="Address confirmed">
             <AddressCheck detail={detail} />
           </Pair>
-          <Pair label="Terms accepted">{detail.accepted_at ? <UtcTime iso={detail.accepted_at} /> : "-"}</Pair>
+          <Pair label="Terms accepted">{detail.accepted_at ? <RequestInlineTime iso={detail.accepted_at} /> : "-"}</Pair>
           <Pair label="Decision">
             <Decision detail={detail} />
           </Pair>
@@ -207,7 +203,7 @@ function RequestSection({
           <dl className="delivery-modal-kv request-detail__grid">
             {consents.map(([key, given]) => (
               <Pair key={key} label={lookups.consentTitles.get(key) ?? humanizeFieldKey(key)}>
-                Given <UtcTime iso={given} />
+                Given <RequestInlineTime iso={given} />
               </Pair>
             ))}
           </dl>
@@ -229,9 +225,9 @@ function RequestSection({
 
 /** When an email went out, or was last tried, or is waiting: the one time that says most about it. */
 function MailTime({ mail }: Readonly<{ mail: RegistrationMailDto }>) {
-  if (mail.sent_at) return <>Sent <UtcTime iso={mail.sent_at} /></>;
-  if (mail.attempted_at) return <>Last tried <UtcTime iso={mail.attempted_at} /></>;
-  return <>Queued <UtcTime iso={mail.queued_at} /></>;
+  if (mail.sent_at) return <>Sent <RequestInlineTime iso={mail.sent_at} /></>;
+  if (mail.attempted_at) return <>Last tried <RequestInlineTime iso={mail.attempted_at} /></>;
+  return <>Queued <RequestInlineTime iso={mail.queued_at} /></>;
 }
 
 function isFailed(mail: Pick<RegistrationMailDto, "status">): boolean {

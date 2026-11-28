@@ -162,6 +162,8 @@ describe("the banner over the table", () => {
     const time = banner()?.querySelector("time");
     expect(time?.getAttribute("datetime")).toBe(OLDEST_WAITING);
     expect(time?.textContent).toMatch(/ UTC$/);
+    // In the look of every time: the zone is quiet, in an element of its own.
+    expect(time?.querySelector(".time-stack__zone")?.textContent).toBe(" UTC");
   });
 
   it("is over the table, under the toolbar, in the amber of a warning, and is no button and no tile", async () => {

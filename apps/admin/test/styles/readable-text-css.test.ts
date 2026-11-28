@@ -335,6 +335,12 @@ describe("the Requests tab of the Registration page", () => {
     }
   });
 
+  it("leaves the colours of a time of a request to the look of every time (time-stack.css), with no colour of its own on `time` in the table or the cards", () => {
+    const ofATime = requests.filter((rule) => rule.selector.split(",").some((part) => part.trim().endsWith(" time")));
+    expect(ofATime.length).toBeGreaterThan(0);
+    for (const rule of ofATime) expect(declares(rule.body, "color"), rule.selector).toBe(false);
+  });
+
   it("insets the banner of the waiting requests and the boxed table by the card's own spacing, so neither touches its edge", () => {
     expect(sets(bodyOf(requests, ".registration-requests__banner"), "padding", "var\\(--space-4\\) var\\(--space-4\\) 0")).toBe(true);
     expect(sets(bodyOf(requests, ".registration-requests__box"), "margin", "var\\(--space-4\\)")).toBe(true);
