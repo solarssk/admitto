@@ -273,11 +273,15 @@
   min-height: 41px;
 }
 
+/* The shape of the real footer of the log (PaginationFooter, .audit-log-footer, measured in Chrome): 16px below the rows, a rule, 12px and a row of 28px controls. */
 .reports-skeleton__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 57px;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  min-height: 41px;
 }
 
 .reports-panels {
@@ -488,27 +492,13 @@
   font-size: var(--fs-sm);
 }
 
-.reports-log-footer {
-  padding: 0 var(--space-4) var(--space-4);
-}
-
-/* This Card is padded={false} (Admission log's filter toolbar sits in the header actions, not
-   inline). .reports-log-truncated/.reports-log-footer below are plain text/control rows with no
-   padding of their own, so they do need this wrapper's var(--space-4) - but the table itself
-   doesn't: .table th/td already carry their own cell padding (shell.css), exactly like the
-   Attendees list's standard table wrap (.attendees-table-wrap: overflow-x:auto, nothing else),
-   which sits in an equally padded={false} Card. Adding var(--space-4) here on top of that cell
-   padding double-inset the table so it read as narrower than the card, unlike every other table
-   in the app (PO report). */
-.reports-log-table-wrap {
-  overflow-x: auto;
-}
-
+/* The note above the log when it was cut to its latest rows: a block of its own in the padded card, above the boxed table. */
 .reports-log-truncated {
-  margin: 0;
+  margin: 0 0 var(--space-4);
   padding: var(--space-3) var(--space-4);
   background: var(--surface-sunken);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   color: var(--text-muted);
   font-size: 0.875rem;
 }
@@ -561,9 +551,8 @@
   gap: 8px;
 }
 
-/* Mobile card list (< 768px, same breakpoint/split-via-useIsDesktop convention as the
-   Attendees list) - same data as the table, one admission per card instead of a
-   horizontally-scrolling row. */
+/* Card list (< 1024px, where the boxed table of reports-log-table.css gives way; the split is useIsDesktop(1024) in ReportsPage.tsx) - same data as the
+   table, one admission per card. */
 .reports-log-cards {
   display: flex;
   flex-direction: column;
@@ -613,6 +602,13 @@
   margin-top: 4px;
   font-size: var(--fs-sm);
   color: var(--text-muted);
+}
+
+/* The label of a ticket type is data an admin typed: a long one wraps inside its badge instead of painting past the card (at 390px it made the page 424px wide). */
+.reports-log-card__meta .at-badge {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
 }
 
 /* Device and issued items were two bare strings back to back (e.g. "scanner-01 Badge, Gift
