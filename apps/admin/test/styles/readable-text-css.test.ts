@@ -743,6 +743,58 @@ describe("the Delivery log table", () => {
   });
 });
 
+describe("the Admission log table of the Reports page", () => {
+  const reportsLog = parse(read("apps/admin/src/pages/reports-log-table.css"));
+  const reportsPage = parse(read("apps/admin/src/pages/reports-page.css"));
+  const width = (column: number) => rem(bodyOf(reportsLog, `.item-table.reports-log-box .table :is(th, td):nth-child(${column})`), "width");
+  const sum = (...columns: number[]) => columns.reduce((total, column) => total + width(column), 0);
+  const fold = ".item-table.reports-log-box .table :is(th, td).reports-log-table__from-1180";
+
+  it("fits its five columns in the box at 1180px and the four that stay below it in the box at 1024px, since a fixed layout paints past its box when they add up to more", () => {
+    expect(sum(1, 2, 3, 4, 5)).toBeLessThanOrEqual(boxRem(1180));
+    expect(sum(1, 2, 3, 4)).toBeLessThanOrEqual(boxRem(1024));
+  });
+
+  it("gives every column a width, so that a wider box is shared in proportion and no column is handed all of it", () => {
+    for (const column of [1, 2, 3, 4, 5]) expect(Number.isFinite(width(column)), `column ${column}`).toBe(true);
+  });
+
+  it("leaves the guest room for a name: the first column pads 1rem and 0.75rem, and the second line of a guest is an e-mail address, which wraps", () => {
+    expect(width(1) - 1.75).toBeGreaterThanOrEqual(MIN_NAME);
+  });
+
+  it("folds Items below 1180px into a line under the guest, and shows that line only there", () => {
+    const folded = bodyOf(reportsLog, fold, "@media (max-width: 1179px)");
+    expect(sets(folded, "width", "0")).toBe(true);
+    // A hidden cell that kept the size of its text would still be as tall as it, and a second size after the first would win over it.
+    expect(sets(folded, "font-size", "0")).toBe(true);
+    expect(folded.match(/(?:^|[;\s])font-size\s*:/g)).toHaveLength(1);
+    expect(sets(folded, "white-space", "nowrap")).toBe(true);
+    expect(sets(bodyOf(reportsLog, ".item-table.reports-log-box .reports-log-table__below-1180", "@media (max-width: 1179px)"), "display", "block")).toBe(true);
+    expect(sets(bodyOf(reportsLog, ".reports-log-table__below-1180"), "display", "none")).toBe(true);
+  });
+
+  it("wraps a long word in any cell, balances a time that wraps, and lets the label of a ticket type wrap inside its badge in the table and in the cards", () => {
+    expect(sets(bodyOf(reportsLog, ".item-table.reports-log-box .table td"), "overflow-wrap", "anywhere")).toBe(true);
+    // "Jun 01, 2026, 11:05 AM UTC+2": balanced, it breaks after the date, not between 11:05 and AM.
+    expect(sets(bodyOf(reportsLog, ".item-table.reports-log-box .table td.time-text"), "text-wrap", "balance")).toBe(true);
+    for (const badge of [bodyOf(reportsLog, ".item-table.reports-log-box .table .at-badge"), bodyOf(reportsPage, ".reports-log-card__meta .at-badge")]) {
+      expect(sets(badge, "white-space", "normal")).toBe(true);
+      expect(sets(badge, "max-width", "100%")).toBe(true);
+    }
+  });
+
+  it("has no wrapper or footer inset of its own left, a note that is a box of its own in the padded card, and a placeholder footer the shape of the real one", () => {
+    expect(reportsPage.some((r) => r.selector.includes(".reports-log-table-wrap"))).toBe(false);
+    expect(reportsPage.some((r) => r.selector.includes(".reports-log-footer"))).toBe(false);
+    const note = bodyOf(reportsPage, ".reports-log-truncated");
+    expect(declares(note, "border-radius")).toBe(true);
+    expect(declares(note, "border-bottom")).toBe(false);
+    const footer = bodyOf(reportsPage, ".reports-skeleton__footer");
+    for (const property of ["margin-top", "padding-top", "border-top"]) expect(declares(footer, property), property).toBe(true);
+  });
+});
+
 describe("the sessions of the Account page", () => {
   const account = parse(read("apps/admin/src/account/account-page.css"));
   const width = (column: number) => rem(bodyOf(account, `.item-table.account-sessions-table .table :is(th, td):nth-child(${column})`), "width");

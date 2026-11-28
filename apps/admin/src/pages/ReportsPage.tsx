@@ -35,7 +35,9 @@ import { CustomFieldsReportsTab, MailReportsTab, WalletsReportsTab } from "../re
 import { calendarDateInZone, formatEventDateTime, formatEventTime } from "../utils/event-dates.js";
 import { peopleOnSiteBreakdown } from "../utils/peopleOnSite.js";
 import { handleExportRequestError } from "./handleExportRequestError.js";
+import "../components/item-table.css";
 import "./reports-page.css";
+import "./reports-log-table.css";
 import "../components/time-stack.css";
 
 const LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
@@ -520,7 +522,8 @@ function AdmissionLog({
   const [operatorFilter, setOperatorFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(LOG_PAGE_SIZE_DEFAULT);
-  const isDesktop = useIsDesktop();
+  // The boxed table fits from 1024px: its columns, folded as far as they go, need more than the 400 to 650px that a screen of 768 to 1023px leaves its box.
+  const showTable = useIsDesktop(1024);
   // Own trigger+panel dropdown, same mechanism as the Export menu above and Attendees' own
   // "Filters" button (AttendeesTable.tsx's FilterToolbar) - splitting the selects out of the
   // card header into a floating panel keeps the header a single row at any viewport, instead of
@@ -572,59 +575,66 @@ function AdmissionLog({
     paged.length === 0 ? (
       admissionLogEmptyState
     ) : (
-      <div className="reports-log-table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Attendee</th>
-              <th>Ticket type</th>
-              <th>Admitted at</th>
-              <th>Checked in by</th>
-              <th>Items</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paged.map((row) => (
-              <tr key={row.attendee_id}>
-                <td>
-                  <Link
-                    to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
-                    className="reports-log-user reports-log-user-link"
-                  >
-                    <strong>{row.name}</strong>
-                    <span className="reports-mono reports-muted">{row.email}</span>
-                  </Link>
-                </td>
-                <td>
-                  {row.ticket_type === null ? (
-                    <Badge variant="neutral">(none)</Badge>
-                  ) : (
-                    <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
-                  )}
-                </td>
-                <td className="time-text">
-                  {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
-                </td>
-                <td>
-                  <div className="reports-log-user">
-                    <span>{operatorDisplayLabel(row)}</span>
-                    {row.device_id && (
-                      <span className="reports-mono reports-muted">{row.device_id}</span>
-                    )}
-                  </div>
-                </td>
-                <td className="reports-muted">{row.items.length > 0 ? row.items.join(", ") : "-"}</td>
+      <div className="item-table reports-log-box">
+        <div className="attendees-table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Attendee</th>
+                <th>Ticket type</th>
+                <th>Admitted at</th>
+                <th>Checked in by</th>
+                <th className="reports-log-table__from-1180">Items</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {paged.map((row) => (
+                <tr key={row.attendee_id}>
+                  <td>
+                    <Link
+                      to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
+                      className="reports-log-user reports-log-user-link"
+                    >
+                      <strong>{row.name}</strong>
+                      <span className="reports-mono reports-muted">{row.email}</span>
+                    </Link>
+                    {/* What a screen with no room for the Items column keeps of it: a line under the guest, only when the admission issued something. */}
+                    {row.items.length > 0 && (
+                      <div className="reports-log-table__below-1180">{`Items: ${row.items.join(", ")}`}</div>
+                    )}
+                  </td>
+                  <td>
+                    {row.ticket_type === null ? (
+                      <Badge variant="neutral">(none)</Badge>
+                    ) : (
+                      <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
+                    )}
+                  </td>
+                  <td className="time-text">
+                    {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
+                  </td>
+                  <td>
+                    <div className="reports-log-user">
+                      <span>{operatorDisplayLabel(row)}</span>
+                      {row.device_id && (
+                        <span className="reports-mono reports-muted">{row.device_id}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="reports-muted reports-log-table__from-1180">
+                    {row.items.length > 0 ? row.items.join(", ") : "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
 
   return (
     <Card
       title="Admission log"
-      padded={false}
       actions={
         <FiltersMenu activeCount={activeFilterCount} className="reports-log-filters-menu" size="sm">
           <div className="reports-log-filters-menu__field">
@@ -675,7 +685,7 @@ function AdmissionLog({
           (up to 10,000 rows).
         </p>
       )}
-      {isDesktop ? (
+      {showTable ? (
         desktopAdmissionLog
       ) : (
         <div className="reports-log-cards">
@@ -720,24 +730,22 @@ function AdmissionLog({
           )}
         </div>
       )}
-      <div className="reports-log-footer">
-        <PaginationFooter
-          idPrefix="reports-admission-log"
-          page={safePage}
-          pageSize={pageSize}
-          totalPages={totalPages}
-          totalRows={total}
-          pageSizeOptions={LOG_PAGE_SIZE_OPTIONS}
-          onPageSizeChange={(size) => {
-            setPageSize(size);
-            setPage(1);
-          }}
-          // Step from safePage, not raw `page`: after a live/filter shrink clamps the view,
-          // paginationHandlers' Previous would burn down a stale page counter before moving.
-          onPrevious={() => setPage(Math.max(1, safePage - 1))}
-          onNext={() => setPage(Math.min(totalPages, safePage + 1))}
-        />
-      </div>
+      <PaginationFooter
+        idPrefix="reports-admission-log"
+        page={safePage}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        totalRows={total}
+        pageSizeOptions={LOG_PAGE_SIZE_OPTIONS}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+        // Step from safePage, not raw `page`: after a live/filter shrink clamps the view,
+        // paginationHandlers' Previous would burn down a stale page counter before moving.
+        onPrevious={() => setPage(Math.max(1, safePage - 1))}
+        onNext={() => setPage(Math.min(totalPages, safePage + 1))}
+      />
     </Card>
   );
 }
