@@ -36,7 +36,7 @@ export interface DeliveryRowMenuProps {
  *
  * The panel is `position: fixed`, placed by `useDropdownMenu` (right-aligned to the trigger,
  * flipped above it and kept inside the viewport) - NOT portaled to document.body. A plain
- * `position: absolute` panel used to inflate `.communication-table-wrap`'s `overflow: auto`
+ * `position: absolute` panel used to inflate the `overflow: auto` of the table's wrapper
  * instead of floating over it whenever it extended past the table's edge (verified live:
  * switching to `position: fixed` alone, no portal, already stops that - a fixed-position
  * descendant's containing block is the viewport rather than the nearest scrolling ancestor, as
