@@ -114,6 +114,7 @@ Each entry is one line that starts with a verb and links to the pull request wit
 - Show the Delivery log in the standard boxed table, with the template and purpose under the recipient below 1280 px and cards below 1024 px ([#1996](https://github.com/solarssk/admitto/pull/1996))
 - Show the Admission log of Reports in the standard boxed table, with the items under the guest below 1180 px and cards below 1024 px, and wrap a long ticket type label in the cards ([#1997](https://github.com/solarssk/admitto/pull/1997))
 - Show the times of a registration request in the standard look, and the guest's own clock under the time of the request when the event kept the guest's time zone ([#1998](https://github.com/solarssk/admitto/pull/1998))
+- Keep the Requests table readable on narrower screens: the company moves under the guest below 1360 px and the last email under the status below 1180 px ([#1999](https://github.com/solarssk/admitto/pull/1999))
 
 ### Fixed
 
