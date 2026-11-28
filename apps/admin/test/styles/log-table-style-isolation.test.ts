@@ -11,10 +11,12 @@ const accountCss = readFileSync(join(ADMIN_SRC, "account/account-page.css"), "ut
 const timeStackCss = readFileSync(join(ADMIN_SRC, "components/time-stack.css"), "utf8");
 
 describe("log table style isolation", () => {
-  it("keeps Audit and Security logs growing with their rows: the Account sessions are the shared boxed table now, with no scroll region of their own", () => {
-    expect(auditLogPanel).toContain("audit-log-table-wrap");
+  it("keeps Audit and Security logs and the Account sessions in the shared boxed table, with no scroll region of their own", () => {
+    // The logs are the shared boxed table too (audit-log-table.css): their old edge to edge wrapper is gone, and with it a rule to isolate.
+    expect(auditLogPanel).toContain("item-table audit-log-box");
+    expect(auditLogPanel).not.toContain("audit-log-table-wrap");
     expect(auditLogPanel).not.toContain("sessions-table-wrap");
-    expect(staffCss).toContain(".audit-log-table-wrap {");
+    expect(staffCss).not.toContain(".audit-log-table-wrap");
     expect(accountPage).toContain("item-table account-sessions-table");
     expect(accountPage).not.toContain("account-sessions-table-wrap");
     expect(accountCss).not.toContain("account-sessions-table-wrap");

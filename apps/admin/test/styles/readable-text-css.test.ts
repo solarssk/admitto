@@ -593,6 +593,103 @@ describe("the tables of the Users page", () => {
   });
 });
 
+describe("the Audit and Security tables of the Logs tab", () => {
+  const logs = parse(read("apps/admin/src/settings/audit-log-table.css"));
+  const width = (variant: "audit" | "security", column: number, media: string | null = null) =>
+    rem(bodyOf(logs, `.item-table.audit-log-box--${variant} .table :is(th, td):nth-child(${column})`, media), "width");
+  const audit = (...columns: number[]) => columns.reduce((total, column) => total + width("audit", column), 0);
+  const security = (...columns: number[]) => columns.reduce((total, column) => total + width("security", column), 0);
+
+  it("fits the columns of each step in the box of that screen: six at 1280px, five at 1180px and four at 1024px", () => {
+    // Audit: Time (1), Action (2), Scope (3), User (4), IP address (5), Details (6). Scope folds below 1280px and the IP address below 1180px.
+    expect(audit(1, 2, 3, 4, 5, 6)).toBeLessThanOrEqual(boxRem(1280));
+    expect(audit(1, 2, 4, 5, 6)).toBeLessThanOrEqual(boxRem(1180));
+    expect(audit(1, 2, 4, 6)).toBeLessThanOrEqual(boxRem(1024));
+    // Security: Time (1), Action (2), User (3), IP address (4), Details (5), with Action as wide as Audit's Action and Scope until 1279px.
+    expect(security(1, 2, 3, 4, 5)).toBeLessThanOrEqual(boxRem(1280));
+    expect(security(1, 3, 4, 5) + width("security", 2, "@media (max-width: 1279px)")).toBeLessThanOrEqual(boxRem(1180));
+    expect(security(1, 3, 5) + width("security", 2, "@media (max-width: 1279px)")).toBeLessThanOrEqual(boxRem(1024));
+  });
+
+  it("keeps the UTC line of a time on one line: the Time column is at least 12.7rem, the 10.9rem of \"2026-11-25 20:40:14 UTC\" in tabular figures and the padding of the cell", () => {
+    expect(width("audit", 1)).toBeGreaterThanOrEqual(12.7);
+    expect(width("security", 1)).toBeGreaterThanOrEqual(12.7);
+  });
+
+  it("puts Time, the user, the IP address and the details of the two tables at the same x at every step, so the headings do not jump between them", () => {
+    // Same sum at every step, and the same widths for the columns that both tables have: a box wider than the sum is shared in the same proportion.
+    expect(security(1, 2, 3, 4, 5)).toBeCloseTo(audit(1, 2, 3, 4, 5, 6), 5);
+    expect(width("security", 2)).toBeCloseTo(width("audit", 2) + width("audit", 3), 5);
+    expect([width("security", 1), width("security", 3), width("security", 4), width("security", 5)]).toEqual([width("audit", 1), width("audit", 4), width("audit", 5), width("audit", 6)]);
+    // Without Scope (below 1280px) Security's Action is Audit's Action.
+    expect(width("security", 2, "@media (max-width: 1279px)")).toBe(width("audit", 2));
+  });
+
+  it("folds Scope and the IP address into a line of another cell below their steps, and shows that line only there", () => {
+    for (const [from, below, media] of [
+      ["audit-log-table__from-1280", "audit-log-table__below-1280", "@media (max-width: 1279px)"],
+      ["audit-log-table__from-1180", "audit-log-table__below-1180", "@media (max-width: 1179px)"],
+    ] as const) {
+      const fold = bodyOf(logs, `.item-table.audit-log-box .table :is(th, td).${from}`, media);
+      expect(sets(fold, "width", "0")).toBe(true);
+      // The IP address of a row is a text node, which hiding the children of the cell does not reach: with a size of no height it cannot make the row 200px tall.
+      expect(sets(fold, "font-size", "0")).toBe(true);
+      expect(sets(fold, "white-space", "nowrap")).toBe(true);
+      expect(sets(bodyOf(logs, `.item-table.audit-log-box .${below}`, media), "display", "block")).toBe(true);
+    }
+    expect(sets(bodyOf(logs, ".audit-log-table__below-1280, .audit-log-table__below-1180"), "display", "none")).toBe(true);
+  });
+
+  it("wraps a long word in a card, where an IPv6 address in its foot pushed the details out of it", () => {
+    expect(sets(bodyOf(logs, ".audit-log-card"), "overflow-wrap", "anywhere")).toBe(true);
+    expect(sets(bodyOf(logs, ".audit-log-card__foot > span"), "min-width", "0")).toBe(true);
+  });
+
+  it("gives the address and where it is from the room that View and the copy button leave in the foot of a card, and keeps those two together at the right", () => {
+    // The details cell is 100% wide in a table cell; in the foot it took most of the row and left "Internal network" a word a line at 440px.
+    const address = bodyOf(logs, ".audit-log-card__foot > span");
+    expect(sets(address, "flex", "1 1 0")).toBe(true);
+    const actions = bodyOf(logs, ".audit-log-card__foot .audit-log-details-cell");
+    expect(sets(actions, "width", "auto")).toBe(true);
+    expect(sets(actions, "flex", "none")).toBe(true);
+    expect(declares(actions, "gap")).toBe(true);
+  });
+
+  it("wraps a long word in any cell, where a fixed layout would let it paint across the next one", () => {
+    expect(sets(bodyOf(logs, ".item-table.audit-log-box .table td"), "overflow-wrap", "anywhere")).toBe(true);
+  });
+
+  it("draws the action as plain text that wraps like any other, with a dot on its first line, and not as a box", () => {
+    const action = bodyOf(logs, ".audit-log-action");
+    expect(sets(action, "display", "flex")).toBe(true);
+    // A grey box was a heavy rectangle around a long name and said nothing about the many neutral actions: nothing on the element paints, rounds, cuts or keeps its text on one line.
+    for (const property of ["background", "border", "border-radius", "white-space", "overflow", "text-overflow"]) {
+      expect(declares(action, property), property).toBe(false);
+    }
+    const dot = bodyOf(logs, ".audit-log-action::before");
+    expect(sets(dot, "flex", "none")).toBe(true);
+    expect(declares(dot, "margin-top")).toBe(true);
+  });
+
+  it("colours the dot by tone with the status colours of the badges, and leaves a neutral one grey", () => {
+    expect(sets(bodyOf(logs, ".audit-log-action::before"), "background", String.raw`var\(--text-muted\)`)).toBe(true);
+    for (const tone of ["ok", "warn", "error", "info"]) {
+      expect(sets(bodyOf(logs, `.audit-log-action--${tone}::before`), "background", String.raw`var\(--status-${tone}\)`), tone).toBe(true);
+    }
+  });
+
+  it("indents the scope that Scope folds under the action to start under its name and not under its dot, by the dot and its gap", () => {
+    expect(sets(bodyOf(logs, ".audit-log-action + .audit-log-table__below-1280"), "padding-left", "1rem")).toBe(true);
+    // In rem, so that the dot and the line below it stay level whatever the size of the text beside them.
+    expect(rem(bodyOf(logs, ".audit-log-action"), "gap") + rem(bodyOf(logs, ".audit-log-action::before"), "width")).toBe(1);
+  });
+
+  it("keeps no rule for a badge in the Logs tab or in the cards of its list: the action is not one any more", () => {
+    expect(logs.some((r) => r.selector.includes(".at-badge"))).toBe(false);
+    expect(staff.some((r) => r.selector.includes(".audit-log-card__action") && r.selector.includes(".at-badge"))).toBe(false);
+  });
+});
+
 describe("the sessions of the Account page", () => {
   const account = parse(read("apps/admin/src/account/account-page.css"));
   const width = (column: number) => rem(bodyOf(account, `.item-table.account-sessions-table .table :is(th, td):nth-child(${column})`), "width");

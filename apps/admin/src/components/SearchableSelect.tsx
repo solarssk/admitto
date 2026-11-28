@@ -106,7 +106,7 @@ interface SearchableSelectProps {
   /** Native tooltip on the trigger, e.g. explaining why the field is disabled. */
   title?: string;
   /** Floor for the panel's width, in px - default 260 fits most option sets, but a list of long
-   * labels (e.g. audit log action names like "Bounce detection check run manually") truncates
+   * labels (e.g. audit log action names like "Attendees bulk erased or removed") truncates
    * more than is comfortable at that width even though it's technically working as designed
    * (PO report). Raise it per call site instead of widening the shared default for every short
    * list too. */

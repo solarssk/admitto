@@ -60,7 +60,7 @@ Shared outbound connections. They are configured in this tab, not through deploy
 - Turn it **Off** for a form that runs inside your own network, or if your organisation does not use Cloudflare. Admitto asks you to confirm. The link and the password then work without keys, Admitto does not contact Cloudflare, and the provider and key fields are hidden.
 - Without the check, a script can send the form and guess an event password. The usual limits still apply, with no tightening: 30 password tries in 15 minutes from one address, 120 a minute for one event, and 600 registrations a minute for one event. You can retune them with `RATE_LIMIT_OVERRIDES`. An event password is often weak, so for an event with a public link or a weak password, use the company SSO or a strong password.
 - The saved keys are kept while the check is **Off**. Turn it **On** again and they apply.
-- The change is recorded in **Logs**, on the **Audit** view, as "Guest registration bot protection updated".
+- The change is recorded in **Logs**, on the **Audit** view, as "Bot protection updated".
 - While it is **On**, choose the provider (Cloudflare Turnstile is the only one for now) and use **Test connection** to ask Cloudflare whether it accepts the secret key you typed, or the saved one when you typed none. Nothing is saved by the test.
 - Save the Cloudflare Turnstile **Site key** and **Secret key** here. Turnstile checks that a visitor to the registration form is not a bot. A form that guests reach by a public link or a password stays closed until both keys are saved.
 - The secret key is stored encrypted and is never shown again. Use **Set**, **Change** or **Clear** on it, then Save once for the whole tab.
